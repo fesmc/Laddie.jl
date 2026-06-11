@@ -54,7 +54,7 @@ GPU (fused) vs CPU (fused), 1-day ......... max|Δ| < 1e-11
 ```
 
 The on-device bit-identity confirms there is no GPU-specific rounding in the
-kernel logic.  The tiny GPU–CPU residual (< 10⁻¹¹) arises from different
+kernel logic. The tiny GPU–CPU residual (< 10⁻¹¹) arises from different
 floating-point operation ordering between CUDA hardware (which uses FMA) and
 the CPU backend — not from physics bugs.
 
@@ -90,7 +90,7 @@ After a 1-day warm ISOMIP+ run from identical initial conditions:
 
 End-state melt: **Julia 24.43 m yr⁻¹ / Python log 24.42 m yr⁻¹** (4 sig. figs.).
 The residuals are consistent with floating-point rounding between NumPy and
-Julia — not physics discrepancies.  See the [Python validation](generated/python_comparison.md)
+Julia — not physics discrepancies. See the [Python validation](generated/python_comparison.md)
 page for spatial maps.
 
 ## The ISOMIP+ test case

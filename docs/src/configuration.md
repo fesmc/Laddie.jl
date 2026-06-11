@@ -1,7 +1,7 @@
 # 4 · Configuration reference
 
 `build_from_config("config.toml")` reads a TOML file that controls every
-aspect of a run.  This page lists every recognised key, its type, default
+aspect of a run. This page lists every recognised key, its type, default
 value (if optional), and what it does.
 
 All physical parameters are converted to the floating-point type `FT` chosen
@@ -22,7 +22,7 @@ at call time (default `Float64`).
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| `dt` | Float | yes | Time step (s).  ISOMIP+ default: `210`. |
+| `dt` | Float | yes | Time step (s). ISOMIP+ default: `210`. |
 | `restday` | Float | yes | Interval between restart saves (days). |
 | `saveday` | Float | yes | Interval between field output saves (days). |
 | `diagday` | Float | yes | Interval between log-file diagnostics (days). |

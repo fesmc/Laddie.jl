@@ -56,7 +56,7 @@ const GRIDS = [
 # Benchmark helper
 # ============================================================================
 
-function bench_backend(backend, nx, ny; fused::Bool)
+function bench_backend(backend, nx, ny; fused=true)
     m = build_isomip(backend; nx=nx, ny=ny, isomipcond=:warm)
     m.fused = fused
     if backend isa CPU
@@ -71,27 +71,23 @@ end
 # Run and report
 # ============================================================================
 
-header = @sprintf("%-20s  %-10s  %12s  %12s  %8s",
-    "Grid", "Path", "CPU median", "GPU median", "Speedup")
+header = @sprintf("%-20s  %12s  %12s  %8s",
+    "Grid", "CPU median", "GPU median", "Speedup")
 println("\n", header)
 println("-" ^ length(header))
 
 for (nx, ny, label) in GRIDS
-    for (fused, path_label) in [(false, "broadcast"), (true, "fused")]
-        b_cpu = bench_backend(CPU(), nx, ny; fused=fused)
-        t_cpu_ms = median(b_cpu).time * 1e3   # seconds → ms
+    b_cpu = bench_backend(CPU(), nx, ny)
+    t_cpu_ms = median(b_cpu).time * 1e3   # seconds → ms
 
-        if gpu_backend !== nothing
-            b_gpu = bench_backend(gpu_backend, nx, ny; fused=fused)
-            t_gpu_ms = median(b_gpu).time * 1e3
-            speedup  = t_cpu_ms / t_gpu_ms
-            @printf("%-20s  %-10s  %9.3f ms  %9.3f ms  %6.1f×\n",
-                label, path_label, t_cpu_ms, t_gpu_ms, speedup)
-        else
-            @printf("%-20s  %-10s  %9.3f ms  %12s  %8s\n",
-                label, path_label, t_cpu_ms, "N/A", "N/A")
-        end
+    if gpu_backend !== nothing
+        b_gpu = bench_backend(gpu_backend, nx, ny)
+        t_gpu_ms = median(b_gpu).time * 1e3
+        speedup  = t_cpu_ms / t_gpu_ms
+        @printf("%-20s  %9.3f ms  %9.3f ms  %6.1f×\n",
+            label, t_cpu_ms, t_gpu_ms, speedup)
+    else
+        @printf("%-20s  %9.3f ms  %12s  %8s\n",
+            label, t_cpu_ms, "N/A", "N/A")
     end
 end
-
-println()

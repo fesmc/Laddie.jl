@@ -103,6 +103,10 @@ end
     @inbounds begin
         FT = typeof(z0)
         depth_idx = -z0 + (zb[i, j] - D[i, j]) / dz
+        # Non-finite D (a blown-up run) must not reach trunc(Int, ·): that is
+        # an InexactError on CPU and undefined behaviour on GPU.  Fall back to
+        # index 0 and let the run!-level blow-up check report the NaN.
+        depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
         idx_lo = clamp(trunc(Int, depth_idx), 0, nz - 1)
         idx_hi = clamp(idx_lo + 1, 0, nz - 1)
         weight = depth_idx - FT(idx_lo)
@@ -402,6 +406,12 @@ end
 # Equation-term functions — one named function per term in each prognostic
 # equation. Functions return the term value; the caller applies the sign,
 # making the step functions read like the written equations.
+#
+# These are the readable REFERENCE implementation of the governing equations.
+# The time loop runs the fused kernels in numerics.jl instead (one pass per
+# prognostic, no intermediate allocations); the test suite asserts that the
+# kernels reproduce these terms exactly (testset "Fused kernels match
+# reference equation terms"), so the two cannot drift apart silently.
 # All equation references are to Lambert et al. (2023), The Cryosphere,
 # https://doi.org/10.5194/tc-17-3203-2023.
 #

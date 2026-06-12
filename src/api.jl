@@ -1,3 +1,4 @@
+using ProgressMeter
 
 # ============================================================================
 # Driver
@@ -44,7 +45,9 @@ Advance model `m` forward in time for `days` days (default: `m.rc.days`).
 Each step applies `advance_leapfrog!` → `leapfrog_step!` (2×dt) →
 `clamp_velocities!` → `apply_robert_asselin_filter!`.  When `m.rc.saveday > 0`,
 `savefields!`, `printdiags`, and `saverestart!` are also called.  When
-`verbose = true`, progress is printed every 5 % of steps.
+`verbose = true`, a progress bar with throughput and ETA is displayed;
+melt/thickness/speed diagnostics attached to the bar refresh every ~5 % of
+steps (they are device reductions, so they are deliberately not per-step).
 
 Before stepping, a warning is emitted if the advective CFL number at the
 velocity cap `vcut` exceeds 1.  Every ~5 % of steps the prognostic fields are
@@ -64,15 +67,11 @@ function run!(m; days = nothing, verbose = true)
         "Advective CFL number at the velocity cap is ", round(cfl, digits = 2),
         " > 1 (dt = ", m.dt, " s, vcut = ", m.vcut, " m/s, dx = ", m.dx,
         " m, dy = ", m.dy, " m); the run is likely unstable — reduce dt or coarsen the grid.")
-    verbose && println(
-        "[KA/",
-        nameof(typeof(KA.get_backend(m.tmask))),
-        "] $(nt) steps, ",
-        size(m.tmask, 1) - 2,
-        "×",
-        size(m.tmask, 2) - 2,
-        " interior",
-    )
+    backend = nameof(typeof(KA.get_backend(m.tmask)))
+    prog = Progress(nt;
+        desc = "[$backend] $(m.ny)×$(m.nx) interior, $nt steps: ",
+        enabled = verbose, showspeed = true)
+    showvals = Tuple{String, Any}[]
     for t = 1:nt
         io_on && (m.t = t)
         advance_leapfrog!(m)
@@ -86,25 +85,22 @@ function run!(m; days = nothing, verbose = true)
         end
         if t % diagint == 0 || t == nt
             _check_blowup(m, t, nt)
+            # These diagnostics are device reductions (each forces a GPU
+            # sync), so they refresh only at this ~5 % cadence; the bar and
+            # ETA update every step via next! at negligible cost.
+            if verbose
+                mx, mn, sp = meltstats(m)
+                Dmax = maximum(ifelse.(m.tmask .> 0, m.D.present, -Inf))
+                showvals = [
+                    ("simulated days", round(m.t_start + t * m.dt / 86400, digits = 2)),
+                    ("melt mean/max [m/yr]", string(round(mn, digits = 2), " / ", round(mx, digits = 2))),
+                    ("Dmax [m]", round(Dmax, digits = 1)),
+                    ("|u|max [m/s]", round(sp, digits = 3)),
+                ]
+            end
         end
-        if verbose && (t % diagint == 0 || t == nt)
-            mx, mn, sp = meltstats(m)
-            Dmax = maximum(ifelse.(m.tmask .> 0, m.D.present, -Inf))
-            println(
-                "  step ",
-                lpad(t, 5),
-                "/",
-                nt,
-                "  melt[m/yr] mean=",
-                round(mn, digits = 2),
-                " max=",
-                round(mx, digits = 2),
-                "  Dmax=",
-                round(Dmax, digits = 1),
-                "  |u|max=",
-                round(sp, digits = 3),
-            )
-        end
+        next!(prog; showvalues = showvals)
     end
+    finish!(prog)
     return m
 end

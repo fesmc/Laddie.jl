@@ -9,6 +9,7 @@ include("entrainment.jl")
 include("melting.jl")
 include("convection.jl")
 include("openboundary.jl")
+include("groundingline.jl")
 include("forcing.jl")
 include("geometry.jl")
 include("io.jl")
@@ -37,6 +38,7 @@ export AbstractMeltParam, FixedGamT, TurbulentGamT
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
 
 export AbstractOpenBoundary, ZeroGradientInflow, NoInflow
+export AbstractGroundingLineBC, FreeSlipGL, NoSlipGL
 export AbstractForcing, ISOMIPForcing, LinearForcing, Linear2Forcing
 export TanhForcing, FileForcing, ProfileForcing
 

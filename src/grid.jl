@@ -30,6 +30,8 @@ struct Grid{FT, A<:AbstractMatrix{FT}}
 
     grdNu::A; grdSu::A
     grdEv::A; grdWv::A
+    glNu::A;  glSu::A
+    glEv::A;  glWv::A
     isfE::A;  isfW::A
     isfN::A;  isfS::A; isf::A
     grlE::A;  grlW::A
@@ -82,6 +84,15 @@ function Grid(mask::AbstractMatrix{Int}, zb::AbstractMatrix, dx, dy; FT = Float6
     grdSu = o .- yp1((o .- grd) .* (o .- xm1(grd)))
     grdEv = o .- xm1((o .- grd) .* (o .- ym1(grd)))
     grdWv = o .- xp1((o .- grd) .* (o .- ym1(grd)))
+    # Grounding-line-only wall indicators: same stencil as grdNu..grdWv but
+    # restricted to grounded ice (mask == 2, excluding land/border walls),
+    # so the momentum kernels can apply a different slip factor at the
+    # grounding line (AbstractGroundingLineBC).  Subset of grd?? pointwise.
+    gl = FT.(mask .== 2)
+    glNu = o .- ym1((o .- gl) .* (o .- xm1(gl)))
+    glSu = o .- yp1((o .- gl) .* (o .- xm1(gl)))
+    glEv = o .- xm1((o .- gl) .* (o .- ym1(gl)))
+    glWv = o .- xp1((o .- gl) .* (o .- ym1(gl)))
     isfE = ocn .* tmaskxp1;   isfW = ocn .* tmaskxm1
     isfN = ocn .* tmaskyp1;   isfS = ocn .* tmaskym1
     isf = isfE .+ isfN .+ isfW .+ isfS
@@ -115,6 +126,7 @@ function Grid(mask::AbstractMatrix{Int}, zb::AbstractMatrix, dx, dy; FT = Float6
         tmaskym1, tmaskyp1, tmaskxm1, tmaskxp1,
         tmaskxm1ym1, tmaskxm1yp1, tmaskxp1ym1,
         grdNu, grdSu, grdEv, grdWv,
+        glNu, glSu, glEv, glWv,
         isfE, isfW, isfN, isfS, isf,
         grlE, grlW, grlN, grlS, grl,
         umask, vmask,

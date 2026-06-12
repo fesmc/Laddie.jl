@@ -1,5 +1,5 @@
 # ============================================================================
-# Params{FT,EP,MP,CS,OB} — all scalar physical constants + parameterization
+# Params{FT,EP,MP,CS,OB,GL} — all scalar physical constants + parameterization
 # objects bundled in one immutable typed struct.
 # ============================================================================
 
@@ -9,6 +9,7 @@ struct Params{
     MP<:AbstractMeltParam,
     CS<:AbstractConvectionScheme,
     OB<:AbstractOpenBoundary,
+    GL<:AbstractGroundingLineBC,
 }
     # Time stepping
     dt::FT
@@ -48,6 +49,7 @@ struct Params{
     meltpar::MP
     convpar::CS
     openbc::OB
+    glbc::GL
 end
 
 """
@@ -95,16 +97,18 @@ function Params(;
     meltpar = FixedGamT(0.00018),
     convpar = ResetToAmbient(0.005),
     openbc  = ZeroGradientInflow(),
+    glbc    = FreeSlipGL(),
 )
     EP = typeof(entpar); MP = typeof(meltpar)
     CS = typeof(convpar); OB = typeof(openbc)
-    Params{FT, EP, MP, CS, OB}(
+    GL = typeof(glbc)
+    Params{FT, EP, MP, CS, OB, GL}(
         FT(dt), FT(nu), FT(g), FT(f), FT(slip), FT(Cd), FT(Cdtop),
         FT(Ah), FT(Kh), FT(maxdetr), FT(minD), FT(vcut),
         FT(utide), FT(Ti), FT(rhofw), FT(rho0), FT(rhoi),
         FT(L), FT(cp), FT(ci),
         FT(alpha), FT(beta), FT(l1), FT(l2), FT(l3),
         FT(Dinit), FT(dTinit), FT(dSinit),
-        entpar, meltpar, convpar, openbc,
+        entpar, meltpar, convpar, openbc, glbc,
     )
 end

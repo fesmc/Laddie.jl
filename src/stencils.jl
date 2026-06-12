@@ -154,7 +154,10 @@ end
     @Const(U),
     @Const(grdNu),
     @Const(grdSu),
+    @Const(glNu),
+    @Const(glSu),
     slip,
+    dslip,
     dx,
     dy,
     Ny,
@@ -174,8 +177,12 @@ end
         FT = typeof(slip)
         D_E = Dxm1[i, j] + ocnxm1[i, j] * D[i, j]
         D_W = D[i, j] + ocn[i, j] * Dxm1[i, j]
-        flux_N = -D_N * Vip[i, j] * (Ujp[i, j] - slip * U[i, j] * grdNu[i, j]) / dy
-        flux_S = D_S * Vip[s, j] * (Ujm[i, j] - slip * U[i, j] * grdSu[i, j]) / dy
+        # Per-face slip factor: land walls use slip, grounding-line walls
+        # slip + dslip (dslip = 0 for FreeSlipGL → bitwise v1 behaviour).
+        flux_N = -D_N * Vip[i, j] *
+                 (Ujp[i, j] - (slip + dslip * glNu[i, j]) * U[i, j] * grdNu[i, j]) / dy
+        flux_S = D_S * Vip[s, j] *
+                 (Ujm[i, j] - (slip + dslip * glSu[i, j]) * U[i, j] * grdSu[i, j]) / dy
         flux_E =
             -D_E *
             Uip[i, j] *
@@ -210,7 +217,10 @@ end
     @Const(V),
     @Const(grdEv),
     @Const(grdWv),
+    @Const(glEv),
+    @Const(glWv),
     slip,
+    dslip,
     dx,
     dy,
     Ny,
@@ -235,8 +245,10 @@ end
             Vjp[i, j] *
             (Vjp[i, j] - (one(FT) - signV[i, j]) * V[i, j] * ocnym1[i, j]) / dy
         flux_S = D_S * Vjm[i, j] * (Vjm[i, j] - signV[i, j] * V[i, j] * ocn[i, j]) / dy
-        flux_E = -D_E * Ujp[i, j] * (Vip[i, j] - slip * V[i, j] * grdEv[i, j]) / dx
-        flux_W = D_W * Ujp[i, w] * (Vim[i, j] - slip * V[i, j] * grdWv[i, j]) / dx
+        flux_E = -D_E * Ujp[i, j] *
+                 (Vip[i, j] - (slip + dslip * glEv[i, j]) * V[i, j] * grdEv[i, j]) / dx
+        flux_W = D_W * Ujp[i, w] *
+                 (Vim[i, j] - (slip + dslip * glWv[i, j]) * V[i, j] * grdWv[i, j]) / dx
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -254,7 +266,10 @@ end
     @Const(ocn),
     @Const(grdNu),
     @Const(grdSu),
+    @Const(glNu),
+    @Const(glSu),
     slip,
+    dslip,
     dx2,
     dy2,
     Ny,
@@ -269,13 +284,16 @@ end
         w = _west(j, Nx)
         o = one(FT)
         v = var[i, j]
-        slip_drag = slip * D_on_ugrid[i, j] * v / dy2
+        # Per-face wall drag: grounding-line walls add dslip to the factor
+        # (dslip = 0 for FreeSlipGL → bitwise v1 behaviour).
+        dragN = (slip + dslip * glNu[i, j]) * D_on_ugrid[i, j] * v / dy2
+        dragS = (slip + dslip * glSu[i, j]) * D_on_ugrid[i, j] * v / dy2
         jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[n, j], tmask_jp[i, j])
         jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[s, j], tmask_jm[i, j])
         flux_N =
-            jpD * (var[n, j] - v) / dy2 * (o - ocnym1[i, j]) - slip_drag * grdNu[i, j]
+            jpD * (var[n, j] - v) / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
         flux_S =
-            jmD * (var[s, j] - v) / dy2 * (o - ocnyp1[i, j]) - slip_drag * grdSu[i, j]
+            jmD * (var[s, j] - v) / dy2 * (o - ocnyp1[i, j]) - dragS * grdSu[i, j]
         flux_E = D0[i, e] * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j])
         flux_W = D0[i, j] * (var[i, w] - v) / dx2 * (o - ocn[i, j])
         out[i, j] = flux_N + flux_S + flux_E + flux_W
@@ -295,7 +313,10 @@ end
     @Const(ocnxp1),
     @Const(grdEv),
     @Const(grdWv),
+    @Const(glEv),
+    @Const(glWv),
     slip,
+    dslip,
     dx2,
     dy2,
     Ny,
@@ -310,15 +331,16 @@ end
         w = _west(j, Nx)
         o = one(FT)
         v = var[i, j]
-        slip_drag = slip * D_on_vgrid[i, j] * v / dx2
+        dragE = (slip + dslip * glEv[i, j]) * D_on_vgrid[i, j] * v / dx2
+        dragW = (slip + dslip * glWv[i, j]) * D_on_vgrid[i, j] * v / dx2
         ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, e], tmask_ip[i, j])
         imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, w], tmask_im[i, j])
         flux_N = D0[n, j] * (var[n, j] - v) / dy2 * (o - ocnym1[i, j])
         flux_S = D0[i, j] * (var[s, j] - v) / dy2 * (o - ocn[i, j])
         flux_E =
-            ipD * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j]) - slip_drag * grdEv[i, j]
+            ipD * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
         flux_W =
-            imD * (var[i, w] - v) / dx2 * (o - ocnxp1[i, j]) - slip_drag * grdWv[i, j]
+            imD * (var[i, w] - v) / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -384,6 +406,7 @@ function convT(out, m, var)
 end
 function convU(m)
     ny, nx = size(m.U.present)
+    dslip = _gl_slip(m.glbc, m.slip) - m.slip
     launch!(
         _convU_kernel!,
         m.cU,
@@ -411,7 +434,10 @@ function convU(m)
         m.U.present,
         m.grdNu,
         m.grdSu,
+        m.glNu,
+        m.glSu,
         m.slip,
+        dslip,
         m.dx,
         m.dy,
         ny,
@@ -421,6 +447,7 @@ function convU(m)
 end
 function convV(m)
     ny, nx = size(m.V.present)
+    dslip = _gl_slip(m.glbc, m.slip) - m.slip
     launch!(
         _convV_kernel!,
         m.cV,
@@ -448,7 +475,10 @@ function convV(m)
         m.V.present,
         m.grdEv,
         m.grdWv,
+        m.glEv,
+        m.glWv,
         m.slip,
+        dslip,
         m.dx,
         m.dy,
         ny,
@@ -480,6 +510,7 @@ function lapT(out, m, var)
 end
 function lapU(m)
     ny, nx = size(m.U.past)
+    dslip = _gl_slip(m.glbc, m.slip) - m.slip
     launch!(
         _lapU_kernel!,
         m.lU,
@@ -495,7 +526,10 @@ function lapU(m)
         m.ocn,
         m.grdNu,
         m.grdSu,
+        m.glNu,
+        m.glSu,
         m.slip,
+        dslip,
         m.dx^2,
         m.dy^2,
         ny,
@@ -505,6 +539,7 @@ function lapU(m)
 end
 function lapV(m)
     ny, nx = size(m.V.past)
+    dslip = _gl_slip(m.glbc, m.slip) - m.slip
     launch!(
         _lapV_kernel!,
         m.lV,
@@ -520,7 +555,10 @@ function lapV(m)
         m.ocnxp1,
         m.grdEv,
         m.grdWv,
+        m.glEv,
+        m.glWv,
         m.slip,
+        dslip,
         m.dx^2,
         m.dy^2,
         ny,

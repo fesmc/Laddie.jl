@@ -61,7 +61,7 @@ end
 function Base.show(io::IO, p::Params{FT}) where {FT}
     print(io, "Params{", FT, "}(", nameof(typeof(p.entpar)), " + ",
           nameof(typeof(p.meltpar)), " + ", nameof(typeof(p.convpar)), " + ",
-          nameof(typeof(p.openbc)), ")")
+          nameof(typeof(p.openbc)), " + ", nameof(typeof(p.glbc)), ")")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
@@ -71,10 +71,11 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     for chunk in Iterators.partition(scal, 4)
         println(io, "  ", join((rpad(string(k, " = ", v), 22) for (k, v) in chunk), " "))
     end
-    println(io, "  entrainment   = ", p.entpar)
-    println(io, "  melt          = ", p.meltpar)
-    println(io, "  convection    = ", p.convpar)
-    print(io,   "  open boundary = ", p.openbc)
+    println(io, "  entrainment    = ", p.entpar)
+    println(io, "  melt           = ", p.meltpar)
+    println(io, "  convection     = ", p.convpar)
+    println(io, "  open boundary  = ", p.openbc)
+    print(io,   "  grounding line = ", p.glbc)
 end
 
 _backend_name(m::Model) = nameof(typeof(KA.get_backend(getfield(m, :grid).zb)))
@@ -95,7 +96,7 @@ function Base.show(io::IO, ::MIME"text/plain", m::Model{FT}) where {FT}
     println(io, "  forcing: ", getfield(m, :forcing))
     println(io, "  params:  dt = ", p.dt, " s, ", nameof(typeof(p.entpar)), " + ",
             nameof(typeof(p.meltpar)), " + ", nameof(typeof(p.convpar)), " + ",
-            nameof(typeof(p.openbc)))
+            nameof(typeof(p.openbc)), " + ", nameof(typeof(p.glbc)))
     if rc.saveday > 0
         print(io, "  output:  every ", rc.saveday, " d → ",
               joinpath(rc.resultdir, rc.name))

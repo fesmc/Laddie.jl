@@ -32,10 +32,7 @@ end
 @testset verbose=true "Laddie.jl" begin
 
     @testset "Code quality (Aqua.jl)" begin
-        # Logging and ProgressMeter are staged for the upcoming logging rework
-        # and not loaded by the package yet — exclude them from the stale-deps
-        # check until then.
-        Aqua.test_all(Laddie; stale_deps = (ignore = [:Logging, :ProgressMeter],))
+        Aqua.test_all(Laddie)
     end
 
     @testset "Utility: _safe_div and index wrap-around helpers" begin
@@ -299,6 +296,36 @@ end
         @test all(m.melt[m.tmask .> 0] .>= 0)
     end
 
+    @testset "Grounding-line BC: FreeSlipGL bit-identical, NoSlipGL differs" begin
+        # Explicit FreeSlipGL is the default and must reproduce it bit-for-bit
+        # (dslip = 0 leaves the kernel arithmetic unchanged), so the Python
+        # verification remains valid for the default configuration.
+        m_def  = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        m_free = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                              params = Params(; FT, glbc = FreeSlipGL()))
+        run!(m_def;  days = 1.0, verbose = false)
+        run!(m_free; days = 1.0, verbose = false)
+        @test m_free.U.present == m_def.U.present
+        @test m_free.V.present == m_def.V.present
+        @test m_free.melt == m_def.melt
+
+        # GL wall indicators are a pointwise subset of the grounded ones; the
+        # ISOMIP+ geometry has a meridional grounding line, so GL faces exist
+        # at least for the V-walls (glEv/glWv).
+        g = getfield(m_def, :grid)
+        @test all(g.glNu .<= g.grdNu) && all(g.glSu .<= g.grdSu)
+        @test all(g.glEv .<= g.grdEv) && all(g.glWv .<= g.grdWv)
+        @test sum(g.glEv) + sum(g.glWv) > 0
+
+        # No-slip at the grounding line changes the solution and stays physical.
+        m_ns = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                            params = Params(; FT, glbc = NoSlipGL()))
+        run!(m_ns; days = 1.0, verbose = false)
+        @test all(isfinite, m_ns.D.present) && all(isfinite, m_ns.melt)
+        @test all(m_ns.melt[m_ns.tmask .> 0] .>= 0)
+        @test m_ns.V.present != m_def.V.present
+    end
+
     @testset "ClampDensity convection scheme: build and short run" begin
         params = Params(; FT, convpar = ClampDensity(FT(0.005)))
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
@@ -324,6 +351,20 @@ end
         # D should have changed
         @test m.D.present != D0
         @test all(isfinite, m.D.present)
+        @test all(isfinite, m.melt)
+    end
+
+    @testset "run! verbose path: ProgressMeter bar" begin
+        # All other run! tests use verbose = false; exercise the progress-bar
+        # code path (diagnostics refresh, showvalues, finish!) with the
+        # output swallowed.
+        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
+        ret = redirect_stdout(devnull) do
+            redirect_stderr(devnull) do
+                run!(m; days = 0.05, verbose = true)
+            end
+        end
+        @test ret === m
         @test all(isfinite, m.melt)
     end
 
@@ -531,6 +572,7 @@ end
         @test meta["params"]["dt"] == 210.0
         @test meta["params"]["melt"]["type"] == "FixedGamT"
         @test meta["params"]["melt"]["gamTfix"] ≈ 0.00018
+        @test meta["params"]["grounding_line"]["type"] == "FreeSlipGL"
         @test meta["forcing"]["type"] == "ISOMIPForcing"
         @test meta["forcing"]["isomipcond"] == "warm"
         @test meta["run_config"]["saveday"] == 0.5
@@ -673,6 +715,17 @@ end
             @test all(isfinite, Array(m_g.melt))
             @test Array(m_g.D.present) ≈ m_c.D.present
             @test Array(m_g.melt)      ≈ m_c.melt
+        end
+
+        @testset "NoSlipGL (GPU): matches CPU" begin
+            m_c = build_isomip(CPU();       nx = 20, ny = 10, isomipcond = :warm,
+                               params = Params(; glbc = NoSlipGL()))
+            m_g = build_isomip(gpu_backend; nx = 20, ny = 10, isomipcond = :warm,
+                               params = Params(; glbc = NoSlipGL()))
+            run!(m_c; days = 0.5, verbose = false)
+            run!(m_g; days = 0.5, verbose = false)
+            @test Array(m_g.melt)      ≈ m_c.melt
+            @test Array(m_g.V.present) ≈ m_c.V.present
         end
 
         @testset "ISOMIP+ warm (GPU Float32): matches CPU Float32" begin

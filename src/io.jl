@@ -159,6 +159,7 @@ function _write_run_metadata(m)
     params_d["melt"]          = _scalar_fields(p.meltpar)
     params_d["convection"]    = _scalar_fields(p.convpar)
     params_d["open_boundary"] = _scalar_fields(p.openbc)
+    params_d["grounding_line"] = _scalar_fields(p.glbc)
     meta = Dict{String, Any}(
         "run" => Dict{String, Any}(
             "created"        => Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
@@ -452,9 +453,8 @@ function printdiags(m)
     d_Dmin = minimum(D[icecells])
     d_Dmax = maximum(D[icecells])
 
-    mspy = 3600 * 24 * 365.25
-    d_Mmax = mspy * maximum(melt)
-    d_Mav = mspy * sum(melt .* tmask) * dxdy / area
+    d_Mmax = spy * maximum(melt)
+    d_Mav = spy * sum(melt .* tmask) * dxdy / area
 
     total = sum((melt .+ entr .+ ent2 .- detr) .* tmask) * dxdy
     d_MWF = total > 0 ? 100.0 * sum(melt .* tmask) * dxdy / total : 0.0

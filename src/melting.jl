@@ -9,7 +9,7 @@ turbulent heat transfer coefficient γ_T.
 
 - `gamTfix`: heat transfer coefficient (ISOMIP+ default: `1.8e-4`).
 
-Select via `usegamtfix = true` and `gamTfix = 0.00018` in `[Parameters]`.
+Select via `Params(; meltpar = FixedGamT(0.00018))`.
 """
 struct FixedGamT{FT} <: AbstractMeltParam
     ;
@@ -27,8 +27,7 @@ coefficients γ_T and γ_S via the log-layer formulation
 - `Sc`:  Schmidt number (default `2432.0`).
 - `nu0`: molecular kinematic viscosity, m² s⁻¹ (default `1.95e-6`).
 
-Select via `usegamtfix = false` in `[Parameters]`; tune `Pr`, `Sc`, `nu0`
-in `[Constants]`.
+Select via `Params(; meltpar = TurbulentGamT(13.8, 2432.0, 1.95e-6))`.
 """
 struct TurbulentGamT{FT} <: AbstractMeltParam
     ;

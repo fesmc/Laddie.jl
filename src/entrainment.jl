@@ -9,7 +9,7 @@ Gladish et al. (2012) and Lambert et al. (2023, Eq. 11).
 
 - `mu`: dimensionless efficiency parameter (ISOMIP+ default: `2.5`).
 
-Select via `entpar = "Gaspar"` and `mu = 2.5` in the `[Parameters]` config section.
+Select via `Params(; entpar = GasparEntrainment(2.5))`.
 """
 struct GasparEntrainment{FT} <: AbstractEntrainmentParam
     ;
@@ -23,7 +23,7 @@ Shear-driven entrainment following Holland & Jenkins (1999).
 
 - `cl`: drag coefficient for entrainment velocity (default: `0.01775`).
 
-Select via `entpar = "Holland"` in the `[Parameters]` config section.
+Select via `Params(; entpar = HollandEntrainment(0.01775))`.
 """
 struct HollandEntrainment{FT} <: AbstractEntrainmentParam
     ;

@@ -21,11 +21,11 @@ function timestep!(m)
 end
 
 # Try to load a GPU backend
-gpu_backend = nothing
+global gpu_backend = nothing
 try
     using CUDA
     if CUDA.functional()
-        gpu_backend = CUDABackend()
+        global gpu_backend = CUDABackend()
         @info "CUDA backend detected"
     end
 catch
@@ -34,7 +34,7 @@ if gpu_backend === nothing
     try
         using Metal
         if Metal.functional()
-            gpu_backend = MetalBackend()
+            global gpu_backend = MetalBackend()
             @info "Metal backend detected"
         end
     catch
@@ -56,9 +56,8 @@ const GRIDS = [
 # Benchmark helper
 # ============================================================================
 
-function bench_backend(backend, nx, ny; fused=true)
+function bench_backend(backend, nx, ny)
     m = build_isomip(backend; nx=nx, ny=ny, isomipcond=:warm)
-    m.fused = fused
     if backend isa CPU
         b = @be (deepcopy(m)) timestep!(_) evals=1 samples=20
     else

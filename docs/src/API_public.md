@@ -60,6 +60,13 @@ ZeroGradientInflow
 NoInflow
 ```
 
+#### Grounding line
+
+```@docs
+FreeSlipGL
+NoSlipGL
+```
+
 ### Ambient forcing
 
 ```@docs

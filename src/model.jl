@@ -1,3 +1,28 @@
+# Properties resolved before the field-forwarding chain in getproperty.
+const _RESERVED_PROPS = (:io, :rc, :grid, :state, :cache, :params, :forcing, :FT, :ny, :nx)
+
+# The flat forwarding layer resolves `m.field` by searching the sub-structs in
+# a fixed order, so a field name appearing in two of them would be silently
+# shadowed by whichever comes first.  Reject such configurations outright —
+# this matters mostly for user-defined AbstractForcing types.  Called from the
+# inner constructor so no construction path can bypass it.
+function _check_property_collisions(io, rc, grid, state, cache, params, forcing)
+    seen = Dict{Symbol, String}()
+    for (label, x) in (
+        ("Grid", grid), ("State", state), ("Cache", cache), ("Params", params),
+        ("RunConfig", rc), (string(nameof(typeof(forcing))), forcing), ("IOState", io),
+    )
+        for fn in fieldnames(typeof(x))
+            fn in _RESERVED_PROPS && error(
+                "field `$fn` of $label collides with the reserved Model property `$fn`")
+            haskey(seen, fn) && error(
+                "Model property forwarding is ambiguous: field `$fn` exists in both $(seen[fn]) and $label")
+            seen[fn] = label
+        end
+    end
+    return
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -40,6 +65,17 @@ mutable struct Model{
     cache  :: C
     params :: Params{FT, EP, MP, CS, OB}
     forcing:: F
+
+    function Model{FT, A, F, EP, MP, CS, OB, C}(
+        io, rc, grid, state, cache, params, forcing,
+    ) where {
+        FT, A<:AbstractMatrix{FT}, F<:AbstractForcing,
+        EP<:AbstractEntrainmentParam, MP<:AbstractMeltParam,
+        CS<:AbstractConvectionScheme, OB<:AbstractOpenBoundary, C<:Cache,
+    }
+        _check_property_collisions(io, rc, grid, state, cache, params, forcing)
+        new{FT, A, F, EP, MP, CS, OB, C}(io, rc, grid, state, cache, params, forcing)
+    end
 end
 
 function Model(

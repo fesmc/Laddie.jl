@@ -3,6 +3,36 @@
 # General model builder
 # ============================================================================
 
+_float_type(::Params{FT}) where {FT} = FT
+_float_type(f::AbstractForcing) = eltype(f.Tz)
+
+function _validate_build_inputs(mask, zb_raw, dx, dy, forcing, params, FT)
+    (size(mask, 1) >= 3 && size(mask, 2) >= 3) || throw(ArgumentError(
+        "mask must be at least 3×3 — interior cells plus the one-cell border ring — got $(size(mask))"))
+    size(zb_raw) == size(mask) || throw(ArgumentError(
+        "zb_raw and mask must have the same size, got $(size(zb_raw)) vs $(size(mask))"))
+    (dx > 0 && dy > 0) || throw(ArgumentError(
+        "dx and dy must be positive, got dx = $dx, dy = $dy"))
+    bad = setdiff(unique(mask), 0:3)
+    isempty(bad) || throw(ArgumentError(
+        "mask may only contain 0 (ocean), 1 (land), 2 (grounded), 3 (shelf); found $(sort(bad))"))
+    any(==(3), mask) || throw(ArgumentError(
+        "mask contains no floating-shelf cells (value 3) — nothing to simulate"))
+    border_shelf =
+        any(==(3), @view mask[1, :]) || any(==(3), @view mask[end, :]) ||
+        any(==(3), @view mask[:, 1]) || any(==(3), @view mask[:, end])
+    border_shelf && throw(ArgumentError(
+        "floating-shelf cells (3) on the domain border: the stencils wrap periodically, " *
+        "so the outermost ring must be ocean/land/grounded (0–2)"))
+    _float_type(params) === FT || throw(ArgumentError(
+        "params is Params{$(_float_type(params))} but build_model was called with FT = $FT; " *
+        "construct the parameters with Params(; FT = $FT, ...) or pass the matching FT"))
+    _float_type(forcing) === FT || throw(ArgumentError(
+        "forcing holds $(_float_type(forcing)) profiles but build_model was called with FT = $FT; " *
+        "construct the forcing with FT = $FT or pass the matching FT"))
+    return
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -30,7 +60,8 @@ values at non-shelf cells (mask ≠ 3) are ignored and zeroed internally.
 - `forcing`: an `AbstractForcing` (e.g. `ISOMIPForcing`, `LinearForcing`, `FileForcing`).
 - `params`:  a `Params` object with all physical constants and parameterizations.
 - `backend`: KernelAbstractions backend (default `CPU()`).
-- `FT`:      floating-point precision type (default `Float64`).
+- `FT`:      floating-point precision type (default `Float64`); must match the
+  precision of `params` and `forcing` (an `ArgumentError` is thrown otherwise).
 - `rc`:      `RunConfig` (default: `RunConfig()`, I/O disabled).
 
 The returned model is fully initialised and ready for `run!`.
@@ -56,6 +87,7 @@ function build_model(
     FT      = Float64,
     rc      = RunConfig(),
 )
+    _validate_build_inputs(mask, zb_raw, dx, dy, forcing, params, FT)
     ny_total, nx_total = size(mask)
     nx, ny = nx_total - 2, ny_total - 2
 

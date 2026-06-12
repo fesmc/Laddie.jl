@@ -34,7 +34,7 @@ The authors of LADDIE (not us!) have worked hard on v2.0, including another [gre
 4. modified boundary conditions at the grounding line (better match with observation)
 5. running pan-Antarctic domains with evolving geometry
 
-Laddie.jl is currently a port of the original LADDIE.py v1.0. As of now, the improvements of v2.0 are not a target for the Julia version.
+Laddie.jl is currently a port of the original LADDIE.py v1.0. As of now, the improvements of v2.0 are not a target for the Julia version, which will focus on developping other capacities.
 
 ## Installation
 

@@ -2,12 +2,96 @@ using JLD2
 using NCDatasets
 using Printf
 
+
+# ============================================================================
+# RunConfig — static run + I/O configuration (all fields have defaults).
+# ============================================================================
+
+"""
+$(TYPEDSIGNATURES)
+
+Static configuration for a model run: duration, I/O cadence, output flags,
+and restart options.  All fields have sensible defaults; a plain `RunConfig()`
+disables file I/O (`saveday = 0`).
+
+Set `saveday > 0` to enable NetCDF output at that interval (days).
+"""
+Base.@kwdef struct RunConfig
+    name        :: String  = "run"
+    days        :: Float64 = 30.0
+    saveday     :: Float64 = 0.0     # 0 = I/O disabled
+    diagday     :: Float64 = 1.0
+    restday     :: Float64 = 30.0
+    resultdir   :: String  = "./output/"
+    logfilename :: String  = "log.txt"
+    forcenewdir :: Bool    = true
+    fromrestart :: Bool    = false
+    restartfile :: String  = ""
+    save_Ut     :: Bool    = true
+    save_Uu     :: Bool    = false
+    save_Vt     :: Bool    = true
+    save_Vv     :: Bool    = false
+    save_D      :: Bool    = true
+    save_T      :: Bool    = true
+    save_S      :: Bool    = true
+    save_melt   :: Bool    = true
+    save_entr   :: Bool    = false
+    save_ent2   :: Bool    = false
+    save_detr   :: Bool    = false
+    save_Tbase  :: Bool    = false
+    save_Tamb   :: Bool    = false
+    save_gammaT :: Bool    = false
+    save_mask   :: Bool    = true
+    save_zb     :: Bool    = true
+end
+
+# ============================================================================
+# IOState{FT, A} — mutable runtime I/O state: counters, run directory, log,
+# coordinate vectors, and time-average accumulators.
+# A is the concrete matrix type (matches Grid/State/Cache).  Accumulators are
+# allocated 0×0 at construction; `prepare_output!` replaces the enabled ones
+# with full-size device arrays (the `save_*` flags in RunConfig guard access).
+# x/y coordinate vectors stay on the CPU — they are only written to NetCDF.
+# ============================================================================
+
+mutable struct IOState{FT, A<:AbstractMatrix{FT}}
+    # Step counters and I/O intervals (in steps)
+    t       :: Int
+    nt      :: Int
+    count   :: Int
+    saveint :: Int
+    diagint :: Int
+    restint :: Int
+    t_start :: Float64
+    # Run directory and log
+    rundir         :: String
+    logfile        :: String
+    walltime_start :: Float64
+    # Interior cell-centre coordinates (m), CPU-resident
+    x :: Vector{FT}
+    y :: Vector{FT}
+    # Time-average accumulators
+    Utav::A; Uuav::A; Vtav::A; Vvav::A
+    Dav::A;  Tav::A;  Sav::A;  meltav::A
+    entrav::A; ent2av::A; detrav::A
+    Tbav::A; Taav::A; gamTav::A
+end
+
+function IOState(FT::Type, x::AbstractVector, y::AbstractVector)
+    IOState{FT, Matrix{FT}}(
+        0, 0, 0, 1, 1, 1, 0.0,
+        "", "", 0.0,
+        Vector{FT}(x), Vector{FT}(y),
+        ntuple(_ -> Matrix{FT}(undef, 0, 0), 14)...,
+    )
+end
+
 # ============================================================================
 # Run directory + log
 # ============================================================================
 
 function _print2log(m, text)
-    haskey(m, :logfile) || return
+    isempty(m.logfile) && return
     elapsed = time() - m.walltime_start
     h = floor(Int, elapsed / 3600)
     rem = elapsed - 3600h
@@ -19,7 +103,7 @@ function _print2log(m, text)
 end
 
 """
-    create_rundir!(m) → m
+$(TYPEDSIGNATURES)
 
 Create the output directory at `joinpath(m.resultdir, m.name)` and open the
 log file.  Skips creating a new directory when `m.forcenewdir = false` and
@@ -42,7 +126,7 @@ end
 # ============================================================================
 
 """
-    prepare_output!(m) → m
+$(TYPEDSIGNATURES)
 
 Initialise time-average accumulators and save/diagnostic interval counters.
 Must be called after prognostics are initialised (needs `m.ny`, `m.nx`) and
@@ -82,11 +166,33 @@ end
 
 _int(a) = Array(a)[2:(end-1), 2:(end-1)]
 
+# t-grid velocity accumulation fused with the staggered average — avoids the
+# two circshift allocations per step that im()/jm() would cost.
+@kernel function _accum_ut_kernel!(av, @Const(U), Nx)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = eltype(av)
+        half = FT(1) / (FT(1) + FT(1))
+        w = _west(j, Nx)
+        av[i, j] += (U[i, j] + U[i, w]) * half
+    end
+end
+
+@kernel function _accum_vt_kernel!(av, @Const(V), Ny)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = eltype(av)
+        half = FT(1) / (FT(1) + FT(1))
+        s = _south(i, Ny)
+        av[i, j] += (V[i, j] + V[s, j]) * half
+    end
+end
+
 function _accum!(m)
     m.count += 1
-    m.save_Ut     && (m.Utav   .+= im(m.U.present))
+    m.save_Ut     && launch!(_accum_ut_kernel!, m.Utav, m.Utav, m.U.present, size(m.Utav, 2))
     m.save_Uu     && (m.Uuav   .+= m.U.present)
-    m.save_Vt     && (m.Vtav   .+= jm(m.V.present))
+    m.save_Vt     && launch!(_accum_vt_kernel!, m.Vtav, m.Vtav, m.V.present, size(m.Vtav, 1))
     m.save_Vv     && (m.Vvav   .+= m.V.present)
     m.save_D      && (m.Dav    .+= m.D.present)
     m.save_T      && (m.Tav    .+= m.T.present)
@@ -102,6 +208,7 @@ end
 
 function _reset_accum!(m)
     m.count = 0
+    io = getfield(m, :io)
     for k in (
         :Utav,
         :Uuav,
@@ -118,7 +225,7 @@ function _reset_accum!(m)
         :Taav,
         :gamTav,
     )
-        haskey(m, k) && fill!(m.d[k], 0.0)
+        fill!(getfield(io, k), 0)   # disabled accumulators are 0×0 — no-op
     end
 end
 
@@ -182,7 +289,7 @@ function _write_output!(m, t_days)
 end
 
 """
-    savefields!(m)
+$(TYPEDSIGNATURES)
 
 Accumulate model fields into time averages and write a NetCDF output file
 at every `m.saveday`-day interval.  Called once per time step inside `run!`.
@@ -201,7 +308,7 @@ end
 # ============================================================================
 
 """
-    saverestart!(m)
+$(TYPEDSIGNATURES)
 
 Write a JLD2 restart file containing all three leapfrog levels of D, U, V,
 T, S.  Fires at every `m.restday`-day interval and at the final step.
@@ -221,7 +328,7 @@ function saverestart!(m)
 end
 
 """
-    init_from_restart!(m)
+$(TYPEDSIGNATURES)
 
 Load D, U, V, T, S from the JLD2 restart file at `m.restartfile` into all
 three leapfrog levels of the existing `Var` structs, then call
@@ -250,7 +357,7 @@ end
 # ============================================================================
 
 """
-    printdiags(m)
+$(TYPEDSIGNATURES)
 
 Write a one-line diagnostic to the log file at every `m.diagday`-day interval.
 """
@@ -290,8 +397,18 @@ function printdiags(m)
     d_DEtot = 1e-6 * sum(detr .* tmask) * dxdy
     d_PSI = -1e-6 * sum(convD .* tmask) * dxdy
 
-    spd = sqrt.(im(U) .^ 2 .+ jm(V) .^ 2)
-    d_Vmax = maximum(spd .* tmask)
+    # max t-grid speed without the im/jm circshift allocations
+    ny, nx = size(U)
+    d_Vmax = 0.0
+    for j = 1:nx, i = 1:ny
+        tmask[i, j] > 0 || continue
+        w = j == 1 ? nx : j - 1
+        s = i == 1 ? ny : i - 1
+        u_t = (U[i, j] + U[i, w]) / 2
+        v_t = (V[i, j] + V[s, j]) / 2
+        spd = sqrt(u_t^2 + v_t^2)
+        spd > d_Vmax && (d_Vmax = spd)
+    end
 
     d_drho = 1000.0 * minimum(ifelse.(tmask .> 0, drho, 100.0))
     d_conv = sum(conv .* (tmask .> 0))

@@ -18,12 +18,14 @@ end
 
 # Reconstruct a forcing struct with all float vectors moved to backend.
 # Required so update_ambient_fields! can index Tz/Sz with GPU index arrays.
+# The unparameterized constructor (typename wrapper) re-infers the vector
+# type parameter V from the moved arrays.
 function _forcing_to_backend(f::F, backend) where {F<:AbstractForcing}
     fields = map(fieldnames(F)) do fn
         v = getfield(f, fn)
         v isa AbstractVector && eltype(v) <: AbstractFloat ? _to_device(backend, v) : v
     end
-    F(fields...)
+    Base.typename(F).wrapper(fields...)
 end
 
 function _var_to_backend(v::Var{LX, LY, FT, A0}, backend) where {LX, LY, FT, A0}
@@ -94,6 +96,6 @@ function to_backend(m::Model, backend)
           getfield(m, :params), new_forcing)
 end
 
-# Backward-compatible alias — returns a NEW Model; assign the result:
-#   m = to_backend!(m, backend)
-to_backend!(m::Model, backend) = to_backend(m, backend)
+# to_backend! never mutated its argument despite the `!`; deprecated in favour
+# of to_backend.  Remove (and drop the export) before the first tagged release.
+@deprecate to_backend!(m::Model, backend) to_backend(m, backend)

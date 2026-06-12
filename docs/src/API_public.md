@@ -6,14 +6,27 @@
 ### Entry points
 
 ```@docs
+build_model
 build_isomip
-build_from_config
 run!
 meltstats
-to_backend!
+to_backend
+```
+
+### Geometry ingestion
+
+```@docs
+build_laddie_mask
+ice_base_depth
 ```
 
 ### Model container
+
+```@docs
+Model
+Params
+RunConfig
+```
 
 
 ### Parameterizations
@@ -55,4 +68,5 @@ LinearForcing
 Linear2Forcing
 TanhForcing
 FileForcing
+ProfileForcing
 ```

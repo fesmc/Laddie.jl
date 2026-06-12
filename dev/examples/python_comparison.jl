@@ -70,7 +70,7 @@ import NCDatasets
 # Path to the Python restart file. Set the environment variable
 # `LADDIE_PY_RESTARTDIR` to the directory containing `restart_000001.nc`.
 const PY_REST = joinpath(
-    get(ENV, "LADDIE_PY_RESTARTDIR", joinpath(pkgdir(Laddie), "reference", "output", "isomip_compare")),
+    get(ENV, "LADDIE_PY_RESTARTDIR", joinpath(pkgdir(Laddie), "docs", "assets")),
     "restart_000001.nc",
 )
 

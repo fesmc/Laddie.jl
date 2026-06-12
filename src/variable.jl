@@ -8,7 +8,7 @@ struct Center <: AbstractLoc end
 struct Face <: AbstractLoc end
 
 """
-    Var{LX, LY, FT, A}
+$(TYPEDSIGNATURES)
 
 Three leapfrog levels (`past`, `present`, `future`) for a prognostic field
 located at staggering position `(LX, LY)` on the C-grid.

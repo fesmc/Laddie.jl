@@ -113,7 +113,7 @@ end
 
 
 """
-    update_ambient_fields!(m)
+$(TYPEDSIGNATURES)
 
 Vertically interpolate the ambient T/S profiles to the depth of each grid cell's
 plume base (zb − D), writing results into `m.Ta` and `m.Sa`
@@ -148,7 +148,7 @@ update_density!(m) = launch!(
 )
 
 """
-    update_convection!(m, cp::ClampDensity)
+$(TYPEDSIGNATURES)
 
 Flag convectively unstable cells and clamp δρ to a minimum positive value
 so the plume remains denser than ambient (Lambert et al. 2023, Sect. 2.4).
@@ -160,7 +160,7 @@ function update_convection!(m, cp::ClampDensity)
 end
 
 """
-    update_convection!(m, cp::ResetToAmbient)
+$(TYPEDSIGNATURES)
 
 Flag convectively unstable cells, then instantly reset their T/S to ambient
 values so the density remains stable (Lambert et al. 2023, Sect. 2.4).
@@ -175,7 +175,7 @@ function update_convection!(m, cp::ResetToAmbient)
 end
 
 """
-    update_convection!(m, ::RelaxToAmbient)
+$(TYPEDSIGNATURES)
 
 Flag convectively unstable cells; relaxation is applied implicitly during the
 tracer time step via `conv2` (Lambert et al. 2023, Sect. 2.4).
@@ -196,7 +196,7 @@ function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamT)
 end
 
 """
-    update_melt!(m, mp::FixedGamT)
+$(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with a fixed heat transfer
 coefficient γ_T (Jenkins 1991; Lambert et al. 2023, Eqs. 8–10).
@@ -230,7 +230,7 @@ function update_melt!(m, mp::FixedGamT)
 end
 
 """
-    update_melt!(m, mp::TurbulentGamT)
+$(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with turbulence-dependent
 transfer coefficients γ_T, γ_S via the log-layer formulation
@@ -255,7 +255,7 @@ end
 update_melt!(m) = update_melt!(m, m.meltpar)
 
 """
-    _compute_entrainment!(m, ep::HollandEntrainment)
+$(TYPEDSIGNATURES)
 
 Holland–Jenkins entrainment: e ∝ √max(0, |u|² − g·δρ·Kh/Ah·D)
 (Holland & Jenkins 1999; Lambert et al. 2023, Eq. 11).
@@ -270,7 +270,7 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
 end
 
 """
-    _compute_entrainment!(m, ep::GasparEntrainment)
+$(TYPEDSIGNATURES)
 
 Gaspar (1988) mechanical-energy entrainment: e ∝ u★³ / (D·δρ) minus a melt
 detrainment correction (Lambert et al. 2023, Eq. 12).
@@ -286,7 +286,7 @@ function _compute_entrainment!(m, ep::GasparEntrainment)
 end
 
 """
-    update_entrainment!(m)
+$(TYPEDSIGNATURES)
 
 Compute entrainment/detrainment rates and the minimum-D correction term `ent2`,
 then set `m.nentr = entr + ent2 − detr` (Lambert et al. 2023, Sect. 2.3).

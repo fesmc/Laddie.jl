@@ -11,7 +11,7 @@ function LinearForcing(FT::Type, S0, S1, T1, forc_z0, l1, l2)
     T0 = FT(l1) * FT(S0) + FT(l2)
     Tz = @. T0 + z * (FT(T1) - T0) / FT(forc_z0)
     Sz = @. FT(S0) + z * (FT(S1) - FT(S0)) / FT(forc_z0)
-    LinearForcing{FT}(Tz, Sz, z, dz, z0, FT(S0), FT(S1), FT(T1), FT(forc_z0))
+    LinearForcing(Tz, Sz, z, dz, z0, FT(S0), FT(S1), FT(T1), FT(forc_z0))
 end
 
 function Linear2Forcing(FT::Type, S0, S1, T1, forc_z0, l1, l2)
@@ -23,7 +23,7 @@ function Linear2Forcing(FT::Type, S0, S1, T1, forc_z0, l1, l2)
     raw_S = @. FT(S0) + z * (FT(S1) - FT(S0)) / FT(forc_z0)
     Tz = FT(T1) > T0 ? min.(raw_T, FT(T1)) : max.(raw_T, FT(T1))
     Sz = min.(raw_S, FT(S1))
-    Linear2Forcing{FT}(Tz, Sz, z, dz, z0, FT(S0), FT(S1), FT(T1), FT(forc_z0))
+    Linear2Forcing(Tz, Sz, z, dz, z0, FT(S0), FT(S1), FT(T1), FT(forc_z0))
 end
 
 function TanhForcing(
@@ -46,7 +46,7 @@ function TanhForcing(
     drho = FT(drho0) .* sqrt.(abs.(z))
     Tz = @. FT(T1) + (T0 - FT(T1)) * (1 + tanh((z - FT(forc_z0)) / FT(forc_z1))) / 2
     Sz = @. FT(S0) + FT(alpha) * (Tz - T0) / FT(beta) + drho / (FT(beta) * FT(rho0))
-    TanhForcing{FT}(
+    TanhForcing(
         Tz,
         Sz,
         z,
@@ -93,7 +93,7 @@ function FileForcing(FT::Type, forcfile::String, forcfile_T::String, forcfile_S:
     end
     dz = FT(1.0);
     z0 = FT(z_raw[1])
-    FileForcing{FT}(FT.(Tz_raw), FT.(Sz_raw), FT.(z_raw), dz, z0, forcfile)
+    FileForcing(FT.(Tz_raw), FT.(Sz_raw), FT.(z_raw), dz, z0, forcfile)
 end
 
 """
@@ -132,7 +132,7 @@ function ProfileForcing(Tz::AbstractVector, Sz::AbstractVector, z::AbstractVecto
         T_new = _interp1d(z_s, T_s, z_new)
         S_new = _interp1d(z_s, S_s, z_new)
     end
-    ProfileForcing{FT}(FT.(T_new), FT.(S_new), FT.(z_new), FT(1.0), FT(z_new[1]))
+    ProfileForcing(FT.(T_new), FT.(S_new), FT.(z_new), FT(1.0), FT(z_new[1]))
 end
 
 function _interp1d(x, y, xi)

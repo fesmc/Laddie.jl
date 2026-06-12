@@ -1,6 +1,7 @@
 using Laddie
 using Test
 using KernelAbstractions
+using Aqua
 import CUDA
 
 FT = Float64
@@ -8,7 +9,34 @@ FT = Float64
 # Detect GPU: use CUDABackend if a functional CUDA device is present.
 const gpu_backend = CUDA.functional() ? CUDA.CUDABackend() : nothing
 
+# Fake forcing types for the property-forwarding collision guard tests
+# (type definitions must live at top level, not inside a @testset).
+struct CollidingForcing <: Laddie.AbstractForcing
+    Tz::Vector{Float64}
+    Sz::Vector{Float64}
+    z::Vector{Float64}
+    dz::Float64
+    z0::Float64
+    melt::Float64   # collides with Cache.melt
+end
+
+struct ReservedNameForcing <: Laddie.AbstractForcing
+    Tz::Vector{Float64}
+    Sz::Vector{Float64}
+    z::Vector{Float64}
+    dz::Float64
+    z0::Float64
+    nx::Int         # collides with the reserved Model property `nx`
+end
+
 @testset verbose=true "Laddie.jl" begin
+
+    @testset "Code quality (Aqua.jl)" begin
+        # Logging and ProgressMeter are staged for the upcoming logging rework
+        # and not loaded by the package yet — exclude them from the stale-deps
+        # check until then.
+        Aqua.test_all(Laddie; stale_deps = (ignore = [:Logging, :ProgressMeter],))
+    end
 
     @testset "Utility: _safe_div and index wrap-around helpers" begin
         @test Laddie._safe_div(6.0, 2.0) === 3.0
@@ -46,6 +74,38 @@ const gpu_backend = CUDA.functional() ? CUDA.CUDABackend() : nothing
         @test all(m.melt[m.tmask .> 0] .>= 0)
         run!(m; days=0.5, verbose=false)
         @test all(isfinite, m.D.present)
+        @test all(isfinite, m.melt)
+    end
+
+    @testset "build_model: input validation errors" begin
+        nx_i, ny_i = 6, 4
+        mask = zeros(Int, ny_i + 2, nx_i + 2)
+        mask[1, :]   .= 1;   mask[end, :] .= 1
+        mask[:, 1]   .= 1;   mask[:, end] .= 1
+        mask[2:end-1, 2:3]   .= 2
+        mask[2:end-1, 4:end-1] .= 3
+        zb = fill(-400.0, ny_i + 2, nx_i + 2)
+        forcing = ISOMIPForcing(FT, :warm)
+        params  = Params(; FT)
+
+        # zb size mismatch
+        @test_throws ArgumentError build_model(mask, zb[:, 1:end-1], 2000.0, 2000.0, forcing, params; FT)
+        # non-positive cell spacing
+        @test_throws ArgumentError build_model(mask, zb, -2000.0, 2000.0, forcing, params; FT)
+        # mask value outside 0:3
+        bad = copy(mask); bad[3, 4] = 7
+        @test_throws ArgumentError build_model(bad, zb, 2000.0, 2000.0, forcing, params; FT)
+        # no floating-shelf cells at all
+        none = copy(mask); none[none .== 3] .= 2
+        @test_throws ArgumentError build_model(none, zb, 2000.0, 2000.0, forcing, params; FT)
+        # shelf cell on the border ring
+        edge = copy(mask); edge[1, 4] = 3
+        @test_throws ArgumentError build_model(edge, zb, 2000.0, 2000.0, forcing, params; FT)
+        # FT mismatch with params and with forcing
+        @test_throws ArgumentError build_model(mask, zb, 2000.0, 2000.0, forcing, Params(; FT = Float32); FT)
+        @test_throws ArgumentError build_model(mask, zb, 2000.0, 2000.0, ISOMIPForcing(Float32, :warm), params; FT)
+        # valid inputs still build
+        m = build_model(mask, zb, 2000.0, 2000.0, forcing, params; FT)
         @test all(isfinite, m.melt)
     end
 
@@ -267,6 +327,24 @@ const gpu_backend = CUDA.functional() ? CUDA.CUDABackend() : nothing
         @test all(isfinite, m.melt)
     end
 
+    @testset "run!: CFL warning and blow-up detection" begin
+        # CFL warning fires when dt is too large for the grid; days = 0 → no
+        # stepping, so only the pre-loop warning is exercised.
+        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm,
+                         params = Params(; dt = 5000.0))
+        @test_logs (:warn, r"CFL") run!(m; days = 0.0, verbose = false)
+
+        # Default ISOMIP+ setup is CFL-safe: no warning.
+        m_ok = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
+        @test_logs run!(m_ok; days = 0.0, verbose = false)
+
+        # Non-finite prognostics abort with an informative error instead of
+        # integrating NaNs to the end of the run.
+        m2 = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
+        m2.D.present[5, 5] = NaN
+        @test_throws "blew up" run!(m2; days = 0.1, verbose = false)
+    end
+
     @testset "Float32 vs Float64: mean melt within 1%" begin
         m64 = build_isomip(CPU(); FT=Float64, nx=20, ny=10, isomipcond=:warm)
         m32 = build_isomip(CPU(); FT=Float32, nx=20, ny=10, isomipcond=:warm)
@@ -277,6 +355,134 @@ const gpu_backend = CUDA.functional() ? CUDA.CUDABackend() : nothing
         @test isfinite(mn64) && mn64 > 0
         @test isfinite(mn32)
         @test abs(Float64(mn32) - mn64) / mn64 < 0.01
+    end
+
+    @testset "Forcing structs are concretely typed" begin
+        forcings = (
+            ISOMIPForcing(FT, :warm),
+            LinearForcing(FT, 33.8, 34.7, 1.0, -720.0, -0.0573, 0.0832),
+            Linear2Forcing(FT, 33.8, 34.7, 1.0, -720.0, -0.0573, 0.0832),
+            TanhForcing(FT, 33.8, 1.0, -720.0, 100.0, 0.01, 1028.0,
+                        3.733e-5, 7.843e-4, -0.0573, 0.0832),
+            ProfileForcing([1.0, 0.0], [34.7, 34.2], [-1000.0, -100.0]; FT),
+        )
+        for f in forcings
+            @test all(isconcretetype, fieldtypes(typeof(f)))
+            @test f.Tz isa Vector{FT}
+            @test all(isfinite, f.Tz) && all(isfinite, f.Sz)
+        end
+    end
+
+    @testset "Model property forwarding: collision guard" begin
+        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
+        parts = (getfield(m, :io), getfield(m, :rc), getfield(m, :grid),
+                 getfield(m, :state), getfield(m, :cache), getfield(m, :params))
+        v = zeros(2)
+        @test_throws "ambiguous" Model(parts..., CollidingForcing(v, v, v, 1.0, -5000.0, 0.0))
+        @test_throws "reserved" Model(parts..., ReservedNameForcing(v, v, v, 1.0, -5000.0, 3))
+        # The shipped struct combination is collision-free (also checked at
+        # every Model construction).
+        @test Model(parts..., getfield(m, :forcing)) isa Model
+    end
+
+    @testset "Compact show methods" begin
+        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
+        plain(x) = sprint(show, MIME("text/plain"), x)
+
+        s = plain(m)
+        @test occursin("Model{Float64} on CPU", s)
+        @test occursin("20×", replace(s, "10×20" => "20×10")) || occursin("interior", s)
+        @test occursin("forcing", s) && occursin("params", s)
+        @test length(s) < 800   # not a field dump
+
+        sg = plain(getfield(m, :grid))
+        @test occursin("shelf", sg) && occursin("interior", sg)
+        @test length(sg) < 400
+
+        sp = plain(getfield(m, :params))
+        @test occursin("Params{Float64}", sp)
+        @test occursin("dt = 210.0", sp) && occursin("entrainment", sp)
+        @test length(sp) < 1500
+
+        @test occursin("ISOMIP+ :warm", plain(getfield(m, :forcing)))
+        for x in (getfield(m, :state), getfield(m, :cache), getfield(m, :io), m.D)
+            @test length(plain(x)) < 400
+        end
+    end
+
+    @testset "to_backend! is a deprecated alias of to_backend" begin
+        # @deprecate keeps it callable (warning visibility depends on the
+        # --depwarn flag, so only the forwarding behaviour is asserted here).
+        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
+        m2 = to_backend!(m, CPU())
+        @test m2 isa Model
+        @test m2 !== m                  # returns a NEW model, never mutates
+        @test m2.D.present ≈ m.D.present
+    end
+
+    @testset "Fused kernels match reference equation terms" begin
+        # The fused step kernels in numerics.jl and the equation-term
+        # functions in physics.jl implement the same governing equations.
+        # Reconstruct one leapfrog step from the term functions and require
+        # the kernels to reproduce it, for both the scalar-coefficient
+        # (FixedGamT/ResetToAmbient) and matrix-coefficient
+        # (TurbulentGamT/RelaxToAmbient) kernel variants.
+        configs = (
+            Params(; FT),
+            Params(; FT,
+                   meltpar = TurbulentGamT(FT(13.8), FT(2432.0), FT(1.95e-6)),
+                   convpar = RelaxToAmbient(FT(10000.0)),
+                   entpar  = HollandEntrainment(FT(0.01775))),
+        )
+        for params in configs
+            m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
+            run!(m; days = 0.2, verbose = false)   # develop a non-trivial flow
+            Laddie.advance_leapfrog!(m)
+            dt = 2 * m.dt
+            Laddie.step_thickness(m, dt)
+            Laddie.precompute_integration_terms!(m)
+
+            rhs_U = .- Laddie.u_thickness_tendency(m) .+ Laddie.u_advection(m) .-
+                       Laddie.u_pressure_depth(m)     .+ Laddie.u_pressure_slope(m) .-
+                       Laddie.u_pressure_density(m)   .+ Laddie.u_coriolis(m) .-
+                       Laddie.u_bottom_drag(m)        .+ Laddie.u_diffusion(m) .-
+                       Laddie.u_detrainment(m)
+            U_ref = m.U.past .+
+                Laddie.div0(rhs_U, Laddie.ip_t(m, m.D.present)) .* m.umask .* dt
+
+            rhs_V = .- Laddie.v_thickness_tendency(m) .+ Laddie.v_advection(m) .-
+                       Laddie.v_pressure_depth(m)     .+ Laddie.v_pressure_slope(m) .-
+                       Laddie.v_pressure_density(m)   .- Laddie.v_coriolis(m) .-
+                       Laddie.v_bottom_drag(m)        .+ Laddie.v_diffusion(m) .-
+                       Laddie.v_detrainment(m)
+            V_ref = m.V.past .+
+                Laddie.div0(rhs_V, Laddie.jp_t(m, m.D.present)) .* m.vmask .* dt
+
+            rhs_T = .- Laddie.tracer_thickness_tendency(m, m.T.present) .+
+                       Laddie.tracer_advection(m, m.T.present) .+
+                       Laddie.tracer_entrainment(m, m.Ta) .+
+                       Laddie.T_ice_ocean_exchange(m) .+
+                       Laddie.tracer_diffusion(m, m.T.past) .-
+                       Laddie.tracer_convection(m, m.T.past, m.Ta)
+            T_ref = m.T.past .+ Laddie.div0(rhs_T, m.D.present) .* m.tmask .* dt
+
+            rhs_S = .- Laddie.tracer_thickness_tendency(m, m.S.present) .+
+                       Laddie.tracer_advection(m, m.S.present) .+
+                       Laddie.tracer_entrainment(m, m.Sa) .+
+                       Laddie.tracer_diffusion(m, m.S.past) .-
+                       Laddie.tracer_convection(m, m.S.past, m.Sa)
+            S_ref = m.S.past .+ Laddie.div0(rhs_S, m.D.present) .* m.tmask .* dt
+
+            Laddie.step_u_momentum(m, dt)
+            Laddie.step_v_momentum(m, dt)
+            Laddie.step_temperature(m, dt)
+            Laddie.step_salinity(m, dt)
+
+            @test m.U.future ≈ U_ref rtol = 1e-10 atol = 1e-12
+            @test m.V.future ≈ V_ref rtol = 1e-10 atol = 1e-12
+            @test m.T.future ≈ T_ref rtol = 1e-10 atol = 1e-12
+            @test m.S.future ≈ S_ref rtol = 1e-10 atol = 1e-12
+        end
     end
 
     @testset "Conservation: D equation exact over one step" begin
@@ -314,6 +520,21 @@ const gpu_backend = CUDA.functional() ? CUDA.CUDABackend() : nothing
         @test isfile(joinpath(rundir, "log.txt"))
         @test filesize(joinpath(rundir, "log.txt")) > 0
 
+        # Run provenance metadata: full effective configuration on disk
+        meta_path = joinpath(rundir, "run_metadata.toml")
+        @test isfile(meta_path)
+        meta = Laddie.TOML.parsefile(meta_path)
+        @test meta["run"]["float_type"] == "Float64"
+        @test meta["run"]["backend"] == "CPU"
+        @test meta["run"]["laddie_version"] isa String
+        @test meta["grid"]["nx"] == 20 && meta["grid"]["ny"] == 10
+        @test meta["params"]["dt"] == 210.0
+        @test meta["params"]["melt"]["type"] == "FixedGamT"
+        @test meta["params"]["melt"]["gamTfix"] ≈ 0.00018
+        @test meta["forcing"]["type"] == "ISOMIPForcing"
+        @test meta["forcing"]["isomipcond"] == "warm"
+        @test meta["run_config"]["saveday"] == 0.5
+
         # NetCDF output written at the saveday cadence.  The filename carries
         # the day stamp rounded to whole days, so both sub-day writes here
         # collapse onto output_000001.nc — hence >= 1, not >= 2.
@@ -338,6 +559,28 @@ const gpu_backend = CUDA.functional() ? CUDA.CUDABackend() : nothing
         @test m2.D.present ≈ m.D.present
         @test m2.T.present ≈ m.T.present
         @test m2.S.present ≈ m.S.present
+
+        # Continuation timestamps: output and restart files of the restarted
+        # run must carry the t_start offset, not restart from day 0.
+        run!(m2; days = 0.5, verbose = false)
+        rundir2 = joinpath(tmpdir, "iotest2")
+        ncs2 = sort(filter(endswith(".nc"), readdir(rundir2)))
+        @test !isempty(ncs2)
+        @test "output_000000.nc" ∉ ncs2   # day stamps continue from t_start = 1
+        NCD.Dataset(joinpath(rundir2, ncs2[end])) do ds
+            @test ds.attrib["time_end_days"] ≈ 1.5 atol = 0.01
+            @test ds.attrib["time_start_days"] >= 1.0 - 0.01
+        end
+        latest2 = joinpath(rundir2, "restart_latest.jld2")
+        @test isfile(latest2)
+        Laddie.JLD2.jldopen(latest2, "r") do f
+            @test f["t_days"] ≈ 1.5 atol = 0.01   # chained restarts accumulate
+        end
+
+        # Continuation metadata records the restart offset
+        meta2 = Laddie.TOML.parsefile(joinpath(rundir2, "run_metadata.toml"))
+        @test meta2["run"]["t_start_days"] ≈ 1.0 atol = 0.01
+        @test meta2["run_config"]["fromrestart"] === true
 
         # Typed Model: unknown properties now error instead of landing in a Dict
         @test_throws ErrorException m.no_such_field

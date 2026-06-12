@@ -26,6 +26,7 @@ include("stencils.jl")
 include("backend.jl")
 include("api.jl")
 include("build.jl")
+include("show.jl")
 
 
 export Model, Grid, State, Cache, Params, RunConfig

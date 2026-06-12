@@ -1,6 +1,7 @@
 using JLD2
 using NCDatasets
 using Printf
+using TOML
 
 
 # ============================================================================
@@ -86,6 +87,11 @@ function IOState(FT::Type, x::AbstractVector, y::AbstractVector)
     )
 end
 
+# Absolute simulation time in days: steps of this run offset by the restart
+# time, so output/restart files of a continuation run never collide with the
+# files of the run they restarted from.
+_t_days(m) = m.t_start + m.t * m.dt / 86400.0
+
 # ============================================================================
 # Run directory + log
 # ============================================================================
@@ -119,6 +125,66 @@ function create_rundir!(m)
     m.walltime_start = time()
     _print2log(m, "Run directory: $(rundir)")
     return m
+end
+
+# ============================================================================
+# Run provenance metadata
+# ============================================================================
+
+_toml_value(v::Bool)          = v
+_toml_value(v::Integer)       = Int(v)
+_toml_value(v::AbstractFloat) = Float64(v)
+_toml_value(v::String)        = v
+_toml_value(v::Symbol)        = String(v)
+_toml_value(::Any)            = nothing   # arrays etc. are skipped
+
+# Type name + all TOML-representable fields of a struct.
+function _scalar_fields(x)
+    d = Dict{String, Any}("type" => string(nameof(typeof(x))))
+    for fn in fieldnames(typeof(x))
+        v = _toml_value(getfield(x, fn))
+        v === nothing || (d[string(fn)] = v)
+    end
+    return d
+end
+
+# Write the effective configuration of this run — parameters, forcing, grid,
+# precision, backend, package/Julia versions — so any output directory can be
+# traced back to what produced it.  Never overwrites: a continuation run into
+# the same directory gets run_metadata_1.toml, _2.toml, ...
+function _write_run_metadata(m)
+    p = getfield(m, :params)
+    params_d = _scalar_fields(p)
+    params_d["entrainment"]   = _scalar_fields(p.entpar)
+    params_d["melt"]          = _scalar_fields(p.meltpar)
+    params_d["convection"]    = _scalar_fields(p.convpar)
+    params_d["open_boundary"] = _scalar_fields(p.openbc)
+    meta = Dict{String, Any}(
+        "run" => Dict{String, Any}(
+            "created"        => Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
+            "julia_version"  => string(VERSION),
+            "laddie_version" => string(pkgversion(@__MODULE__)),
+            "backend"        => string(nameof(typeof(KA.get_backend(m.tmask)))),
+            "float_type"     => string(m.FT),
+            "t_start_days"   => m.t_start,
+        ),
+        "grid" => Dict{String, Any}(
+            "nx" => m.nx, "ny" => m.ny,
+            "dx" => Float64(m.dx), "dy" => Float64(m.dy),
+        ),
+        "forcing"    => _scalar_fields(getfield(m, :forcing)),
+        "params"     => params_d,
+        "run_config" => _scalar_fields(getfield(m, :rc)),
+    )
+    path = joinpath(m.rundir, "run_metadata.toml")
+    k = 1
+    while isfile(path)
+        path = joinpath(m.rundir, "run_metadata_$(k).toml")
+        k += 1
+    end
+    open(io -> TOML.print(io, meta), path, "w")
+    _print2log(m, "Wrote run metadata → $(basename(path))")
+    return
 end
 
 # ============================================================================
@@ -157,6 +223,7 @@ function prepare_output!(m)
     m.save_Tbase  && (m.Tbav   = copy(z))
     m.save_Tamb   && (m.Taav   = copy(z))
     m.save_gammaT && (m.gamTav = copy(z))
+    _write_run_metadata(m)
     return m
 end
 
@@ -243,7 +310,7 @@ function _write_output!(m, t_days)
         defDim(ds, "x", m.nx)
         defVar(ds, "x", Float64, ("x",))[:] = m.x
         defVar(ds, "y", Float64, ("y",))[:] = m.y
-        ds.attrib["time_start_days"] = max(0.0, t_days - m.saveday)
+        ds.attrib["time_start_days"] = max(m.t_start, t_days - m.saveday)
         ds.attrib["time_end_days"] = t_days
         ds.attrib["model"] = "Laddie.jl"
 
@@ -296,7 +363,7 @@ at every `m.saveday`-day interval.  Called once per time step inside `run!`.
 """
 function savefields!(m)
     _accum!(m)
-    t_days = m.t * m.dt / 86400.0
+    t_days = _t_days(m)
     if m.t % m.saveint == 0 || (m.t == m.nt && m.count > 0)
         _write_output!(m, t_days)
         _reset_accum!(m)
@@ -317,7 +384,7 @@ the file is backend-agnostic; the native `FT` precision is preserved.
 """
 function saverestart!(m)
     (m.t % m.restint == 0 || m.t == m.nt) || return
-    t_days = m.t * m.dt / 86400.0
+    t_days = _t_days(m)
     filename = joinpath(m.rundir, @sprintf("restart_%06.0f.jld2", t_days))
 
     _v(var) = (past = Array(var.past), present = Array(var.present), future = Array(var.future))
@@ -363,7 +430,7 @@ Write a one-line diagnostic to the log file at every `m.diagday`-day interval.
 """
 function printdiags(m)
     m.t % m.diagint == 0 || return
-    t_days = m.t * m.dt / 86400.0
+    t_days = _t_days(m)
 
     tmask = Array(m.tmask)
     D = Array(m.D.present)

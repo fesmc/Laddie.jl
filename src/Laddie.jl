@@ -5,7 +5,11 @@ const KA = KernelAbstractions
 
 const spy = 365.25 * 24 * 3600   # seconds per year
 
-include("parameterizations.jl")
+include("entrainment.jl")
+include("melting.jl")
+include("convection.jl")
+include("openboundary.jl")
+include("forcing.jl")
 include("geometry.jl")
 include("io.jl")
 include("variable.jl")

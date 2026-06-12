@@ -8,12 +8,16 @@ before so correctness never had to be taken on faith.
 - **`np.roll` → `circshift`.** Arrays are kept in numpy `[y, x]` orientation so
   `np.roll(·, k, axis)` maps exactly onto `circshift`. The grounded border makes
   periodic wrap harmless. This made the translation near-mechanical.
-- **"Object bag" state.** `Model` forwards `m.field` to a `Dict` (via
-  `getproperty`/`setproperty!`), mirroring Python's `object.attr` style. This
-  kept the line-by-line translation honest and low-risk.
+- **"Object bag" state.** During the port, `Model` forwarded `m.field` to a
+  `Dict` (via `getproperty`/`setproperty!`), mirroring Python's `object.attr`
+  style. This kept the line-by-line translation honest and low-risk; the Dict
+  has since been replaced by typed structs (`Grid`, `State`, `Cache`, `Params`,
+  `IOState`) behind the same flat `m.field` access.
 - **Location-typed prognostics.** ``D, U, V, T, S`` are `Var{LX,LY}` carrying
   three leapfrog levels; `rotate!` swaps references (≡ `np.roll(...,-1,axis=0)`),
-  honouring the `CGridProto` design while staying allocation-free.
+  with the C-grid staggering carried in the type (`Center`/`Face` per axis)
+  while staying allocation-free. This design was first validated in a
+  standalone `CGridProto` module, since folded into the model.
 
 ## GPU strategy (KernelAbstractions)
 
@@ -39,7 +43,7 @@ order** as the corresponding broadcast, so there is no floating-point reordering
 ## Verification ladder
 
 ```
-CGridProto unit tests ............................... pass
+C-grid prototype unit tests (historical) ............ pass
 LaddieKA (CPU) vs Laddie reference ........ max|Δ| = 0.0
 fused kernels vs broadcast, op-by-op ...... max|Δ| = 0.0
 fused vs broadcast, end-to-end 1-day ...... max|Δ| = 0.0

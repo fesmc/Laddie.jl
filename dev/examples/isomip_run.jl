@@ -90,7 +90,7 @@ The buoyant meltwater accelerates up-slope toward the ice front; Coriolis
 steers it against a side wall.
 =#
 
-spd = sqrt.(Laddie.im(m.U.present).^2 .+ Laddie.jm(m.V.present).^2)
+spd = sqrt.(Laddie.im_half(m.U.present).^2 .+ Laddie.jm_half(m.V.present).^2)
 x, y, SP = field(m, spd)
 fig4 = Figure(size = (900, 250))
 ax = Axis(fig4[1, 1], xlabel = "x (km)", ylabel = "y (km)", title = "Flow speed |u| (m/s)")

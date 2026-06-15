@@ -11,8 +11,8 @@ using DelimitedFiles
 # depths — interpolate S onto the temperature depths before building the
 # forcing.
 
-fn_T = "docs/assets/crosson-dotson-T.csv"
-fn_S = "docs/assets/crosson-dotson-S.csv"
+fn_T = "assets/crosson-dotson-T.csv"
+fn_S = "assets/crosson-dotson-S.csv"
 
 T_data = readdlm(fn_T, ',', skipstart = 1)
 S_data = readdlm(fn_S, ',', skipstart = 1)
@@ -30,17 +30,17 @@ ax1 = Axis(fig[1, 1], xlabel = "Temperature (°C)", ylabel = "Depth (m)")
 ax2 = Axis(fig[1, 2], xlabel = "Salinity (PSU)",   ylabel = "Depth (m)")
 lines!(ax1, forcing.Tz, forcing.z)
 lines!(ax2, forcing.Sz, forcing.z)
-display(fig)
+fig
 
 # =============================================================================
 # BedMachine geometry
 # =============================================================================
-i1, i2 = 3400, 3700
-j1, j2 = 7800, 8200
+i1, i2 = 3445, 3720
+j1, j2 = 7710, 8070
 fn_topo = "/home/jan/pCloudSync/PhD/Projects/Isostasy/GRDMIP/GRDMIP-Paleo/preprocessing/topography/data/BedMachine/BedMachineAntarctica-v3.nc"
 ds    = Dataset(fn_topo)
-z_bed = Float64.(Array(ds["bed"][i1:i2, j1:j2]))
-h_ice = Float64.(Array(ds["thickness"][i1:i2, j1:j2]))
+z_bed = Float64.(Array(ds["bed"][i1:i2, j2:-1:j1]))
+h_ice = Float64.(Array(ds["thickness"][i1:i2, j2:-1:j1]))
 close(ds)
 
 dx = 500.0   # BedMachine v3 resolution: 500 m
@@ -52,6 +52,40 @@ dy = 500.0
 # ice_base_depth returns the ice-draft elevation in metres (negative below sea level).
 mask = build_laddie_mask(z_bed, h_ice)
 zb   = ice_base_depth(z_bed, h_ice)
+
+z_bed_ocean = copy(z_bed)
+z_bed_ocean[h_ice .> 0] .= NaN
+cmap_ocean = cgrad([:midnightblue, :cornflowerblue])
+z_bed_grounded = copy(z_bed)
+z_bed_grounded[h_ice .<= 0] .= NaN
+cmap_grounded = cgrad([:gray20, :gray80])
+zb[mask .< 3] .= NaN
+cmap_shelfbase = cgrad(:tempo, rev = true)
+
+fig_map = Figure()
+ax1 = Axis(fig_map[1, 1], aspect = DataAspect())
+hm = heatmap!(
+    ax1,
+    mask,
+    colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
+    colorrange = (0, 3))
+Colorbar(fig_map[2, 1], hm, vertical = false, flipaxis = false, label = "LADDIE mask class",
+    ticks = ([0, 1, 2, 3], ["ocean", "border", "grounded", "shelf"]))
+
+ax2 = Axis(fig_map[1, 2], aspect = DataAspect())
+heatmap!(ax2, z_bed_ocean ./ 1f3, colormap = cmap_ocean, colorrange = (-1, 1))
+heatmap!(ax2, z_bed_grounded ./ 1f3, colormap = cmap_grounded, colorrange = (-1, 1))
+heatmap!(ax2, zb ./ 1f3, colormap = cmap_shelfbase, colorrange = (-2, 0))
+fig_map
+
+h_af = h_above_flotation.(z_bed, h_ice)
+z_base = ice_base.(z_bed, h_ice, h_af)
+shelf_mask = h_ice .> 0 .&& h_af .< 0
+
+
+
+fig_map = Figure()
+
 
 # =============================================================================
 # Build and run model

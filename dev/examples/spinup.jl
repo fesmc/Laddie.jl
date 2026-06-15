@@ -77,3 +77,37 @@ println("After $(NDAYS) days ($(nx_int)×$(ny_int) grid):")
 println("  mean melt = ", round(mean_melt[end], digits = 2), " m yr⁻¹")
 println("  max  melt = ", round(max_melt[end],  digits = 2), " m yr⁻¹")
 println("  D_max     = ", round(dmax[end],      digits = 1), " m")
+
+#=
+## Adaptive time stepping
+
+The run above used a fixed `dt`.  Enabling [`AdaptiveDt`](@ref) instead adjusts
+`dt` to hold a target CFL number: it shrinks `dt` where the flow is fast (so the
+integration stays stable) and grows it where the flow is slow (saving steps).
+The controller state — the current `dt` — persists across `run!` calls, so the
+same 1-day-increment loop works unchanged; only the `Params` differ.
+=#
+
+m_ad = build_isomip(; isomipcond = :warm, nx = 80, ny = 20,
+                     params = Params(; tstep = AdaptiveDt()))
+
+## run! resets its step counter each call, so sum per-day counts for the total
+steps_adaptive = sum(_ -> (run!(m_ad; days = 1.0, verbose = false); m_ad.t), 1:NDAYS)
+steps_fixed    = NDAYS * m.t          # fixed dt → same step count every day
+mx_ad, mn_ad, _ = meltstats(m_ad)
+nothing #hide
+
+#=
+The controller reaches essentially the same melt rate.  In this warm cavity the
+vigorous circulation holds the CFL near its limit, so `dt` settles a little
+*below* the fixed value and the step count is comparable — here the benefit is
+that stability is enforced automatically rather than hand-tuned.  The step-count
+*saving* shows up in slow or under-resolved cavities, where `dt` can grow well
+above the fixed step (see `benchmark/adaptive_dt.jl`).
+=#
+
+println("Fixed vs adaptive after $(NDAYS) days:")
+println("  mean melt:   ", round(mean_melt[end], digits = 2), " (fixed) vs ",
+        round(Float64(mn_ad), digits = 2), " (adaptive) m yr⁻¹")
+println("  total steps: ", steps_fixed, " (fixed) vs ", steps_adaptive, " (adaptive)")
+println("  settled dt:  210.0 (fixed) vs ", round(Float64(m_ad.dt), digits = 1), " s (adaptive)")

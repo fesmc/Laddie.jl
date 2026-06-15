@@ -1,4 +1,3 @@
-
 @kernel function _freezing_point_kernel!(Tf, @Const(S), @Const(zb), l1, l2, l3)
     i, j = @index(Global, NTuple)
     @inbounds Tf[i, j] = l1 * S[i, j] + l2 + l3 * zb[i, j]
@@ -47,6 +46,7 @@ end
         quad_c = cp_over_Leff * gamT * gamS * (Tf_depth - T[i, j] + l1 * S[i, j])
         disc = quad_b * quad_b - FT(4) * quad_c
         disc = ifelse(disc < zero(FT), zero(FT), disc)
+        # TODO check / 2
         melt_rate = (-quad_b + sqrt(disc)) / (FT(1) + FT(1)) * tmask[i, j]
         melt[i, j] = melt_rate
         Tb_denom = cp_over_Leff * gamT + cp_over_Leff * ci_over_cp * melt_rate
@@ -57,6 +57,7 @@ end
 end
 
 # Matrix-gamT variant for TurbulentGamT: reads per-element gamT[i,j] / gamS[i,j].
+# TODO rm redundancy with previous function?
 @kernel function _three_eq_melt_mat_gamT_kernel!(
     melt,
     Tb,
@@ -106,6 +107,7 @@ end
         # Non-finite D (a blown-up run) must not reach trunc(Int, ·): that is
         # an InexactError on CPU and undefined behaviour on GPU.  Fall back to
         # index 0 and let the run!-level blow-up check report the NaN.
+        # TODO check how we should handle if layer reaches bedrock
         depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
         idx_lo = clamp(trunc(Int, depth_idx), 0, nz - 1)
         idx_hi = clamp(idx_lo + 1, 0, nz - 1)
@@ -123,6 +125,7 @@ Vertically interpolate the ambient T/S profiles to the depth of each grid cell's
 plume base (zb − D), writing results into `m.Ta` and `m.Sa`
 (Lambert et al. 2023, Eqs. A1–A2).
 """
+# TODO no eq A1-A2
 function update_ambient_fields!(m)
     nz = length(m.z)
     launch!(
@@ -133,7 +136,7 @@ function update_ambient_fields!(m)
     return
 end
 
-"Linear liquidus: Tf = l1·S + l2 + l3·zb  (Lambert et al. 2023, Eq. 6)."
+"Linear liquidus: Tf = l1·S + l2 + l3·zb  (Lambert et al. 2023, Eq. 10)."
 update_freezing_temperature!(m) =
     launch!(_freezing_point_kernel!, m.Tf, m.Tf, m.S.present, m.zb, m.l1, m.l2, m.l3)
 
@@ -155,7 +158,7 @@ update_density!(m) = launch!(
 $(TYPEDSIGNATURES)
 
 Flag convectively unstable cells and clamp δρ to a minimum positive value
-so the plume remains denser than ambient (Lambert et al. 2023, Sect. 2.4).
+so the plume remains denser than ambient.
 """
 function update_convection!(m, cp::ClampDensity)
     thr = cp.mindrho / m.rho0
@@ -167,7 +170,7 @@ end
 $(TYPEDSIGNATURES)
 
 Flag convectively unstable cells, then instantly reset their T/S to ambient
-values so the density remains stable (Lambert et al. 2023, Sect. 2.4).
+values so the density remains stable.
 """
 function update_convection!(m, cp::ResetToAmbient)
     thr   = cp.mindrho / m.rho0
@@ -182,7 +185,7 @@ end
 $(TYPEDSIGNATURES)
 
 Flag convectively unstable cells; relaxation is applied implicitly during the
-tracer time step via `conv2` (Lambert et al. 2023, Sect. 2.4).
+tracer time step via `conv2`.
 """
 function update_convection!(m, ::RelaxToAmbient)
     m.convection .= m.drho .< 0
@@ -203,7 +206,7 @@ end
 $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with a fixed heat transfer
-coefficient γ_T (Jenkins 1991; Lambert et al. 2023, Eqs. 8–10).
+coefficient γ_T (Jenkins 1991; Lambert et al. 2023, Eqs. 8-12).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::FixedGamT)
@@ -213,7 +216,7 @@ function update_melt!(m, mp::FixedGamT)
     cp_over_Leff = m.cp / (m.L - m.ci * m.Ti)
     ci_over_cp = m.ci / m.cp
     m.gamT = mp.gamTfix
-    m.gamS = m.gamT / FT(35)
+    m.gamS = m.gamT / FT(35)    # TODO could be 35
     launch!(
         _three_eq_melt_kernel!,
         m.melt,
@@ -238,7 +241,7 @@ $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with turbulence-dependent
 transfer coefficients γ_T, γ_S via the log-layer formulation
-(Holland & Jenkins 1999; Lambert et al. 2023, Eqs. 8–10).
+(Holland & Jenkins 1999; Lambert et al. 2023, Eqs. 8–12).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::TurbulentGamT)
@@ -258,6 +261,7 @@ end
 
 update_melt!(m) = update_melt!(m, m.meltpar)
 
+# TODO formula should be tex
 """
 $(TYPEDSIGNATURES)
 
@@ -273,6 +277,8 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
         coeff, drho_coeff, ny, nx)
 end
 
+# TODO formula should be tex
+# TODO make table with formula of Lambert et al.
 """
 $(TYPEDSIGNATURES)
 
@@ -289,6 +295,7 @@ function _compute_entrainment!(m, ep::GasparEntrainment)
     )
 end
 
+# TODO check ref
 """
 $(TYPEDSIGNATURES)
 
@@ -306,8 +313,8 @@ function update_entrainment!(m)
     return
 end
 
-# Friction velocity at the T-point: |u|_T = √(Cd_top · (im(U)² + jm(V)² + u_tide²))
-# im(U)[i,j] = (U[i,j] + U[i,j−1]) / 2,  jm(V)[i,j] = (V[i,j] + V[i−1,j]) / 2
+# Friction velocity at the T-point: |u|_T = √(Cd_top · (im_half(U)² + jm_half(V)² + u_tide²))
+# im_half(U)[i,j] = (U[i,j] + U[i,j−1]) / 2,  jm_half(V)[i,j] = (V[i,j] + V[i−1,j]) / 2
 @kernel function _ustar_kernel!(ustar, @Const(U), @Const(V), @Const(tmask), Cdtop, utide, Ny, Nx)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -454,9 +461,9 @@ end
 @inline u_coriolis(m) = m.f .* ip_t(m, m.D.present .* m.Vjm)
 # Cd·U·|u|  (quadratic bottom drag)
 @inline u_bottom_drag(m) =
-    m.Cd .* m.U.present .* sqrt.(m.U.present .^ 2 .+ ip(jm(m.V.present)) .^ 2)
+    m.Cd .* m.U.present .* sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
 # Ah·∇²(DU)  (lateral diffusion)
-@inline u_diffusion(m) = m.Ah .* lapU(m)
+@inline u_diffusion(m) = m.Ah .* laplace_U(m)
 # e·U  (detrainment momentum loss)
 @inline u_detrainment(m) = m.detr .* m.U.present
 
@@ -477,9 +484,9 @@ end
 @inline v_coriolis(m) = m.f .* jp_t(m, m.D.present .* m.Uim)
 # Cd·V·|u|  (quadratic bottom drag)
 @inline v_bottom_drag(m) =
-    m.Cd .* m.V.present .* sqrt.(m.V.present .^ 2 .+ jp(im(m.U.present)) .^ 2)
+    m.Cd .* m.V.present .* sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)
 # Ah·∇²(DV)  (lateral diffusion)
-@inline v_diffusion(m) = m.Ah .* lapV(m)
+@inline v_diffusion(m) = m.Ah .* laplace_V(m)
 # ė·V  (detrainment momentum loss)
 @inline v_detrainment(m) = m.detr .* m.V.present
 
@@ -492,7 +499,7 @@ end
 # e_net·qa  (entrainment of ambient water)
 @inline tracer_entrainment(m, qa) = m.nentr .* qa
 # Kh·∇²q  (horizontal diffusion)
-@inline tracer_diffusion(m, q_past) = m.Kh .* lapT(similar(q_past), m, q_past)
+@inline tracer_diffusion(m, q_past) = m.Kh .* laplace_T(similar(q_past), m, q_past)
 # (q_past − qa)·conv2  (convective relaxation, RelaxToAmbient only)
 @inline tracer_convection(m, q_past, qa) = (q_past .- qa) .* m.conv2
 # ṁ·Tb − γT·(T − Tb)  (ice-ocean heat exchange; temperature equation only)

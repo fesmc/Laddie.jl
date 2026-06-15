@@ -326,6 +326,64 @@ end
         @test m_ns.V.present != m_def.V.present
     end
 
+    @testset "Time stepper: FixedDt default/equivalence, AdaptiveDt threading" begin
+        # FixedDt is the default; an explicit FixedDt() must reproduce it
+        # bit-for-bit so the Python verification stays valid for the default.
+        m_def = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        @test getfield(m_def, :params).tstep isa FixedDt
+        m_fix = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                             params = Params(; FT, tstep = FixedDt()))
+        run!(m_def; days = 1.0, verbose = false)
+        run!(m_fix; days = 1.0, verbose = false)
+        @test m_fix.D.present == m_def.D.present
+        @test m_fix.melt == m_def.melt
+
+        # AdaptiveDt threads through Params → Model; its FT tracks Params' FT
+        # (default-constructed at Float64 here, promoted to Float32).
+        p = Params(; FT, tstep = AdaptiveDt(; cfl_target = 0.4, ncheck = 10))
+        @test p.tstep isa AdaptiveDt{FT}
+        @test p.tstep.cfl_target ≈ FT(0.4) && p.tstep.ncheck == 10
+        @test Params(; FT = Float32, tstep = AdaptiveDt()).tstep isa AdaptiveDt{Float32}
+
+        # Run metadata records the active stepper for both default and adaptive.
+        tmp = mktempdir()
+        build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                     rc = RunConfig(; name = "tsfix", resultdir = tmp, saveday = 0.5))
+        meta = Laddie.TOML.parsefile(joinpath(tmp, "tsfix", "run_metadata.toml"))
+        @test meta["params"]["time_stepper"]["type"] == "FixedDt"
+
+        build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                     params = Params(; FT, tstep = AdaptiveDt(; cfl_target = 0.4)),
+                     rc = RunConfig(; name = "tsadp", resultdir = tmp, saveday = 0.5))
+        meta2 = Laddie.TOML.parsefile(joinpath(tmp, "tsadp", "run_metadata.toml"))
+        @test meta2["params"]["time_stepper"]["type"] == "AdaptiveDt"
+        @test meta2["params"]["time_stepper"]["cfl_target"] ≈ 0.4
+    end
+
+    @testset "Params: parameterizations promoted to FT" begin
+        # A mixed-precision call — FT = Float32 with objects built at Float64 —
+        # yields a fully Float32 parameter set (no silent Float64 leakage that
+        # would crash a Float32→Float64 setfield in the physics kernels).
+        p = Params(; FT = Float32,
+                   entpar  = GasparEntrainment(2.5),
+                   meltpar = FixedGamT(0.00018),
+                   convpar = ResetToAmbient(0.005),
+                   tstep   = AdaptiveDt(; cfl_target = 0.4))
+        @test p.entpar  isa GasparEntrainment{Float32}
+        @test p.meltpar isa FixedGamT{Float32}
+        @test p.convpar isa ResetToAmbient{Float32}
+        @test p.tstep   isa AdaptiveDt{Float32}
+        @test p.tstep.ncheck isa Int                  # integer field not converted
+        @test p.openbc isa ZeroGradientInflow && p.glbc isa FreeSlipGL   # singletons pass through
+
+        # The payoff: a Float32 build + run from an explicit Params no longer
+        # errors on a Float64-typed parameterization.
+        m = build_isomip(CPU(); FT = Float32, nx = 20, ny = 10, isomipcond = :warm,
+                         params = Params(; FT = Float32, tstep = AdaptiveDt()))
+        run!(m; days = 0.2, verbose = false)
+        @test all(isfinite, m.melt) && eltype(m.melt) == Float32
+    end
+
     @testset "ClampDensity convection scheme: build and short run" begin
         params = Params(; FT, convpar = ClampDensity(FT(0.005)))
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
@@ -386,6 +444,154 @@ end
         @test_throws "blew up" run!(m2; days = 0.1, verbose = false)
     end
 
+    @testset "CFL number: matches hand-built states" begin
+        m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        g, dt, dx, dy = m.g, m.dt, m.dx, m.dy
+        cfl(u, v, D, dr) = begin
+            m.U.present .= u; m.V.present .= v
+            m.D.present .= D; m.drho .= dr
+            Laddie._cfl_number(m)
+        end
+
+        # Full advective + gravity-wave case: c = √(g·δρ·D).
+        c = sqrt(g * 1e-3 * 100.0)
+        expected = dt * ((0.5 + c) / dx + (0.3 + c) / dy)
+        @test cfl(0.5, 0.3, 100.0, 1e-3) ≈ expected
+        # Uses max|U|/max|V| — sign-independent.
+        @test cfl(-0.5, -0.3, 100.0, 1e-3) ≈ expected
+        # Velocity-only (δρ = 0 → c = 0).
+        @test cfl(0.4, 0.2, 100.0, 0.0) ≈ dt * (0.4 / dx + 0.2 / dy)
+        # Gravity-wave-only (zero velocity) — what the startup check leans on.
+        c2 = sqrt(g * 2e-3 * 50.0)
+        @test cfl(0.0, 0.0, 50.0, 2e-3) ≈ dt * (c2 / dx + c2 / dy)
+        # CPU Float64 scalar (device reductions return to host).
+        @test cfl(0.5, 0.3, 100.0, 1e-3) isa Float64
+    end
+
+    @testset "AdaptiveDt controller: bounds, rescue, logging" begin
+        # Predictive, asymmetric controller arithmetic.  Defaults: cfl_target =
+        # 0.5, q = 1, max_growth = 1.1, grow_hyst = 0.8, dt ∈ [1, 1000].
+        ts = AdaptiveDt()
+        @test Laddie._controller_dt(ts, 210.0, 1.0;  allow_grow = true)  ≈ 105.0        # above target → shrink to target (q=1)
+        @test Laddie._controller_dt(ts, 210.0, 0.45; allow_grow = true)  ≈ 210.0        # hysteresis band → hold
+        @test Laddie._controller_dt(ts, 210.0, 0.20; allow_grow = true)  ≈ 210.0 * 1.1  # well below → grow, capped
+        @test Laddie._controller_dt(ts, 210.0, 0.20; allow_grow = false) ≈ 210.0        # startup never grows
+        @test Laddie._controller_dt(ts, 9000.0, 1.0; allow_grow = true)  ≈ 1000.0       # clamp to dtmax
+        @test Laddie._controller_dt(ts, 210.0, 0.0;  allow_grow = true)  ≈ 210.0        # no CFL signal → hold
+
+        # Startup rescue (worst-case basis): leaves a safe dt0 alone, shrinks a
+        # too-large one before the first step.
+        msafe = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                             params = Params(; FT, tstep = AdaptiveDt()))
+        Laddie._init_adaptive_dt!(msafe, msafe.tstep)
+        @test msafe.dt == 210.0
+        mbig = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                            params = Params(; FT, dt = 5000.0, tstep = AdaptiveDt()))
+        Laddie._init_adaptive_dt!(mbig, mbig.tstep)
+        @test mbig.dt < 5000.0
+
+        # Warm run completes with dt staying in bounds.
+        ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                          params = Params(; FT, tstep = AdaptiveDt()))
+        run!(ma; days = 1.0, verbose = false)
+        @test all(isfinite, ma.D.present) && all(isfinite, ma.melt)
+        @test 1.0 <= ma.dt <= 1000.0
+
+        # Stability rescue (headline): a dt0 that blows up under FixedDt is made
+        # to survive by the controller.  Blow-up can surface as a thrown error
+        # or as non-finite state, so check survival directly.
+        survives(p, days) = try
+            mm = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p)
+            run!(mm; days, verbose = false)
+            all(isfinite, mm.D.present) && all(isfinite, mm.melt)
+        catch
+            false
+        end
+        @test !survives(Params(; FT, dt = 5000.0),                        2.0)  # FixedDt blows up
+        @test  survives(Params(; FT, dt = 5000.0, tstep = AdaptiveDt()),  2.0)  # AdaptiveDt rescues
+
+        # dt changes are logged to log.txt.
+        tmp = mktempdir()
+        ml = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                          params = Params(; FT, tstep = AdaptiveDt()),
+                          rc = RunConfig(; name = "adlog", resultdir = tmp, saveday = 10.0))
+        run!(ml; days = 1.0, verbose = false)
+        @test occursin(r"dt .* → .* s \(CFL", read(joinpath(tmp, "adlog", "log.txt"), String))
+    end
+
+    @testset "AdaptiveDt: accuracy, step count, restart round-trip" begin
+        # Accuracy: on 1-day warm ISOMIP+ the adaptive solution tracks the
+        # fixed-dt one to within a few percent (measured ~2.2% mean, ~0.1% max).
+        mf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                          params = Params(; FT, tstep = AdaptiveDt()))
+        run!(mf; days = 1.0, verbose = false)
+        run!(ma; days = 1.0, verbose = false)
+        mxf, mnf, _ = meltstats(mf)
+        mxa, mna, _ = meltstats(ma)
+        @test abs(mna - mnf) / mnf < 0.04
+        @test abs(mxa - mxf) / mxf < 0.02
+
+        # Speedup: in a cold (slow) cavity the controller grows dt, so the same
+        # 1 day is reached in measurably fewer steps (measured 266 vs 411).
+        cf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :cold)
+        ca = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :cold,
+                          params = Params(; FT, tstep = AdaptiveDt()))
+        run!(cf; days = 1.0, verbose = false)
+        run!(ca; days = 1.0, verbose = false)
+        @test ca.t < 0.9 * cf.t
+        @test ca.dt > cf.dt          # dt grew above the fixed step
+
+        # Restart round-trip: the current dt is saved and restored, so an
+        # adaptive run resumes at exactly the step it left off.
+        tmp = mktempdir()
+        m1 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                          params = Params(; FT, tstep = AdaptiveDt()),
+                          rc = RunConfig(; name = "ar1", resultdir = tmp,
+                                         saveday = 0.5, restday = 0.5))
+        run!(m1; days = 1.0, verbose = false)
+        m2 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                          params = Params(; FT, tstep = AdaptiveDt()),
+                          rc = RunConfig(; name = "ar2", resultdir = tmp, saveday = 0.5,
+                                         fromrestart = true,
+                                         restartfile = joinpath(tmp, "ar1", "restart_latest.jld2")))
+        @test m2.dt ≈ m1.dt
+        @test m2.D.present ≈ m1.D.present
+        run!(m2; days = 0.5, verbose = false)
+        @test all(isfinite, m2.D.present) && all(isfinite, m2.melt)
+    end
+
+    @testset "Simulation end: FixedSimulationEnd / SteadyStateEnd" begin
+        # Steady-state criterion: relative change in mean melt below tol.
+        @test  Laddie._steady_reached(SteadyStateEnd(tol = 0.01), 100.0, 100.05)  # 5e-4 < 1e-2
+        @test !Laddie._steady_reached(SteadyStateEnd(tol = 0.01), 100.0, 90.0)    # 0.11
+        @test !Laddie._steady_reached(SteadyStateEnd(tol = 0.01), 100.0, NaN)     # no predecessor
+        @test !Laddie._steady_reached(FixedSimulationEnd(), 100.0, 100.0)         # fixed never early-stops
+
+        # `days` is shorthand for FixedSimulationEnd — bit-identical, same steps.
+        a = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        b = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        run!(a; days = 1.0, verbose = false)
+        run!(b; until = FixedSimulationEnd(t_end = 1.0), verbose = false)
+        @test a.D.present == b.D.present && a.melt == b.melt && a.t == b.t
+
+        # Passing both `days` and `until` is ambiguous.
+        @test_throws ArgumentError run!(a; days = 1.0, until = FixedSimulationEnd())
+
+        # SteadyStateEnd stops early once the day-over-day mean-melt change drops
+        # below tol; a (near-)zero tol never triggers and runs to the t_end cap.
+        cap = 20.0
+        ms = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        run!(ms; until = SteadyStateEnd(tol = 0.3, t_end = cap), verbose = false)
+        @test ms.t_sim < 0.5 * cap * 86400              # stopped well before the cap
+        @test all(isfinite, ms.D.present) && all(isfinite, ms.melt)
+
+        mc = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        run!(mc; until = SteadyStateEnd(tol = 1e-12, t_end = cap), verbose = false)
+        @test mc.t_sim > 0.9 * cap * 86400              # ran essentially to the cap
+        @test ms.t < mc.t                               # early stop took fewer steps
+    end
+
     @testset "Float32 vs Float64: mean melt within 1%" begin
         m64 = build_isomip(CPU(); FT=Float64, nx=20, ny=10, isomipcond=:warm)
         m32 = build_isomip(CPU(); FT=Float32, nx=20, ny=10, isomipcond=:warm)
@@ -442,23 +648,13 @@ end
 
         sp = plain(getfield(m, :params))
         @test occursin("Params{Float64}", sp)
-        @test occursin("dt = 210.0", sp) && occursin("entrainment", sp)
+        @test occursin("dt0 = 210.0", sp) && occursin("entrainment", sp)
         @test length(sp) < 1500
 
         @test occursin("ISOMIP+ :warm", plain(getfield(m, :forcing)))
         for x in (getfield(m, :state), getfield(m, :cache), getfield(m, :io), m.D)
             @test length(plain(x)) < 400
         end
-    end
-
-    @testset "to_backend! is a deprecated alias of to_backend" begin
-        # @deprecate keeps it callable (warning visibility depends on the
-        # --depwarn flag, so only the forwarding behaviour is asserted here).
-        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
-        m2 = to_backend!(m, CPU())
-        @test m2 isa Model
-        @test m2 !== m                  # returns a NEW model, never mutates
-        @test m2.D.present ≈ m.D.present
     end
 
     @testset "Fused kernels match reference equation terms" begin
@@ -569,7 +765,7 @@ end
         @test meta["run"]["backend"] == "CPU"
         @test meta["run"]["laddie_version"] isa String
         @test meta["grid"]["nx"] == 20 && meta["grid"]["ny"] == 10
-        @test meta["params"]["dt"] == 210.0
+        @test meta["params"]["dt0"] == 210.0
         @test meta["params"]["melt"]["type"] == "FixedGamT"
         @test meta["params"]["melt"]["gamTfix"] ≈ 0.00018
         @test meta["params"]["grounding_line"]["type"] == "FreeSlipGL"
@@ -715,6 +911,8 @@ end
             @test all(isfinite, Array(m_g.melt))
             @test Array(m_g.D.present) ≈ m_c.D.present
             @test Array(m_g.melt)      ≈ m_c.melt
+            # CFL monitor reductions run on the device and match the CPU value.
+            @test Laddie._cfl_number(m_g) ≈ Laddie._cfl_number(m_c)
         end
 
         @testset "NoSlipGL (GPU): matches CPU" begin
@@ -738,6 +936,16 @@ end
             _, mn_c, _ = meltstats(m_c)
             _, mn_g, _ = meltstats(m_g)
             @test abs(Float64(mn_g) - Float64(mn_c)) / Float64(mn_c) < 1e-3
+        end
+
+        @testset "AdaptiveDt (GPU): controller + re-bootstrap run on device" begin
+            # The CFL reductions, worst-case startup rescue, and re-bootstrap
+            # must all be GPU-safe; assert a clean completion in bounds.
+            m_g = build_isomip(gpu_backend; nx = 20, ny = 10, isomipcond = :warm,
+                               params = Params(; tstep = AdaptiveDt()))
+            run!(m_g; days = 1.0, verbose = false)
+            @test all(isfinite, Array(m_g.D.present)) && all(isfinite, Array(m_g.melt))
+            @test 1.0 <= m_g.dt <= 1000.0
         end
 
     end # gpu_backend !== nothing

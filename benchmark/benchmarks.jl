@@ -1,5 +1,6 @@
 using BenchmarkTools
 using Laddie
+using KernelAbstractions
 
 function timestep!(m)
     Laddie.advance_leapfrog!(m)

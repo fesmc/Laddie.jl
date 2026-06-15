@@ -1,4 +1,3 @@
-
 # ============================================================================
 # Backend transfer
 # ============================================================================
@@ -95,7 +94,3 @@ function to_backend(m::Model, backend)
     Model(new_io, getfield(m, :rc), new_grid, new_state, new_cache,
           getfield(m, :params), new_forcing)
 end
-
-# to_backend! never mutated its argument despite the `!`; deprecated in favour
-# of to_backend.  Remove (and drop the export) before the first tagged release.
-@deprecate to_backend!(m::Model, backend) to_backend(m, backend)

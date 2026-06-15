@@ -61,8 +61,14 @@ end
 function Base.show(io::IO, p::Params{FT}) where {FT}
     print(io, "Params{", FT, "}(", nameof(typeof(p.entpar)), " + ",
           nameof(typeof(p.meltpar)), " + ", nameof(typeof(p.convpar)), " + ",
-          nameof(typeof(p.openbc)), " + ", nameof(typeof(p.glbc)), ")")
+          nameof(typeof(p.openbc)), " + ", nameof(typeof(p.glbc)), " + ",
+          nameof(typeof(p.tstep)), ")")
 end
+
+Base.show(io::IO, ::FixedDt) = print(io, "FixedDt()")
+Base.show(io::IO, ts::AdaptiveDt) = print(io,
+    "AdaptiveDt(cfl_target = ", ts.cfl_target, ", q = ", ts.q,
+    ", ncheck = ", ts.ncheck, ", dt ∈ [", ts.dtmin, ", ", ts.dtmax, "])")
 
 function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "Params{", FT, "}:")
@@ -75,7 +81,8 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  melt           = ", p.meltpar)
     println(io, "  convection     = ", p.convpar)
     println(io, "  open boundary  = ", p.openbc)
-    print(io,   "  grounding line = ", p.glbc)
+    println(io, "  grounding line = ", p.glbc)
+    print(io,   "  time stepper   = ", p.tstep)
 end
 
 _backend_name(m::Model) = nameof(typeof(KA.get_backend(getfield(m, :grid).zb)))
@@ -94,9 +101,10 @@ function Base.show(io::IO, ::MIME"text/plain", m::Model{FT}) where {FT}
     println(io, "  grid:    ", g.Ny - 2, "×", g.Nx - 2, " interior cells, dx = ",
             g.dx, " m, dy = ", g.dy, " m, ", count(==(3), g.mask), " shelf cells")
     println(io, "  forcing: ", getfield(m, :forcing))
-    println(io, "  params:  dt = ", p.dt, " s, ", nameof(typeof(p.entpar)), " + ",
+    println(io, "  params:  dt0 = ", p.dt0, " s, ", nameof(typeof(p.entpar)), " + ",
             nameof(typeof(p.meltpar)), " + ", nameof(typeof(p.convpar)), " + ",
-            nameof(typeof(p.openbc)), " + ", nameof(typeof(p.glbc)))
+            nameof(typeof(p.openbc)), " + ", nameof(typeof(p.glbc)), " + ",
+            nameof(typeof(p.tstep)))
     if rc.saveday > 0
         print(io, "  output:  every ", rc.saveday, " d → ",
               joinpath(rc.resultdir, rc.name))

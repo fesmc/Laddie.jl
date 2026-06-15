@@ -56,14 +56,21 @@ end
 # ============================================================================
 
 mutable struct IOState{FT, A<:AbstractMatrix{FT}}
-    # Step counters and I/O intervals (in steps)
-    t       :: Int
-    nt      :: Int
-    count   :: Int
-    saveint :: Int
-    diagint :: Int
-    restint :: Int
-    t_start :: Float64
+    # Time accounting.  `dt` is the runtime time step; because IOState is last
+    # in the Model forwarding chain and Params holds `dt0` (not `dt`), `m.dt`
+    # resolves here — so the same field tracks a step that may vary under
+    # adaptive time stepping.  `t_sim` accumulates simulated seconds this run.
+    t       :: Int        # completed steps this run (diagnostic / blow-up msg)
+    dt      :: FT         # current time step (s) — resolves as `m.dt`
+    t_sim   :: Float64    # accumulated simulated time this run (s)
+    t_start :: Float64    # restart offset (days), added by `_t_days`
+    # Time-average accumulation window
+    count   :: Int        # steps accumulated since the last output write
+    t_accum :: Float64    # simulated time accumulated since the last write (s)
+    # Next-event times for periodic I/O (s since the start of this run)
+    nextsave :: Float64
+    nextdiag :: Float64
+    nextrest :: Float64
     # Run directory and log
     rundir         :: String
     logfile        :: String
@@ -80,17 +87,19 @@ end
 
 function IOState(FT::Type, x::AbstractVector, y::AbstractVector)
     IOState{FT, Matrix{FT}}(
-        0, 0, 0, 1, 1, 1, 0.0,
+        0, FT(0), 0.0, 0.0,
+        0, 0.0,
+        0.0, 0.0, 0.0,
         "", "", 0.0,
         Vector{FT}(x), Vector{FT}(y),
         ntuple(_ -> Matrix{FT}(undef, 0, 0), 14)...,
     )
 end
 
-# Absolute simulation time in days: steps of this run offset by the restart
-# time, so output/restart files of a continuation run never collide with the
-# files of the run they restarted from.
-_t_days(m) = m.t_start + m.t * m.dt / 86400.0
+# Absolute simulation time in days: accumulated simulated time of this run
+# offset by the restart time, so output/restart files of a continuation run
+# never collide with the files of the run they restarted from.
+_t_days(m) = m.t_start + m.t_sim / 86400.0
 
 # ============================================================================
 # Run directory + log
@@ -107,6 +116,12 @@ function _print2log(m, text)
         write(f, @sprintf("[%02d:%02d:%04.1f] %s\n", h, mn, sc, text))
     end
 end
+
+# One-line record of an adaptive-dt change (no-op when I/O is disabled).  Kept
+# here because Printf is imported in this file; called by the dt controller.
+_log_dt_change!(m, dt_old, dt_new, cfl) = _print2log(m, @sprintf(
+    "%.3f days: dt %.1f → %.1f s (CFL %.2f)",
+    _t_days(m), Float64(dt_old), Float64(dt_new), cfl))
 
 """
 $(TYPEDSIGNATURES)
@@ -160,6 +175,7 @@ function _write_run_metadata(m)
     params_d["convection"]    = _scalar_fields(p.convpar)
     params_d["open_boundary"] = _scalar_fields(p.openbc)
     params_d["grounding_line"] = _scalar_fields(p.glbc)
+    params_d["time_stepper"]   = _scalar_fields(p.tstep)
     meta = Dict{String, Any}(
         "run" => Dict{String, Any}(
             "created"        => Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
@@ -202,9 +218,7 @@ after `create_rundir!`.
 function prepare_output!(m)
     m.t = 0
     m.count = 0
-    m.saveint = max(1, round(Int, m.saveday * 86400 / m.dt))
-    m.diagint = max(1, round(Int, m.diagday * 86400 / m.dt))
-    m.restint = max(1, round(Int, m.restday * 86400 / m.dt))
+    m.t_accum = 0.0
 
     # Allocate on same device and with same FT as the model arrays.
     # Full grid size (including halos) so _accum! can do bare .+= without
@@ -235,47 +249,52 @@ end
 _int(a) = Array(a)[2:(end-1), 2:(end-1)]
 
 # t-grid velocity accumulation fused with the staggered average — avoids the
-# two circshift allocations per step that im()/jm() would cost.
-@kernel function _accum_ut_kernel!(av, @Const(U), Nx)
+# two circshift allocations per step that im_half()/jm_half() would cost.  Accumulation
+# is dt-weighted (× dt) so the time average is correct when dt varies; with a
+# fixed dt this is the constant dt × the old step-weighted sum.
+@kernel function _accum_ut_kernel!(av, @Const(U), Nx, dt)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(av)
         half = FT(1) / (FT(1) + FT(1))
         w = _west(j, Nx)
-        av[i, j] += (U[i, j] + U[i, w]) * half
+        av[i, j] += (U[i, j] + U[i, w]) * half * dt
     end
 end
 
-@kernel function _accum_vt_kernel!(av, @Const(V), Ny)
+@kernel function _accum_vt_kernel!(av, @Const(V), Ny, dt)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(av)
         half = FT(1) / (FT(1) + FT(1))
         s = _south(i, Ny)
-        av[i, j] += (V[i, j] + V[s, j]) * half
+        av[i, j] += (V[i, j] + V[s, j]) * half * dt
     end
 end
 
 function _accum!(m)
+    dt = m.dt
     m.count += 1
-    m.save_Ut     && launch!(_accum_ut_kernel!, m.Utav, m.Utav, m.U.present, size(m.Utav, 2))
-    m.save_Uu     && (m.Uuav   .+= m.U.present)
-    m.save_Vt     && launch!(_accum_vt_kernel!, m.Vtav, m.Vtav, m.V.present, size(m.Vtav, 1))
-    m.save_Vv     && (m.Vvav   .+= m.V.present)
-    m.save_D      && (m.Dav    .+= m.D.present)
-    m.save_T      && (m.Tav    .+= m.T.present)
-    m.save_S      && (m.Sav    .+= m.S.present)
-    m.save_melt   && (m.meltav .+= m.melt)
-    m.save_entr   && (m.entrav .+= m.entr)
-    m.save_ent2   && (m.ent2av .+= m.ent2)
-    m.save_detr   && (m.detrav .+= m.detr)
-    m.save_Tbase  && (m.Tbav   .+= m.Tb)
-    m.save_Tamb   && (m.Taav   .+= m.Ta)
-    m.save_gammaT && (m.gamTav .+= m.gamT)
+    m.t_accum += dt
+    m.save_Ut     && launch!(_accum_ut_kernel!, m.Utav, m.Utav, m.U.present, size(m.Utav, 2), dt)
+    m.save_Uu     && (m.Uuav   .+= m.U.present .* dt)
+    m.save_Vt     && launch!(_accum_vt_kernel!, m.Vtav, m.Vtav, m.V.present, size(m.Vtav, 1), dt)
+    m.save_Vv     && (m.Vvav   .+= m.V.present .* dt)
+    m.save_D      && (m.Dav    .+= m.D.present .* dt)
+    m.save_T      && (m.Tav    .+= m.T.present .* dt)
+    m.save_S      && (m.Sav    .+= m.S.present .* dt)
+    m.save_melt   && (m.meltav .+= m.melt .* dt)
+    m.save_entr   && (m.entrav .+= m.entr .* dt)
+    m.save_ent2   && (m.ent2av .+= m.ent2 .* dt)
+    m.save_detr   && (m.detrav .+= m.detr .* dt)
+    m.save_Tbase  && (m.Tbav   .+= m.Tb .* dt)
+    m.save_Tamb   && (m.Taav   .+= m.Ta .* dt)
+    m.save_gammaT && (m.gamTav .+= m.gamT .* dt)
 end
 
 function _reset_accum!(m)
     m.count = 0
+    m.t_accum = 0.0
     io = getfield(m, :io)
     for k in (
         :Utav,
@@ -302,7 +321,9 @@ end
 # ============================================================================
 
 function _write_output!(m, t_days)
-    n = m.count
+    # dt-weighted accumulators divided by accumulated time → time average
+    # (equals the old ÷ count when dt is constant).
+    n = m.t_accum
     tmask_int = _int(m.tmask)
     filename = joinpath(m.rundir, @sprintf("output_%06.0f.nc", t_days))
 
@@ -356,43 +377,64 @@ function _write_output!(m, t_days)
     _print2log(m, @sprintf("%.3f days: saved output → %s", t_days, basename(filename)))
 end
 
+# A periodic event is due once accumulated time reaches the next event time.
+# The half-step tolerance mirrors the run! stopping rule (round-half-up), so a
+# fixed dt fires at the same steps the old `t % interval == 0` test did.
+_event_due(m, next) = m.t_sim + m.dt / 2 >= next
+
 """
 $(TYPEDSIGNATURES)
 
 Accumulate model fields into time averages and write a NetCDF output file
-at every `m.saveday`-day interval.  Called once per time step inside `run!`.
+at every `m.saveday`-day interval.  Called once per time step inside `run!`;
+the final partial window is flushed by `run!` after the loop.
 """
 function savefields!(m)
     _accum!(m)
-    t_days = _t_days(m)
-    if m.t % m.saveint == 0 || (m.t == m.nt && m.count > 0)
-        _write_output!(m, t_days)
+    if _event_due(m, m.nextsave)
+        _write_output!(m, _t_days(m))
         _reset_accum!(m)
+        m.nextsave += m.saveday * 86400.0
     end
+end
+
+# Flush any unwritten accumulation as a final output file (end of run).
+function flush_output!(m)
+    m.count > 0 || return
+    _write_output!(m, _t_days(m))
+    _reset_accum!(m)
 end
 
 # ============================================================================
 # Restart I/O
 # ============================================================================
 
+function _write_restart!(m, t_days)
+    filename = joinpath(m.rundir, @sprintf("restart_%06.0f.jld2", t_days))
+
+    _v(var) = (past = Array(var.past), present = Array(var.present), future = Array(var.future))
+    # Save the current dt so an adaptive run resumes at the step it left off
+    # (the saved leapfrog levels are separated by this dt); FixedDt saves dt0.
+    jldsave(filename; t_days, dt = Float64(m.dt),
+            D = _v(m.D), U = _v(m.U), V = _v(m.V), T = _v(m.T), S = _v(m.S))
+
+    cp(filename, joinpath(m.rundir, "restart_latest.jld2"); force = true)
+    _print2log(m, @sprintf("%.3f days: saved restart → %s", t_days, basename(filename)))
+end
+
 """
 $(TYPEDSIGNATURES)
 
 Write a JLD2 restart file containing all three leapfrog levels of D, U, V,
-T, S.  Fires at every `m.restday`-day interval and at the final step.
-Also writes `restart_latest.jld2`.  Arrays are moved to CPU before saving so
-the file is backend-agnostic; the native `FT` precision is preserved.
+T, S at every `m.restday`-day interval.  Called once per time step inside
+`run!`; the final state is written by `run!` after the loop.  Also writes
+`restart_latest.jld2`.  Arrays are moved to CPU before saving so the file is
+backend-agnostic; the native `FT` precision is preserved.
 """
 function saverestart!(m)
-    (m.t % m.restint == 0 || m.t == m.nt) || return
-    t_days = _t_days(m)
-    filename = joinpath(m.rundir, @sprintf("restart_%06.0f.jld2", t_days))
-
-    _v(var) = (past = Array(var.past), present = Array(var.present), future = Array(var.future))
-    jldsave(filename; t_days, D = _v(m.D), U = _v(m.U), V = _v(m.V), T = _v(m.T), S = _v(m.S))
-
-    cp(filename, joinpath(m.rundir, "restart_latest.jld2"); force = true)
-    _print2log(m, @sprintf("%.3f days: saved restart → %s", t_days, basename(filename)))
+    _event_due(m, m.nextrest) || return
+    _write_restart!(m, _t_days(m))
+    m.nextrest += m.restday * 86400.0
 end
 
 """
@@ -407,6 +449,9 @@ Geometry (masks, zb) must already be initialised before calling this.
 function init_from_restart!(m)
     jldopen(m.restartfile, "r") do f
         m.t_start = f["t_days"]
+        # Resume at the saved dt when present (adaptive runs); older files
+        # without it keep the dt set at build (dt0).
+        haskey(f, "dt") && (m.dt = m.FT(f["dt"]))
         for (name, var) in (("D", m.D), ("U", m.U), ("V", m.V), ("T", m.T), ("S", m.S))
             data = f[name]
             var.past    .= data.past
@@ -430,7 +475,8 @@ $(TYPEDSIGNATURES)
 Write a one-line diagnostic to the log file at every `m.diagday`-day interval.
 """
 function printdiags(m)
-    m.t % m.diagint == 0 || return
+    _event_due(m, m.nextdiag) || return
+    m.nextdiag += m.diagday * 86400.0
     t_days = _t_days(m)
 
     tmask = Array(m.tmask)

@@ -181,10 +181,14 @@ end
         D_W = D[i, j] + ocn[i, j] * Dxm1[i, j]
         # Per-face slip factor: land walls use slip, grounding-line walls
         # slip + dslip (dslip = 0 for FreeSlipGL → bitwise v1 behaviour).
-        flux_N = -D_N * Vip[i, j] *
-                 (Ujp[i, j] - (slip + dslip * glNu[i, j]) * U[i, j] * grdNu[i, j]) / dy
-        flux_S = D_S * Vip[s, j] *
-                 (Ujm[i, j] - (slip + dslip * glSu[i, j]) * U[i, j] * grdSu[i, j]) / dy
+        flux_N =
+            -D_N *
+            Vip[i, j] *
+            (Ujp[i, j] - (slip + dslip * glNu[i, j]) * U[i, j] * grdNu[i, j]) / dy
+        flux_S =
+            D_S *
+            Vip[s, j] *
+            (Ujm[i, j] - (slip + dslip * glSu[i, j]) * U[i, j] * grdSu[i, j]) / dy
         flux_E =
             -D_E *
             Uip[i, j] *
@@ -247,10 +251,14 @@ end
             Vjp[i, j] *
             (Vjp[i, j] - (one(FT) - signV[i, j]) * V[i, j] * ocnym1[i, j]) / dy
         flux_S = D_S * Vjm[i, j] * (Vjm[i, j] - signV[i, j] * V[i, j] * ocn[i, j]) / dy
-        flux_E = -D_E * Ujp[i, j] *
-                 (Vip[i, j] - (slip + dslip * glEv[i, j]) * V[i, j] * grdEv[i, j]) / dx
-        flux_W = D_W * Ujp[i, w] *
-                 (Vim[i, j] - (slip + dslip * glWv[i, j]) * V[i, j] * grdWv[i, j]) / dx
+        flux_E =
+            -D_E *
+            Ujp[i, j] *
+            (Vip[i, j] - (slip + dslip * glEv[i, j]) * V[i, j] * grdEv[i, j]) / dx
+        flux_W =
+            D_W *
+            Ujp[i, w] *
+            (Vim[i, j] - (slip + dslip * glWv[i, j]) * V[i, j] * grdWv[i, j]) / dx
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -292,10 +300,8 @@ end
         dragS = (slip + dslip * glSu[i, j]) * D_on_ugrid[i, j] * v / dy2
         jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[n, j], tmask_jp[i, j])
         jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[s, j], tmask_jm[i, j])
-        flux_N =
-            jpD * (var[n, j] - v) / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
-        flux_S =
-            jmD * (var[s, j] - v) / dy2 * (o - ocnyp1[i, j]) - dragS * grdSu[i, j]
+        flux_N = jpD * (var[n, j] - v) / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
+        flux_S = jmD * (var[s, j] - v) / dy2 * (o - ocnyp1[i, j]) - dragS * grdSu[i, j]
         flux_E = D0[i, e] * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j])
         flux_W = D0[i, j] * (var[i, w] - v) / dx2 * (o - ocn[i, j])
         out[i, j] = flux_N + flux_S + flux_E + flux_W
@@ -339,10 +345,8 @@ end
         imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, w], tmask_im[i, j])
         flux_N = D0[n, j] * (var[n, j] - v) / dy2 * (o - ocnym1[i, j])
         flux_S = D0[i, j] * (var[s, j] - v) / dy2 * (o - ocn[i, j])
-        flux_E =
-            ipD * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
-        flux_W =
-            imD * (var[i, w] - v) / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
+        flux_E = ipD * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
+        flux_W = imD * (var[i, w] - v) / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -575,27 +579,65 @@ function precompute_advection_stencils!(m)
     ny, nx = size(m.D.present)
     # All 7 D-shift fields in one kernel pass, Dt = D.*tmask computed on the fly
     launch!(
-        _precompute_D_shifts_kernel!, m.Dym1,
-        m.Dym1, m.Dyp1, m.Dxm1, m.Dxp1, m.Dxm1ym1, m.Dxp1ym1, m.Dxm1yp1,
-        m.D.present, m.tmask, ny, nx,
+        _precompute_D_shifts_kernel!,
+        m.Dym1,
+        m.Dym1,
+        m.Dyp1,
+        m.Dxm1,
+        m.Dxp1,
+        m.Dxm1ym1,
+        m.Dxp1ym1,
+        m.Dxm1yp1,
+        m.D.present,
+        m.tmask,
+        ny,
+        nx,
     )
     # Staggered interpolations, sign, and velocity shifts in one kernel pass
     launch!(
-        _precompute_staggered_kernel!, m.Vip,
-        m.Vip, m.Vim, m.Vjp, m.Vjm,
-        m.Uip, m.Uim, m.Ujp, m.Ujm,
-        m.signU, m.signV, m.Vyp1, m.Uxp1,
-        m.V.present, m.U.present,
-        m.vmask_ip, m.vmask_im, m.vmask_jp, m.vmask_jm,
-        m.umask_ip, m.umask_im, m.umask_jp, m.umask_jm,
-        ny, nx,
+        _precompute_staggered_kernel!,
+        m.Vip,
+        m.Vip,
+        m.Vim,
+        m.Vjp,
+        m.Vjm,
+        m.Uip,
+        m.Uim,
+        m.Ujp,
+        m.Ujm,
+        m.signU,
+        m.signV,
+        m.Vyp1,
+        m.Uxp1,
+        m.V.present,
+        m.U.present,
+        m.vmask_ip,
+        m.vmask_im,
+        m.vmask_jp,
+        m.vmask_jm,
+        m.umask_ip,
+        m.umask_im,
+        m.umask_jp,
+        m.umask_jm,
+        ny,
+        nx,
     )
     # Upwind splits — all 8 fields in one kernel pass
     launch!(
-        _upwind_split_kernel!, m.Upos,
-        m.Upos, m.Uneg, m.Vpos, m.Vneg,
-        m.Vyp1pos, m.Vyp1neg, m.Uxp1pos, m.Uxp1neg,
-        m.U.present, m.V.present, m.Vyp1, m.Uxp1,
+        _upwind_split_kernel!,
+        m.Upos,
+        m.Upos,
+        m.Uneg,
+        m.Vpos,
+        m.Vneg,
+        m.Vyp1pos,
+        m.Vyp1neg,
+        m.Uxp1pos,
+        m.Uxp1neg,
+        m.U.present,
+        m.V.present,
+        m.Vyp1,
+        m.Uxp1,
     )
     return
 end
@@ -603,11 +645,19 @@ end
 function precompute_laplacian_stencils!(m)
     ny, nx = size(m.D.past)
     launch!(
-        _precompute_laplacian_kernel!, m.D0ip,
-        m.D0ip, m.D0im, m.D0jp, m.D0jm,
+        _precompute_laplacian_kernel!,
+        m.D0ip,
+        m.D0ip,
+        m.D0im,
+        m.D0jp,
+        m.D0jm,
         m.D.past,
-        m.tmask_ip, m.tmask_im, m.tmask_jp, m.tmask_jm,
-        ny, nx,
+        m.tmask_ip,
+        m.tmask_im,
+        m.tmask_jp,
+        m.tmask_jm,
+        ny,
+        nx,
     )
     @. m.D_on_ugrid = m.D0ip * m.tmask
     @. m.D_on_vgrid = m.D0jp * m.tmask

@@ -18,32 +18,32 @@ disables file I/O (`saveday = 0`).
 Set `saveday > 0` to enable NetCDF output at that interval (days).
 """
 Base.@kwdef struct RunConfig
-    name        :: String  = "run"
-    days        :: Float64 = 30.0
-    saveday     :: Float64 = 0.0     # 0 = I/O disabled
-    diagday     :: Float64 = 1.0
-    restday     :: Float64 = 30.0
-    resultdir   :: String  = "./output/"
-    logfilename :: String  = "log.txt"
-    forcenewdir :: Bool    = true
-    fromrestart :: Bool    = false
-    restartfile :: String  = ""
-    save_Ut     :: Bool    = true
-    save_Uu     :: Bool    = false
-    save_Vt     :: Bool    = true
-    save_Vv     :: Bool    = false
-    save_D      :: Bool    = true
-    save_T      :: Bool    = true
-    save_S      :: Bool    = true
-    save_melt   :: Bool    = true
-    save_entr   :: Bool    = false
-    save_ent2   :: Bool    = false
-    save_detr   :: Bool    = false
-    save_Tbase  :: Bool    = false
-    save_Tamb   :: Bool    = false
-    save_gammaT :: Bool    = false
-    save_mask   :: Bool    = true
-    save_zb     :: Bool    = true
+    name::String = "run"
+    days::Float64 = 30.0
+    saveday::Float64 = 0.0     # 0 = I/O disabled
+    diagday::Float64 = 1.0
+    restday::Float64 = 30.0
+    resultdir::String = "./output/"
+    logfilename::String = "log.txt"
+    forcenewdir::Bool = true
+    fromrestart::Bool = false
+    restartfile::String = ""
+    save_Ut::Bool = true
+    save_Uu::Bool = false
+    save_Vt::Bool = true
+    save_Vv::Bool = false
+    save_D::Bool = true
+    save_T::Bool = true
+    save_S::Bool = true
+    save_melt::Bool = true
+    save_entr::Bool = false
+    save_ent2::Bool = false
+    save_detr::Bool = false
+    save_Tbase::Bool = false
+    save_Tamb::Bool = false
+    save_gammaT::Bool = false
+    save_mask::Bool = true
+    save_zb::Bool = true
 end
 
 # ============================================================================
@@ -55,43 +55,62 @@ end
 # x/y coordinate vectors stay on the CPU — they are only written to NetCDF.
 # ============================================================================
 
-mutable struct IOState{FT, A<:AbstractMatrix{FT}}
+mutable struct IOState{FT,A<:AbstractMatrix{FT}}
     # Time accounting.  `dt` is the runtime time step; because IOState is last
     # in the Model forwarding chain and Params holds `dt0` (not `dt`), `m.dt`
     # resolves here — so the same field tracks a step that may vary under
     # adaptive time stepping.  `t_sim` accumulates simulated seconds this run.
-    t       :: Int        # completed steps this run (diagnostic / blow-up msg)
-    dt      :: FT         # current time step (s) — resolves as `m.dt`
-    t_sim   :: Float64    # accumulated simulated time this run (s)
-    t_start :: Float64    # restart offset (days), added by `_t_days`
+    t::Int        # completed steps this run (diagnostic / blow-up msg)
+    dt::FT         # current time step (s) — resolves as `m.dt`
+    t_sim::Float64    # accumulated simulated time this run (s)
+    t_start::Float64    # restart offset (days), added by `_t_days`
     # Time-average accumulation window
-    count   :: Int        # steps accumulated since the last output write
-    t_accum :: Float64    # simulated time accumulated since the last write (s)
+    count::Int        # steps accumulated since the last output write
+    t_accum::Float64    # simulated time accumulated since the last write (s)
     # Next-event times for periodic I/O (s since the start of this run)
-    nextsave :: Float64
-    nextdiag :: Float64
-    nextrest :: Float64
+    nextsave::Float64
+    nextdiag::Float64
+    nextrest::Float64
     # Run directory and log
-    rundir         :: String
-    logfile        :: String
-    walltime_start :: Float64
+    rundir::String
+    logfile::String
+    walltime_start::Float64
     # Interior cell-centre coordinates (m), CPU-resident
-    x :: Vector{FT}
-    y :: Vector{FT}
+    x::Vector{FT}
+    y::Vector{FT}
     # Time-average accumulators
-    Utav::A; Uuav::A; Vtav::A; Vvav::A
-    Dav::A;  Tav::A;  Sav::A;  meltav::A
-    entrav::A; ent2av::A; detrav::A
-    Tbav::A; Taav::A; gamTav::A
+    Utav::A;
+    Uuav::A;
+    Vtav::A;
+    Vvav::A
+    Dav::A;
+    Tav::A;
+    Sav::A;
+    meltav::A
+    entrav::A;
+    ent2av::A;
+    detrav::A
+    Tbav::A;
+    Taav::A;
+    gamTav::A
 end
 
 function IOState(FT::Type, x::AbstractVector, y::AbstractVector)
-    IOState{FT, Matrix{FT}}(
-        0, FT(0), 0.0, 0.0,
-        0, 0.0,
-        0.0, 0.0, 0.0,
-        "", "", 0.0,
-        Vector{FT}(x), Vector{FT}(y),
+    IOState{FT,Matrix{FT}}(
+        0,
+        FT(0),
+        0.0,
+        0.0,
+        0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        "",
+        "",
+        0.0,
+        Vector{FT}(x),
+        Vector{FT}(y),
         ntuple(_ -> Matrix{FT}(undef, 0, 0), 14)...,
     )
 end
@@ -119,9 +138,16 @@ end
 
 # One-line record of an adaptive-dt change (no-op when I/O is disabled).  Kept
 # here because Printf is imported in this file; called by the dt controller.
-_log_dt_change!(m, dt_old, dt_new, cfl) = _print2log(m, @sprintf(
-    "%.3f days: dt %.1f → %.1f s (CFL %.2f)",
-    _t_days(m), Float64(dt_old), Float64(dt_new), cfl))
+_log_dt_change!(m, dt_old, dt_new, cfl) = _print2log(
+    m,
+    @sprintf(
+        "%.3f days: dt %.1f → %.1f s (CFL %.2f)",
+        _t_days(m),
+        Float64(dt_old),
+        Float64(dt_new),
+        cfl
+    )
+)
 
 """
 $(TYPEDSIGNATURES)
@@ -146,16 +172,16 @@ end
 # Run provenance metadata
 # ============================================================================
 
-_toml_value(v::Bool)          = v
-_toml_value(v::Integer)       = Int(v)
+_toml_value(v::Bool) = v
+_toml_value(v::Integer) = Int(v)
 _toml_value(v::AbstractFloat) = Float64(v)
-_toml_value(v::String)        = v
-_toml_value(v::Symbol)        = String(v)
-_toml_value(::Any)            = nothing   # arrays etc. are skipped
+_toml_value(v::String) = v
+_toml_value(v::Symbol) = String(v)
+_toml_value(::Any) = nothing   # arrays etc. are skipped
 
 # Type name + all TOML-representable fields of a struct.
 function _scalar_fields(x)
-    d = Dict{String, Any}("type" => string(nameof(typeof(x))))
+    d = Dict{String,Any}("type" => string(nameof(typeof(x))))
     for fn in fieldnames(typeof(x))
         v = _toml_value(getfield(x, fn))
         v === nothing || (d[string(fn)] = v)
@@ -170,27 +196,29 @@ end
 function _write_run_metadata(m)
     p = getfield(m, :params)
     params_d = _scalar_fields(p)
-    params_d["entrainment"]   = _scalar_fields(p.entpar)
-    params_d["melt"]          = _scalar_fields(p.meltpar)
-    params_d["convection"]    = _scalar_fields(p.convpar)
+    params_d["entrainment"] = _scalar_fields(p.entpar)
+    params_d["melt"] = _scalar_fields(p.meltpar)
+    params_d["convection"] = _scalar_fields(p.convpar)
     params_d["open_boundary"] = _scalar_fields(p.openbc)
     params_d["grounding_line"] = _scalar_fields(p.glbc)
-    params_d["time_stepper"]   = _scalar_fields(p.tstep)
-    meta = Dict{String, Any}(
-        "run" => Dict{String, Any}(
-            "created"        => Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
-            "julia_version"  => string(VERSION),
+    params_d["time_stepper"] = _scalar_fields(p.tstep)
+    meta = Dict{String,Any}(
+        "run" => Dict{String,Any}(
+            "created" => Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
+            "julia_version" => string(VERSION),
             "laddie_version" => string(pkgversion(@__MODULE__)),
-            "backend"        => string(nameof(typeof(KA.get_backend(m.tmask)))),
-            "float_type"     => string(m.FT),
-            "t_start_days"   => m.t_start,
+            "backend" => string(nameof(typeof(KA.get_backend(m.tmask)))),
+            "float_type" => string(m.FT),
+            "t_start_days" => m.t_start,
         ),
-        "grid" => Dict{String, Any}(
-            "nx" => m.nx, "ny" => m.ny,
-            "dx" => Float64(m.dx), "dy" => Float64(m.dy),
+        "grid" => Dict{String,Any}(
+            "nx" => m.nx,
+            "ny" => m.ny,
+            "dx" => Float64(m.dx),
+            "dy" => Float64(m.dy),
         ),
-        "forcing"    => _scalar_fields(getfield(m, :forcing)),
-        "params"     => params_d,
+        "forcing" => _scalar_fields(getfield(m, :forcing)),
+        "params" => params_d,
         "run_config" => _scalar_fields(getfield(m, :rc)),
     )
     path = joinpath(m.rundir, "run_metadata.toml")
@@ -224,19 +252,19 @@ function prepare_output!(m)
     # Full grid size (including halos) so _accum! can do bare .+= without
     # border-stripping; halos are masked out when writing to NetCDF.
     z = zero(m.tmask)
-    m.save_Ut     && (m.Utav   = copy(z))
-    m.save_Uu     && (m.Uuav   = copy(z))
-    m.save_Vt     && (m.Vtav   = copy(z))
-    m.save_Vv     && (m.Vvav   = copy(z))
-    m.save_D      && (m.Dav    = copy(z))
-    m.save_T      && (m.Tav    = copy(z))
-    m.save_S      && (m.Sav    = copy(z))
-    m.save_melt   && (m.meltav = copy(z))
-    m.save_entr   && (m.entrav = copy(z))
-    m.save_ent2   && (m.ent2av = copy(z))
-    m.save_detr   && (m.detrav = copy(z))
-    m.save_Tbase  && (m.Tbav   = copy(z))
-    m.save_Tamb   && (m.Taav   = copy(z))
+    m.save_Ut && (m.Utav = copy(z))
+    m.save_Uu && (m.Uuav = copy(z))
+    m.save_Vt && (m.Vtav = copy(z))
+    m.save_Vv && (m.Vvav = copy(z))
+    m.save_D && (m.Dav = copy(z))
+    m.save_T && (m.Tav = copy(z))
+    m.save_S && (m.Sav = copy(z))
+    m.save_melt && (m.meltav = copy(z))
+    m.save_entr && (m.entrav = copy(z))
+    m.save_ent2 && (m.ent2av = copy(z))
+    m.save_detr && (m.detrav = copy(z))
+    m.save_Tbase && (m.Tbav = copy(z))
+    m.save_Tamb && (m.Taav = copy(z))
     m.save_gammaT && (m.gamTav = copy(z))
     _write_run_metadata(m)
     return m
@@ -276,19 +304,21 @@ function _accum!(m)
     dt = m.dt
     m.count += 1
     m.t_accum += dt
-    m.save_Ut     && launch!(_accum_ut_kernel!, m.Utav, m.Utav, m.U.present, size(m.Utav, 2), dt)
-    m.save_Uu     && (m.Uuav   .+= m.U.present .* dt)
-    m.save_Vt     && launch!(_accum_vt_kernel!, m.Vtav, m.Vtav, m.V.present, size(m.Vtav, 1), dt)
-    m.save_Vv     && (m.Vvav   .+= m.V.present .* dt)
-    m.save_D      && (m.Dav    .+= m.D.present .* dt)
-    m.save_T      && (m.Tav    .+= m.T.present .* dt)
-    m.save_S      && (m.Sav    .+= m.S.present .* dt)
-    m.save_melt   && (m.meltav .+= m.melt .* dt)
-    m.save_entr   && (m.entrav .+= m.entr .* dt)
-    m.save_ent2   && (m.ent2av .+= m.ent2 .* dt)
-    m.save_detr   && (m.detrav .+= m.detr .* dt)
-    m.save_Tbase  && (m.Tbav   .+= m.Tb .* dt)
-    m.save_Tamb   && (m.Taav   .+= m.Ta .* dt)
+    m.save_Ut &&
+        launch!(_accum_ut_kernel!, m.Utav, m.Utav, m.U.present, size(m.Utav, 2), dt)
+    m.save_Uu && (m.Uuav .+= m.U.present .* dt)
+    m.save_Vt &&
+        launch!(_accum_vt_kernel!, m.Vtav, m.Vtav, m.V.present, size(m.Vtav, 1), dt)
+    m.save_Vv && (m.Vvav .+= m.V.present .* dt)
+    m.save_D && (m.Dav .+= m.D.present .* dt)
+    m.save_T && (m.Tav .+= m.T.present .* dt)
+    m.save_S && (m.Sav .+= m.S.present .* dt)
+    m.save_melt && (m.meltav .+= m.melt .* dt)
+    m.save_entr && (m.entrav .+= m.entr .* dt)
+    m.save_ent2 && (m.ent2av .+= m.ent2 .* dt)
+    m.save_detr && (m.detrav .+= m.detr .* dt)
+    m.save_Tbase && (m.Tbav .+= m.Tb .* dt)
+    m.save_Tamb && (m.Taav .+= m.Ta .* dt)
     m.save_gammaT && (m.gamTav .+= m.gamT .* dt)
 end
 
@@ -412,11 +442,23 @@ end
 function _write_restart!(m, t_days)
     filename = joinpath(m.rundir, @sprintf("restart_%06.0f.jld2", t_days))
 
-    _v(var) = (past = Array(var.past), present = Array(var.present), future = Array(var.future))
+    _v(var) = (
+        past = Array(var.past),
+        present = Array(var.present),
+        future = Array(var.future),
+    )
     # Save the current dt so an adaptive run resumes at the step it left off
     # (the saved leapfrog levels are separated by this dt); FixedDt saves dt0.
-    jldsave(filename; t_days, dt = Float64(m.dt),
-            D = _v(m.D), U = _v(m.U), V = _v(m.V), T = _v(m.T), S = _v(m.S))
+    jldsave(
+        filename;
+        t_days,
+        dt = Float64(m.dt),
+        D = _v(m.D),
+        U = _v(m.U),
+        V = _v(m.V),
+        T = _v(m.T),
+        S = _v(m.S),
+    )
 
     cp(filename, joinpath(m.rundir, "restart_latest.jld2"); force = true)
     _print2log(m, @sprintf("%.3f days: saved restart → %s", t_days, basename(filename)))
@@ -454,9 +496,9 @@ function init_from_restart!(m)
         haskey(f, "dt") && (m.dt = m.FT(f["dt"]))
         for (name, var) in (("D", m.D), ("U", m.U), ("V", m.V), ("T", m.T), ("S", m.S))
             data = f[name]
-            var.past    .= data.past
+            var.past .= data.past
             var.present .= data.present
-            var.future  .= data.future
+            var.future .= data.future
         end
     end
     update_secondary_fields!(m)

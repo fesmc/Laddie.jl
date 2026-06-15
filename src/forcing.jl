@@ -10,7 +10,7 @@
 
 abstract type AbstractForcing end
 
-struct ISOMIPForcing{FT, V<:AbstractVector{FT}} <: AbstractForcing
+struct ISOMIPForcing{FT,V<:AbstractVector{FT}} <: AbstractForcing
     Tz::V
     Sz::V
     z::V
@@ -53,7 +53,7 @@ values (T at freezing, S = `S0`) to (`T1`, `S1`) at depth `z0`.
 Construct with `LinearForcing(FT, S0, S1, T1, forc_z0, l1, l2)` and pass it as
 the `forcing` argument of `build_model`.
 """
-struct LinearForcing{FT, V<:AbstractVector{FT}} <: AbstractForcing
+struct LinearForcing{FT,V<:AbstractVector{FT}} <: AbstractForcing
     Tz::V;
     Sz::V;
     z::V;
@@ -74,7 +74,7 @@ do not extrapolate beyond (`T1`, `S1`) above `z0`.
 Construct with `Linear2Forcing(FT, S0, S1, T1, forc_z0, l1, l2)` and pass it
 as the `forcing` argument of `build_model`.
 """
-struct Linear2Forcing{FT, V<:AbstractVector{FT}} <: AbstractForcing
+struct Linear2Forcing{FT,V<:AbstractVector{FT}} <: AbstractForcing
     Tz::V;
     Sz::V;
     z::V;
@@ -95,7 +95,7 @@ warm deep waters, with an additional density perturbation `drho0·√|z|`.
 Construct with `TanhForcing(FT, S0, T1, forc_z0, forc_z1, drho0, rho0, alpha,
 beta, l1, l2)` and pass it as the `forcing` argument of `build_model`.
 """
-struct TanhForcing{FT, V<:AbstractVector{FT}} <: AbstractForcing
+struct TanhForcing{FT,V<:AbstractVector{FT}} <: AbstractForcing
     Tz::V;
     Sz::V;
     z::V;
@@ -121,7 +121,7 @@ separate paths — and pass it as the `forcing` argument of `build_model`.
 For profile data from other sources (CSV, in-memory vectors), use
 `ProfileForcing` instead.
 """
-struct FileForcing{FT, V<:AbstractVector{FT}} <: AbstractForcing
+struct FileForcing{FT,V<:AbstractVector{FT}} <: AbstractForcing
     Tz::V;
     Sz::V;
     z::V;
@@ -130,7 +130,7 @@ struct FileForcing{FT, V<:AbstractVector{FT}} <: AbstractForcing
     path::String
 end
 
-struct ProfileForcing{FT, V<:AbstractVector{FT}} <: AbstractForcing
+struct ProfileForcing{FT,V<:AbstractVector{FT}} <: AbstractForcing
     Tz::V
     Sz::V
     z::V

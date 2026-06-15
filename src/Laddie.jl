@@ -33,7 +33,8 @@ include("show.jl")
 
 
 export Model, Grid, State, Cache, Params, RunConfig
-export build_model, build_isomip, build_laddie_mask, ice_base_depth, run!, meltstats, to_backend
+export build_model,
+    build_isomip, build_laddie_mask, ice_base_depth, run!, meltstats, to_backend
 
 export AbstractEntrainmentParam, HollandEntrainment, GasparEntrainment
 export AbstractMeltParam, FixedGamT, TurbulentGamT

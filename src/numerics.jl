@@ -15,22 +15,32 @@
 end
 
 @kernel function _precompute_D_shifts_kernel!(
-    Dym1, Dyp1, Dxm1, Dxp1, Dxm1ym1, Dxp1ym1, Dxm1yp1,
-    @Const(D), @Const(tmask),
-    Ny, Nx,
+    Dym1,
+    Dyp1,
+    Dxm1,
+    Dxp1,
+    Dxm1ym1,
+    Dxp1ym1,
+    Dxm1yp1,
+    @Const(D),
+    @Const(tmask),
+    Ny,
+    Nx,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny); s = _south(i, Ny)
-        e = _east(j, Nx);  w = _west(j, Nx)
-        Dn  = D[n, j] * tmask[n, j]
-        Ds  = D[s, j] * tmask[s, j]
-        De  = D[i, e] * tmask[i, e]
-        Dw  = D[i, w] * tmask[i, w]
-        Dym1[i, j]    = Dn
-        Dyp1[i, j]    = Ds
-        Dxm1[i, j]    = De
-        Dxp1[i, j]    = Dw
+        n = _north(i, Ny);
+        s = _south(i, Ny)
+        e = _east(j, Nx);
+        w = _west(j, Nx)
+        Dn = D[n, j] * tmask[n, j]
+        Ds = D[s, j] * tmask[s, j]
+        De = D[i, e] * tmask[i, e]
+        Dw = D[i, w] * tmask[i, w]
+        Dym1[i, j] = Dn
+        Dyp1[i, j] = Ds
+        Dxm1[i, j] = De
+        Dxp1[i, j] = Dw
         Dxm1ym1[i, j] = D[n, e] * tmask[n, e]
         Dxp1ym1[i, j] = D[n, w] * tmask[n, w]
         Dxm1yp1[i, j] = D[s, e] * tmask[s, e]
@@ -38,44 +48,73 @@ end
 end
 
 @kernel function _precompute_staggered_kernel!(
-    Vip, Vim, Vjp, Vjm,
-    Uip, Uim, Ujp, Ujm,
-    signU, signV, Vyp1, Uxp1,
-    @Const(V), @Const(U),
-    @Const(vmask_ip), @Const(vmask_im), @Const(vmask_jp), @Const(vmask_jm),
-    @Const(umask_ip), @Const(umask_im), @Const(umask_jp), @Const(umask_jm),
-    Ny, Nx,
+    Vip,
+    Vim,
+    Vjp,
+    Vjm,
+    Uip,
+    Uim,
+    Ujp,
+    Ujm,
+    signU,
+    signV,
+    Vyp1,
+    Uxp1,
+    @Const(V),
+    @Const(U),
+    @Const(vmask_ip),
+    @Const(vmask_im),
+    @Const(vmask_jp),
+    @Const(vmask_jm),
+    @Const(umask_ip),
+    @Const(umask_im),
+    @Const(umask_jp),
+    @Const(umask_jm),
+    Ny,
+    Nx,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny); s = _south(i, Ny)
-        e = _east(j, Nx);  w = _west(j, Nx)
-        Vij = V[i, j]; Uij = U[i, j]
-        Vip[i, j]   = _safe_div(Vij + V[i, e], vmask_ip[i, j])
-        Vim[i, j]   = _safe_div(Vij + V[i, w], vmask_im[i, j])
-        Vjp[i, j]   = _safe_div(Vij + V[n, j], vmask_jp[i, j])
-        Vjm[i, j]   = _safe_div(Vij + V[s, j], vmask_jm[i, j])
-        Uip[i, j]   = _safe_div(Uij + U[i, e], umask_ip[i, j])
-        Uim[i, j]   = _safe_div(Uij + U[i, w], umask_im[i, j])
-        Ujp[i, j]   = _safe_div(Uij + U[n, j], umask_jp[i, j])
-        Ujm[i, j]   = _safe_div(Uij + U[s, j], umask_jm[i, j])
+        n = _north(i, Ny);
+        s = _south(i, Ny)
+        e = _east(j, Nx);
+        w = _west(j, Nx)
+        Vij = V[i, j];
+        Uij = U[i, j]
+        Vip[i, j] = _safe_div(Vij + V[i, e], vmask_ip[i, j])
+        Vim[i, j] = _safe_div(Vij + V[i, w], vmask_im[i, j])
+        Vjp[i, j] = _safe_div(Vij + V[n, j], vmask_jp[i, j])
+        Vjm[i, j] = _safe_div(Vij + V[s, j], vmask_jm[i, j])
+        Uip[i, j] = _safe_div(Uij + U[i, e], umask_ip[i, j])
+        Uim[i, j] = _safe_div(Uij + U[i, w], umask_im[i, j])
+        Ujp[i, j] = _safe_div(Uij + U[n, j], umask_jp[i, j])
+        Ujm[i, j] = _safe_div(Uij + U[s, j], umask_jm[i, j])
         signU[i, j] = sign(Uij)
         signV[i, j] = sign(Vij)
-        Vyp1[i, j]  = V[s, j]
-        Uxp1[i, j]  = U[i, w]
+        Vyp1[i, j] = V[s, j]
+        Uxp1[i, j] = U[i, w]
     end
 end
 
 @kernel function _precompute_laplacian_kernel!(
-    D0ip, D0im, D0jp, D0jm,
+    D0ip,
+    D0im,
+    D0jp,
+    D0jm,
     @Const(D),
-    @Const(tmask_ip), @Const(tmask_im), @Const(tmask_jp), @Const(tmask_jm),
-    Ny, Nx,
+    @Const(tmask_ip),
+    @Const(tmask_im),
+    @Const(tmask_jp),
+    @Const(tmask_jm),
+    Ny,
+    Nx,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny); s = _south(i, Ny)
-        e = _east(j, Nx);  w = _west(j, Nx)
+        n = _north(i, Ny);
+        s = _south(i, Ny)
+        e = _east(j, Nx);
+        w = _west(j, Nx)
         Dij = D[i, j]
         D0ip[i, j] = _safe_div(Dij + D[i, e], tmask_ip[i, j])
         D0im[i, j] = _safe_div(Dij + D[i, w], tmask_im[i, j])
@@ -104,14 +143,14 @@ end
 # Time integration (Lambert et al. 2023)
 # ============================================================================
 
-_update_conv2!(::Any, ::ClampDensity)   = nothing
+_update_conv2!(::Any, ::ClampDensity) = nothing
 _update_conv2!(::Any, ::ResetToAmbient) = nothing
 function _update_conv2!(m, cp::RelaxToAmbient)
     @. m.conv2 = (m.drho < 0) * m.D.present / cp.convtime
 end
 
 function precompute_integration_terms!(m)
-    @. m.dDdt  = (m.D.future - m.D.past) / (m.dt + m.dt)
+    @. m.dDdt = (m.D.future - m.D.past) / (m.dt + m.dt)
     @. m.Ddrho = m.D.present * m.drho
     _update_conv2!(m, m.convpar)
     return
@@ -503,17 +542,17 @@ function step_v_momentum(m, dt)
 end
 # Kernel selection dispatches on the concrete types of gamT and conv2, which are
 # fixed at model-construction time by the MP and CS type parameters.
-_launch_T!(args, gamT::Number,          Kh, conv2::Number,          dt) =
-    launch!(_step_temperature_kernel!,          args..., gamT, Kh, conv2, dt)
-_launch_T!(args, gamT::Number,          Kh, conv2::AbstractArray,   dt) =
+_launch_T!(args, gamT::Number, Kh, conv2::Number, dt) =
+    launch!(_step_temperature_kernel!, args..., gamT, Kh, conv2, dt)
+_launch_T!(args, gamT::Number, Kh, conv2::AbstractArray, dt) =
     launch!(_step_temperature_mat_conv2_kernel!, args..., gamT, Kh, conv2, dt)
-_launch_T!(args, gamT::AbstractArray,   Kh, conv2::Number,          dt) =
+_launch_T!(args, gamT::AbstractArray, Kh, conv2::Number, dt) =
     launch!(_step_temperature_mat_gamT_kernel!, args..., gamT, Kh, conv2, dt)
-_launch_T!(args, gamT::AbstractArray,   Kh, conv2::AbstractArray,   dt) =
+_launch_T!(args, gamT::AbstractArray, Kh, conv2::AbstractArray, dt) =
     launch!(_step_temperature_mat_both_kernel!, args..., gamT, Kh, conv2, dt)
 
-_launch_S!(args, Kh, conv2::Number,        dt) =
-    launch!(_step_salinity_kernel!,         args..., Kh, conv2, dt)
+_launch_S!(args, Kh, conv2::Number, dt) =
+    launch!(_step_salinity_kernel!, args..., Kh, conv2, dt)
 _launch_S!(args, Kh, conv2::AbstractArray, dt) =
     launch!(_step_salinity_mat_conv2_kernel!, args..., Kh, conv2, dt)
 
@@ -593,11 +632,17 @@ end
 # ============================================================================
 
 function apply_robert_asselin_filter!(m)
-    for (var, mask) in (
-        (m.D, m.tmask), (m.U, m.umask), (m.V, m.vmask),
-        (m.T, m.tmask), (m.S, m.tmask),
-    )
-        launch!(_robert_asselin_kernel!, var.present, var.present, var.past, var.future, mask, m.nu)
+    for (var, mask) in
+        ((m.D, m.tmask), (m.U, m.umask), (m.V, m.vmask), (m.T, m.tmask), (m.S, m.tmask))
+        launch!(
+            _robert_asselin_kernel!,
+            var.present,
+            var.present,
+            var.past,
+            var.future,
+            mask,
+            m.nu,
+        )
     end
     update_density!(m)
     update_convection!(m)
@@ -605,7 +650,10 @@ function apply_robert_asselin_filter!(m)
 end
 
 function advance_leapfrog!(m)
-    for var in (m.D, m.U, m.V, m.T, m.S); rotate!(var); end
+    for var in (m.D, m.U, m.V, m.T, m.S)
+        ;
+        rotate!(var);
+    end
     update_secondary_fields!(m)
     return
 end

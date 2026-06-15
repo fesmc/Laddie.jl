@@ -1,4 +1,3 @@
-
 # ============================================================================
 # General model builder
 # ============================================================================
@@ -7,29 +6,52 @@ _float_type(::Params{FT}) where {FT} = FT
 _float_type(f::AbstractForcing) = eltype(f.Tz)
 
 function _validate_build_inputs(mask, zb_raw, dx, dy, forcing, params, FT)
-    (size(mask, 1) >= 3 && size(mask, 2) >= 3) || throw(ArgumentError(
-        "mask must be at least 3×3 — interior cells plus the one-cell border ring — got $(size(mask))"))
-    size(zb_raw) == size(mask) || throw(ArgumentError(
-        "zb_raw and mask must have the same size, got $(size(zb_raw)) vs $(size(mask))"))
-    (dx > 0 && dy > 0) || throw(ArgumentError(
-        "dx and dy must be positive, got dx = $dx, dy = $dy"))
+    (size(mask, 1) >= 3 && size(mask, 2) >= 3) || throw(
+        ArgumentError(
+            "mask must be at least 3×3 — interior cells plus the one-cell border ring — got $(size(mask))",
+        ),
+    )
+    size(zb_raw) == size(mask) || throw(
+        ArgumentError(
+            "zb_raw and mask must have the same size, got $(size(zb_raw)) vs $(size(mask))",
+        ),
+    )
+    (dx > 0 && dy > 0) ||
+        throw(ArgumentError("dx and dy must be positive, got dx = $dx, dy = $dy"))
     bad = setdiff(unique(mask), 0:3)
-    isempty(bad) || throw(ArgumentError(
-        "mask may only contain 0 (ocean), 1 (land), 2 (grounded), 3 (shelf); found $(sort(bad))"))
-    any(==(3), mask) || throw(ArgumentError(
-        "mask contains no floating-shelf cells (value 3) — nothing to simulate"))
+    isempty(bad) || throw(
+        ArgumentError(
+            "mask may only contain 0 (ocean), 1 (land), 2 (grounded), 3 (shelf); found $(sort(bad))",
+        ),
+    )
+    any(==(3), mask) || throw(
+        ArgumentError(
+            "mask contains no floating-shelf cells (value 3) — nothing to simulate",
+        ),
+    )
     border_shelf =
-        any(==(3), @view mask[1, :]) || any(==(3), @view mask[end, :]) ||
-        any(==(3), @view mask[:, 1]) || any(==(3), @view mask[:, end])
-    border_shelf && throw(ArgumentError(
-        "floating-shelf cells (3) on the domain border: the stencils wrap periodically, " *
-        "so the outermost ring must be ocean/land/grounded (0–2)"))
-    _float_type(params) === FT || throw(ArgumentError(
-        "params is Params{$(_float_type(params))} but build_model was called with FT = $FT; " *
-        "construct the parameters with Params(; FT = $FT, ...) or pass the matching FT"))
-    _float_type(forcing) === FT || throw(ArgumentError(
-        "forcing holds $(_float_type(forcing)) profiles but build_model was called with FT = $FT; " *
-        "construct the forcing with FT = $FT or pass the matching FT"))
+        any(==(3), @view mask[1, :]) ||
+        any(==(3), @view mask[end, :]) ||
+        any(==(3), @view mask[:, 1]) ||
+        any(==(3), @view mask[:, end])
+    border_shelf && throw(
+        ArgumentError(
+            "floating-shelf cells (3) on the domain border: the stencils wrap periodically, " *
+            "so the outermost ring must be ocean/land/grounded (0–2)",
+        ),
+    )
+    _float_type(params) === FT || throw(
+        ArgumentError(
+            "params is Params{$(_float_type(params))} but build_model was called with FT = $FT; " *
+            "construct the parameters with Params(; FT = $FT, ...) or pass the matching FT",
+        ),
+    )
+    _float_type(forcing) === FT || throw(
+        ArgumentError(
+            "forcing holds $(_float_type(forcing)) profiles but build_model was called with FT = $FT; " *
+            "construct the forcing with FT = $FT or pass the matching FT",
+        ),
+    )
     return
 end
 
@@ -77,36 +99,38 @@ run!(m; days=30)
 ```
 """
 function build_model(
-    mask    :: AbstractMatrix{Int},
-    zb_raw  :: AbstractMatrix,
-    dx      :: Real,
-    dy      :: Real,
-    forcing :: AbstractForcing,
-    params  :: Params;
+    mask::AbstractMatrix{Int},
+    zb_raw::AbstractMatrix,
+    dx::Real,
+    dy::Real,
+    forcing::AbstractForcing,
+    params::Params;
     backend = CPU(),
-    FT      = Float64,
-    rc      = RunConfig(),
+    FT = Float64,
+    rc = RunConfig(),
 )
     _validate_build_inputs(mask, zb_raw, dx, dy, forcing, params, FT)
     ny_total, nx_total = size(mask)
     nx, ny = nx_total - 2, ny_total - 2
 
-    zb    = _adjust_zb(mask, zb_raw, FT)
-    grid  = Grid(mask, zb, FT(dx), FT(dy); FT)
+    zb = _adjust_zb(mask, zb_raw, FT)
+    grid = Grid(mask, zb, FT(dx), FT(dy); FT)
     state = State(FT, ny_total, nx_total)
-    cache = Cache(FT, typeof(params.meltpar), typeof(params.convpar), ny_total, nx_total)
+    cache =
+        Cache(FT, typeof(params.meltpar), typeof(params.convpar), ny_total, nx_total)
 
     io = IOState(FT, collect(FT(dx) .* (1:nx)), collect(FT(dy) .* (1:ny)))
-    m  = Model(io, rc, grid, state, cache, params, forcing)
+    m = Model(io, rc, grid, state, cache, params, forcing)
+    m.dt = params.dt0   # runtime dt starts at the configured initial step
 
     if rc.saveday > 0
         create_rundir!(m)
     end
     if rc.fromrestart
         m.drho = zero(grid.tmask)
-        m.Tf   = zero(grid.tmask)
+        m.Tf = zero(grid.tmask)
         m.melt = zero(grid.tmask)
-        m.Tb   = zero(grid.tmask)
+        m.Tb = zero(grid.tmask)
         init_from_restart!(m)
     else
         _initialize_prognostics!(m)
@@ -159,10 +183,12 @@ function build_isomip(
     rc = RunConfig(),
 )
     ny_total, nx_total = ny + 2, nx + 2
-    mask   = zeros(Int, ny_total, nx_total)
+    mask = zeros(Int, ny_total, nx_total)
     zb_raw = zeros(FT, ny_total, nx_total)
-    xgl_ft = FT(xgl);   xfront_ft = FT(xfront)
-    zgl_ft = FT(zb_gl); zfr_ft    = FT(zb_front)
+    xgl_ft = FT(xgl);
+    xfront_ft = FT(xfront)
+    zgl_ft = FT(zb_gl);
+    zfr_ft = FT(zb_front)
     for j = 1:ny, i = 1:nx
         x = FT((i - 1) * dx)
         jp, ip = j + 1, i + 1
@@ -174,17 +200,21 @@ function build_isomip(
                 zgl_ft + (zfr_ft - zgl_ft) * (x - xgl_ft) / (xfront_ft - xgl_ft)
         end
     end
-    mask[1, :] .= 1;   mask[end, :] .= 1
-    mask[:, 1] .= 1;   mask[:, end] .= 1
+    mask[1, :] .= 1;
+    mask[end, :] .= 1
+    mask[:, 1] .= 1;
+    mask[:, end] .= 1
 
     forcing = ISOMIPForcing(FT, isomipcond)
-    _params = isnothing(params) ? Params(;
-        FT,
-        entpar  = GasparEntrainment(FT(2.5)),
-        meltpar = FixedGamT(FT(0.00018)),
-        convpar = ResetToAmbient(FT(0.005)),
-        openbc  = ZeroGradientInflow(),
-    ) : params
+    _params =
+        isnothing(params) ?
+        Params(;
+            FT,
+            entpar = GasparEntrainment(FT(2.5)),
+            meltpar = FixedGamT(FT(0.00018)),
+            convpar = ResetToAmbient(FT(0.005)),
+            openbc = ZeroGradientInflow(),
+        ) : params
 
     return build_model(mask, zb_raw, dx, dy, forcing, _params; backend, FT, rc)
 end

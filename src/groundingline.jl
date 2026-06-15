@@ -32,4 +32,4 @@ struct NoSlipGL <: AbstractGroundingLineBC end
 # Slip factor applied at grounding-line faces (land faces always use `slip`).
 # Ghost tangential velocity is (1 − factor)·u: 1 → free slip, 2 → no slip.
 _gl_slip(::FreeSlipGL, slip) = slip
-_gl_slip(::NoSlipGL,  slip) = oftype(slip, 2)
+_gl_slip(::NoSlipGL, slip) = oftype(slip, 2)

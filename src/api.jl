@@ -20,8 +20,8 @@ function meltstats(m)
     n = sum(mask)
     meltyr = m.melt .* spy
     return maximum(meltyr .* mask),
-        sum(meltyr .* mask) / n,
-        maximum(sqrt.(im_half(m.U.present) .^ 2 .+ jm_half(m.V.present) .^ 2) .* mask)
+    sum(meltyr .* mask) / n,
+    maximum(sqrt.(im_half(m.U.present) .^ 2 .+ jm_half(m.V.present) .^ 2) .* mask)
 end
 
 """
@@ -45,8 +45,10 @@ function _cfl_number(m)
     # Reduced-gravity wave speed from the largest δρ·D over the active domain.
     gDdrho = maximum(ifelse.(m.tmask .> 0, m.drho .* m.D.present, zero(FT)))
     c = sqrt(m.g * max(zero(FT), gDdrho))
-    return Float64(m.dt) * ((Float64(umax) + Float64(c)) / Float64(m.dx) +
-                            (Float64(vmax) + Float64(c)) / Float64(m.dy))
+    return Float64(m.dt) * (
+        (Float64(umax) + Float64(c)) / Float64(m.dx) +
+        (Float64(vmax) + Float64(c)) / Float64(m.dy)
+    )
 end
 
 # Worst-case CFL: the advective term uses the velocity cap `vcut` instead of the
@@ -65,13 +67,28 @@ end
 # Abort with a clear message as soon as the integration produces non-finite
 # values, instead of silently stepping NaNs for the rest of the run.
 function _check_blowup(m, t, nt)
-    (all(isfinite, m.D.present) && all(isfinite, m.U.present) &&
-     all(isfinite, m.V.present)) && return
-    error(string(
-        "Simulation blew up: non-finite values in D/U/V at step ", t, "/", nt,
-        " (≈ day ", round(_t_days(m), digits = 2), "). Common causes: time step too",
-        " large for this grid (dt = ", m.dt, " s, dx = ", m.dx, " m) or unstable",
-        " forcing. Reduce dt in Params, or check the inputs."))
+    (
+        all(isfinite, m.D.present) &&
+        all(isfinite, m.U.present) &&
+        all(isfinite, m.V.present)
+    ) && return
+    error(
+        string(
+            "Simulation blew up: non-finite values in D/U/V at step ",
+            t,
+            "/",
+            nt,
+            " (≈ day ",
+            round(_t_days(m), digits = 2),
+            "). Common causes: time step too",
+            " large for this grid (dt = ",
+            m.dt,
+            " s, dx = ",
+            m.dx,
+            " m) or unstable",
+            " forcing. Reduce dt in Params, or check the inputs.",
+        ),
+    )
 end
 
 """
@@ -103,8 +120,9 @@ function run!(m; days = nothing, until = nothing, verbose = true)
     if days !== nothing && until !== nothing
         throw(ArgumentError("pass either `days` or `until`, not both"))
     end
-    until = until !== nothing ? until :
-            FixedSimulationEnd(t_end = days !== nothing ? Float64(days) : m.rc.days)
+    until =
+        until !== nothing ? until :
+        FixedSimulationEnd(t_end = days !== nothing ? Float64(days) : m.rc.days)
     total = _end_seconds(until)                    # hard time cap (s) for this run
     io_on = m.rc.saveday > 0
     # Fresh time accounting for this run; next-event times are relative to it.
@@ -122,16 +140,28 @@ function run!(m; days = nothing, until = nothing, verbose = true)
     checkint = _check_interval(m.tstep, nt)
     cfl = Float64(m.dt) * Float64(m.vcut) * (1.0 / Float64(m.dx) + 1.0 / Float64(m.dy))
     cfl > 1.0 && @warn string(
-        "Advective CFL number at the velocity cap is ", round(cfl, digits = 2),
-        " > 1 (dt = ", m.dt, " s, vcut = ", m.vcut, " m/s, dx = ", m.dx,
-        " m, dy = ", m.dy, " m); the run is likely unstable — reduce dt or coarsen the grid.")
+        "Advective CFL number at the velocity cap is ",
+        round(cfl, digits = 2),
+        " > 1 (dt = ",
+        m.dt,
+        " s, vcut = ",
+        m.vcut,
+        " m/s, dx = ",
+        m.dx,
+        " m, dy = ",
+        m.dy,
+        " m); the run is likely unstable — reduce dt or coarsen the grid.",
+    )
     backend = nameof(typeof(KA.get_backend(m.tmask)))
     # Progress is tracked in simulated seconds (nt is only an estimate under
     # adaptive dt); update! sets the absolute position from t_sim each step.
-    prog = Progress(round(Int, total);
+    prog = Progress(
+        round(Int, total);
         desc = "[$backend] $(m.ny)×$(m.nx) interior, ~$nt steps: ",
-        enabled = verbose, showspeed = true)
-    showvals = Tuple{String, Any}[]
+        enabled = verbose,
+        showspeed = true,
+    )
+    showvals = Tuple{String,Any}[]
     # Steady-state sampling: compare the mean melt rate on a fixed daily cadence
     # (independent of run length, so `tol` means the same thing for any cap).
     # Disabled (next_steady = Inf) unless the criterion needs it.
@@ -158,8 +188,15 @@ function run!(m; days = nothing, until = nothing, verbose = true)
         if m.t_sim + m.dt / 2 >= next_steady
             _, mean_melt, _ = meltstats(m)
             if _steady_reached(until, mean_melt, prev_mean)
-                _print2log(m, string(round(_t_days(m), digits = 3),
-                    " days: steady state reached (relative Δ mean melt < ", until.tol, ")"))
+                _print2log(
+                    m,
+                    string(
+                        round(_t_days(m), digits = 3),
+                        " days: steady state reached (relative Δ mean melt < ",
+                        until.tol,
+                        ")",
+                    ),
+                )
                 break
             end
             prev_mean = mean_melt
@@ -180,10 +217,16 @@ function run!(m; days = nothing, until = nothing, verbose = true)
                 Dmax = maximum(ifelse.(m.tmask .> 0, m.D.present, -Inf))
                 showvals = [
                     ("simulated days", round(_t_days(m), digits = 2)),
-                    ("melt mean/max [m/yr]", string(round(mn, digits = 2), " / ", round(mx, digits = 2))),
+                    (
+                        "melt mean/max [m/yr]",
+                        string(round(mn, digits = 2), " / ", round(mx, digits = 2)),
+                    ),
                     ("Dmax [m]", round(Dmax, digits = 1)),
                     ("|u|max [m/s]", round(sp, digits = 3)),
-                    ("dt [s] / CFL", string(round(m.dt, digits = 1), " / ", round(cfl, digits = 3))),
+                    (
+                        "dt [s] / CFL",
+                        string(round(m.dt, digits = 1), " / ", round(cfl, digits = 3)),
+                    ),
                 ]
             end
         end

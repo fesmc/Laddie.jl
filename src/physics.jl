@@ -76,15 +76,15 @@ end
     i, j = @index(Global, NTuple)
     FT = typeof(cp_over_Leff)
     @inbounds begin
-        gT       = gamT[i, j]
-        gS       = gamS[i, j]
+        gT = gamT[i, j]
+        gS = gamS[i, j]
         Tf_depth = l2 + l3 * zb[i, j]
         quad_b =
             cp_over_Leff * gT * (Tf_depth - T[i, j]) +
             gS * (one(FT) + cp_over_Leff * ci_over_cp * (Tf_depth + l1 * S[i, j]))
-        quad_c   = cp_over_Leff * gT * gS * (Tf_depth - T[i, j] + l1 * S[i, j])
-        disc     = quad_b * quad_b - FT(4) * quad_c
-        disc     = ifelse(disc < zero(FT), zero(FT), disc)
+        quad_c = cp_over_Leff * gT * gS * (Tf_depth - T[i, j] + l1 * S[i, j])
+        disc = quad_b * quad_b - FT(4) * quad_c
+        disc = ifelse(disc < zero(FT), zero(FT), disc)
         melt_rate = (-quad_b + sqrt(disc)) / (FT(1) + FT(1)) * tmask[i, j]
         melt[i, j] = melt_rate
         Tb_denom = cp_over_Leff * gT + cp_over_Leff * ci_over_cp * melt_rate
@@ -95,10 +95,15 @@ end
 end
 
 @kernel function _ambient_interp_kernel!(
-    Ta, Sa,
-    @Const(zb), @Const(D),
-    @Const(Tz), @Const(Sz),
-    z0, dz, nz,
+    Ta,
+    Sa,
+    @Const(zb),
+    @Const(D),
+    @Const(Tz),
+    @Const(Sz),
+    z0,
+    dz,
+    nz,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -112,8 +117,8 @@ end
         idx_lo = clamp(trunc(Int, depth_idx), 0, nz - 1)
         idx_hi = clamp(idx_lo + 1, 0, nz - 1)
         weight = depth_idx - FT(idx_lo)
-        Ta[i, j] = weight * Tz[idx_hi + 1] + (one(FT) - weight) * Tz[idx_lo + 1]
-        Sa[i, j] = weight * Sz[idx_hi + 1] + (one(FT) - weight) * Sz[idx_lo + 1]
+        Ta[i, j] = weight * Tz[idx_hi+1] + (one(FT) - weight) * Tz[idx_lo+1]
+        Sa[i, j] = weight * Sz[idx_hi+1] + (one(FT) - weight) * Sz[idx_lo+1]
     end
 end
 
@@ -129,9 +134,17 @@ plume base (zb − D), writing results into `m.Ta` and `m.Sa`
 function update_ambient_fields!(m)
     nz = length(m.z)
     launch!(
-        _ambient_interp_kernel!, m.Ta,
-        m.Ta, m.Sa, m.zb, m.D.present, m.Tz, m.Sz,
-        m.z0, m.dz, nz,
+        _ambient_interp_kernel!,
+        m.Ta,
+        m.Ta,
+        m.Sa,
+        m.zb,
+        m.D.present,
+        m.Tz,
+        m.Sz,
+        m.z0,
+        m.dz,
+        nz,
     )
     return
 end
@@ -173,11 +186,11 @@ Flag convectively unstable cells, then instantly reset their T/S to ambient
 values so the density remains stable.
 """
 function update_convection!(m, cp::ResetToAmbient)
-    thr   = cp.mindrho / m.rho0
+    thr = cp.mindrho / m.rho0
     S_adj = cp.mindrho / (m.rho0 * m.beta)
     @. m.convection = m.drho < 0
-    @. m.T.present  = ifelse(m.drho < thr, m.Ta, m.T.present)
-    @. m.S.present  = ifelse(m.drho < thr, m.Sa - S_adj, m.S.present)
+    @. m.T.present = ifelse(m.drho < thr, m.Ta, m.T.present)
+    @. m.S.present = ifelse(m.drho < thr, m.Sa - S_adj, m.S.present)
     update_density!(m)
 end
 
@@ -194,12 +207,14 @@ end
 update_convection!(m) = update_convection!(m, m.convpar)
 
 function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamT)
-    FT     = typeof(mp.Pr)
+    FT = typeof(mp.Pr)
     PrCorr = FT(12.5) * mp.Pr^(FT(2)/FT(3)) - FT(8.68)
     ScCorr = FT(12.5) * mp.Sc^(FT(2)/FT(3)) - FT(8.68)
-    nu0    = mp.nu0
-    @. m.gamT = m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + PrCorr)
-    @. m.gamS = m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + ScCorr)
+    nu0 = mp.nu0
+    @. m.gamT =
+        m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + PrCorr)
+    @. m.gamS =
+        m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + ScCorr)
 end
 
 """
@@ -212,7 +227,18 @@ Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 function update_melt!(m, mp::FixedGamT)
     FT = m.FT
     ny, nx = size(m.ustar)
-    launch!(_ustar_kernel!, m.ustar, m.ustar, m.U.present, m.V.present, m.tmask, m.Cdtop, m.utide, ny, nx)
+    launch!(
+        _ustar_kernel!,
+        m.ustar,
+        m.ustar,
+        m.U.present,
+        m.V.present,
+        m.tmask,
+        m.Cdtop,
+        m.utide,
+        ny,
+        nx,
+    )
     cp_over_Leff = m.cp / (m.L - m.ci * m.Ti)
     ci_over_cp = m.ci / m.cp
     m.gamT = mp.gamTfix
@@ -246,16 +272,37 @@ Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::TurbulentGamT)
     ny, nx = size(m.ustar)
-    launch!(_ustar_kernel!, m.ustar, m.ustar, m.U.present, m.V.present, m.tmask, m.Cdtop, m.utide, ny, nx)
+    launch!(
+        _ustar_kernel!,
+        m.ustar,
+        m.ustar,
+        m.U.present,
+        m.V.present,
+        m.tmask,
+        m.Cdtop,
+        m.utide,
+        ny,
+        nx,
+    )
     cp_over_Leff = m.cp / (m.L - m.ci * m.Ti)
-    ci_over_cp   = m.ci / m.cp
+    ci_over_cp = m.ci / m.cp
     _compute_turbulent_transfer_coefficients!(m, mp)
     launch!(
-        _three_eq_melt_mat_gamT_kernel!, m.melt,
-        m.melt, m.Tb,
-        m.T.present, m.S.present, m.zb, m.tmask,
-        m.gamT, m.gamS,
-        cp_over_Leff, ci_over_cp, m.l1, m.l2, m.l3,
+        _three_eq_melt_mat_gamT_kernel!,
+        m.melt,
+        m.melt,
+        m.Tb,
+        m.T.present,
+        m.S.present,
+        m.zb,
+        m.tmask,
+        m.gamT,
+        m.gamS,
+        cp_over_Leff,
+        ci_over_cp,
+        m.l1,
+        m.l2,
+        m.l3,
     )
 end
 
@@ -269,12 +316,24 @@ Holland–Jenkins entrainment: e ∝ √max(0, |u|² − g·δρ·Kh/Ah·D)
 (Holland & Jenkins 1999; Lambert et al. 2023, Eq. 11).
 """
 function _compute_entrainment!(m, ep::HollandEntrainment)
-    coeff      = ep.cl * m.Kh / m.Ah^2
+    coeff = ep.cl * m.Kh / m.Ah^2
     drho_coeff = m.g * m.Kh / m.Ah
     ny, nx = size(m.entr)
-    launch!(_holland_entrainment_kernel!, m.entr,
-        m.entr, m.detr, m.U.present, m.V.present, m.drho, m.D.present, m.tmask,
-        coeff, drho_coeff, ny, nx)
+    launch!(
+        _holland_entrainment_kernel!,
+        m.entr,
+        m.entr,
+        m.detr,
+        m.U.present,
+        m.V.present,
+        m.drho,
+        m.D.present,
+        m.tmask,
+        coeff,
+        drho_coeff,
+        ny,
+        nx,
+    )
 end
 
 # TODO formula should be tex
@@ -287,11 +346,30 @@ detrainment correction (Lambert et al. 2023, Eq. 12).
 """
 function _compute_entrainment!(m, ep::GasparEntrainment)
     mu2_over_g = (ep.mu + ep.mu) / m.g
-    launch!(_gaspar_entrainment_kernel!, m.entr,
-        m.Sb, m.drhob, m.ent, m.entr, m.detr,
-        m.T.present, m.S.present, m.Tb, m.zb,
-        m.ustar, m.D.present, m.drho, m.melt, m.tmask,
-        mu2_over_g, m.maxdetr, m.alpha, m.beta, m.l1, m.l2, m.l3,
+    launch!(
+        _gaspar_entrainment_kernel!,
+        m.entr,
+        m.Sb,
+        m.drhob,
+        m.ent,
+        m.entr,
+        m.detr,
+        m.T.present,
+        m.S.present,
+        m.Tb,
+        m.zb,
+        m.ustar,
+        m.D.present,
+        m.drho,
+        m.melt,
+        m.tmask,
+        mu2_over_g,
+        m.maxdetr,
+        m.alpha,
+        m.beta,
+        m.l1,
+        m.l2,
+        m.l3,
     )
 end
 
@@ -303,28 +381,40 @@ Compute entrainment/detrainment rates and the minimum-D correction term `ent2`,
 then set `m.nentr = entr + ent2 − detr` (Lambert et al. 2023, Sect. 2.3).
 """
 function update_entrainment!(m)
-    FT  = m.FT
+    FT = m.FT
     _compute_entrainment!(m, m.entpar)
     convT(m.convD, m, m.D.present)
-    z   = zero(FT)
+    z = zero(FT)
     dt2 = m.dt + m.dt
-    @. m.ent2  = max(z, (m.minD - m.D.past) / dt2 - (m.convD + m.melt + m.entr - m.detr)) * m.tmask
+    @. m.ent2 =
+        max(z, (m.minD - m.D.past) / dt2 - (m.convD + m.melt + m.entr - m.detr)) *
+        m.tmask
     @. m.nentr = m.entr + m.ent2 - m.detr
     return
 end
 
 # Friction velocity at the T-point: |u|_T = √(Cd_top · (im_half(U)² + jm_half(V)² + u_tide²))
 # im_half(U)[i,j] = (U[i,j] + U[i,j−1]) / 2,  jm_half(V)[i,j] = (V[i,j] + V[i−1,j]) / 2
-@kernel function _ustar_kernel!(ustar, @Const(U), @Const(V), @Const(tmask), Cdtop, utide, Ny, Nx)
+@kernel function _ustar_kernel!(
+    ustar,
+    @Const(U),
+    @Const(V),
+    @Const(tmask),
+    Cdtop,
+    utide,
+    Ny,
+    Nx,
+)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        FT   = typeof(Cdtop)
+        FT = typeof(Cdtop)
         half = FT(1) / (FT(1) + FT(1))
-        w    = _west(j, Nx)
-        s    = _south(i, Ny)
+        w = _west(j, Nx)
+        s = _south(i, Ny)
         u_im = (U[i, j] + U[i, w]) * half
         v_jm = (V[i, j] + V[s, j]) * half
-        ustar[i, j] = sqrt(Cdtop * (u_im * u_im + v_jm * v_jm + utide * utide)) * tmask[i, j]
+        ustar[i, j] =
+            sqrt(Cdtop * (u_im * u_im + v_jm * v_jm + utide * utide)) * tmask[i, j]
     end
 end
 
@@ -333,24 +423,42 @@ end
 # division is safe. D*drho_pos can be zero where D=0 (outside domain), so _safe_div is
 # used for the ustar³/(D·δρ) term.
 @kernel function _gaspar_entrainment_kernel!(
-    Sb, drhob, ent, entr, detr,
-    @Const(T), @Const(S), @Const(Tb), @Const(zb),
-    @Const(ustar), @Const(D), @Const(drho), @Const(melt), @Const(tmask),
-    mu2_over_g, maxdetr, alpha, beta, l1, l2, l3,
+    Sb,
+    drhob,
+    ent,
+    entr,
+    detr,
+    @Const(T),
+    @Const(S),
+    @Const(Tb),
+    @Const(zb),
+    @Const(ustar),
+    @Const(D),
+    @Const(drho),
+    @Const(melt),
+    @Const(tmask),
+    mu2_over_g,
+    maxdetr,
+    alpha,
+    beta,
+    l1,
+    l2,
+    l3,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        FT       = typeof(mu2_over_g)
+        FT = typeof(mu2_over_g)
         drho_pos = max(FT(0.0001), drho[i, j])
-        sb       = (Tb[i, j] - l2 - l3 * zb[i, j]) / l1
+        sb = (Tb[i, j] - l2 - l3 * zb[i, j]) / l1
         Sb[i, j] = sb
-        db_ij    = (beta * (S[i, j] - sb) - alpha * (T[i, j] - Tb[i, j])) * tmask[i, j]
+        db_ij = (beta * (S[i, j] - sb) - alpha * (T[i, j] - Tb[i, j])) * tmask[i, j]
         drhob[i, j] = db_ij
-        us3      = ustar[i, j]^3
-        e_ij     = mu2_over_g * _safe_div(us3, D[i, j] * drho_pos) -
-                   db_ij / drho_pos * melt[i, j] * tmask[i, j]
-        ent[i, j]  = e_ij
-        z          = zero(FT)
+        us3 = ustar[i, j]^3
+        e_ij =
+            mu2_over_g * _safe_div(us3, D[i, j] * drho_pos) -
+            db_ij / drho_pos * melt[i, j] * tmask[i, j]
+        ent[i, j] = e_ij
+        z = zero(FT)
         entr[i, j] = max(e_ij, z)
         detr[i, j] = min(maxdetr, max(-e_ij, z))
     end
@@ -358,38 +466,58 @@ end
 
 # Holland–Jenkins entrainment fused with im/jm: avoids two circshift allocations.
 @kernel function _holland_entrainment_kernel!(
-    entr, detr,
-    @Const(U), @Const(V), @Const(drho), @Const(D), @Const(tmask),
-    coeff, drho_coeff, Ny, Nx,
+    entr,
+    detr,
+    @Const(U),
+    @Const(V),
+    @Const(drho),
+    @Const(D),
+    @Const(tmask),
+    coeff,
+    drho_coeff,
+    Ny,
+    Nx,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        FT   = typeof(coeff)
+        FT = typeof(coeff)
         half = FT(1) / (FT(1) + FT(1))
-        w    = _west(j, Nx)
-        s    = _south(i, Ny)
+        w = _west(j, Nx)
+        s = _south(i, Ny)
         u_im = (U[i, j] + U[i, w]) * half
         v_jm = (V[i, j] + V[s, j]) * half
-        speed_sq = max(zero(FT), u_im * u_im + v_jm * v_jm - drho_coeff * drho[i, j] * D[i, j])
+        speed_sq =
+            max(zero(FT), u_im * u_im + v_jm * v_jm - drho_coeff * drho[i, j] * D[i, j])
         entr[i, j] = coeff * sqrt(speed_sq) * tmask[i, j]
         detr[i, j] = zero(FT)
     end
 end
 
 @kernel function _upwind_split_kernel!(
-    Upos, Uneg, Vpos, Vneg,
-    Vyp1pos, Vyp1neg, Uxp1pos, Uxp1neg,
-    @Const(U), @Const(V), @Const(Vyp1), @Const(Uxp1),
+    Upos,
+    Uneg,
+    Vpos,
+    Vneg,
+    Vyp1pos,
+    Vyp1neg,
+    Uxp1pos,
+    Uxp1neg,
+    @Const(U),
+    @Const(V),
+    @Const(Vyp1),
+    @Const(Uxp1),
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        z    = zero(eltype(U))
-        u    = U[i, j];    v   = V[i, j]
-        vy1  = Vyp1[i, j]; ux1 = Uxp1[i, j]
-        Upos[i, j]    = max(u,   z)
-        Uneg[i, j]    = min(u,   z)
-        Vpos[i, j]    = max(v,   z)
-        Vneg[i, j]    = min(v,   z)
+        z = zero(eltype(U))
+        u = U[i, j];
+        v = V[i, j]
+        vy1 = Vyp1[i, j];
+        ux1 = Uxp1[i, j]
+        Upos[i, j] = max(u, z)
+        Uneg[i, j] = min(u, z)
+        Vpos[i, j] = max(v, z)
+        Vneg[i, j] = min(v, z)
         Vyp1pos[i, j] = max(vy1, z)
         Vyp1neg[i, j] = min(vy1, z)
         Uxp1pos[i, j] = max(ux1, z)

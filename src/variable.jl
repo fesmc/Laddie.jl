@@ -17,16 +17,16 @@ located at staggering position `(LX, LY)` on the C-grid.
 `to_backend` returns a new `Var` with a different `A`; the struct itself is
 never mutated to hold a different array type.
 """
-mutable struct Var{LX, LY, FT, A<:AbstractMatrix{FT}}
-    past   ::A
+mutable struct Var{LX,LY,FT,A<:AbstractMatrix{FT}}
+    past::A
     present::A
-    future ::A
+    future::A
 end
 
-Var(::Type{LX}, ::Type{LY}, ::Type{FT}, ny, nx) where {LX, LY, FT} =
-    Var{LX, LY, FT, Matrix{FT}}(zeros(FT, ny, nx), zeros(FT, ny, nx), zeros(FT, ny, nx))
+Var(::Type{LX}, ::Type{LY}, ::Type{FT}, ny, nx) where {LX,LY,FT} =
+    Var{LX,LY,FT,Matrix{FT}}(zeros(FT, ny, nx), zeros(FT, ny, nx), zeros(FT, ny, nx))
 
-Var(::Type{LX}, ::Type{LY}, ny, nx) where {LX, LY} = Var(LX, LY, Float64, ny, nx)
+Var(::Type{LX}, ::Type{LY}, ny, nx) where {LX,LY} = Var(LX, LY, Float64, ny, nx)
 
 function rotate!(v::Var)
     v.past, v.present, v.future = v.present, v.future, v.past

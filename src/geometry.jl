@@ -46,18 +46,7 @@ function TanhForcing(
     drho = FT(drho0) .* sqrt.(abs.(z))
     Tz = @. FT(T1) + (T0 - FT(T1)) * (1 + tanh((z - FT(forc_z0)) / FT(forc_z1))) / 2
     Sz = @. FT(S0) + FT(alpha) * (Tz - T0) / FT(beta) + drho / (FT(beta) * FT(rho0))
-    TanhForcing(
-        Tz,
-        Sz,
-        z,
-        dz,
-        z0,
-        FT(S0),
-        FT(T1),
-        FT(forc_z0),
-        FT(forc_z1),
-        FT(drho0),
-    )
+    TanhForcing(Tz, Sz, z, dz, z0, FT(S0), FT(T1), FT(forc_z0), FT(forc_z1), FT(drho0))
 end
 
 function _load_file_profiles(forcfile::String, forcfile_T::String, forcfile_S::String)
@@ -114,17 +103,32 @@ data = readdlm("profile-T.csv", ',', skipstart = 1)
 forcing = ProfileForcing(data[:, 1], S_values, data[:, 2] .* 1e3)
 ```
 """
-function ProfileForcing(Tz::AbstractVector, Sz::AbstractVector, z::AbstractVector; FT = Float64)
-    length(Tz) == length(z) || throw(ArgumentError(
-        "Tz and z must have the same length, got $(length(Tz)) vs $(length(z))"))
-    length(Sz) == length(z) || throw(ArgumentError(
-        "Sz and z must have the same length, got $(length(Sz)) vs $(length(z))"))
+function ProfileForcing(
+    Tz::AbstractVector,
+    Sz::AbstractVector,
+    z::AbstractVector;
+    FT = Float64,
+)
+    length(Tz) == length(z) || throw(
+        ArgumentError(
+            "Tz and z must have the same length, got $(length(Tz)) vs $(length(z))",
+        ),
+    )
+    length(Sz) == length(z) || throw(
+        ArgumentError(
+            "Sz and z must have the same length, got $(length(Sz)) vs $(length(z))",
+        ),
+    )
     isempty(z) && throw(ArgumentError("profile vectors must be non-empty"))
     p = sortperm(Float64.(z))
-    z_s = Float64.(z[p]); T_s = Float64.(Tz[p]); S_s = Float64.(Sz[p])
+    z_s = Float64.(z[p]);
+    T_s = Float64.(Tz[p]);
+    S_s = Float64.(Sz[p])
     # Drop duplicate depths (keep first occurrence) so _interp1d never divides by zero.
     keep = [k == 1 || z_s[k] != z_s[k-1] for k in eachindex(z_s)]
-    z_s = z_s[keep]; T_s = T_s[keep]; S_s = S_s[keep]
+    z_s = z_s[keep];
+    T_s = T_s[keep];
+    S_s = S_s[keep]
     if length(z_s) > 1 && all(≈(1.0), diff(z_s))
         z_new, T_new, S_new = z_s, T_s, S_s
     else
@@ -220,15 +224,18 @@ mask = build_laddie_mask(z_bed, h_ice)
 """
 function build_laddie_mask(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
     ny, nx = size(bed)
-    size(bed) == size(thickness) || throw(ArgumentError(
-        "bed and thickness must have the same size, got $(size(bed)) vs $(size(thickness))"))
+    size(bed) == size(thickness) || throw(
+        ArgumentError(
+            "bed and thickness must have the same size, got $(size(bed)) vs $(size(thickness))",
+        ),
+    )
     mask = zeros(Int, ny + 2, nx + 2)
-    mask[1, :]   .= 1
+    mask[1, :] .= 1
     mask[end, :] .= 1
-    mask[:, 1]   .= 1
+    mask[:, 1] .= 1
     mask[:, end] .= 1
     r = rho_ice / rho_sw
-    for j in 1:nx, i in 1:ny
+    for j = 1:nx, i = 1:ny
         h = Float64(thickness[i, j])
         b = Float64(bed[i, j])
         if h > 0
@@ -259,11 +266,14 @@ very shallow shelf cells and zero the ice-front ocean strip.
 """
 function ice_base_depth(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
     ny, nx = size(bed)
-    size(bed) == size(thickness) || throw(ArgumentError(
-        "bed and thickness must have the same size, got $(size(bed)) vs $(size(thickness))"))
+    size(bed) == size(thickness) || throw(
+        ArgumentError(
+            "bed and thickness must have the same size, got $(size(bed)) vs $(size(thickness))",
+        ),
+    )
     zb = zeros(Float64, ny + 2, nx + 2)
     r = rho_ice / rho_sw
-    for j in 1:nx, i in 1:ny
+    for j = 1:nx, i = 1:ny
         h = Float64(thickness[i, j])
         b = Float64(bed[i, j])
         if h > 0

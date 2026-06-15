@@ -45,13 +45,13 @@ Select via `Params(; tstep = AdaptiveDt())`; override fields as needed, e.g.
 `AdaptiveDt(; cfl_target = 0.4, ncheck = 10)`.
 """
 struct AdaptiveDt{FT} <: AbstractTimeStepper
-    cfl_target :: FT     # CFL setpoint the controller aims for
-    q          :: FT     # response exponent (1 = CFL-exact, <1 damps)
-    max_growth :: FT     # max dt increase per adjustment (e.g. 1.1 = +10%)
-    grow_hyst  :: FT     # grow only when cfl < grow_hyst · cfl_target
-    ncheck     :: Int    # steps between CFL checks
-    dtmin      :: FT     # lower clamp on dt (s)
-    dtmax      :: FT     # upper clamp on dt (s)
+    cfl_target::FT     # CFL setpoint the controller aims for
+    q::FT     # response exponent (1 = CFL-exact, <1 damps)
+    max_growth::FT     # max dt increase per adjustment (e.g. 1.1 = +10%)
+    grow_hyst::FT     # grow only when cfl < grow_hyst · cfl_target
+    ncheck::Int    # steps between CFL checks
+    dtmin::FT     # lower clamp on dt (s)
+    dtmax::FT     # upper clamp on dt (s)
 end
 
 """
@@ -61,17 +61,24 @@ Keyword constructor for [`AdaptiveDt`](@ref); all scalar fields are converted
 to `FT`.  Defaults are conservative ISOMIP+-scale values.
 """
 function AdaptiveDt(;
-    FT         = Float64,
+    FT = Float64,
     cfl_target = 0.5,
-    q          = 1.0,
+    q = 1.0,
     max_growth = 1.1,
-    grow_hyst  = 0.8,
-    ncheck     = 20,
-    dtmin      = 1.0,
-    dtmax      = 1000.0,
+    grow_hyst = 0.8,
+    ncheck = 20,
+    dtmin = 1.0,
+    dtmax = 1000.0,
 )
-    AdaptiveDt{FT}(FT(cfl_target), FT(q), FT(max_growth), FT(grow_hyst),
-                   Int(ncheck), FT(dtmin), FT(dtmax))
+    AdaptiveDt{FT}(
+        FT(cfl_target),
+        FT(q),
+        FT(max_growth),
+        FT(grow_hyst),
+        Int(ncheck),
+        FT(dtmin),
+        FT(dtmax),
+    )
 end
 
 # (Float-type promotion of the stepper to match Params{FT} is handled generically
@@ -83,7 +90,9 @@ end
 # small initial CFL (e.g. zero velocity at t = 0) can never inflate dt0.
 function _controller_dt(ts::AdaptiveDt, dt, cfl; allow_grow::Bool)
     target = Float64(ts.cfl_target)
-    dt = Float64(dt); dtmin = Float64(ts.dtmin); dtmax = Float64(ts.dtmax)
+    dt = Float64(dt);
+    dtmin = Float64(ts.dtmin);
+    dtmax = Float64(ts.dtmax)
     (cfl > 0 && isfinite(cfl)) || return clamp(dt, dtmin, dtmax)
     if cfl > target                                            # above target → shrink now
         dtn = dt * (target / cfl)^Float64(ts.q)

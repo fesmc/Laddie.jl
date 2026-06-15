@@ -1,5 +1,6 @@
 # Properties resolved before the field-forwarding chain in getproperty.
-const _RESERVED_PROPS = (:io, :rc, :grid, :state, :cache, :params, :forcing, :FT, :ny, :nx)
+const _RESERVED_PROPS =
+    (:io, :rc, :grid, :state, :cache, :params, :forcing, :FT, :ny, :nx)
 
 # The flat forwarding layer resolves `m.field` by searching the sub-structs in
 # a fixed order, so a field name appearing in two of them would be silently
@@ -7,16 +8,23 @@ const _RESERVED_PROPS = (:io, :rc, :grid, :state, :cache, :params, :forcing, :FT
 # this matters mostly for user-defined AbstractForcing types.  Called from the
 # inner constructor so no construction path can bypass it.
 function _check_property_collisions(io, rc, grid, state, cache, params, forcing)
-    seen = Dict{Symbol, String}()
+    seen = Dict{Symbol,String}()
     for (label, x) in (
-        ("Grid", grid), ("State", state), ("Cache", cache), ("Params", params),
-        ("RunConfig", rc), (string(nameof(typeof(forcing))), forcing), ("IOState", io),
+        ("Grid", grid),
+        ("State", state),
+        ("Cache", cache),
+        ("Params", params),
+        ("RunConfig", rc),
+        (string(nameof(typeof(forcing))), forcing),
+        ("IOState", io),
     )
         for fn in fieldnames(typeof(x))
             fn in _RESERVED_PROPS && error(
-                "field `$fn` of $label collides with the reserved Model property `$fn`")
+                "field `$fn` of $label collides with the reserved Model property `$fn`",
+            )
             haskey(seen, fn) && error(
-                "Model property forwarding is ambiguous: field `$fn` exists in both $(seen[fn]) and $label")
+                "Model property forwarding is ambiguous: field `$fn` exists in both $(seen[fn]) and $label",
+            )
             seen[fn] = label
         end
     end
@@ -48,54 +56,51 @@ Fields are accessed directly on `m` through a flat forwarding layer:
 `Grid` and `Params` are immutable after construction.  `Cache`, `State`, and
 `IOState` fields are mutable and updated in place each time step.
 """
-mutable struct Model{
-    FT,
-    A<:AbstractMatrix{FT},
-    F<:AbstractForcing,
-    P<:Params{FT},
-    C<:Cache,
-}
-    io     :: IOState{FT, A}
-    rc     :: RunConfig
-    grid   :: Grid{FT, A}
-    state  :: State{FT, A}
-    cache  :: C
-    params :: P
-    forcing:: F
+mutable struct Model{FT,A<:AbstractMatrix{FT},F<:AbstractForcing,P<:Params{FT},C<:Cache}
+    io::IOState{FT,A}
+    rc::RunConfig
+    grid::Grid{FT,A}
+    state::State{FT,A}
+    cache::C
+    params::P
+    forcing::F
 
-    function Model{FT, A, F, P, C}(
-        io, rc, grid, state, cache, params, forcing,
-    ) where {
-        FT, A<:AbstractMatrix{FT}, F<:AbstractForcing,
-        P<:Params{FT}, C<:Cache,
-    }
+    function Model{FT,A,F,P,C}(
+        io,
+        rc,
+        grid,
+        state,
+        cache,
+        params,
+        forcing,
+    ) where {FT,A<:AbstractMatrix{FT},F<:AbstractForcing,P<:Params{FT},C<:Cache}
         _check_property_collisions(io, rc, grid, state, cache, params, forcing)
-        new{FT, A, F, P, C}(io, rc, grid, state, cache, params, forcing)
+        new{FT,A,F,P,C}(io, rc, grid, state, cache, params, forcing)
     end
 end
 
 function Model(
-    io     ::IOState{FT, A},
-    rc     ::RunConfig,
-    grid   ::Grid{FT, A},
-    state  ::State{FT, A},
-    cache  ::C,
-    params ::P,
+    io::IOState{FT,A},
+    rc::RunConfig,
+    grid::Grid{FT,A},
+    state::State{FT,A},
+    cache::C,
+    params::P,
     forcing::F,
-) where {FT, A, C<:Cache, F<:AbstractForcing, P<:Params{FT}}
-    Model{FT, A, F, P, C}(io, rc, grid, state, cache, params, forcing)
+) where {FT,A,C<:Cache,F<:AbstractForcing,P<:Params{FT}}
+    Model{FT,A,F,P,C}(io, rc, grid, state, cache, params, forcing)
 end
 
 function Base.getproperty(m::Model{FT}, k::Symbol) where {FT}
     # Direct struct fields — fast path
-    k === :io      && return getfield(m, :io)
-    k === :rc      && return getfield(m, :rc)
-    k === :grid    && return getfield(m, :grid)
-    k === :state   && return getfield(m, :state)
-    k === :cache   && return getfield(m, :cache)
-    k === :params  && return getfield(m, :params)
+    k === :io && return getfield(m, :io)
+    k === :rc && return getfield(m, :rc)
+    k === :grid && return getfield(m, :grid)
+    k === :state && return getfield(m, :state)
+    k === :cache && return getfield(m, :cache)
+    k === :params && return getfield(m, :params)
     k === :forcing && return getfield(m, :forcing)
-    k === :FT      && return FT
+    k === :FT && return FT
     # Interior dimensions derived from grid (total minus 2 border cells)
     k === :ny && return getfield(m, :grid).Ny - 2
     k === :nx && return getfield(m, :grid).Nx - 2

@@ -67,6 +67,20 @@ FreeSlipGL
 NoSlipGL
 ```
 
+#### Time stepping
+
+```@docs
+FixedDt
+AdaptiveDt
+```
+
+#### Simulation end
+
+```@docs
+FixedSimulationEnd
+SteadyStateEnd
+```
+
 ### Ambient forcing
 
 ```@docs

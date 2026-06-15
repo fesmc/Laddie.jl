@@ -12,10 +12,10 @@
 
 # Arithmetic-mean interpolation to cell-face midpoints.
 # Naming convention: `im` = value at i−½, `ip` = i+½, `jm` = j−½, `jp` = j+½.
-im(a) = (a .+ xp1(a)) ./ (one(eltype(a)) + one(eltype(a)))
-ip(a) = (a .+ xm1(a)) ./ (one(eltype(a)) + one(eltype(a)))
-jm(a) = (a .+ yp1(a)) ./ (one(eltype(a)) + one(eltype(a)))
-jp(a) = (a .+ ym1(a)) ./ (one(eltype(a)) + one(eltype(a)))
+im_half(a) = (a .+ xp1(a)) ./ 2
+ip_half(a) = (a .+ xm1(a)) ./ 2
+jm_half(a) = (a .+ yp1(a)) ./ 2
+jp_half(a) = (a .+ ym1(a)) ./ 2
 
 # Safe division: returns 0 where the denominator is zero.
 div0(a, b) = ifelse.(b .== 0, zero(eltype(a)), a ./ b)

@@ -435,7 +435,7 @@ function step_thickness(m, dt)
 end
 function step_u_momentum(m, dt)
     convU(m)
-    lapU(m)
+    laplace_U(m)
     ny, nx = size(m.U.future)
     launch!(
         _step_u_momentum_kernel!,
@@ -469,7 +469,7 @@ function step_u_momentum(m, dt)
 end
 function step_v_momentum(m, dt)
     convV(m)
-    lapV(m)
+    laplace_V(m)
     ny, nx = size(m.V.future)
     launch!(
         _step_v_momentum_kernel!,
@@ -520,7 +520,7 @@ _launch_S!(args, Kh, conv2::AbstractArray, dt) =
 function step_temperature(m, dt)
     @. m.DT = m.D.present * m.T.present
     convT(m.cT, m, m.DT)
-    lapT(m.lT, m, m.T.past)
+    laplace_T(m.lT, m, m.T.past)
     args = (
         m.T.future,
         m.T.future,
@@ -542,7 +542,7 @@ end
 function step_salinity(m, dt)
     @. m.DS = m.D.present * m.S.present
     convT(m.cS, m, m.DS)
-    lapT(m.lS, m, m.S.past)
+    laplace_T(m.lS, m, m.S.past)
     args = (
         m.S.future,
         m.S.future,
@@ -569,6 +569,22 @@ function leapfrog_step!(m, nsteps)
     step_v_momentum(m, dt)
     step_temperature(m, dt)
     step_salinity(m, dt)
+    return
+end
+
+# Re-initialise the leapfrog after a dt change: collapse the `past` level onto
+# `present` so the two are co-located in time, refresh secondary fields, then
+# take one first-order step at the new dt.  Structurally identical to the
+# bootstrap that ends `_initialize_prognostics!`/`init_from_restart!`, so the
+# next `advance_leapfrog!` rotation leaves a past/present pair separated by the
+# new dt and the following centred `leapfrog_step!(m, 2)` is consistent.  The
+# anchor is the Robert–Asselin-filtered `present`, exactly as at startup.
+function _rebootstrap_leapfrog!(m)
+    for var in (m.D, m.U, m.V, m.T, m.S)
+        var.past .= var.present
+    end
+    update_secondary_fields!(m)
+    leapfrog_step!(m, 1)
     return
 end
 

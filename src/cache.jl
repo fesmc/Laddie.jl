@@ -1,4 +1,3 @@
-
 # ============================================================================
 # Cache{FT, A, GamT, Conv2} — pre-allocated diagnostic + stencil scratch arrays.
 # A    is the concrete matrix type (matches Grid and State).
@@ -28,7 +27,7 @@ mutable struct Cache{FT, A<:AbstractMatrix{FT}, GamT, Conv2}
     signU::A; signV::A
     # Laplacian stencil temporaries
     D0ip::A; D0im::A; D0jp::A; D0jm::A
-    # lapU/lapV thickness grids (D0ip/D0jp * tmask, precomputed with laplacian stencils)
+    # laplace_U/laplace_V thickness grids (D0ip/D0jp * tmask, precomputed with laplacian stencils)
     D_on_ugrid::A; D_on_vgrid::A
     # Stencil output arrays (eliminate similar() per step)
     cU::A; cV::A; cT::A; cS::A

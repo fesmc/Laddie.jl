@@ -129,6 +129,8 @@ end
     end
 end
 
+# TODO can I rm Dxm1, Dym1... etc? Would free up cache,
+# prevent memory access and make function signature legible
 @kernel function _convU_kernel!(
     out,
     @Const(D),
@@ -253,7 +255,7 @@ end
     end
 end
 
-@kernel function _lapU_kernel!(
+@kernel function _laplace_U_kernel!(
     out,
     @Const(var),
     @Const(D0),
@@ -300,7 +302,7 @@ end
     end
 end
 
-@kernel function _lapV_kernel!(
+@kernel function _laplace_V_kernel!(
     out,
     @Const(var),
     @Const(D0),
@@ -486,7 +488,7 @@ function convV(m)
     )
     return m.cV
 end
-function lapT(out, m, var)
+function laplace_T(out, m, var)
     ny, nx = size(var)
     launch!(
         _lapT_kernel!,
@@ -508,11 +510,11 @@ function lapT(out, m, var)
     )
     return out
 end
-function lapU(m)
+function laplace_U(m)
     ny, nx = size(m.U.past)
     dslip = _gl_slip(m.glbc, m.slip) - m.slip
     launch!(
-        _lapU_kernel!,
+        _laplace_U_kernel!,
         m.lU,
         m.lU,
         m.U.past,
@@ -537,11 +539,11 @@ function lapU(m)
     )
     return m.lU
 end
-function lapV(m)
+function laplace_V(m)
     ny, nx = size(m.V.past)
     dslip = _gl_slip(m.glbc, m.slip) - m.slip
     launch!(
-        _lapV_kernel!,
+        _laplace_V_kernel!,
         m.lV,
         m.lV,
         m.V.past,

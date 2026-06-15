@@ -52,11 +52,7 @@ mutable struct Model{
     FT,
     A<:AbstractMatrix{FT},
     F<:AbstractForcing,
-    EP<:AbstractEntrainmentParam,
-    MP<:AbstractMeltParam,
-    CS<:AbstractConvectionScheme,
-    OB<:AbstractOpenBoundary,
-    GL<:AbstractGroundingLineBC,
+    P<:Params{FT},
     C<:Cache,
 }
     io     :: IOState{FT, A}
@@ -64,19 +60,17 @@ mutable struct Model{
     grid   :: Grid{FT, A}
     state  :: State{FT, A}
     cache  :: C
-    params :: Params{FT, EP, MP, CS, OB, GL}
+    params :: P
     forcing:: F
 
-    function Model{FT, A, F, EP, MP, CS, OB, GL, C}(
+    function Model{FT, A, F, P, C}(
         io, rc, grid, state, cache, params, forcing,
     ) where {
         FT, A<:AbstractMatrix{FT}, F<:AbstractForcing,
-        EP<:AbstractEntrainmentParam, MP<:AbstractMeltParam,
-        CS<:AbstractConvectionScheme, OB<:AbstractOpenBoundary,
-        GL<:AbstractGroundingLineBC, C<:Cache,
+        P<:Params{FT}, C<:Cache,
     }
         _check_property_collisions(io, rc, grid, state, cache, params, forcing)
-        new{FT, A, F, EP, MP, CS, OB, GL, C}(io, rc, grid, state, cache, params, forcing)
+        new{FT, A, F, P, C}(io, rc, grid, state, cache, params, forcing)
     end
 end
 
@@ -86,10 +80,10 @@ function Model(
     grid   ::Grid{FT, A},
     state  ::State{FT, A},
     cache  ::C,
-    params ::Params{FT, EP, MP, CS, OB, GL},
+    params ::P,
     forcing::F,
-) where {FT, A, C<:Cache, F<:AbstractForcing, EP, MP, CS, OB, GL}
-    Model{FT, A, F, EP, MP, CS, OB, GL, C}(io, rc, grid, state, cache, params, forcing)
+) where {FT, A, C<:Cache, F<:AbstractForcing, P<:Params{FT}}
+    Model{FT, A, F, P, C}(io, rc, grid, state, cache, params, forcing)
 end
 
 function Base.getproperty(m::Model{FT}, k::Symbol) where {FT}

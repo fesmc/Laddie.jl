@@ -1,5 +1,5 @@
 # ============================================================================
-# Params{FT,EP,MP,CS,OB,GL} — all scalar physical constants + parameterization
+# Params{FT,EP,MP,CS,OB,GL,TS} — all scalar physical constants + parameterization
 # objects bundled in one immutable typed struct.
 # ============================================================================
 
@@ -10,9 +10,11 @@ struct Params{
     CS<:AbstractConvectionScheme,
     OB<:AbstractOpenBoundary,
     GL<:AbstractGroundingLineBC,
+    TS<:AbstractTimeStepper,
 }
-    # Time stepping
-    dt::FT
+    # Time stepping (dt0 is the initial step; the runtime dt lives in IOState
+    # so it can vary under adaptive time stepping — `m.dt` resolves there)
+    dt0::FT
     nu::FT
     # Dynamics
     g::FT
@@ -50,6 +52,21 @@ struct Params{
     convpar::CS
     openbc::OB
     glbc::GL
+    tstep::TS
+end
+
+# Promote a parameterization object's floating-point fields to FT so it stays
+# consistent with Params{FT} (e.g. Params(; FT = Float32, meltpar = FixedGamT(...))
+# where the default object was built at Float64).  Integer fields (such as
+# AdaptiveDt's ncheck) and field-less singletons (open/grounding-line BCs) pass
+# through unchanged.  Generic over the field list, so new parameterization types
+# are handled automatically.
+_to_ft(v::AbstractFloat, ::Type{FT}) where {FT} = FT(v)
+_to_ft(v, ::Type) = v
+function _promote_param(x, ::Type{FT}) where {FT}
+    fieldcount(typeof(x)) == 0 && return x
+    ctor = Base.typename(typeof(x)).wrapper
+    return ctor(ntuple(i -> _to_ft(getfield(x, i), FT), fieldcount(typeof(x)))...)
 end
 
 """
@@ -98,17 +115,25 @@ function Params(;
     convpar = ResetToAmbient(0.005),
     openbc  = ZeroGradientInflow(),
     glbc    = FreeSlipGL(),
+    tstep   = FixedDt(),
 )
+    # Keep every parameterization object's precision aligned with Params{FT}.
+    entpar  = _promote_param(entpar,  FT)
+    meltpar = _promote_param(meltpar, FT)
+    convpar = _promote_param(convpar, FT)
+    openbc  = _promote_param(openbc,  FT)
+    glbc    = _promote_param(glbc,    FT)
+    tstep   = _promote_param(tstep,   FT)
     EP = typeof(entpar); MP = typeof(meltpar)
     CS = typeof(convpar); OB = typeof(openbc)
-    GL = typeof(glbc)
-    Params{FT, EP, MP, CS, OB, GL}(
+    GL = typeof(glbc); TS = typeof(tstep)
+    Params{FT, EP, MP, CS, OB, GL, TS}(
         FT(dt), FT(nu), FT(g), FT(f), FT(slip), FT(Cd), FT(Cdtop),
         FT(Ah), FT(Kh), FT(maxdetr), FT(minD), FT(vcut),
         FT(utide), FT(Ti), FT(rhofw), FT(rho0), FT(rhoi),
         FT(L), FT(cp), FT(ci),
         FT(alpha), FT(beta), FT(l1), FT(l2), FT(l3),
         FT(Dinit), FT(dTinit), FT(dSinit),
-        entpar, meltpar, convpar, openbc, glbc,
+        entpar, meltpar, convpar, openbc, glbc, tstep,
     )
 end

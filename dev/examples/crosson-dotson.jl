@@ -78,22 +78,74 @@ heatmap!(ax2, z_bed_grounded ./ 1f3, colormap = cmap_grounded, colorrange = (-1,
 heatmap!(ax2, zb ./ 1f3, colormap = cmap_shelfbase, colorrange = (-2, 0))
 fig_map
 
-h_af = h_above_flotation.(z_bed, h_ice)
-z_base = ice_base.(z_bed, h_ice, h_af)
-shelf_mask = h_ice .> 0 .&& h_af .< 0
 
-
-
-fig_map = Figure()
+# h_af = h_above_flotation.(z_bed, h_ice)
+# z_base = ice_base.(z_bed, h_ice, h_af)
+# shelf_mask = h_ice .> 0 .&& h_af .< 0
+# fig_map = Figure()
 
 
 # =============================================================================
-# Build and run model
+# Build and run model — snapshot all fields + masks every 5th step
 # =============================================================================
-params = Params(; FT = Float64)
+params = Params(; tstep = FixedDt())
 
 m = build_model(mask, zb, dx, dy, forcing, params)
-run!(m; days = 5.0)
+run!(m; days = 5)
+
+# The built-in periodic output (RunConfig `saveday`) writes day-AVERAGED fields
+# and names files by whole day, so a sub-daily cadence would overwrite a single
+# file.  For instantaneous per-step snapshots we step the model in 5-step chunks
+# and write our own NetCDF — all prognostics, the melt/entrainment fields, and
+# the masks — with a sequential filename.  Tune `nstep` / `total_days` below.
+outdir = joinpath("output", "crosson-dotson")
+mkpath(outdir)
+
+xc = collect((0:m.nx-1) .* dx)
+yc = collect((0:m.ny-1) .* dy)
+strip_halo(a) = Array(a)[2:end-1, 2:end-1]
+
+function save_snapshot(m, path, t_days)
+    NCDataset(path, "c") do ds
+        defDim(ds, "x", m.nx)
+        defDim(ds, "y", m.ny)
+        defVar(ds, "x", Float64, ("x",))[:] = xc
+        defVar(ds, "y", Float64, ("y",))[:] = yc
+        ds.attrib["time_days"] = t_days
+        fields = (
+            ("D",    m.D.present,          "m"),
+            ("U",    m.U.present,          "m s-1"),
+            ("V",    m.V.present,          "m s-1"),
+            ("T",    m.T.present,          "degC"),
+            ("S",    m.S.present,          "psu"),
+            ("melt", m.melt .* Laddie.spy, "m yr-1"),
+            ("entr", m.entr .* Laddie.spy, "m yr-1"),
+            ("ent2", m.ent2 .* Laddie.spy, "m yr-1"),
+            ("detr", m.detr .* Laddie.spy, "m yr-1"),
+            ("Tb",   m.Tb,                 "degC"),
+            ("Ta",   m.Ta,                 "degC"),
+            ("zb",   m.zb,                 "m"),
+        )
+        for (name, field, units) in fields
+            defVar(ds, name, Float64, ("y", "x"); attrib = ["units" => units])[:, :] =
+                strip_halo(field)
+        end
+        defVar(ds, "tmask", Int32, ("y", "x"))[:, :] = Int32.(strip_halo(m.tmask))
+        defVar(ds, "mask", Int32, ("y", "x"))[:, :] = Int32.(strip_halo(m.mask))
+    end
+end
+
+nstep      = 5                              # snapshot cadence (time steps)
+total_days = 5.0                            # total run length (days)
+chunk      = nstep * params.dt0 / 86400.0   # 5 steps expressed in days
+ndumps     = round(Int, total_days / chunk)
+
+save_snapshot(m, joinpath(outdir, "snap_00000.nc"), 0.0)   # initial state
+for k = 1:ndumps
+    @show k
+    run!(m; days = chunk, verbose = false)
+    save_snapshot(m, joinpath(outdir, "snap_$(lpad(k, 5, '0')).nc"), k * chunk)
+end
 
 mx, mn, sp = meltstats(m)
 println("max melt = $(round(mx, digits=2)) m/yr,  mean = $(round(mn, digits=2)) m/yr")

@@ -210,7 +210,7 @@ function build_isomip(
         isnothing(params) ?
         Params(;
             FT,
-            entpar = GasparEntrainment(FT(2.5)),
+            entpar = LambertEntrainment(FT(2.5)),
             meltpar = FixedGamT(FT(0.00018)),
             convpar = ResetToAmbient(FT(0.005)),
             openbc = ZeroGradientInflow(),

@@ -21,7 +21,7 @@ $(TYPEDSIGNATURES)
 
 Three-equation melt parameterisation with turbulence-dependent transfer
 coefficients γ_T and γ_S via the log-layer formulation
-(Holland & Jenkins 1999; Lambert et al. 2023, Eqs. 8–10).
+(Holland & Jenkins 1999; Lambert et al. 2023, Eqs. 11–12).
 
 - `Pr`:  Prandtl number (default `13.8`).
 - `Sc`:  Schmidt number (default `2432.0`).

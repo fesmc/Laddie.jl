@@ -127,10 +127,9 @@ end
 $(TYPEDSIGNATURES)
 
 Vertically interpolate the ambient T/S profiles to the depth of each grid cell's
-plume base (zb − D), writing results into `m.Ta` and `m.Sa`
-(Lambert et al. 2023, Eqs. A1–A2).
+plume base (zb − D), writing results into `m.Ta` and `m.Sa`. This sampling has
+no numbered equation in Lambert et al. (2023); see `docs/src/equations.md`.
 """
-# TODO no eq A1-A2
 function update_ambient_fields!(m)
     nz = length(m.z)
     launch!(
@@ -153,7 +152,7 @@ end
 update_freezing_temperature!(m) =
     launch!(_freezing_point_kernel!, m.Tf, m.Tf, m.S.present, m.zb, m.l1, m.l2, m.l3)
 
-"Linear EOS: δρ = β·(Sa − S) − α·(Ta − T)  (Lambert et al. 2023, Eq. 7)."
+"Reduced (dimensionless) density δρ = Δρₐ/ρ₀ = β·(Sa − S) − α·(Ta − T)  (Lambert et al. 2023, Eqs. 6–7)."
 update_density!(m) = launch!(
     _density_kernel!,
     m.drho,
@@ -221,7 +220,7 @@ end
 $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with a fixed heat transfer
-coefficient γ_T (Jenkins 1991; Lambert et al. 2023, Eqs. 8-12).
+coefficient γ_T (Jenkins 1991; Lambert et al. 2023, Eqs. 8–10 and 13).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::FixedGamT)
@@ -267,7 +266,7 @@ $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with turbulence-dependent
 transfer coefficients γ_T, γ_S via the log-layer formulation
-(Holland & Jenkins 1999; Lambert et al. 2023, Eqs. 8–12).
+(Holland & Jenkins 1999; Lambert et al. 2023, Eqs. 8–13).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::TurbulentGamT)
@@ -308,12 +307,12 @@ end
 
 update_melt!(m) = update_melt!(m, m.meltpar)
 
-# TODO formula should be tex
 """
 $(TYPEDSIGNATURES)
 
-Holland–Jenkins entrainment: e ∝ √max(0, |u|² − g·δρ·Kh/Ah·D)
-(Holland & Jenkins 1999; Lambert et al. 2023, Eq. 11).
+Holland–Jenkins shear entrainment: e ∝ √max(0, |u|² − gₐ′·Kh/Ah·D)
+(Holland & Jenkins 1999). This is an alternative to the Gaspar scheme of
+Lambert et al. (2023, Eq. 14); see `docs/src/equations.md`.
 """
 function _compute_entrainment!(m, ep::HollandEntrainment)
     coeff = ep.cl * m.Kh / m.Ah^2
@@ -336,18 +335,18 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
     )
 end
 
-# TODO formula should be tex
-# TODO make table with formula of Lambert et al.
 """
 $(TYPEDSIGNATURES)
 
-Gaspar (1988) mechanical-energy entrainment: e ∝ u★³ / (D·δρ) minus a melt
-detrainment correction (Lambert et al. 2023, Eq. 12).
+Reference-LADDIE mechanical-energy entrainment: e = 2μ·u★³/(g·D·δρ) minus a melt
+detrainment correction. This is the form verified against the Python reference
+(Lambert et al. 2023; see `docs/src/equations.md`). Contrast
+[`_compute_entrainment!`](@ref)`(m, ::GasparEntrainment)`, the literal Eq. 14.
 """
-function _compute_entrainment!(m, ep::GasparEntrainment)
+function _compute_entrainment!(m, ep::LambertEntrainment)
     mu2_over_g = (ep.mu + ep.mu) / m.g
     launch!(
-        _gaspar_entrainment_kernel!,
+        _lambert_entrainment_kernel!,
         m.entr,
         m.Sb,
         m.drhob,
@@ -373,12 +372,50 @@ function _compute_entrainment!(m, ep::GasparEntrainment)
     )
 end
 
-# TODO check ref
 """
 $(TYPEDSIGNATURES)
 
-Compute entrainment/detrainment rates and the minimum-D correction term `ent2`,
-then set `m.nentr = entr + ent2 − detr` (Lambert et al. 2023, Sect. 2.3).
+Literal Eq. 14 entrainment: e = μ·u★³/(g·D²·δρ) minus the same melt detrainment
+correction (Lambert et al. 2023, Eq. 14; see `docs/src/equations.md`). Differs
+from the reference [`LambertEntrainment`](@ref) by the `D²` denominator and the
+`μ` (not `2μ`) prefactor.
+"""
+function _compute_entrainment!(m, ep::GasparEntrainment)
+    mu_over_g = ep.mu / m.g
+    launch!(
+        _gaspar_entrainment_kernel!,
+        m.entr,
+        m.Sb,
+        m.drhob,
+        m.ent,
+        m.entr,
+        m.detr,
+        m.T.present,
+        m.S.present,
+        m.Tb,
+        m.zb,
+        m.ustar,
+        m.D.present,
+        m.drho,
+        m.melt,
+        m.tmask,
+        mu_over_g,
+        m.maxdetr,
+        m.alpha,
+        m.beta,
+        m.l1,
+        m.l2,
+        m.l3,
+    )
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Compute entrainment/detrainment rates and assemble the net entrainment
+`m.nentr = entr + ent2 − detr` that enters the thickness equation
+(Lambert et al. 2023, Eq. 1). `ent2` is a Laddie.jl minimum-thickness safeguard
+(D ≥ `minD`), not part of Lambert et al. (2023); see `docs/src/equations.md`.
 """
 function update_entrainment!(m)
     FT = m.FT
@@ -418,11 +455,12 @@ end
     end
 end
 
-# Gaspar (1988) entrainment: fuses Sb, drhob, drho_pos, ent, entr, detr into one pass.
+# Reference-LADDIE entrainment (Lambert et al. 2023): fuses Sb, drhob, drho_pos,
+# ent, entr, detr into one pass. Production term = 2μ·u★³/(g·D·δρ).
 # drho_pos = max(0.0001, drho) is computed inline — never zero — so the drhob/drho_pos
 # division is safe. D*drho_pos can be zero where D=0 (outside domain), so _safe_div is
 # used for the ustar³/(D·δρ) term.
-@kernel function _gaspar_entrainment_kernel!(
+@kernel function _lambert_entrainment_kernel!(
     Sb,
     drhob,
     ent,
@@ -464,6 +502,51 @@ end
     end
 end
 
+# Literal Eq. 14 entrainment: identical to _lambert_entrainment_kernel! except
+# the production term is μ·u★³/(g·D²·δρ) — a D² denominator and a μ (not 2μ)
+# prefactor. _safe_div guards D²·δρ = 0 outside the domain.
+@kernel function _gaspar_entrainment_kernel!(
+    Sb,
+    drhob,
+    ent,
+    entr,
+    detr,
+    @Const(T),
+    @Const(S),
+    @Const(Tb),
+    @Const(zb),
+    @Const(ustar),
+    @Const(D),
+    @Const(drho),
+    @Const(melt),
+    @Const(tmask),
+    mu_over_g,
+    maxdetr,
+    alpha,
+    beta,
+    l1,
+    l2,
+    l3,
+)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = typeof(mu_over_g)
+        drho_pos = max(FT(0.0001), drho[i, j])
+        sb = (Tb[i, j] - l2 - l3 * zb[i, j]) / l1
+        Sb[i, j] = sb
+        db_ij = (beta * (S[i, j] - sb) - alpha * (T[i, j] - Tb[i, j])) * tmask[i, j]
+        drhob[i, j] = db_ij
+        us3 = ustar[i, j]^3
+        e_ij =
+            mu_over_g * _safe_div(us3, D[i, j] * D[i, j] * drho_pos) -
+            db_ij / drho_pos * melt[i, j] * tmask[i, j]
+        ent[i, j] = e_ij
+        z = zero(FT)
+        entr[i, j] = max(e_ij, z)
+        detr[i, j] = min(maxdetr, max(-e_ij, z))
+    end
+end
+
 # Holland–Jenkins entrainment fused with im/jm: avoids two circshift allocations.
 @kernel function _holland_entrainment_kernel!(
     entr,
@@ -493,6 +576,7 @@ end
     end
 end
 
+# TODO feels like this could be removed altogether if reduced cache
 @kernel function _upwind_split_kernel!(
     Upos,
     Uneg,
@@ -525,6 +609,7 @@ end
     end
 end
 
+# TODO don't like this name, consider new one + add docstring
 function update_secondary_fields!(m)
     update_ambient_fields!(m)
     update_freezing_temperature!(m)
@@ -571,7 +656,6 @@ end
 #   Kh      horizontal diffusivity [m² s⁻¹]
 #   γT      turbulent heat transfer coefficient [m s⁻¹]
 # ============================================================================
-
 # -- U-momentum terms (Eq. 2) -----------------------------------------------
 
 # U·∂D/∂t  (thickness-tendency coupling)

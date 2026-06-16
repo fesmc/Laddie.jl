@@ -296,6 +296,25 @@ end
         @test all(m.melt[m.tmask .> 0] .>= 0)
     end
 
+    @testset "Entrainment: Lambert is default, Gaspar (literal Eq. 14) differs" begin
+        # LambertEntrainment reproduces the reference LADDIE production term
+        # (2μ u★³/(g D δρ)) and must be the default so the Python verification
+        # holds; GasparEntrainment is the literal Eq. 14 (μ u★³/(g D² δρ)).
+        @test build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold).entpar isa
+              LambertEntrainment
+        mk(ep) = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm,
+            params = Params(; FT, entpar = ep, meltpar = FixedGamT(FT(0.00018)),
+                            convpar = ResetToAmbient(FT(0.005))))
+        ml = mk(LambertEntrainment(FT(2.5)))
+        mg = mk(GasparEntrainment(FT(2.5)))
+        run!(ml; days=0.5, verbose=false)
+        run!(mg; days=0.5, verbose=false)
+        @test all(isfinite, ml.entr) && all(isfinite, mg.entr)
+        @test all(isfinite, ml.melt) && all(isfinite, mg.melt)
+        # Same μ but different production term ⇒ the entrainment fields diverge.
+        @test !isapprox(ml.entr, mg.entr)
+    end
+
     @testset "Grounding-line BC: FreeSlipGL bit-identical, NoSlipGL differs" begin
         # Explicit FreeSlipGL is the default and must reproduce it bit-for-bit
         # (dslip = 0 leaves the kernel arithmetic unchanged), so the Python

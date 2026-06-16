@@ -5,7 +5,7 @@
 
 struct Params{
     FT,
-    EP<:AbstractEntrainmentParam,
+    EP<:AbstractEntrainment,
     MP<:AbstractMeltParam,
     CS<:AbstractConvectionScheme,
     OB<:AbstractOpenBoundary,
@@ -110,7 +110,7 @@ function Params(;
     Dinit = 10.0,
     dTinit = 0.0,
     dSinit = -0.1,
-    entpar = GasparEntrainment(2.5),
+    entpar = LambertEntrainment(2.5),
     meltpar = FixedGamT(0.00018),
     convpar = ResetToAmbient(0.005),
     openbc = ZeroGradientInflow(),

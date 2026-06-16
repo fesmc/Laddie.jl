@@ -14,7 +14,7 @@ logic, so the same kernels execute unchanged on CPU and GPU.
 
 Advective fluxes of volume, heat, and salt are computed with an
 **upstream-biased** scheme (`convT`, `convU`, `convV`); viscous and diffusive
-fluxes use a five-point **Laplacian** (`lapT`, `lapU`, `lapV`). Both families
+fluxes use a five-point **Laplacian** (`laplace_T`, `laplace_U`, `laplace_V`). Both families
 are nearest-neighbour stencils built from `circshift`-style shifts, keeping the
 mask-based boundary treatment uniform across all operators.
 

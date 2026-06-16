@@ -34,6 +34,7 @@ RunConfig
 #### Entrainment
 
 ```@docs
+LambertEntrainment
 GasparEntrainment
 HollandEntrainment
 ```

@@ -131,11 +131,11 @@ Only relevant when `convop = 0` or `convop = 1` (`ClampDensity` /
 | `Cdtop` | Float | yes | Top (ice–ocean) drag coefficient used in u★. |
 | `Ah` | Float | yes | Laplacian viscosity (m² s⁻¹). |
 | `Kh` | Float | yes | Laplacian diffusivity for T and S (m² s⁻¹). |
-| `entpar` | String | yes | `"Gaspar"` or `"Holland"` — selects the entrainment parameterisation. |
+| `entpar` | String | yes | `"Lambert"` (default), `"Gaspar"`, or `"Holland"` — selects the entrainment parameterisation. `"Lambert"` is the reference LADDIE form; `"Gaspar"` is the literal Eq. 14. |
 | `maxdetr` | Float | yes | Maximum detrainment rate (m s⁻¹). |
 | `minD` | Float | yes | Minimum layer thickness enforced by extra entrainment (m). |
 | `vcut` | Float | `1.414` | Velocity cutoff — U and V are clipped to ±`vcut` m s⁻¹. |
-| `mu` | Float | Gaspar only | Entrainment efficiency parameter for `GasparEntrainment`. |
+| `mu` | Float | Lambert/Gaspar only | Entrainment efficiency parameter for `LambertEntrainment` / `GasparEntrainment`. |
 | `cl` | Float | `0.01775` | Drag coefficient for `HollandEntrainment`. |
 | `gamTfix` | Float | FixedGamT only | Fixed heat transfer coefficient γ_T (used when `usegamtfix = true`). |
 

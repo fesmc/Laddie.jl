@@ -282,3 +282,140 @@ function ice_base_depth(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
     end
     return zb
 end
+
+"""
+$(TYPEDSIGNATURES)
+
+Remove isolated ocean pockets from a LADDIE mask by flood-filling from the main
+ocean.  Ocean cells (`mask == 0`) that are not connected (4-connectivity) to the
+outer ocean are reclassified as grounded ice (`mask == 2`).
+
+The outer ocean is identified as all ocean cells reachable from the border ring
+(`mask == 1`).  Noisy topography (e.g. BedMachine) occasionally creates small
+enclosed ocean patches fully surrounded by ice; these cause spurious ice-front
+dynamics and numerical instabilities.
+
+Modifies `mask` in-place and returns the number of cells that were reclassified.
+
+# Arguments
+- `mask`: integer mask matrix as returned by [`build_laddie_mask`](@ref).
+
+# Example
+```julia
+mask = build_laddie_mask(z_bed, h_ice)
+n = fill_ocean_holes!(mask)
+println("Reclassified \$n isolated ocean cells")
+```
+"""
+function fill_ocean_holes!(mask::AbstractMatrix{Int})
+    ny, nx = size(mask)
+    visited = falses(ny, nx)
+    queue = Tuple{Int,Int}[]
+
+    # Seed: ocean cells touching the border ring (mask == 1)
+    dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
+    for i in 1:ny, j in 1:nx
+        if mask[i, j] == 0 && !visited[i, j]
+            for (di, dj) in dirs
+                ni, nj = i + di, j + dj
+                if 1 <= ni <= ny && 1 <= nj <= nx && mask[ni, nj] == 1
+                    visited[i, j] = true
+                    push!(queue, (i, j))
+                    break
+                end
+            end
+        end
+    end
+
+    # BFS to mark all reachable ocean cells
+    while !isempty(queue)
+        i, j = popfirst!(queue)
+        for (di, dj) in dirs
+            ni, nj = i + di, j + dj
+            if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 0
+                visited[ni, nj] = true
+                push!(queue, (ni, nj))
+            end
+        end
+    end
+
+    # Reclassify unreachable ocean cells as grounded ice
+    n_filled = 0
+    for i in 1:ny, j in 1:nx
+        if mask[i, j] == 0 && !visited[i, j]
+            mask[i, j] = 2
+            n_filled += 1
+        end
+    end
+    return n_filled
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Remove isolated floating-shelf patches from a LADDIE mask by flood-filling from
+shelf cells connected to the open ocean.  Shelf cells (`mask == 3`) that have no
+4-connected path to any ocean cell (`mask == 0`) are reclassified as grounded ice
+(`mask == 2`).
+
+Noisy topography can produce small shelf patches fully enclosed by grounded ice
+with no ice front; these are physically inconsistent and can cause instabilities.
+
+Modifies `mask` in-place and returns the number of cells reclassified.  Call
+[`fill_ocean_holes!`](@ref) first so that isolated ocean pockets do not
+artificially seed shelf connectivity.
+
+# Arguments
+- `mask`: integer mask matrix as returned by [`build_laddie_mask`](@ref).
+
+# Example
+```julia
+mask = build_laddie_mask(z_bed, h_ice)
+fill_ocean_holes!(mask)
+n = fill_shelf_holes!(mask)
+println("Reclassified \$n isolated shelf cells")
+```
+"""
+function fill_shelf_holes!(mask::AbstractMatrix{Int})
+    ny, nx = size(mask)
+    visited = falses(ny, nx)
+    queue = Tuple{Int,Int}[]
+
+    dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
+
+    # Seed: shelf cells adjacent to at least one ocean cell
+    for i in 1:ny, j in 1:nx
+        if mask[i, j] == 3 && !visited[i, j]
+            for (di, dj) in dirs
+                ni, nj = i + di, j + dj
+                if 1 <= ni <= ny && 1 <= nj <= nx && mask[ni, nj] == 0
+                    visited[i, j] = true
+                    push!(queue, (i, j))
+                    break
+                end
+            end
+        end
+    end
+
+    # BFS through shelf cells only
+    while !isempty(queue)
+        i, j = popfirst!(queue)
+        for (di, dj) in dirs
+            ni, nj = i + di, j + dj
+            if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 3
+                visited[ni, nj] = true
+                push!(queue, (ni, nj))
+            end
+        end
+    end
+
+    # Reclassify isolated shelf cells as grounded ice
+    n_filled = 0
+    for i in 1:ny, j in 1:nx
+        if mask[i, j] == 3 && !visited[i, j]
+            mask[i, j] = 2
+            n_filled += 1
+        end
+    end
+    return n_filled
+end

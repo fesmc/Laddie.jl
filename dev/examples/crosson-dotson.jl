@@ -2,6 +2,8 @@ using Laddie
 using NCDatasets
 using CairoMakie
 using DelimitedFiles
+using KernelAbstractions
+using CUDA
 
 # =============================================================================
 # Ocean forcing profile
@@ -36,8 +38,8 @@ fig
 # BedMachine geometry
 # =============================================================================
 i1, i2 = 3445, 3720
-j1, j2 = 7710, 8070
-fn_topo = "/home/jan/pCloudSync/PhD/Projects/Isostasy/GRDMIP/GRDMIP-Paleo/preprocessing/topography/data/BedMachine/BedMachineAntarctica-v3.nc"
+j1, j2 = 7732, 8070
+fn_topo = "/home/jan/Documents/projects/esm-datasets/data/topography/src/BedMachineAntarctica-v4.nc"
 ds    = Dataset(fn_topo)
 z_bed = Float64.(Array(ds["bed"][i1:i2, j2:-1:j1]))
 h_ice = Float64.(Array(ds["thickness"][i1:i2, j2:-1:j1]))
@@ -46,22 +48,14 @@ close(ds)
 dx = 500.0   # BedMachine v3 resolution: 500 m
 dy = 500.0
 
+
+
+
 # Derive the 4-class LADDIE mask and ice-base draft from BedMachine arrays.
 # build_laddie_mask classifies each interior cell as:
 #   0 = open ocean, 1 = border, 2 = grounded ice, 3 = floating shelf
 # ice_base_depth returns the ice-draft elevation in metres (negative below sea level).
 mask = build_laddie_mask(z_bed, h_ice)
-zb   = ice_base_depth(z_bed, h_ice)
-
-z_bed_ocean = copy(z_bed)
-z_bed_ocean[h_ice .> 0] .= NaN
-cmap_ocean = cgrad([:midnightblue, :cornflowerblue])
-z_bed_grounded = copy(z_bed)
-z_bed_grounded[h_ice .<= 0] .= NaN
-cmap_grounded = cgrad([:gray20, :gray80])
-zb[mask .< 3] .= NaN
-cmap_shelfbase = cgrad(:tempo, rev = true)
-
 fig_map = Figure()
 ax1 = Axis(fig_map[1, 1], aspect = DataAspect())
 hm = heatmap!(
@@ -71,11 +65,62 @@ hm = heatmap!(
     colorrange = (0, 3))
 Colorbar(fig_map[2, 1], hm, vertical = false, flipaxis = false, label = "LADDIE mask class",
     ticks = ([0, 1, 2, 3], ["ocean", "border", "grounded", "shelf"]))
+fig_map
+
+n = fill_ocean_holes!(mask)
+n > 0 && @info "fill_ocean_holes!: reclassified $n isolated ocean cells as grounded"
+hm = heatmap!(
+    ax1,
+    mask,
+    colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
+    colorrange = (0, 3))
+fig_map
+
+n = fill_shelf_holes!(mask)
+n > 0 && @info "fill_shelf_holes!: reclassified $n isolated shelf cells as grounded"
+hm = heatmap!(
+    ax1,
+    mask,
+    colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
+    colorrange = (0, 3))
+fig_map
+
+n = fill_small_shelf_patches!(mask, 10)
+n > 0 && @info "fill_small_shelf_patches!: removed $n cells in undersized shelf patches"
+hm = heatmap!(
+    ax1,
+    mask,
+    colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
+    colorrange = (0, 3))
+fig_map
+
+n = fill_small_grounded_patches!(mask, 3)
+n > 0 && @info "fill_small_grounded_patches!: reclassified $n cells in undersized isolated grounded patches"
+hm = heatmap!(
+    ax1,
+    mask,
+    colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
+    colorrange = (0, 3))
+fig_map
+
+
+zb       = ice_base_depth(z_bed, h_ice)
+z_bed_m  = bed_elevation(z_bed)
+
+z_bed_ocean = copy(z_bed)
+z_bed_ocean[h_ice .> 0] .= NaN
+cmap_ocean = cgrad([:midnightblue, :cornflowerblue])
+z_bed_grounded = copy(z_bed)
+z_bed_grounded[h_ice .<= 0] .= NaN
+cmap_grounded = cgrad([:gray20, :gray80])
+zb_plot = copy(zb)
+zb_plot[mask .< 3] .= NaN
+cmap_shelfbase = cgrad(:tempo, rev = true)
 
 ax2 = Axis(fig_map[1, 2], aspect = DataAspect())
 heatmap!(ax2, z_bed_ocean ./ 1f3, colormap = cmap_ocean, colorrange = (-1, 1))
 heatmap!(ax2, z_bed_grounded ./ 1f3, colormap = cmap_grounded, colorrange = (-1, 1))
-heatmap!(ax2, zb ./ 1f3, colormap = cmap_shelfbase, colorrange = (-2, 0))
+heatmap!(ax2, zb_plot ./ 1f3, colormap = cmap_shelfbase, colorrange = (-2, 0))
 fig_map
 
 
@@ -88,64 +133,58 @@ fig_map
 # =============================================================================
 # Build and run model — snapshot all fields + masks every 5th step
 # =============================================================================
-params = Params(; tstep = FixedDt())
+# mp = PrescribedMelt{Float64}()
+mp = TurbulentGamT()
+# mp = FixedGamT(0.00018)
+params = Params(; dt = 120, Ah = 25, Kh = 25, minD = 2.8, nu = 0.1, Dinit = 2.8,
+    tstep = AdaptiveDt(), meltpar = mp, glbc = NoSlipGL())
 
-m = build_model(mask, zb, dx, dy, forcing, params)
-run!(m; days = 5)
+m = build_model(mask, zb, dx, dy, forcing, params;
+    z_bed_raw = z_bed_m,
+    rc = RunConfig(; saveday = 0.1,
+    dbg = DebugConfig(check_nans = true)),
+    backend = CUDABackend(),
+)
+run!(m; days = 3, verbose = true)
 
-# The built-in periodic output (RunConfig `saveday`) writes day-AVERAGED fields
-# and names files by whole day, so a sub-daily cadence would overwrite a single
-# file.  For instantaneous per-step snapshots we step the model in 5-step chunks
-# and write our own NetCDF — all prognostics, the melt/entrainment fields, and
-# the masks — with a sequential filename.  Tune `nstep` / `total_days` below.
-outdir = joinpath("output", "crosson-dotson")
-mkpath(outdir)
 
-xc = collect((0:m.nx-1) .* dx)
-yc = collect((0:m.ny-1) .* dy)
-strip_halo(a) = Array(a)[2:end-1, 2:end-1]
+# Colors sampled directly from the source figure (pale cyan -> blue -> dark navy
+# -> magenta -> orange -> pale yellow), 40 stops, light->dark->light diverging map
+colors = [
+    colorant"#ebfcfc", colorant"#d8f2f3", colorant"#bce4e4", colorant"#9dd4d7",
+    colorant"#83c5d3", colorant"#6fb5ce", colorant"#5fa4c5", colorant"#5194c1",
+    colorant"#4783bb", colorant"#4071b3", colorant"#3e61ab", colorant"#3e509a",
+    colorant"#3c3f84", colorant"#323267", colorant"#2a2850", colorant"#1b1a37",
+    colorant"#210b4b", colorant"#350960", colorant"#450a68", colorant"#560f6d",
+    colorant"#64156e", colorant"#741b6d", colorant"#842069", colorant"#932669",
+    colorant"#a32d61", colorant"#b33259", colorant"#c23a50", colorant"#d04447",
+    colorant"#db503b", colorant"#e55c30", colorant"#ee6923", colorant"#f47d15",
+    colorant"#f98c09", colorant"#fc9f06", colorant"#feb117", colorant"#fbc42b",
+    colorant"#f3d848", colorant"#f4ea6e", colorant"#f4f992", colorant"#fbffa2",
+]
+cmap = cgrad(colors)
 
-function save_snapshot(m, path, t_days)
-    NCDataset(path, "c") do ds
-        defDim(ds, "x", m.nx)
-        defDim(ds, "y", m.ny)
-        defVar(ds, "x", Float64, ("x",))[:] = xc
-        defVar(ds, "y", Float64, ("y",))[:] = yc
-        ds.attrib["time_days"] = t_days
-        fields = (
-            ("D",    m.D.present,          "m"),
-            ("U",    m.U.present,          "m s-1"),
-            ("V",    m.V.present,          "m s-1"),
-            ("T",    m.T.present,          "degC"),
-            ("S",    m.S.present,          "psu"),
-            ("melt", m.melt .* Laddie.spy, "m yr-1"),
-            ("entr", m.entr .* Laddie.spy, "m yr-1"),
-            ("ent2", m.ent2 .* Laddie.spy, "m yr-1"),
-            ("detr", m.detr .* Laddie.spy, "m yr-1"),
-            ("Tb",   m.Tb,                 "degC"),
-            ("Ta",   m.Ta,                 "degC"),
-            ("zb",   m.zb,                 "m"),
-        )
-        for (name, field, units) in fields
-            defVar(ds, name, Float64, ("y", "x"); attrib = ["units" => units])[:, :] =
-                strip_halo(field)
-        end
-        defVar(ds, "tmask", Int32, ("y", "x"))[:, :] = Int32.(strip_halo(m.tmask))
-        defVar(ds, "mask", Int32, ("y", "x"))[:, :] = Int32.(strip_halo(m.mask))
-    end
-end
-
-nstep      = 5                              # snapshot cadence (time steps)
-total_days = 5.0                            # total run length (days)
-chunk      = nstep * params.dt0 / 86400.0   # 5 steps expressed in days
-ndumps     = round(Int, total_days / chunk)
-
-save_snapshot(m, joinpath(outdir, "snap_00000.nc"), 0.0)   # initial state
-for k = 1:ndumps
-    @show k
-    run!(m; days = chunk, verbose = false)
-    save_snapshot(m, joinpath(outdir, "snap_$(lpad(k, 5, '0')).nc"), k * chunk)
-end
+fig_melt = Figure()
+ax = Axis(fig_melt[1, 1], aspect = DataAspect())
+hidedecorations!(ax)
+hm = heatmap!(
+    ax,
+    Array(m.cache.melt) .* (3600 * 24 * 365.25),
+    colormap = cmap,
+    colorrange = (-10, 100),
+    colorscale = Makie.Symlog10(0.3),
+    lowclip    = colors[1],
+    highclip   = colors[end],
+)
+Colorbar(fig_melt[2, 1], hm;
+    vertical   = false,
+    flipaxis   = false,
+    ticks      = [-10, -3, -1, -0.3, 0, 0.3, 1, 3, 10, 30, 100],
+    label      = L"\mathrm{Freezing\ /\ Melt\ rate\ } \dot{n}\ [\mathrm{m\ yr^{-1}}]",
+    width = Relative(0.5),
+    height = 20,
+)
+fig_melt
 
 mx, mn, sp = meltstats(m)
 println("max melt = $(round(mx, digits=2)) m/yr,  mean = $(round(mn, digits=2)) m/yr")

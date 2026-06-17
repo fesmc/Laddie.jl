@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(julia --project -e \"using Pkg; Pkg.test\\(\\)\")",
+      "Bash(Read /tmp/claude-1003/-home-jan--julia-dev-Laddie/0d387d02-88ea-4ef0-85b3-b6cd4e1789be/tasks/bzx53caqf.output)",
+      "Bash(tee /tmp/test_output.txt)",
+      "Bash(julia --project -e ' *)",
+      "Bash(git stash *)",
+      "Bash(julia --project -e \"using Laddie; println\\(\\\\\"fill_ocean_holes! exported: \\\\\", isdefined\\(Laddie, :fill_ocean_holes!\\)\\)\")",
+      "Bash(julia --project -e \"using Laddie; println\\(\\\\\"OK\\\\\"\\)\")",
+      "Bash(julia --project -e \"import Pkg; Pkg.test\\(\\)\")",
+      "Bash(julia --project /home/jan/.julia/dev/Laddie /home/jan/.julia/dev/Laddie/test/runtests.jl)",
+      "Bash(julia --project -e 'import Pkg; Pkg.test\\(\\)')",
+      "Bash(julia --project=. -e 'using Pkg; Pkg.test\\(\\)')",
+      "Bash(julia --project -e \"include\\(\\\\\"test/runtests.jl\\\\\"\\)\")",
+      "Bash(julia --project=test -e \"using Pkg; Pkg.test\\(\\\\\"Laddie\\\\\"\\)\")"
+    ]
+  }
+}

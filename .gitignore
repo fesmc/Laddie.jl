@@ -5,4 +5,5 @@
 /docs/Manifest*.toml
 /docs/build/
 docs/src/generated/
+docs/output/
 TODO.md

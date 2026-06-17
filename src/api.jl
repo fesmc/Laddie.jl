@@ -1,9 +1,8 @@
 using ProgressMeter
 
-# ============================================================================
+# =================================================================
 # Driver
-# ============================================================================
-
+# =================================================================
 """
 $(TYPEDSIGNATURES)
 
@@ -19,22 +18,25 @@ function meltstats(m)
     mask = m.tmask
     n = sum(mask)
     meltyr = m.melt .* spy
-    return maximum(meltyr .* mask),
-    sum(meltyr .* mask) / n,
-    maximum(sqrt.(im_half(m.U.present) .^ 2 .+ jm_half(m.V.present) .^ 2) .* mask)
+    max_meltrate = maximum(meltyr .* mask)
+    mean_meltrate = sum(meltyr .* mask) / n
+    max_speed = maximum(sqrt.(im_half(m.U.present) .^ 2 .+ jm_half(m.V.present) .^ 2) .* mask)
+    return max_meltrate, mean_meltrate, max_speed
 end
 
 """
 $(TYPEDSIGNATURES)
 
-Advective–gravity-wave CFL number at the current `dt`: the fastest signal —
-advection at `max|U|`/`max|V|` plus the reduced-gravity wave speed
-`c = √(g·max(δρ·D))` — crossing a grid cell in one step,
+Return advective–gravity-wave CFL number at the current `dt`: the fastest signal —
+advection at ``\\mathrm{max}|U| / \\mathrm{max}|V|`` plus the reduced-gravity wave speed
+``c = \\sqrt{g·max(\\delta \\rho \\cdot D)}`` — crossing a grid cell in one step,
 
-    cfl = dt·((|u|ₘₐₓ + c)/dx + (|v|ₘₐₓ + c)/dy).
+```math
+\\mathrm{CFL} = \\Delta t \\left( \\frac{|u|_\\mathrm{max} + c}{\\Delta x} + \\frac{|v|_\\mathrm{max} + c}{\\Delta y} \\right).
+```
 
-`δρ` (`m.drho`) is the dimensionless reduced density the pressure terms use, so
-`g·δρ·D` is the reduced-gravity wave speed squared.  All reductions run on the
+``\\delta \\rho`` (`m.drho`) is the dimensionless reduced density the pressure terms use, so
+``g·\\delta \\rho \\cdot D`` is the reduced-gravity wave speed squared.  All reductions run on the
 device (GPU-safe); the result is a `Float64` scalar.  A value above ~1 means the
 step is likely unstable.  Used by the progress bar and the adaptive-dt controller.
 """

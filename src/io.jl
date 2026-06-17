@@ -5,6 +5,23 @@ using TOML
 
 
 # ============================================================================
+# DebugConfig — optional debug options (all fields default to off).
+# ============================================================================
+
+"""
+$(TYPEDSIGNATURES)
+
+Optional debug configuration passed via `RunConfig(; dbg = DebugConfig(...))`.
+
+Set `check_nans = true` to check every prognostic variable for NaNs over the
+shelf mask after each sub-step of `leapfrog_step!`.  When a NaN is found the
+run errors immediately, naming the first variable to blow up and the time.
+"""
+Base.@kwdef struct DebugConfig
+    check_nans::Bool = false
+end
+
+# ============================================================================
 # RunConfig — static run + I/O configuration (all fields have defaults).
 # ============================================================================
 
@@ -44,6 +61,7 @@ Base.@kwdef struct RunConfig
     save_gammaT::Bool = false
     save_mask::Bool = true
     save_zb::Bool = true
+    dbg::DebugConfig = DebugConfig()
 end
 
 # ============================================================================
@@ -67,6 +85,7 @@ mutable struct IOState{FT,A<:AbstractMatrix{FT}}
     # Time-average accumulation window
     count::Int        # steps accumulated since the last output write
     t_accum::Float64    # simulated time accumulated since the last write (s)
+    time_index::Int     # number of time slices written to output.nc so far
     # Next-event times for periodic I/O (s since the start of this run)
     nextsave::Float64
     nextdiag::Float64
@@ -97,18 +116,19 @@ end
 
 function IOState(FT::Type, x::AbstractVector, y::AbstractVector)
     IOState{FT,Matrix{FT}}(
-        0,
-        FT(0),
-        0.0,
-        0.0,
-        0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        "",
-        "",
-        0.0,
+        0,       # t
+        FT(0),   # dt
+        0.0,     # t_sim
+        0.0,     # t_start
+        0,       # count
+        0.0,     # t_accum
+        0,       # time_index
+        0.0,     # nextsave
+        0.0,     # nextdiag
+        0.0,     # nextrest
+        "",      # rundir
+        "",      # logfile
+        0.0,     # walltime_start
         Vector{FT}(x),
         Vector{FT}(y),
         ntuple(_ -> Matrix{FT}(undef, 0, 0), 14)...,
@@ -247,6 +267,7 @@ function prepare_output!(m)
     m.t = 0
     m.count = 0
     m.t_accum = 0.0
+    m.time_index = 0
 
     # Allocate on same device and with same FT as the model arrays.
     # Full grid size (including halos) so _accum! can do bare .+= without
@@ -267,6 +288,11 @@ function prepare_output!(m)
     m.save_Tamb && (m.Taav = copy(z))
     m.save_gammaT && (m.gamTav = copy(z))
     _write_run_metadata(m)
+    _create_output_file!(m)
+    # Write the initial state as the first time slice before any stepping.
+    _accum!(m)
+    _write_output!(m, _t_days(m))
+    _reset_accum!(m)
     return m
 end
 
@@ -350,61 +376,133 @@ end
 # Time-average output
 # ============================================================================
 
-function _write_output!(m, t_days)
-    # dt-weighted accumulators divided by accumulated time → time average
-    # (equals the old ÷ count when dt is constant).
-    n = m.t_accum
-    tmask_int = _int(m.tmask)
-    filename = joinpath(m.rundir, @sprintf("output_%06.0f.nc", t_days))
-
-    NCDataset(filename, "c") do ds
-        defDim(ds, "y", m.ny);
+# Create output.nc once at the start of a run: defines all dimensions,
+# coordinate variables, and time-varying/static field variables.  Time-varying
+# fields are 3D (y, x, time) with an unlimited time dimension; static fields
+# (mask, zb) are 2D and written here.
+function _create_output_file!(m)
+    path = joinpath(m.rundir, "output.nc")
+    NCDataset(path, "c") do ds
+        defDim(ds, "y", m.ny)
         defDim(ds, "x", m.nx)
-        defVar(ds, "x", Float64, ("x",))[:] = m.x
-        defVar(ds, "y", Float64, ("y",))[:] = m.y
-        ds.attrib["time_start_days"] = max(m.t_start, t_days - m.saveday)
-        ds.attrib["time_end_days"] = t_days
-        ds.attrib["model"] = "Laddie.jl"
+        defDim(ds, "time", Inf)   # unlimited
 
-        function wv(name, av, scale, units, longname)
-            v = defVar(
+        defVar(ds, "x", Float64, ("x",); attrib = ["units" => "m"])[:] = m.x
+        defVar(ds, "y", Float64, ("y",); attrib = ["units" => "m"])[:] = m.y
+        defVar(
+            ds,
+            "time",
+            Float64,
+            ("time",);
+            attrib = [
+                "units" => "days",
+                "long_name" => "simulation time (end of averaging window)",
+            ],
+        )
+
+        ds.attrib["model"] = "Laddie.jl"
+        ds.attrib["saveday"] = m.saveday
+
+        # Time-varying fields — data appended each save interval
+        function dv(name, units, longname)
+            defVar(
                 ds,
                 name,
                 Float64,
-                ("y", "x");
+                ("y", "x", "time");
                 fillvalue = NaN,
                 attrib = ["units" => units, "long_name" => longname],
             )
-            av_int = _int(av)   # one Array() transfer + halo strip per field, at write time
-            v[:, :] = ifelse.(tmask_int .> 0, av_int ./ n .* scale, NaN)
         end
+        m.save_Ut     && dv("Ut",     "m s-1",  "x-velocity on t-grid")
+        m.save_Uu     && dv("Uu",     "m s-1",  "x-velocity on u-grid")
+        m.save_Vt     && dv("Vt",     "m s-1",  "y-velocity on t-grid")
+        m.save_Vv     && dv("Vv",     "m s-1",  "y-velocity on v-grid")
+        m.save_D      && dv("D",      "m",      "mixed-layer thickness")
+        m.save_T      && dv("T",      "degC",   "layer-averaged temperature")
+        m.save_S      && dv("S",      "psu",    "layer-averaged salinity")
+        m.save_melt   && dv("melt",   "m yr-1", "basal melt rate")
+        m.save_entr   && dv("entr",   "m yr-1", "entrainment rate")
+        m.save_ent2   && dv("ent2",   "m yr-1", "additional entrainment")
+        m.save_detr   && dv("detr",   "m yr-1", "detrainment rate")
+        m.save_Tbase  && dv("Tbase",  "degC",   "temperature at ice base")
+        m.save_Tamb   && dv("Tamb",   "degC",   "ambient temperature at layer base")
+        m.save_gammaT && dv("gammaT", "m s-1",  "turbulent heat exchange velocity")
 
-        m.save_Ut && wv("Ut", m.Utav, 1.0, "m s-1", "x-velocity on t-grid")
-        m.save_Uu && wv("Uu", m.Uuav, 1.0, "m s-1", "x-velocity on u-grid")
-        m.save_Vt && wv("Vt", m.Vtav, 1.0, "m s-1", "y-velocity on t-grid")
-        m.save_Vv && wv("Vv", m.Vvav, 1.0, "m s-1", "y-velocity on v-grid")
-        m.save_D && wv("D", m.Dav, 1.0, "m", "mixed-layer thickness")
-        m.save_T && wv("T", m.Tav, 1.0, "degC", "layer-averaged temperature")
-        m.save_S && wv("S", m.Sav, 1.0, "psu", "layer-averaged salinity")
-        m.save_melt && wv("melt", m.meltav, spy, "m yr-1", "basal melt rate")
-        m.save_entr && wv("entr", m.entrav, spy, "m yr-1", "entrainment rate")
-        m.save_ent2 && wv("ent2", m.ent2av, spy, "m yr-1", "additional entrainment")
-        m.save_detr && wv("detr", m.detrav, spy, "m yr-1", "detrainment rate")
-        m.save_Tbase && wv("Tbase", m.Tbav, 1.0, "degC", "temperature at ice base")
-        m.save_Tamb &&
-            wv("Tamb", m.Taav, 1.0, "degC", "ambient temperature at layer base")
-        m.save_gammaT &&
-            wv("gammaT", m.gamTav, 1.0, "m s-1", "turbulent heat exchange velocity")
-
+        # Static fields — written once
         if m.save_mask
             defVar(ds, "mask", Int32, ("y", "x"))[:, :] = Int32.(_int(m.mask))
+            at_isf = _int(
+                (m.tmask .> 0) .&
+                (m.ocnxm1 .+ m.ocnxp1 .+ m.ocnym1 .+ m.ocnyp1 .> 0),
+            )
+            defVar(
+                ds,
+                "at_isf",
+                Int8,
+                ("y", "x");
+                attrib = ["long_name" => "shelf cell at ice-shelf front (ocean neighbour)"],
+            )[:, :] = Int8.(at_isf)
+            mask_c = m.mask
+            at_grl = _int(
+                (mask_c .== 3) .& (
+                    (xm1(mask_c) .== 2) .| (xp1(mask_c) .== 2) .|
+                    (ym1(mask_c) .== 2) .| (yp1(mask_c) .== 2)
+                ),
+            )
+            defVar(
+                ds,
+                "at_grl",
+                Int8,
+                ("y", "x");
+                attrib = [
+                    "long_name" => "shelf cell at grounding line (grounded-ice neighbour)",
+                ],
+            )[:, :] = Int8.(at_grl)
         end
         if m.save_zb
-            v = defVar(ds, "zb", Float64, ("y", "x"); attrib = ["units" => "m"])
-            v[:, :] = _int(m.zb)
+            defVar(ds, "zb", Float64, ("y", "x"); attrib = ["units" => "m"])[:, :] =
+                _int(m.zb)
         end
     end
-    _print2log(m, @sprintf("%.3f days: saved output → %s", t_days, basename(filename)))
+    _print2log(m, "Created output file → output.nc")
+end
+
+# Append one time-average slice to output.nc.  The dt-weighted accumulators are
+# divided by the accumulated window length; the time coordinate stores the end
+# of the averaging window in days.
+function _write_output!(m, t_days)
+    n = m.t_accum
+    tmask_int = _int(m.tmask)
+    m.time_index += 1
+    k = m.time_index
+    path = joinpath(m.rundir, "output.nc")
+
+    NCDataset(path, "a") do ds
+        ds["time"][k] = t_days
+
+        function wv(name, av, scale)
+            av_int = _int(av)
+            FT0 = zero(eltype(av_int))
+            ds[name][:, :, k] = ifelse.(tmask_int .> 0, av_int ./ n .* scale, FT0)
+        end
+
+        m.save_Ut     && wv("Ut",     m.Utav,   1.0)
+        m.save_Uu     && wv("Uu",     m.Uuav,   1.0)
+        m.save_Vt     && wv("Vt",     m.Vtav,   1.0)
+        m.save_Vv     && wv("Vv",     m.Vvav,   1.0)
+        m.save_D      && wv("D",      m.Dav,    1.0)
+        m.save_T      && wv("T",      m.Tav,    1.0)
+        m.save_S      && wv("S",      m.Sav,    1.0)
+        m.save_melt   && wv("melt",   m.meltav, spy)
+        m.save_entr   && wv("entr",   m.entrav, spy)
+        m.save_ent2   && wv("ent2",   m.ent2av, spy)
+        m.save_detr   && wv("detr",   m.detrav, spy)
+        m.save_Tbase  && wv("Tbase",  m.Tbav,   1.0)
+        m.save_Tamb   && wv("Tamb",   m.Taav,   1.0)
+        m.save_gammaT && wv("gammaT", m.gamTav, 1.0)
+    end
+    _print2log(m, @sprintf("%.3f days: appended output → output.nc (step %d)", t_days, k))
 end
 
 # A periodic event is due once accumulated time reaches the next event time.

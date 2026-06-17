@@ -35,7 +35,7 @@
     end
 end
 
-@kernel function _convT_kernel!(
+@kernel function _upwind_advection_T_kernel!(
     out,
     @Const(var),
     @Const(Vpos),
@@ -94,7 +94,7 @@ end
     end
 end
 
-@kernel function _convT_noinflow_kernel!(
+@kernel function _upwind_advection_T_noinflow_kernel!(
     out,
     @Const(var),
     @Const(Vpos),
@@ -131,7 +131,7 @@ end
 
 # TODO can I rm Dxm1, Dym1... etc? Would free up cache,
 # prevent memory access and make function signature legible
-@kernel function _convU_kernel!(
+@kernel function _upwind_advection_U_kernel!(
     out,
     @Const(D),
     @Const(Dxm1),
@@ -198,7 +198,7 @@ end
     end
 end
 
-@kernel function _convV_kernel!(
+@kernel function _upwind_advection_V_kernel!(
     out,
     @Const(D),
     @Const(Dym1),
@@ -351,11 +351,11 @@ end
     end
 end
 
-function convT(out, m, var)
+function upwind_advection_T(out, m, var)
     ny, nx = size(var)
     if m.openbc isa ZeroGradientInflow
         launch!(
-            _convT_kernel!,
+            _upwind_advection_T_kernel!,
             out,
             out,
             var,
@@ -386,7 +386,7 @@ function convT(out, m, var)
         )
     else  # NoInflow
         launch!(
-            _convT_noinflow_kernel!,
+            _upwind_advection_T_noinflow_kernel!,
             out,
             out,
             var,
@@ -410,11 +410,11 @@ function convT(out, m, var)
     end
     return out
 end
-function convU(m)
+function upwind_advection_U(m)
     ny, nx = size(m.U.present)
     dslip = _gl_slip(m.glbc, m.slip) - m.slip
     launch!(
-        _convU_kernel!,
+        _upwind_advection_U_kernel!,
         m.cU,
         m.cU,
         m.D.present,
@@ -451,11 +451,11 @@ function convU(m)
     )
     return m.cU
 end
-function convV(m)
+function upwind_advection_V(m)
     ny, nx = size(m.V.present)
     dslip = _gl_slip(m.glbc, m.slip) - m.slip
     launch!(
-        _convV_kernel!,
+        _upwind_advection_V_kernel!,
         m.cV,
         m.cV,
         m.D.present,
@@ -522,7 +522,7 @@ function laplace_U(m)
         m.lU,
         m.lU,
         m.U.past,
-        m.D.past,
+        m.D.present,
         m.D_on_ugrid,
         m.tmask_jp,
         m.tmask_jm,
@@ -551,7 +551,7 @@ function laplace_V(m)
         m.lV,
         m.lV,
         m.V.past,
-        m.D.past,
+        m.D.present,
         m.D_on_vgrid,
         m.tmask_ip,
         m.tmask_im,
@@ -643,7 +643,7 @@ function precompute_advection_stencils!(m)
 end
 
 function precompute_laplacian_stencils!(m)
-    ny, nx = size(m.D.past)
+    ny, nx = size(m.D.present)
     launch!(
         _precompute_laplacian_kernel!,
         m.D0ip,
@@ -651,7 +651,7 @@ function precompute_laplacian_stencils!(m)
         m.D0im,
         m.D0jp,
         m.D0jm,
-        m.D.past,
+        m.D.present,
         m.tmask_ip,
         m.tmask_im,
         m.tmask_jp,

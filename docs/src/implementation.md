@@ -31,7 +31,7 @@ Two complementary mechanisms give device portability:
    - **elementwise physics**: EOS (`_density_kernel!`, `_freezing_point_kernel!`), the three-equation
      melt (`_three_eq_melt_kernel!`), Robert–Asselin filter (`_robert_asselin_kernel!`), velocity clip
      (`_clamp_kernel!`);
-   - **stencil operators**: advection `_convT/U/V_kernel!`, diffusion `_lapT/U/V_kernel!`,
+   - **stencil operators**: advection `_upwind_advection_T/U/V_kernel!`, diffusion `_lapT/U/V_kernel!`,
      with periodic neighbour indexing (`_east/_west/_north/_south` ≡ `circshift`);
    - **integration combines**: `_step_thickness/u_momentum/v_momentum/temperature/salinity_kernel!`
      — the `ip_t/jp_t` interpolations and pressure-gradient/Coriolis/drag terms move into kernels.

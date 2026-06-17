@@ -79,6 +79,7 @@ mutable struct Cache{FT,A<:AbstractMatrix{FT},GamT,Conv2}
 end
 
 _gamT_init(FT, _, _, ::Type{<:FixedGamT}) = zero(FT)
+_gamT_init(FT, _, _, ::Type{<:PrescribedMelt}) = zero(FT)
 _gamT_init(FT, ny, nx, ::Type{<:TurbulentGamT}) = zeros(FT, ny, nx)
 _conv2_init(FT, _, _, ::Type{<:Union{ClampDensity,ResetToAmbient}}) = zero(FT)
 _conv2_init(FT, ny, nx, ::Type{<:RelaxToAmbient}) = zeros(FT, ny, nx)

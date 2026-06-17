@@ -93,6 +93,7 @@ function Params(;
     Kh = 1.0,
     maxdetr = 0.5,
     minD = 1.0,
+    maxD = 100.0,
     vcut = 1.414,
     utide = 0.01,
     Ti = -25.0,

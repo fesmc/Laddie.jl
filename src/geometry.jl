@@ -160,16 +160,18 @@ end
 # Geometry helpers for builders
 # ============================================================================
 
-# Adjust zb before Grid construction: zero out ice-front ocean cells and
-# clamp very shallow ice-shelf cells to -1 m (mirrors initialize_from_scratch!
-# in the old dict-bag flow, but applied pre-Grid so the immutable Grid is final).
+# Adjust zb before Grid construction.  zb is defined by mask category:
+#   ocean  (0): 0        (no ice above, sea-surface reference)
+#   border (1): 0        (not physically active)
+#   grounded (2): z_bed  (ice base coincides with bed; keep zb_raw)
+#   shelf  (3): zb_raw   (actual ice-base depth, clamped to ≤ -1 m)
+# Any NaN fill values from the raw data are stripped before the mask logic.
 function _adjust_zb(mask::AbstractMatrix{Int}, zb_raw::AbstractMatrix, FT)
     tmask = FT.(mask .== 3)
-    ocn = FT.(mask .== 0)
-    isf = ocn .* (xp1(tmask) .+ xm1(tmask) .+ yp1(tmask) .+ ym1(tmask))
     zb = FT.(zb_raw)
-    zb = ifelse.(isf .> 0, zero(FT), zb)
-    zb = ifelse.((tmask .> 0) .& (zb .> FT(-1)), FT(-1), zb)
+    zb = ifelse.(isnan.(zb), zero(FT), zb)              # strip NaN fill values
+    zb = ifelse.((mask .== 0) .| (mask .== 1), zero(FT), zb)  # ocean + border → 0
+    zb = ifelse.((tmask .> 0) .& (zb .> FT(-1)), FT(-1), zb)  # clamp shallow shelf
     return zb
 end
 
@@ -243,6 +245,26 @@ function build_laddie_mask(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
         end
     end
     return mask
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Pad a bed-elevation array into the `(ny+2, nx+2)` format expected by `build_model`.
+The one-cell border ring is zeroed; interior values are copied from `bed` unchanged.
+Pass the result as the `z_bed_raw` keyword argument to `build_model` to enable the
+water-column upper bound on plume thickness (`D ≤ zb − z_bed`).
+
+# Arguments
+- `bed`: bed elevation (m, positive above sea level), size `(ny, nx)`.
+"""
+function bed_elevation(bed; FT = Float64)
+    ny, nx = size(bed)
+    z_bed = zeros(FT, ny + 2, nx + 2)
+    for j = 1:nx, i = 1:ny
+        z_bed[i+1, j+1] = FT(bed[i, j])
+    end
+    return z_bed
 end
 
 """
@@ -415,6 +437,144 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
         if mask[i, j] == 3 && !visited[i, j]
             mask[i, j] = 2
             n_filled += 1
+        end
+    end
+    return n_filled
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Remove undersized isolated grounded-ice patches from a LADDIE mask.  Each
+4-connected component of grounded cells (`mask == 2`) that is *not* connected
+to the domain border ring (`mask == 1`) is identified; any such component with
+fewer than `min_cells` cells is reclassified as floating shelf (`mask == 3`).
+
+Components that touch the border ring are part of the main grounded ice sheet
+and are never modified, regardless of size.  Only truly isolated grounded
+patches — pinning points, rumples, or topographic artefacts inside the shelf —
+are candidates for removal.
+
+Modifies `mask` in-place and returns the number of cells reclassified.
+Recommended to call [`fill_ocean_holes!`](@ref) and
+[`fill_shelf_holes!`](@ref) first so that the shelf geometry is clean before
+removing pinning points.
+
+# Arguments
+- `mask`:      integer mask matrix as returned by [`build_laddie_mask`](@ref).
+- `min_cells`: minimum number of cells an isolated grounded component must have
+  to be retained (default 10).  Components strictly smaller than this are
+  reclassified as shelf.
+
+# Example
+```julia
+mask = build_laddie_mask(z_bed, h_ice)
+fill_ocean_holes!(mask)
+fill_shelf_holes!(mask)
+n = fill_small_grounded_patches!(mask, 20)
+println("Reclassified \$n cells in undersized isolated grounded patches")
+```
+"""
+function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
+    ny, nx = size(mask)
+    visited = falses(ny, nx)
+    dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
+    n_filled = 0
+
+    for i in 1:ny, j in 1:nx
+        mask[i, j] == 2 && !visited[i, j] || continue
+
+        component = Tuple{Int,Int}[]
+        queue = Tuple{Int,Int}[(i, j)]
+        visited[i, j] = true
+        touches_border = false
+        while !isempty(queue)
+            ci, cj = popfirst!(queue)
+            push!(component, (ci, cj))
+            for (di, dj) in dirs
+                ni, nj = ci + di, cj + dj
+                1 <= ni <= ny && 1 <= nj <= nx || continue
+                mask[ni, nj] == 1 && (touches_border = true)
+                if !visited[ni, nj] && mask[ni, nj] == 2
+                    visited[ni, nj] = true
+                    push!(queue, (ni, nj))
+                end
+            end
+        end
+
+        if !touches_border && length(component) < min_cells
+            for (ci, cj) in component
+                mask[ci, cj] = 3
+            end
+            n_filled += length(component)
+        end
+    end
+    return n_filled
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Remove undersized floating-shelf patches from a LADDIE mask.  Each
+4-connected component of shelf cells (`mask == 3`) is identified; any
+component with fewer than `min_cells` cells is reclassified as grounded
+ice (`mask == 2`).
+
+A component of only a few cells cannot meaningfully resolve the LADDIE
+plume dynamics: the centred-difference stencil spans ≥ 2 cells in each
+direction, and the depth-averaged momentum balance requires at least
+O(10) cells to develop a coherent flow.  Removing these micro-patches
+eliminates spurious gradients and numerical instabilities in noisy
+real-world topography (e.g. BedMachine).
+
+Modifies `mask` in-place and returns the number of cells reclassified.
+Recommended to call [`fill_ocean_holes!`](@ref) and
+[`fill_shelf_holes!`](@ref) first.
+
+# Arguments
+- `mask`:      integer mask matrix as returned by [`build_laddie_mask`](@ref).
+- `min_cells`: minimum number of cells a shelf component must have to be
+  retained (default 10).  Components strictly smaller than this are removed.
+
+# Example
+```julia
+mask = build_laddie_mask(z_bed, h_ice)
+fill_ocean_holes!(mask)
+fill_shelf_holes!(mask)
+n = fill_small_shelf_patches!(mask, 20)
+println("Removed \$n cells in undersized shelf patches")
+```
+"""
+function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
+    ny, nx = size(mask)
+    visited = falses(ny, nx)
+    dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
+    n_filled = 0
+
+    for i in 1:ny, j in 1:nx
+        mask[i, j] == 3 && !visited[i, j] || continue
+
+        # BFS to collect the full connected component
+        component = Tuple{Int,Int}[]
+        queue = Tuple{Int,Int}[(i, j)]
+        visited[i, j] = true
+        while !isempty(queue)
+            ci, cj = popfirst!(queue)
+            push!(component, (ci, cj))
+            for (di, dj) in dirs
+                ni, nj = ci + di, cj + dj
+                if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 3
+                    visited[ni, nj] = true
+                    push!(queue, (ni, nj))
+                end
+            end
+        end
+
+        if length(component) < min_cells
+            for (ci, cj) in component
+                mask[ci, cj] = 2
+            end
+            n_filled += length(component)
         end
     end
     return n_filled

@@ -38,11 +38,11 @@ Handle convective instability by relaxing T and S of unstable cells toward
 ambient values over a prescribed timescale (applied implicitly in the tracer
 time step via the `conv2` term).
 
-- `convtime`: relaxation timescale, s (default `10000.0`).
+- `upwind_advection_Time`: relaxation timescale, s (default `10000.0`).
 
 Select via `Params(; convpar = RelaxToAmbient(10000.0))`.
 """
 struct RelaxToAmbient{FT} <: AbstractConvectionScheme
     ;
-    convtime::FT;
+    upwind_advection_Time::FT;
 end

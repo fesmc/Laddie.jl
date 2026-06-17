@@ -1,5 +1,77 @@
 
 # ============================================================================
+# Ice-base slope gradient variants
+# ============================================================================
+
+"""
+Abstract supertype for ice-base slope (dzdx/dzdy) computation strategies.
+Pass a concrete instance as the `gradient` keyword to `build_model` or
+`build_isomip`.
+"""
+abstract type AbstractIceSlopeGradient end
+
+"""
+    PyGradient()
+
+Python-ported centred-difference gradient: `(zb_E − zb_W) / (2 dx)` applied
+uniformly over all cells with no mask awareness.  Matches the Python LADDIE
+v1.1 stencil exactly and should be used when comparing against the Python
+reference output.
+"""
+struct PyGradient <: AbstractIceSlopeGradient end
+
+"""
+    JlGradient()
+
+Mask-aware gradient (default): the ice-base slope at each shelf cell is
+computed using only shelf-cell neighbours, falling back to one-sided
+differences at ice fronts / grounding lines, and zero when no shelf neighbour
+exists.  This avoids spurious slopes from the physically-incompatible `zb`
+values stored at ocean cells (`zb=0`) and grounded cells (`zb=bed`).
+"""
+struct JlGradient <: AbstractIceSlopeGradient end
+
+function _icebase_slope(::PyGradient, tmask, zb_ft, dx_ft, dy_ft, FT)
+    return gradient_x(zb_ft, dx_ft), gradient_y(zb_ft, dy_ft)
+end
+
+function _icebase_slope(::JlGradient, tmask, zb_ft, dx_ft, dy_ft, FT)
+    # Only read shelf-cell neighbours to avoid incorporating the
+    # physically-incompatible zb values at ocean (zb=0) and grounded
+    # (zb=bed) cells, which would produce O(0.2) spurious slopes.
+    #
+    # Shift convention: xm1=east, xp1=west, ym1=north, yp1=south.
+    # Stencil at each shelf cell:
+    #   both neighbours shelf → centred  (zb_E − zb_W) / (2 dx)
+    #   east only             → forward  (zb_E − zb_C) / dx
+    #   west only             → backward (zb_C − zb_W) / dx
+    #   neither               → 0
+    _tm_e = xm1(tmask); _tm_w = xp1(tmask)
+    _tm_n = ym1(tmask); _tm_s = yp1(tmask)
+    _zb_e = xm1(zb_ft); _zb_w = xp1(zb_ft)
+    _zb_n = ym1(zb_ft); _zb_s = yp1(zb_ft)
+    dzdx = ifelse.(tmask .> 0,
+        ifelse.(_tm_e .* _tm_w .> 0,
+            (_zb_e .- _zb_w) ./ (FT(2) .* dx_ft),
+            ifelse.(_tm_e .> 0,
+                (_zb_e .- zb_ft) ./ dx_ft,
+                ifelse.(_tm_w .> 0,
+                    (zb_ft .- _zb_w) ./ dx_ft,
+                    zero(FT)))),
+        gradient_x(zb_ft, dx_ft))
+    dzdy = ifelse.(tmask .> 0,
+        ifelse.(_tm_n .* _tm_s .> 0,
+            (_zb_n .- _zb_s) ./ (FT(2) .* dy_ft),
+            ifelse.(_tm_n .> 0,
+                (_zb_n .- zb_ft) ./ dy_ft,
+                ifelse.(_tm_s .> 0,
+                    (zb_ft .- _zb_s) ./ dy_ft,
+                    zero(FT)))),
+        gradient_y(zb_ft, dy_ft))
+    return dzdx, dzdy
+end
+
+# ============================================================================
 # Grid{FT, A} — static geometry, masks, stagger-count denominators.
 # A is the concrete matrix type (Matrix{FT} on CPU, CuArray{FT,2} on GPU).
 # mask is always kept as Matrix{Int} on the CPU for host-side branching.
@@ -13,6 +85,7 @@ struct Grid{FT,A<:AbstractMatrix{FT}}
 
     mask::Matrix{Int}
     zb::A
+    z_bed::A
     dzdx::A
     dzdy::A
 
@@ -83,12 +156,11 @@ $(TYPEDSIGNATURES)
 Build all masks and stagger-count denominators from the raw integer `mask` and
 ice-draft array `zb`.  Returns an immutable typed struct.
 """
-function Grid(mask::AbstractMatrix{Int}, zb::AbstractMatrix, dx, dy; FT = Float64)
+function Grid(mask::AbstractMatrix{Int}, zb::AbstractMatrix, z_bed_raw::AbstractMatrix, dx, dy; FT = Float64, gradient = JlGradient())
     dx_ft = FT(dx);
     dy_ft = FT(dy)
     zb_ft = FT.(zb)
-    dzdx = gradient_x(zb_ft, dx_ft)
-    dzdy = gradient_y(zb_ft, dy_ft)
+    z_bed_ft = FT.(z_bed_raw)
 
     # Primary classification
     tmask = FT.(mask .== 3)
@@ -99,6 +171,8 @@ function Grid(mask::AbstractMatrix{Int}, zb::AbstractMatrix, dx, dy; FT = Float6
     ocnyp1 = yp1(ocn)
     ocnxm1 = xm1(ocn);
     ocnxp1 = xp1(ocn)
+
+    dzdx, dzdy = _icebase_slope(gradient, tmask, zb_ft, dx_ft, dy_ft, FT)
 
     tmaskym1 = ym1(tmask);
     tmaskyp1 = yp1(tmask)
@@ -168,6 +242,7 @@ function Grid(mask::AbstractMatrix{Int}, zb::AbstractMatrix, dx, dy; FT = Float6
         dy_ft,
         Matrix{Int}(mask),
         zb_ft,
+        z_bed_ft,
         dzdx,
         dzdy,
         tmask,

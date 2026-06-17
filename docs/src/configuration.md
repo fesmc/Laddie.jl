@@ -113,7 +113,7 @@ Only relevant when `convop = 0` or `convop = 1` (`ClampDensity` /
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `mindrho` | Float | `0.005` | Minimum density contrast δρ (kg m⁻³); used by `ClampDensity` and `ResetToAmbient`. |
-| `convtime` | Float | `10000.0` | Relaxation timescale (s); used by `RelaxToAmbient`. |
+| `upwind_advection_Time` | Float | `10000.0` | Relaxation timescale (s); used by `RelaxToAmbient`. |
 
 ---
 

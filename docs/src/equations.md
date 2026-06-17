@@ -293,10 +293,10 @@ the Python-LADDIE verification stays valid.
 ### Convective relaxation
 
 For `convpar = RelaxToAmbient`, unstable cells (``\delta\rho < 0``) relax T/S
-toward ambient over `convtime` via the `conv2` field appearing in (4)–(5):
+toward ambient over `upwind_advection_Time` via the `conv2` field appearing in (4)–(5):
 
 ```math
-\mathrm{conv2} = \frac{[\delta\rho < 0]\,D}{\mathrm{convtime}}.
+\mathrm{conv2} = \frac{[\delta\rho < 0]\,D}{\mathrm{upwind_advection_Time}}.
 ```
 
 `ClampDensity` (clamp ``\delta\rho`` to a positive floor) and `ResetToAmbient`

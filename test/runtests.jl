@@ -155,6 +155,96 @@ end
         @test zb[2, 4] ≈ 0.0
     end
 
+    @testset "Mask cleaning: fill_ocean_holes!, fill_shelf_holes!, fill_small_shelf_patches!" begin
+        # 6×6 interior (8×8 with border ring).
+        # Layout (interior rows 1-6, cols 1-6):
+        #   cols 1-3  → grounded (2)
+        #   cols 4-6  → shelf (3), except cell (3,3) interior = (4,4) in full = isolated ocean
+        #   cell (2,5) interior = (3,6) in full = isolated shelf (surrounded by grounded)
+        m = zeros(Int, 8, 8)
+        m[1, :] .= 1; m[end, :] .= 1; m[:, 1] .= 1; m[:, end] .= 1
+        m[2:end-1, 2:4] .= 2   # grounded block
+        m[2:end-1, 5:end-1] .= 3  # shelf block
+
+        # Plant an isolated ocean pocket inside the shelf
+        m[4, 6] = 0   # one ocean cell surrounded by shelf — not reachable from border
+        # Plant an isolated shelf cell surrounded by grounded ice
+        m[3, 3] = 3   # shelf cell inside the grounded block
+
+        # fill_ocean_holes!: the isolated ocean pocket at (4,6) is not connected
+        # to the outer ocean (which is fully excluded by the border ring of 1s);
+        # it should be reclassified as grounded.
+        mc = copy(m)
+        n = fill_ocean_holes!(mc)
+        @test n == 1
+        @test mc[4, 6] == 2   # reclassified
+        @test mc[3, 3] == 3   # shelf cell untouched
+
+        # fill_shelf_holes!: the isolated shelf at (3,3) has no ocean neighbour
+        # → reclassified; the shelf block (cols 5-6) touches ocean → kept.
+        mc2 = copy(m)
+        n = fill_shelf_holes!(mc2)
+        @test n == 1
+        @test mc2[3, 3] == 2   # reclassified
+        @test mc2[3, 6] == 3   # shelf block untouched
+
+        # fill_small_shelf_patches!: a single-cell shelf component is below min_cells=5
+        # → reclassified; the main shelf block (many cells) is kept.
+        mc3 = copy(m)
+        n = fill_small_shelf_patches!(mc3, 5)
+        @test n == 1
+        @test mc3[3, 3] == 2   # single-cell component removed
+        # Main shelf block has >> 5 cells → untouched (spot-check cells away from the ocean hole)
+        @test mc3[2, 5] == 3
+        @test mc3[5, 7] == 3
+
+        # min_cells=1 keeps everything including single-cell patches
+        mc4 = copy(m)
+        mc4[3, 3] = 3
+        n = fill_small_shelf_patches!(mc4, 1)
+        @test n == 0
+        @test mc4[3, 3] == 3
+
+        # Return value: cells reclassified (0 when nothing to do)
+        mc5 = copy(m); mc5[3, 3] = 2   # no isolated shelf
+        @test fill_small_shelf_patches!(mc5, 10) == 0
+    end
+
+    @testset "Mask cleaning: fill_small_grounded_patches!" begin
+        # 6×6 interior (8×8 with border ring).
+        # Left grounded block (cols 2-4) touches the border → main sheet, never removed.
+        # A 2-cell isolated grounded patch (rows 3-4, col 6) sits inside the shelf.
+        g = zeros(Int, 8, 8)
+        g[1, :] .= 1; g[end, :] .= 1; g[:, 1] .= 1; g[:, end] .= 1
+        g[2:end-1, 2:4] .= 2   # main grounded block (touches border → kept)
+        g[2:end-1, 5:end-1] .= 3  # shelf block
+        g[3, 6] = 2             # isolated grounded cell 1
+        g[4, 6] = 2             # isolated grounded cell 2 (component size = 2)
+
+        # min_cells=5: the 2-cell isolated patch is removed → shelf; main block untouched
+        gc = copy(g)
+        n = fill_small_grounded_patches!(gc, 5)
+        @test n == 2
+        @test gc[3, 6] == 3   # reclassified to shelf
+        @test gc[4, 6] == 3
+        @test gc[3, 3] == 2   # main grounded block untouched
+
+        # min_cells=1: nothing removed (component size 2 >= 1)
+        gc2 = copy(g)
+        @test fill_small_grounded_patches!(gc2, 1) == 0
+        @test gc2[3, 6] == 2   # kept
+
+        # min_cells=3: 2-cell patch is below threshold → removed
+        gc3 = copy(g)
+        @test fill_small_grounded_patches!(gc3, 3) == 2
+        @test gc3[3, 6] == 3
+
+        # Border-connected grounded cells are never removed regardless of min_cells
+        gc4 = copy(g)
+        @test fill_small_grounded_patches!(gc4, 100) == 2   # only the 2-cell patch
+        @test gc4[3, 3] == 2   # main block kept
+    end
+
     @testset "Geometry ingestion: end-to-end build_model from synthetic BedMachine" begin
         # 4×8 interior: cols 1-2 grounded, cols 3-8 floating
         ny_bm, nx_bm = 4, 8
@@ -303,6 +393,7 @@ end
         @test build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold).entpar isa
               LambertEntrainment
         mk(ep) = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm,
+            gradient = PyGradient(),
             params = Params(; FT, entpar = ep, meltpar = FixedGamT(FT(0.00018)),
                             convpar = ResetToAmbient(FT(0.005))))
         ml = mk(LambertEntrainment(FT(2.5)))
@@ -541,8 +632,11 @@ end
     @testset "AdaptiveDt: accuracy, step count, restart round-trip" begin
         # Accuracy: on 1-day warm ISOMIP+ the adaptive solution tracks the
         # fixed-dt one to within a few percent (measured ~2.2% mean, ~0.1% max).
-        mf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        # PyGradient is used here so tolerances reflect the calibrated dynamics.
+        mf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                          gradient = PyGradient())
         ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                          gradient = PyGradient(),
                           params = Params(; FT, tstep = AdaptiveDt()))
         run!(mf; days = 1.0, verbose = false)
         run!(ma; days = 1.0, verbose = false)
@@ -792,15 +886,15 @@ end
         @test meta["forcing"]["isomipcond"] == "warm"
         @test meta["run_config"]["saveday"] == 0.5
 
-        # NetCDF output written at the saveday cadence.  The filename carries
-        # the day stamp rounded to whole days, so both sub-day writes here
-        # collapse onto output_000001.nc — hence >= 1, not >= 2.
-        ncs = sort(filter(endswith(".nc"), readdir(rundir)))
-        @test length(ncs) >= 1
+        # All output is written into a single output.nc with a time dimension;
+        # saveday=0.5 over 1 day produces at least 2 time slices.
         NCD = Laddie.NCDatasets
-        melt_out = NCD.Dataset(joinpath(rundir, ncs[end])) do ds
+        out_path = joinpath(rundir, "output.nc")
+        @test isfile(out_path)
+        melt_out = NCD.Dataset(out_path) do ds
             @test haskey(ds, "melt") && haskey(ds, "D") && haskey(ds, "T")
-            coalesce.(Array(ds["melt"][:, :]), NaN)
+            @test length(ds["time"]) >= 2
+            coalesce.(Array(ds["melt"][:, :, end]), NaN)
         end
         @test any(isfinite, melt_out)
         @test maximum(filter(isfinite, melt_out)) > 0   # m/yr, warm cavity melts
@@ -817,16 +911,15 @@ end
         @test m2.T.present ≈ m.T.present
         @test m2.S.present ≈ m.S.present
 
-        # Continuation timestamps: output and restart files of the restarted
-        # run must carry the t_start offset, not restart from day 0.
+        # Continuation timestamps: time values in output.nc must carry the
+        # t_start offset, not restart from day 0.
         run!(m2; days = 0.5, verbose = false)
         rundir2 = joinpath(tmpdir, "iotest2")
-        ncs2 = sort(filter(endswith(".nc"), readdir(rundir2)))
-        @test !isempty(ncs2)
-        @test "output_000000.nc" ∉ ncs2   # day stamps continue from t_start = 1
-        NCD.Dataset(joinpath(rundir2, ncs2[end])) do ds
-            @test ds.attrib["time_end_days"] ≈ 1.5 atol = 0.01
-            @test ds.attrib["time_start_days"] >= 1.0 - 0.01
+        out2_path = joinpath(rundir2, "output.nc")
+        @test isfile(out2_path)
+        NCD.Dataset(out2_path) do ds
+            @test ds["time"][end] ≈ 1.5 atol = 0.01   # end of window at t_start + 0.5
+            @test ds["time"][1] >= 1.0 - 0.01           # first slice starts after restart
         end
         latest2 = joinpath(rundir2, "restart_latest.jld2")
         @test isfile(latest2)
@@ -851,11 +944,14 @@ end
         # residuals measured at verification time, which are consistent with
         # NumPy-vs-Julia floating-point evaluation-order differences; a physics
         # regression exceeds them by orders of magnitude.
-        # Note: output_000001.nc holds day-AVERAGED fields and is not comparable
-        # to the end state — only the restart file is used here.
+        #
+        # PyGradient() matches the Python LADDIE v1.1 centred-difference stencil
+        # (no mask awareness), so the field residuals are meaningful here.
+        # For production runs use the default JlGradient() which avoids spurious
+        # slopes from ocean/grounded neighbours.
         py_restart = joinpath(@__DIR__, "..", "docs", "assets", "restart_000001.nc")
         if isfile(py_restart)
-            m = build_isomip(; isomipcond = :warm)   # full size, Float64
+            m = build_isomip(; isomipcond = :warm, gradient = PyGradient())
             run!(m; days = 1.0, verbose = false)
 
             NCD = Laddie.NCDatasets
@@ -886,8 +982,7 @@ end
                 @test maximum(resid) < max_tol
             end
 
-            # Melt stats verified against the Python log diagnostics at t ≈ 1 day
-            # (Python: mean 24.42, max ≈ 141 m/yr).
+            # Melt stats verified against the Python log diagnostics at t ≈ 1 day.
             mx, mn, _ = meltstats(m)
             @test isapprox(mn, 24.42; rtol = 0.01)
             @test isapprox(mx, 140.7; rtol = 0.01)

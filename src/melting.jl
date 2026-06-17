@@ -29,9 +29,12 @@ coefficients γ_T and γ_S via the log-layer formulation
 
 Select via `Params(; meltpar = TurbulentGamT(13.8, 2432.0, 1.95e-6))`.
 """
-struct TurbulentGamT{FT} <: AbstractMeltParam
-    ;
-    Pr::FT;
-    Sc::FT;
-    nu0::FT;
+@kwdef struct TurbulentGamT{FT} <: AbstractMeltParam
+    Pr::FT = 13.8
+    Sc::FT = 2432.0
+    nu0::FT = 1.95e-6
+end
+
+@kwdef struct PrescribedMelt{FT} <: AbstractMeltParam
+    melt::FT = zero(FT)
 end

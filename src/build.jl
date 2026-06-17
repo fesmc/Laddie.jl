@@ -108,13 +108,20 @@ function build_model(
     backend = CPU(),
     FT = Float64,
     rc = RunConfig(),
+    gradient = JlGradient(),
+    z_bed_raw = nothing,
 )
     _validate_build_inputs(mask, zb_raw, dx, dy, forcing, params, FT)
     ny_total, nx_total = size(mask)
     nx, ny = nx_total - 2, ny_total - 2
 
     zb = _adjust_zb(mask, zb_raw, FT)
-    grid = Grid(mask, zb, FT(dx), FT(dy); FT)
+    z_bed = if z_bed_raw === nothing
+        fill(FT(-Inf), ny_total, nx_total)  # no upper cap on D
+    else
+        FT.(z_bed_raw)
+    end
+    grid = Grid(mask, zb, z_bed, FT(dx), FT(dy); FT, gradient)
     state = State(FT, ny_total, nx_total)
     cache =
         Cache(FT, typeof(params.meltpar), typeof(params.convpar), ny_total, nx_total)
@@ -181,6 +188,7 @@ function build_isomip(
     isomipcond = :warm,
     params = nothing,
     rc = RunConfig(),
+    gradient = JlGradient(),
 )
     ny_total, nx_total = ny + 2, nx + 2
     mask = zeros(Int, ny_total, nx_total)
@@ -216,5 +224,5 @@ function build_isomip(
             openbc = ZeroGradientInflow(),
         ) : params
 
-    return build_model(mask, zb_raw, dx, dy, forcing, _params; backend, FT, rc)
+    return build_model(mask, zb_raw, dx, dy, forcing, _params; backend, FT, rc, gradient)
 end

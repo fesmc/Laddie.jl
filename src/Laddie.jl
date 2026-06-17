@@ -32,16 +32,20 @@ include("build.jl")
 include("show.jl")
 
 
-export Model, Grid, State, Cache, Params, RunConfig
+export Model, Grid, State, Cache, Params, RunConfig, DebugConfig
 export build_model,
-    build_isomip, build_laddie_mask, ice_base_depth, run!, meltstats, to_backend
+    build_isomip, build_laddie_mask, ice_base_depth, bed_elevation,
+    fill_ocean_holes!, fill_shelf_holes!, fill_small_shelf_patches!,
+    fill_small_grounded_patches!,
+    run!, meltstats, to_backend
 
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
-export AbstractMeltParam, FixedGamT, TurbulentGamT
+export AbstractMeltParam, FixedGamT, TurbulentGamT, PrescribedMelt
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
 
 export AbstractOpenBoundary, ZeroGradientInflow, NoInflow
 export AbstractGroundingLineBC, FreeSlipGL, NoSlipGL
+export AbstractIceSlopeGradient, PyGradient, JlGradient
 export AbstractTimeStepper, FixedDt, AdaptiveDt
 export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateEnd
 export AbstractForcing, ISOMIPForcing, LinearForcing, Linear2Forcing

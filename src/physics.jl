@@ -47,12 +47,12 @@ end
         disc = quad_b * quad_b - FT(4) * quad_c
         disc = ifelse(disc < zero(FT), zero(FT), disc)
         # TODO check / 2
-        melt_rate = (-quad_b + sqrt(disc)) / (FT(1) + FT(1)) * tmask[i, j]
-        melt[i, j] = melt_rate
+        melt_rate = (-quad_b + sqrt(disc)) / (FT(1) + FT(1))
+        melt[i, j] = iszero(tmask[i, j]) ? zero(FT) : melt_rate
         Tb_denom = cp_over_Leff * gamT + cp_over_Leff * ci_over_cp * melt_rate
         Tb[i, j] =
-            iszero(Tb_denom) ? zero(FT) :
-            (cp_over_Leff * gamT * T[i, j] - melt_rate) / Tb_denom * tmask[i, j]
+            (iszero(tmask[i, j]) || iszero(Tb_denom)) ? zero(FT) :
+            (cp_over_Leff * gamT * T[i, j] - melt_rate) / Tb_denom
     end
 end
 
@@ -85,12 +85,12 @@ end
         quad_c = cp_over_Leff * gT * gS * (Tf_depth - T[i, j] + l1 * S[i, j])
         disc = quad_b * quad_b - FT(4) * quad_c
         disc = ifelse(disc < zero(FT), zero(FT), disc)
-        melt_rate = (-quad_b + sqrt(disc)) / (FT(1) + FT(1)) * tmask[i, j]
-        melt[i, j] = melt_rate
+        melt_rate = (-quad_b + sqrt(disc)) / (FT(1) + FT(1))
+        melt[i, j] = iszero(tmask[i, j]) ? zero(FT) : melt_rate
         Tb_denom = cp_over_Leff * gT + cp_over_Leff * ci_over_cp * melt_rate
         Tb[i, j] =
-            iszero(Tb_denom) ? zero(FT) :
-            (cp_over_Leff * gT * T[i, j] - melt_rate) / Tb_denom * tmask[i, j]
+            (iszero(tmask[i, j]) || iszero(Tb_denom)) ? zero(FT) :
+            (cp_over_Leff * gT * T[i, j] - melt_rate) / Tb_denom
     end
 end
 
@@ -109,12 +109,13 @@ end
     @inbounds begin
         FT = typeof(z0)
         depth_idx = -z0 + (zb[i, j] - D[i, j]) / dz
-        # Non-finite D (a blown-up run) must not reach trunc(Int, ·): that is
-        # an InexactError on CPU and undefined behaviour on GPU.  Fall back to
-        # index 0 and let the run!-level blow-up check report the NaN.
-        # TODO check how we should handle if layer reaches bedrock
+        # Guard against non-finite or out-of-range depth_idx before the integer
+        # conversion: trunc(Int, x) throws InexactError on CPU and is UB on GPU
+        # when x overflows Int64 (~9.2e18).  Clamp to [0, nz-1] in float first
+        # so trunc always receives a representable value.
         depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
-        idx_lo = clamp(trunc(Int, depth_idx), 0, nz - 1)
+        depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
+        idx_lo = trunc(Int, depth_idx)
         idx_hi = clamp(idx_lo + 1, 0, nz - 1)
         weight = depth_idx - FT(idx_lo)
         Ta[i, j] = weight * Tz[idx_hi+1] + (one(FT) - weight) * Tz[idx_lo+1]
@@ -210,10 +211,18 @@ function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamT)
     PrCorr = FT(12.5) * mp.Pr^(FT(2)/FT(3)) - FT(8.68)
     ScCorr = FT(12.5) * mp.Sc^(FT(2)/FT(3)) - FT(8.68)
     nu0 = mp.nu0
-    @. m.gamT =
-        m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + PrCorr)
-    @. m.gamS =
-        m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + ScCorr)
+    # @show extrema(m.ustar), extrema(m.D.present)
+    # @show nu0, PrCorr, ScCorr
+    @. m.gamT = ifelse(
+        m.tmask > 0,
+        m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + PrCorr),
+        zero(FT),
+    )
+    @. m.gamS = ifelse(
+        m.tmask > 0,
+        m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + ScCorr),
+        zero(FT),
+    )
 end
 
 """
@@ -259,6 +268,10 @@ function update_melt!(m, mp::FixedGamT)
         m.l2,
         m.l3,
     )
+end
+
+function update_melt!(m, mp::PrescribedMelt)
+    @. m.melt = 0
 end
 
 """
@@ -413,20 +426,15 @@ end
 $(TYPEDSIGNATURES)
 
 Compute entrainment/detrainment rates and assemble the net entrainment
-`m.nentr = entr + ent2 − detr` that enters the thickness equation
-(Lambert et al. 2023, Eq. 1). `ent2` is a Laddie.jl minimum-thickness safeguard
-(D ≥ `minD`), not part of Lambert et al. (2023); see `docs/src/equations.md`.
+`m.nentr = entr − detr` that enters the thickness and tracer equations.
+`ent2` (the mass rate from saturating D at `minD`) is computed separately
+in `_clamp_thickness!` after the thickness step so that T/S are not
+perturbed by the floor correction.
 """
 function update_entrainment!(m)
-    FT = m.FT
     _compute_entrainment!(m, m.entpar)
-    convT(m.convD, m, m.D.present)
-    z = zero(FT)
-    dt2 = m.dt + m.dt
-    @. m.ent2 =
-        max(z, (m.minD - m.D.past) / dt2 - (m.convD + m.melt + m.entr - m.detr)) *
-        m.tmask
-    @. m.nentr = m.entr + m.ent2 - m.detr
+    upwind_advection_T(m.convD, m, m.D.present)
+    @. m.nentr = m.entr - m.detr
     return
 end
 
@@ -661,7 +669,7 @@ end
 # U·∂D/∂t  (thickness-tendency coupling)
 @inline u_thickness_tendency(m) = m.U.present .* ip_t(m, m.dDdt)
 # ∇·(DUu)  (momentum advection)
-@inline u_advection(m) = convU(m)
+@inline u_advection(m) = upwind_advection_U(m)
 # g·D̄·ρ̄·∂D/∂x  (pressure gradient from plume-thickness depth)
 @inline u_pressure_depth(m) = m.g .* ip_t(m, m.Ddrho) .* (m.Dxm1 .- m.D.present) ./ m.dx
 # g·D̄·ρ̄·∂zb/∂x  (baroclinic pressure via ice-base slope)
@@ -684,7 +692,7 @@ end
 # V·∂D/∂t  (thickness-tendency coupling)
 @inline v_thickness_tendency(m) = m.V.present .* jp_t(m, m.dDdt)
 # ∇·(DVv)  (momentum advection)
-@inline v_advection(m) = convV(m)
+@inline v_advection(m) = upwind_advection_V(m)
 # g·D̄·ρ̄·∂D/∂y  (pressure gradient from plume-thickness depth)
 @inline v_pressure_depth(m) = m.g .* jp_t(m, m.Ddrho) .* (m.Dym1 .- m.D.present) ./ m.dy
 # g·D̄·ρ̄·∂zb/∂y  (baroclinic pressure via ice-base slope)
@@ -707,7 +715,7 @@ end
 # q·∂D/∂t  (thickness-tendency coupling)
 @inline tracer_thickness_tendency(m, q) = q .* m.dDdt
 # ∇·(D·u·q)  (horizontal tracer advection)
-@inline tracer_advection(m, q) = convT(similar(m.D.present), m, m.D.present .* q)
+@inline tracer_advection(m, q) = upwind_advection_T(similar(m.D.present), m, m.D.present .* q)
 # e_net·qa  (entrainment of ambient water)
 @inline tracer_entrainment(m, qa) = m.nentr .* qa
 # Kh·∇²q  (horizontal diffusion)

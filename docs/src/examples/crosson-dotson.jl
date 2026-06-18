@@ -94,7 +94,7 @@ hm = heatmap!(
     colorrange = (0, 3))
 fig_map
 
-n = fill_small_grounded_patches!(mask, 3)
+n = fill_small_grounded_patches!(mask, 8)
 n > 0 && @info "fill_small_grounded_patches!: reclassified $n cells in undersized isolated grounded patches"
 hm = heatmap!(
     ax1,
@@ -131,14 +131,16 @@ mp = TurbulentGamT()
 # mp = FixedGamT(0.00018)
 params = Params(; dt = 120, A_h = 25, K_h = 25, D_min = 2.8, nu = 0.1, D_init = 2.8,
     tstep = AdaptiveDt(), melting = mp, grline_bc = NoSlipGL(),
-    max_layer_thickness = AbsoluteMaxLayerThickness(30))
+    # max_layer_thickness = AbsoluteMaxLayerThickness(400),
+    max_layer_thickness = TopographicMaxLayerThickness(),
+)
 
 m = build_model(mask, zb, dx, dy, forcing, params;
     z_bed_raw = z_bed_m,
     config = RunConfig(; saveday = 0.1, dbg = DebugConfig(check_nans = true)),
     backend = CUDABackend(),
 )
-run!(m; days = 3, verbose = true)
+run!(m; days = 30, verbose = true)
 
 
 # Colors sampled directly from the source figure (pale cyan -> blue -> dark navy

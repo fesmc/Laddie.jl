@@ -608,6 +608,8 @@ end
 
 function _clamp_thickness!(m)
     max_layer_thickness!(m, m.params.max_layer_thickness)
+    # @. m.D.future = min(m.D.future, m.zb - m.z_bed)
+    # @. m.D.future = min(m.D.future, m.max_layer_thickness.D_max)
     @. m.D.future = max(m.D.future, m.D_min)
     return
 end

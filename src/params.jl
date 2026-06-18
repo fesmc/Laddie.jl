@@ -93,7 +93,7 @@ function Params(;
     C_d_top = 1.1e-3,
     A_h = 6.0,
     K_h = 1.0,
-    max_detrainment = 0.5,
+    max_detrainment = 1e6,
     D_min = 1.0,
     v_cut = 1.414,
     u_tide = 0.01,

@@ -426,15 +426,18 @@ end
 $(TYPEDSIGNATURES)
 
 Compute entrainment/detrainment rates and assemble the net entrainment
-`m.nentr = entr − detr` that enters the thickness and tracer equations.
-`ent2` (the mass rate from saturating D at `D_min`) is computed separately
-in `_clamp_thickness!` after the thickness step so that T/S are not
-perturbed by the floor correction.
+`m.nentr = entr + ent2 − detr` that enters the thickness and tracer equations.
+`ent2` is the minimum additional entrainment rate needed to prevent D falling
+below `D_min` after the upcoming thickness step; it is computed here (before
+stepping) from `D.past`, matching the reference Python LADDIE implementation.
 """
 function update_entrainment!(m)
     _compute_entrainment!(m, m.entrainment)
     upwind_advection_T(m.convD, m, m.D.present)
-    @. m.nentr = m.entr - m.detr
+    FT = m.FT
+    dt2 = FT(2) * m.dt
+    @. m.ent2 = max(zero(FT), (m.D_min - m.D.past) / dt2 - (m.convD + m.melt + m.entr - m.detr)) * m.tmask
+    @. m.nentr = m.entr + m.ent2 - m.detr
     return
 end
 

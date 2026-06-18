@@ -1,6 +1,6 @@
 abstract type AbstractMaxLayerThickness end
 
-struct TopographicMaxLayerThicness <: AbstractMaxLayerThickness end
+struct TopographicMaxLayerThickness <: AbstractMaxLayerThickness end
 @kwdef struct AbsoluteMaxLayerThickness{FT} <: AbstractMaxLayerThickness
     D_max::FT = 100
 end
@@ -9,7 +9,7 @@ end
     f_D_max::FT = 4/5
 end
 
-function max_layer_thickness!(m, ::TopographicMaxLayerThicness)
+function max_layer_thickness!(m, ::TopographicMaxLayerThickness)
     @. m.D.future = min(m.D.future, m.zb - m.z_bed)
 end
 function max_layer_thickness!(m, c::AbsoluteMaxLayerThickness)

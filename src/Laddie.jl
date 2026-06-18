@@ -42,7 +42,7 @@ export build_model,
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
 export AbstractMeltParam, FixedGamT, TurbulentGamT, PrescribedMelt
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
-export AbstractMaximumLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThicness
+export AbstractMaximumLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThickness
 
 export AbstractOpenBoundary, ZeroGradientInflow, NoInflow
 export AbstractGroundingLineBC, FreeSlipGL, NoSlipGL

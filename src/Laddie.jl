@@ -42,11 +42,13 @@ export build_model,
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
 export AbstractMeltParam, FixedGamT, TurbulentGamT, PrescribedMelt
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
+export AbstractMaximumLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThicness
 
 export AbstractOpenBoundary, ZeroGradientInflow, NoInflow
 export AbstractGroundingLineBC, FreeSlipGL, NoSlipGL
 export AbstractIceSlopeGradient, PyGradient, JlGradient
 export AbstractTimeStepper, FixedDt, AdaptiveDt
+export AbstractCFL, ConservativeCFL, ExactCFL
 export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateEnd
 export AbstractForcing, ISOMIPForcing, LinearForcing, Linear2Forcing
 export TanhForcing, FileForcing, ProfileForcing

@@ -96,7 +96,7 @@ function to_backend(m::Model, backend)
     new_forcing = _forcing_to_backend(getfield(m, :forcing), backend)
     Model(
         new_io,
-        getfield(m, :rc),
+        getfield(m, :config),
         new_grid,
         new_state,
         new_cache,

@@ -84,7 +84,7 @@ values at non-shelf cells (mask ≠ 3) are ignored and zeroed internally.
 - `backend`: KernelAbstractions backend (default `CPU()`).
 - `FT`:      floating-point precision type (default `Float64`); must match the
   precision of `params` and `forcing` (an `ArgumentError` is thrown otherwise).
-- `rc`:      `RunConfig` (default: `RunConfig()`, I/O disabled).
+- `config`:      `RunConfig` (default: `RunConfig()`, I/O disabled).
 
 The returned model is fully initialised and ready for `run!`.
 
@@ -107,7 +107,7 @@ function build_model(
     params::Params;
     backend = CPU(),
     FT = Float64,
-    rc = RunConfig(),
+    config = RunConfig(),
     gradient = JlGradient(),
     z_bed_raw = nothing,
 )
@@ -124,16 +124,16 @@ function build_model(
     grid = Grid(mask, zb, z_bed, FT(dx), FT(dy); FT, gradient)
     state = State(FT, ny_total, nx_total)
     cache =
-        Cache(FT, typeof(params.meltpar), typeof(params.convpar), ny_total, nx_total)
+        Cache(FT, typeof(params.melting), typeof(params.convection_scheme), ny_total, nx_total)
 
     io = IOState(FT, collect(FT(dx) .* (1:nx)), collect(FT(dy) .* (1:ny)))
-    m = Model(io, rc, grid, state, cache, params, forcing)
+    m = Model(io, config, grid, state, cache, params, forcing)
     m.dt = params.dt0   # runtime dt starts at the configured initial step
 
-    if rc.saveday > 0
+    if config.saveday > 0
         create_rundir!(m)
     end
-    if rc.fromrestart
+    if config.fromrestart
         m.drho = zero(grid.tmask)
         m.Tf = zero(grid.tmask)
         m.melt = zero(grid.tmask)
@@ -143,7 +143,7 @@ function build_model(
         _initialize_prognostics!(m)
     end
     backend === CPU() || (m = to_backend(m, backend))
-    if rc.saveday > 0
+    if config.saveday > 0
         prepare_output!(m)
     end
     return m
@@ -172,7 +172,7 @@ delegates to `build_model`.
 - `isomipcond`: `:warm` (1 °C at depth) or `:cold` (nearly freezing).
 - `FT`: floating-point precision type (default `Float64`; use `Float32` for GPU).
 - `params`: `Params` object (default: ISOMIP+-canonical values).
-- `rc`: `RunConfig` object (default: `RunConfig()`, I/O disabled).
+- `config`: `RunConfig` object (default: `RunConfig()`, I/O disabled).
 """
 function build_isomip(
     backend = CPU();
@@ -187,7 +187,7 @@ function build_isomip(
     zb_front = -200.0,
     isomipcond = :warm,
     params = nothing,
-    rc = RunConfig(),
+    config = RunConfig(),
     gradient = JlGradient(),
 )
     ny_total, nx_total = ny + 2, nx + 2
@@ -218,11 +218,11 @@ function build_isomip(
         isnothing(params) ?
         Params(;
             FT,
-            entpar = LambertEntrainment(FT(2.5)),
-            meltpar = FixedGamT(FT(0.00018)),
-            convpar = ResetToAmbient(FT(0.005)),
-            openbc = ZeroGradientInflow(),
+            entrainment = LambertEntrainment(FT(2.5)),
+            melting = FixedGamT(FT(0.00018)),
+            convection_scheme = ResetToAmbient(FT(0.005)),
+            open_bc = ZeroGradientInflow(),
         ) : params
 
-    return build_model(mask, zb_raw, dx, dy, forcing, _params; backend, FT, rc, gradient)
+    return build_model(mask, zb_raw, dx, dy, forcing, _params; backend, FT, config, gradient)
 end

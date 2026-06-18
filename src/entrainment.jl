@@ -20,7 +20,7 @@ differs from a literal reading of Eq. 14 (see [`GasparEntrainment`](@ref) and
 
 - `mu`: dimensionless efficiency parameter (ISOMIP+ default: `2.5`).
 
-Select via `Params(; entpar = LambertEntrainment(2.5))`.
+Select via `Params(; entrainment = LambertEntrainment(2.5))`.
 """
 struct LambertEntrainment{FT} <: AbstractEntrainment
     ;
@@ -44,7 +44,7 @@ the form the reference LADDIE actually integrates — for that, use the default
 
 - `mu`: dimensionless efficiency parameter (ISOMIP+ default: `2.5`).
 
-Select via `Params(; entpar = GasparEntrainment(2.5))`.
+Select via `Params(; entrainment = GasparEntrainment(2.5))`.
 """
 struct GasparEntrainment{FT} <: AbstractEntrainment
     ;
@@ -58,7 +58,7 @@ Shear-driven entrainment following Holland & Jenkins (1999).
 
 - `cl`: drag coefficient for entrainment velocity (default: `0.01775`).
 
-Select via `Params(; entpar = HollandEntrainment(0.01775))`.
+Select via `Params(; entrainment = HollandEntrainment(0.01775))`.
 """
 struct HollandEntrainment{FT} <: AbstractEntrainment
     ;

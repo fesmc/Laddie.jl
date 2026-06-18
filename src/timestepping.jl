@@ -145,3 +145,29 @@ function _init_adaptive_dt!(m, ts::AdaptiveDt)
     _apply_dt!(m, ts, _cfl_worstcase(m); allow_grow = false)
     return
 end
+
+# ============================================================================
+# CFL diagnostics — select how the in-loop CFL number is computed.
+# Threaded through RunConfig as the `cfl` field; dispatches `_cfl_number`.
+# ============================================================================
+
+abstract type AbstractCFL end
+
+"""
+$(TYPEDSIGNATURES)
+
+Conservative CFL estimate: takes `max|U|`, `max|V|`, and `max c` independently
+over the active domain, then adds them.  This overestimates the true CFL (the
+worst velocity and worst wave speed rarely occur at the same cell) but avoids a
+per-cell reduction.  Default.
+"""
+struct ConservativeCFL <: AbstractCFL end
+
+"""
+$(TYPEDSIGNATURES)
+
+Per-cell CFL: interpolates U and V to T-points, computes the CFL at every
+active cell, and returns the maximum.  More accurate than [`ConservativeCFL`](@ref)
+but allocates temporary arrays proportional to the grid size.
+"""
+struct ExactCFL <: AbstractCFL end

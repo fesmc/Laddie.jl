@@ -168,17 +168,18 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         s = _south(i, Ny)
+        D0 = D[i, j] * tmask[i, j]
         D_N = _safe_div(
-            D[i, j] + Dxm1[i, j] + Dym1[i, j] + Dxm1ym1[i, j],
+            D0 + Dxm1[i, j] + Dym1[i, j] + Dxm1ym1[i, j],
             tmask[i, j] + tmaskxm1[i, j] + tmaskym1[i, j] + tmaskxm1ym1[i, j],
         )
         D_S = _safe_div(
-            D[i, j] + Dxm1[i, j] + Dyp1[i, j] + Dxm1yp1[i, j],
+            D0 + Dxm1[i, j] + Dyp1[i, j] + Dxm1yp1[i, j],
             tmask[i, j] + tmaskxm1[i, j] + tmaskyp1[i, j] + tmaskxm1yp1[i, j],
         )
         FT = typeof(slip)
-        D_E = Dxm1[i, j] + ocnxm1[i, j] * D[i, j]
-        D_W = D[i, j] + ocn[i, j] * Dxm1[i, j]
+        D_E = Dxm1[i, j] + ocnxm1[i, j] * D0
+        D_W = D0 + ocn[i, j] * Dxm1[i, j]
         # Per-face slip factor: land walls use slip, grounding-line walls
         # slip + dslip (dslip = 0 for FreeSlipGL → bitwise v1 behaviour).
         flux_N =
@@ -235,17 +236,18 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         w = _west(j, Nx)
+        D0 = D[i, j] * tmask[i, j]
         D_E = _safe_div(
-            D[i, j] + Dym1[i, j] + Dxm1[i, j] + Dxm1ym1[i, j],
+            D0 + Dym1[i, j] + Dxm1[i, j] + Dxm1ym1[i, j],
             tmask[i, j] + tmaskym1[i, j] + tmaskxm1[i, j] + tmaskxm1ym1[i, j],
         )
         D_W = _safe_div(
-            D[i, j] + Dym1[i, j] + Dxp1[i, j] + Dxp1ym1[i, j],
+            D0 + Dym1[i, j] + Dxp1[i, j] + Dxp1ym1[i, j],
             tmask[i, j] + tmaskym1[i, j] + tmaskxp1[i, j] + tmaskxp1ym1[i, j],
         )
         FT = typeof(slip)
-        D_N = Dym1[i, j] + ocnym1[i, j] * D[i, j]
-        D_S = D[i, j] + ocn[i, j] * Dym1[i, j]
+        D_N = Dym1[i, j] + ocnym1[i, j] * D0
+        D_S = D0 + ocn[i, j] * Dym1[i, j]
         flux_N =
             -D_N *
             Vjp[i, j] *
@@ -353,7 +355,7 @@ end
 
 function upwind_advection_T(out, m, var)
     ny, nx = size(var)
-    if m.openbc isa ZeroGradientInflow
+    if m.open_bc isa ZeroGradientInflow
         launch!(
             _upwind_advection_T_kernel!,
             out,
@@ -412,7 +414,7 @@ function upwind_advection_T(out, m, var)
 end
 function upwind_advection_U(m)
     ny, nx = size(m.U.present)
-    dslip = _gl_slip(m.glbc, m.slip) - m.slip
+    dslip = _gl_slip(m.grline_bc, m.slip) - m.slip
     launch!(
         _upwind_advection_U_kernel!,
         m.cU,
@@ -453,7 +455,7 @@ function upwind_advection_U(m)
 end
 function upwind_advection_V(m)
     ny, nx = size(m.V.present)
-    dslip = _gl_slip(m.glbc, m.slip) - m.slip
+    dslip = _gl_slip(m.grline_bc, m.slip) - m.slip
     launch!(
         _upwind_advection_V_kernel!,
         m.cV,
@@ -516,7 +518,7 @@ function laplace_T(out, m, var)
 end
 function laplace_U(m)
     ny, nx = size(m.U.past)
-    dslip = _gl_slip(m.glbc, m.slip) - m.slip
+    dslip = _gl_slip(m.grline_bc, m.slip) - m.slip
     launch!(
         _laplace_U_kernel!,
         m.lU,
@@ -545,7 +547,7 @@ function laplace_U(m)
 end
 function laplace_V(m)
     ny, nx = size(m.V.past)
-    dslip = _gl_slip(m.glbc, m.slip) - m.slip
+    dslip = _gl_slip(m.grline_bc, m.slip) - m.slip
     launch!(
         _laplace_V_kernel!,
         m.lV,

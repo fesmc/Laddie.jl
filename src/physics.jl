@@ -173,8 +173,8 @@ $(TYPEDSIGNATURES)
 Flag convectively unstable cells and clamp δρ to a minimum positive value
 so the plume remains denser than ambient.
 """
-function update_convection!(m, cp::ClampDensity)
-    thr = cp.mindrho / m.rho0
+function update_convection!(m, c_p::ClampDensity)
+    thr = c_p.mindrho / m.rho0_seawater
     @. m.convection = m.drho < 0
     @. m.drho = max(m.drho, thr)
 end
@@ -185,9 +185,9 @@ $(TYPEDSIGNATURES)
 Flag convectively unstable cells, then instantly reset their T/S to ambient
 values so the density remains stable.
 """
-function update_convection!(m, cp::ResetToAmbient)
-    thr = cp.mindrho / m.rho0
-    S_adj = cp.mindrho / (m.rho0 * m.beta)
+function update_convection!(m, c_p::ResetToAmbient)
+    thr = c_p.mindrho / m.rho0_seawater
+    S_adj = c_p.mindrho / (m.rho0_seawater * m.beta)
     @. m.convection = m.drho < 0
     @. m.T.present = ifelse(m.drho < thr, m.Ta, m.T.present)
     @. m.S.present = ifelse(m.drho < thr, m.Sa - S_adj, m.S.present)
@@ -204,7 +204,7 @@ function update_convection!(m, ::RelaxToAmbient)
     m.convection .= m.drho .< 0
 end
 
-update_convection!(m) = update_convection!(m, m.convpar)
+update_convection!(m) = update_convection!(m, m.convection_scheme)
 
 function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamT)
     FT = typeof(mp.Pr)
@@ -242,13 +242,13 @@ function update_melt!(m, mp::FixedGamT)
         m.U.present,
         m.V.present,
         m.tmask,
-        m.Cdtop,
-        m.utide,
+        m.C_d_top,
+        m.u_tide,
         ny,
         nx,
     )
-    cp_over_Leff = m.cp / (m.L - m.ci * m.Ti)
-    ci_over_cp = m.ci / m.cp
+    cp_over_Leff = m.c_p / (m.L - m.c_i * m.T_i)
+    ci_over_cp = m.c_i / m.c_p
     m.gamT = mp.gamTfix
     m.gamS = m.gamT / FT(35)    # TODO could be 35
     launch!(
@@ -291,13 +291,13 @@ function update_melt!(m, mp::TurbulentGamT)
         m.U.present,
         m.V.present,
         m.tmask,
-        m.Cdtop,
-        m.utide,
+        m.C_d_top,
+        m.u_tide,
         ny,
         nx,
     )
-    cp_over_Leff = m.cp / (m.L - m.ci * m.Ti)
-    ci_over_cp = m.ci / m.cp
+    cp_over_Leff = m.c_p / (m.L - m.c_i * m.T_i)
+    ci_over_cp = m.c_i / m.c_p
     _compute_turbulent_transfer_coefficients!(m, mp)
     launch!(
         _three_eq_melt_mat_gamT_kernel!,
@@ -318,7 +318,7 @@ function update_melt!(m, mp::TurbulentGamT)
     )
 end
 
-update_melt!(m) = update_melt!(m, m.meltpar)
+update_melt!(m) = update_melt!(m, m.melting)
 
 """
 $(TYPEDSIGNATURES)
@@ -328,8 +328,8 @@ Holland–Jenkins shear entrainment: e ∝ √max(0, |u|² − gₐ′·Kh/Ah·D
 Lambert et al. (2023, Eq. 14); see `docs/src/equations.md`.
 """
 function _compute_entrainment!(m, ep::HollandEntrainment)
-    coeff = ep.cl * m.Kh / m.Ah^2
-    drho_coeff = m.g * m.Kh / m.Ah
+    coeff = ep.cl * m.K_h / m.A_h^2
+    drho_coeff = m.g * m.K_h / m.A_h
     ny, nx = size(m.entr)
     launch!(
         _holland_entrainment_kernel!,
@@ -376,7 +376,7 @@ function _compute_entrainment!(m, ep::LambertEntrainment)
         m.melt,
         m.tmask,
         mu2_over_g,
-        m.maxdetr,
+        m.max_detrainment,
         m.alpha,
         m.beta,
         m.l1,
@@ -413,7 +413,7 @@ function _compute_entrainment!(m, ep::GasparEntrainment)
         m.melt,
         m.tmask,
         mu_over_g,
-        m.maxdetr,
+        m.max_detrainment,
         m.alpha,
         m.beta,
         m.l1,
@@ -427,39 +427,39 @@ $(TYPEDSIGNATURES)
 
 Compute entrainment/detrainment rates and assemble the net entrainment
 `m.nentr = entr − detr` that enters the thickness and tracer equations.
-`ent2` (the mass rate from saturating D at `minD`) is computed separately
+`ent2` (the mass rate from saturating D at `D_min`) is computed separately
 in `_clamp_thickness!` after the thickness step so that T/S are not
 perturbed by the floor correction.
 """
 function update_entrainment!(m)
-    _compute_entrainment!(m, m.entpar)
+    _compute_entrainment!(m, m.entrainment)
     upwind_advection_T(m.convD, m, m.D.present)
     @. m.nentr = m.entr - m.detr
     return
 end
 
-# Friction velocity at the T-point: |u|_T = √(Cd_top · (im_half(U)² + jm_half(V)² + u_tide²))
+# Friction velocity at the T-point: |u|_T = √(C_d_top · (im_half(U)² + jm_half(V)² + u_tide²))
 # im_half(U)[i,j] = (U[i,j] + U[i,j−1]) / 2,  jm_half(V)[i,j] = (V[i,j] + V[i−1,j]) / 2
 @kernel function _ustar_kernel!(
     ustar,
     @Const(U),
     @Const(V),
     @Const(tmask),
-    Cdtop,
-    utide,
+    C_d_top,
+    u_tide,
     Ny,
     Nx,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        FT = typeof(Cdtop)
+        FT = typeof(C_d_top)
         half = FT(1) / (FT(1) + FT(1))
         w = _west(j, Nx)
         s = _south(i, Ny)
         u_im = (U[i, j] + U[i, w]) * half
         v_jm = (V[i, j] + V[s, j]) * half
         ustar[i, j] =
-            sqrt(Cdtop * (u_im * u_im + v_jm * v_jm + utide * utide)) * tmask[i, j]
+            sqrt(C_d_top * (u_im * u_im + v_jm * v_jm + u_tide * u_tide)) * tmask[i, j]
     end
 end
 
@@ -484,7 +484,7 @@ end
     @Const(melt),
     @Const(tmask),
     mu2_over_g,
-    maxdetr,
+    max_detrainment,
     alpha,
     beta,
     l1,
@@ -506,7 +506,7 @@ end
         ent[i, j] = e_ij
         z = zero(FT)
         entr[i, j] = max(e_ij, z)
-        detr[i, j] = min(maxdetr, max(-e_ij, z))
+        detr[i, j] = min(max_detrainment, max(-e_ij, z))
     end
 end
 
@@ -529,7 +529,7 @@ end
     @Const(melt),
     @Const(tmask),
     mu_over_g,
-    maxdetr,
+    max_detrainment,
     alpha,
     beta,
     l1,
@@ -551,7 +551,7 @@ end
         ent[i, j] = e_ij
         z = zero(FT)
         entr[i, j] = max(e_ij, z)
-        detr[i, j] = min(maxdetr, max(-e_ij, z))
+        detr[i, j] = min(max_detrainment, max(-e_ij, z))
     end
 end
 
@@ -658,10 +658,10 @@ end
 #   g       gravitational acceleration [m s⁻²]
 #   ρ₀      reference seawater density [kg m⁻³]
 #   zb      ice-base depth, negative below sea level [m]
-#   Cd      quadratic bottom drag coefficient [–]
+#   C_d      quadratic bottom drag coefficient [–]
 #   |u|     current speed, √(U² + V²) [m s⁻¹]
-#   Ah      horizontal viscosity [m² s⁻¹]
-#   Kh      horizontal diffusivity [m² s⁻¹]
+#   A_h      horizontal viscosity [m² s⁻¹]
+#   K_h      horizontal diffusivity [m² s⁻¹]
 #   γT      turbulent heat transfer coefficient [m s⁻¹]
 # ============================================================================
 # -- U-momentum terms (Eq. 2) -----------------------------------------------
@@ -681,9 +681,9 @@ end
 @inline u_coriolis(m) = m.f .* ip_t(m, m.D.present .* m.Vjm)
 # Cd·U·|u|  (quadratic bottom drag)
 @inline u_bottom_drag(m) =
-    m.Cd .* m.U.present .* sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
+    m.C_d .* m.U.present .* sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
 # Ah·∇²(DU)  (lateral diffusion)
-@inline u_diffusion(m) = m.Ah .* laplace_U(m)
+@inline u_diffusion(m) = m.A_h .* laplace_U(m)
 # e·U  (detrainment momentum loss)
 @inline u_detrainment(m) = m.detr .* m.U.present
 
@@ -704,9 +704,9 @@ end
 @inline v_coriolis(m) = m.f .* jp_t(m, m.D.present .* m.Uim)
 # Cd·V·|u|  (quadratic bottom drag)
 @inline v_bottom_drag(m) =
-    m.Cd .* m.V.present .* sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)
+    m.C_d .* m.V.present .* sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)
 # Ah·∇²(DV)  (lateral diffusion)
-@inline v_diffusion(m) = m.Ah .* laplace_V(m)
+@inline v_diffusion(m) = m.A_h .* laplace_V(m)
 # ė·V  (detrainment momentum loss)
 @inline v_detrainment(m) = m.detr .* m.V.present
 
@@ -719,7 +719,7 @@ end
 # e_net·qa  (entrainment of ambient water)
 @inline tracer_entrainment(m, qa) = m.nentr .* qa
 # Kh·∇²q  (horizontal diffusion)
-@inline tracer_diffusion(m, q_past) = m.Kh .* laplace_T(similar(q_past), m, q_past)
+@inline tracer_diffusion(m, q_past) = m.K_h .* laplace_T(similar(q_past), m, q_past)
 # (q_past − qa)·conv2  (convective relaxation, RelaxToAmbient only)
 @inline tracer_convection(m, q_past, qa) = (q_past .- qa) .* m.conv2
 # ṁ·Tb − γT·(T − Tb)  (ice-ocean heat exchange; temperature equation only)

@@ -80,7 +80,7 @@ fig2
 
 In the warm cavity the plume thickens rapidly away from the grounding line as
 entrainment mixes in ambient water; in the cold cavity the plume stays close
-to the initialisation thickness `Dinit = 10 m` because entrainment is weak.
+to the initialisation thickness `D_init = 10 m` because entrainment is weak.
 =#
 
 x, y, Dw = field(mw, mw.D.present)

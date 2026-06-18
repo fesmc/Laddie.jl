@@ -24,27 +24,15 @@ function meltstats(m)
     return max_meltrate, mean_meltrate, max_speed
 end
 
-"""
-$(TYPEDSIGNATURES)
+# Dispatch on RunConfig.cfl — selects ConservativeCFL or ExactCFL.
+_cfl_number(m) = _cfl_number(m, m.cfl)
 
-Return advective–gravity-wave CFL number at the current `dt`: the fastest signal —
-advection at ``\\mathrm{max}|U| / \\mathrm{max}|V|`` plus the reduced-gravity wave speed
-``c = \\sqrt{g·max(\\delta \\rho \\cdot D)}`` — crossing a grid cell in one step,
-
-```math
-\\mathrm{CFL} = \\Delta t \\left( \\frac{|u|_\\mathrm{max} + c}{\\Delta x} + \\frac{|v|_\\mathrm{max} + c}{\\Delta y} \\right).
-```
-
-``\\delta \\rho`` (`m.drho`) is the dimensionless reduced density the pressure terms use, so
-``g·\\delta \\rho \\cdot D`` is the reduced-gravity wave speed squared.  All reductions run on the
-device (GPU-safe); the result is a `Float64` scalar.  A value above ~1 means the
-step is likely unstable.  Used by the progress bar and the adaptive-dt controller.
-"""
-function _cfl_number(m)
+# Conservative: global max of |U|, |V|, and c taken independently, then combined.
+# Overestimates the true CFL but cheap (three scalar reductions).
+function _cfl_number(m, ::ConservativeCFL)
     FT = m.FT
-    umax = maximum(abs, m.U.present)
-    vmax = maximum(abs, m.V.present)
-    # Reduced-gravity wave speed from the largest δρ·D over the active domain.
+    umax = maximum(ifelse.(m.umask .> 0, abs.(m.U.present), zero(FT)))
+    vmax = maximum(ifelse.(m.vmask .> 0, abs.(m.V.present), zero(FT)))
     gDdrho = maximum(ifelse.(m.tmask .> 0, m.drho .* m.D.present, zero(FT)))
     c = sqrt(m.g * max(zero(FT), gDdrho))
     return Float64(m.dt) * (
@@ -53,17 +41,33 @@ function _cfl_number(m)
     )
 end
 
-# Worst-case CFL: the advective term uses the velocity cap `vcut` instead of the
+# Exact: per-cell CFL using T-point-interpolated velocities; maximum over active cells.
+# Tighter than ConservativeCFL but allocates temporaries proportional to grid size.
+function _cfl_number(m, ::ExactCFL)
+    FT = m.FT
+    U_T = im_half(m.U.present)
+    V_T = jm_half(m.V.present)
+    c = sqrt.(m.g .* max.(zero(FT), m.drho .* m.D.present))
+    cfl_cell = Float64(m.dt) .* (
+        abs.(U_T) ./ Float64(m.dx) .+
+        abs.(V_T) ./ Float64(m.dy) .+
+        c ./ Float64(m.dx) .+
+        c ./ Float64(m.dy)
+    ) .* m.tmask
+    return Float64(maximum(cfl_cell))
+end
+
+# Worst-case CFL: the advective term uses the velocity cap `v_cut` instead of the
 # actual speed.  At startup the flow is ~stationary, so the actual CFL is tiny
 # and useless for sizing dt0; this bounds the advective CFL the developing flow
-# can ever reach (it cannot exceed vcut), while keeping the real gravity-wave
+# can ever reach (it cannot exceed v_cut), while keeping the real gravity-wave
 # term.  Used by the preemptive startup rescue, not the in-loop controller.
 function _cfl_worstcase(m)
     FT = m.FT
-    vcut = Float64(m.vcut)
+    v_cut = Float64(m.v_cut)
     gDdrho = maximum(ifelse.(m.tmask .> 0, m.drho .* m.D.present, zero(FT)))
     c = Float64(sqrt(m.g * max(zero(FT), gDdrho)))
-    return Float64(m.dt) * ((vcut + c) / Float64(m.dx) + (vcut + c) / Float64(m.dy))
+    return Float64(m.dt) * ((v_cut + c) / Float64(m.dx) + (v_cut + c) / Float64(m.dy))
 end
 
 # Abort with a clear message as soon as the integration produces non-finite
@@ -102,17 +106,17 @@ Advance model `m` forward in time until the criterion `until` is met.
 for a fixed duration, [`SteadyStateEnd`](@ref) stops early once the mean melt
 rate is quasi-steady.  As a shorthand, `run!(m; days = 30.0)` is equivalent to
 `run!(m; until = FixedSimulationEnd(t_end = 30.0))`; with neither given the run
-lasts `m.rc.days`.
+lasts `m.config.days`.
 
 Each step applies `advance_leapfrog!` → `leapfrog_step!` (2×dt) →
-`clamp_velocities!` → `apply_robert_asselin_filter!`.  When `m.rc.saveday > 0`,
+`clamp_velocities!` → `apply_robert_asselin_filter!`.  When `m.config.saveday > 0`,
 `savefields!`, `printdiags`, and `saverestart!` are also called.  When
 `verbose = true`, a progress bar with throughput and ETA is displayed;
 melt/thickness/speed diagnostics attached to the bar refresh every ~5 % of
 steps (they are device reductions, so they are deliberately not per-step).
 
 Before stepping, a warning is emitted if the advective CFL number at the
-velocity cap `vcut` exceeds 1.  Every ~5 % of steps the prognostic fields are
+velocity cap `v_cut` exceeds 1.  Every ~5 % of steps the prognostic fields are
 checked for non-finite values; on blow-up the run aborts with an error
 instead of integrating NaNs.
 
@@ -124,9 +128,9 @@ function run!(m; days = nothing, until = nothing, verbose = true)
     end
     until =
         until !== nothing ? until :
-        FixedSimulationEnd(t_end = days !== nothing ? Float64(days) : m.rc.days)
+        FixedSimulationEnd(t_end = days !== nothing ? Float64(days) : m.config.days)
     total = _end_seconds(until)                    # hard time cap (s) for this run
-    io_on = m.rc.saveday > 0
+    io_on = m.config.saveday > 0
     # Fresh time accounting for this run; next-event times are relative to it.
     m.t = 0
     m.t_sim = 0.0
@@ -140,15 +144,13 @@ function run!(m; days = nothing, until = nothing, verbose = true)
     _init_adaptive_dt!(m, m.tstep)
     nt = round(Int, total / m.dt)
     checkint = _check_interval(m.tstep, nt)
-    cfl = Float64(m.dt) * Float64(m.vcut) * (1.0 / Float64(m.dx) + 1.0 / Float64(m.dy))
+    cfl = _cfl_worstcase(m)
     cfl > 1.0 && @warn string(
-        "Advective CFL number at the velocity cap is ",
+        "Worst-case CFL (advection at v_cut + gravity wave) is ",
         round(cfl, digits = 2),
         " > 1 (dt = ",
         m.dt,
-        " s, vcut = ",
-        m.vcut,
-        " m/s, dx = ",
+        " s, dx = ",
         m.dx,
         " m, dy = ",
         m.dy,

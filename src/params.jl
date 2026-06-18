@@ -5,12 +5,13 @@
 
 struct Params{
     FT,
-    EP<:AbstractEntrainment,
-    MP<:AbstractMeltParam,
-    CS<:AbstractConvectionScheme,
-    OB<:AbstractOpenBoundary,
-    GL<:AbstractGroundingLineBC,
-    TS<:AbstractTimeStepper,
+    EP,     #<:AbstractEntrainment,
+    MP,     #<:AbstractMeltParam,
+    CS,     #<:AbstractConvectionScheme,
+    OB,     #<:AbstractOpenBoundary,
+    GL,     #<:AbstractGroundingLineBC,
+    TS,     #<:AbstractTimeStepper,
+    MLT,    #<:AbstractMaximumLayerThickness,
 }
     # Time stepping (dt0 is the initial step; the runtime dt lives in IOState
     # so it can vary under adaptive time stepping — `m.dt` resolves there)
@@ -20,22 +21,22 @@ struct Params{
     g::FT
     f::FT
     slip::FT
-    Cd::FT
-    Cdtop::FT
-    Ah::FT
-    Kh::FT
-    maxdetr::FT
-    minD::FT
-    vcut::FT
+    C_d::FT
+    C_d_top::FT
+    A_h::FT
+    K_h::FT
+    max_detrainment::FT
+    D_min::FT
+    v_cut::FT
     # Thermodynamics
-    utide::FT
-    Ti::FT
-    rhofw::FT
-    rho0::FT
-    rhoi::FT
+    u_tide::FT
+    T_i::FT
+    rho_freshwater::FT
+    rho0_seawater::FT
+    rho_ice::FT
     L::FT
-    cp::FT
-    ci::FT
+    c_p::FT
+    c_i::FT
     # EOS (linear liquidus + thermal/haline expansion)
     alpha::FT
     beta::FT
@@ -43,20 +44,21 @@ struct Params{
     l2::FT
     l3::FT
     # Initialisation scalars
-    Dinit::FT
-    dTinit::FT
-    dSinit::FT
+    D_init::FT
+    dT_init::FT
+    dS_init::FT
     # Typed parameterization objects
-    entpar::EP
-    meltpar::MP
-    convpar::CS
-    openbc::OB
-    glbc::GL
+    entrainment::EP
+    melting::MP
+    convection_scheme::CS
+    open_bc::OB
+    grline_bc::GL
     tstep::TS
+    max_layer_thickness::MLT
 end
 
 # Promote a parameterization object's floating-point fields to FT so it stays
-# consistent with Params{FT} (e.g. Params(; FT = Float32, meltpar = FixedGamT(...))
+# consistent with Params{FT} (e.g. Params(; FT = Float32, melting = FixedGamT(...))
 # where the default object was built at Float64).  Integer fields (such as
 # AdaptiveDt's ncheck) and field-less singletons (open/grounding-line BCs) pass
 # through unchanged.  Generic over the field list, so new parameterization types
@@ -77,7 +79,7 @@ All parameters default to ISOMIP+-canonical values, so `Params()` is a valid
 ready-to-use parameter set.  Override individual fields as needed:
 
 ```julia
-params = Params(; f = 0.0, meltpar = TurbulentGamT(), FT = Float32)
+params = Params(; f = 0.0, melting = TurbulentGamT(), FT = Float32)
 ```
 """
 function Params(;
@@ -87,84 +89,80 @@ function Params(;
     g = 9.81,
     f = -1.37e-4,
     slip = 1.0,
-    Cd = 2.5e-3,
-    Cdtop = 1.1e-3,
-    Ah = 6.0,
-    Kh = 1.0,
-    maxdetr = 0.5,
-    minD = 1.0,
-    maxD = 100.0,
-    vcut = 1.414,
-    utide = 0.01,
-    Ti = -25.0,
-    rhofw = 1000.0,
-    rho0 = 1028.0,
-    rhoi = 910.0,
+    C_d = 2.5e-3,
+    C_d_top = 1.1e-3,
+    A_h = 6.0,
+    K_h = 1.0,
+    max_detrainment = 0.5,
+    D_min = 1.0,
+    v_cut = 1.414,
+    u_tide = 0.01,
+    T_i = -25.0,
+    rho_freshwater = 1000.0,
+    rho0_seawater = 1028.0,
+    rho_ice = 910.0,
     L = 3.34e5,
-    cp = 3.974e3,
-    ci = 2009.0,
+    c_p = 3.974e3,
+    c_i = 2009.0,
     alpha = 3.733e-5,
     beta = 7.843e-4,
     l1 = -5.73e-2,
     l2 = 8.32e-2,
     l3 = 7.61e-4,
-    Dinit = 10.0,
-    dTinit = 0.0,
-    dSinit = -0.1,
-    entpar = LambertEntrainment(2.5),
-    meltpar = FixedGamT(0.00018),
-    convpar = ResetToAmbient(0.005),
-    openbc = ZeroGradientInflow(),
-    glbc = FreeSlipGL(),
+    D_init = 10.0,
+    dT_init = 0.0,
+    dS_init = -0.1,
+    entrainment = LambertEntrainment(2.5),
+    melting = FixedGamT(0.00018),
+    convection_scheme = ResetToAmbient(0.005),
+    open_bc = ZeroGradientInflow(),
+    grline_bc = FreeSlipGL(),
     tstep = FixedDt(),
+    max_layer_thickness = AbsoluteMaxLayerThickness(),
 )
     # Keep every parameterization object's precision aligned with Params{FT}.
-    entpar = _promote_param(entpar, FT)
-    meltpar = _promote_param(meltpar, FT)
-    convpar = _promote_param(convpar, FT)
-    openbc = _promote_param(openbc, FT)
-    glbc = _promote_param(glbc, FT)
+    entrainment = _promote_param(entrainment, FT)
+    melting = _promote_param(melting, FT)
+    convection_scheme = _promote_param(convection_scheme, FT)
+    open_bc = _promote_param(open_bc, FT)
+    grline_bc = _promote_param(grline_bc, FT)
     tstep = _promote_param(tstep, FT)
-    EP = typeof(entpar);
-    MP = typeof(meltpar)
-    CS = typeof(convpar);
-    OB = typeof(openbc)
-    GL = typeof(glbc);
-    TS = typeof(tstep)
-    Params{FT,EP,MP,CS,OB,GL,TS}(
+    max_layer_thickness = _promote_param(max_layer_thickness, FT)
+    Params(
         FT(dt),
         FT(nu),
         FT(g),
         FT(f),
         FT(slip),
-        FT(Cd),
-        FT(Cdtop),
-        FT(Ah),
-        FT(Kh),
-        FT(maxdetr),
-        FT(minD),
-        FT(vcut),
-        FT(utide),
-        FT(Ti),
-        FT(rhofw),
-        FT(rho0),
-        FT(rhoi),
+        FT(C_d),
+        FT(C_d_top),
+        FT(A_h),
+        FT(K_h),
+        FT(max_detrainment),
+        FT(D_min),
+        FT(v_cut),
+        FT(u_tide),
+        FT(T_i),
+        FT(rho_freshwater),
+        FT(rho0_seawater),
+        FT(rho_ice),
         FT(L),
-        FT(cp),
-        FT(ci),
+        FT(c_p),
+        FT(c_i),
         FT(alpha),
         FT(beta),
         FT(l1),
         FT(l2),
         FT(l3),
-        FT(Dinit),
-        FT(dTinit),
-        FT(dSinit),
-        entpar,
-        meltpar,
-        convpar,
-        openbc,
-        glbc,
+        FT(D_init),
+        FT(dT_init),
+        FT(dS_init),
+        entrainment,
+        melting,
+        convection_scheme,
+        open_bc,
+        grline_bc,
         tstep,
+        max_layer_thickness,
     )
 end

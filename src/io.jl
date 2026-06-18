@@ -62,6 +62,7 @@ Base.@kwdef struct RunConfig
     save_mask::Bool = true
     save_zb::Bool = true
     dbg::DebugConfig = DebugConfig()
+    cfl::AbstractCFL = ExactCFL()
 end
 
 # ============================================================================
@@ -216,11 +217,11 @@ end
 function _write_run_metadata(m)
     p = getfield(m, :params)
     params_d = _scalar_fields(p)
-    params_d["entrainment"] = _scalar_fields(p.entpar)
-    params_d["melt"] = _scalar_fields(p.meltpar)
-    params_d["convection"] = _scalar_fields(p.convpar)
-    params_d["open_boundary"] = _scalar_fields(p.openbc)
-    params_d["grounding_line"] = _scalar_fields(p.glbc)
+    params_d["entrainment"] = _scalar_fields(p.entrainment)
+    params_d["melt"] = _scalar_fields(p.melting)
+    params_d["convection"] = _scalar_fields(p.convection_scheme)
+    params_d["open_boundary"] = _scalar_fields(p.open_bc)
+    params_d["grounding_line"] = _scalar_fields(p.grline_bc)
     params_d["time_stepper"] = _scalar_fields(p.tstep)
     meta = Dict{String,Any}(
         "run" => Dict{String,Any}(
@@ -239,7 +240,7 @@ function _write_run_metadata(m)
         ),
         "forcing" => _scalar_fields(getfield(m, :forcing)),
         "params" => params_d,
-        "run_config" => _scalar_fields(getfield(m, :rc)),
+        "run_config" => _scalar_fields(getfield(m, :config)),
     )
     path = joinpath(m.rundir, "run_metadata.toml")
     k = 1

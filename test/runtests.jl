@@ -357,9 +357,9 @@ end
     @testset "TurbulentGamT: build and short run" begin
         params = Params(;
             FT,
-            meltpar = TurbulentGamT(FT(13.8), FT(2432.0), FT(1.95e-6)),
-            entpar  = GasparEntrainment(FT(2.5)),
-            convpar = ResetToAmbient(FT(0.005)),
+            melting = TurbulentGamT(FT(13.8), FT(2432.0), FT(1.95e-6)),
+            entrainment  = GasparEntrainment(FT(2.5)),
+            convection_scheme = ResetToAmbient(FT(0.005)),
         )
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
         @test all(isfinite, m.melt)
@@ -373,9 +373,9 @@ end
     @testset "HollandEntrainment: build and short run" begin
         params = Params(;
             FT,
-            entpar  = HollandEntrainment(FT(0.01775)),
-            meltpar = FixedGamT(FT(0.00018)),
-            convpar = ResetToAmbient(FT(0.005)),
+            entrainment  = HollandEntrainment(FT(0.01775)),
+            melting = FixedGamT(FT(0.00018)),
+            convection_scheme = ResetToAmbient(FT(0.005)),
         )
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
         @test all(isfinite, m.melt)
@@ -390,12 +390,12 @@ end
         # LambertEntrainment reproduces the reference LADDIE production term
         # (2μ u★³/(g D δρ)) and must be the default so the Python verification
         # holds; GasparEntrainment is the literal Eq. 14 (μ u★³/(g D² δρ)).
-        @test build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold).entpar isa
+        @test build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold).entrainment isa
               LambertEntrainment
         mk(ep) = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm,
             gradient = PyGradient(),
-            params = Params(; FT, entpar = ep, meltpar = FixedGamT(FT(0.00018)),
-                            convpar = ResetToAmbient(FT(0.005))))
+            params = Params(; FT, entrainment = ep, melting = FixedGamT(FT(0.00018)),
+                            convection_scheme = ResetToAmbient(FT(0.005))))
         ml = mk(LambertEntrainment(FT(2.5)))
         mg = mk(GasparEntrainment(FT(2.5)))
         run!(ml; days=0.5, verbose=false)
@@ -412,7 +412,7 @@ end
         # verification remains valid for the default configuration.
         m_def  = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
         m_free = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                              params = Params(; FT, glbc = FreeSlipGL()))
+                              params = Params(; FT, grline_bc = FreeSlipGL()))
         run!(m_def;  days = 1.0, verbose = false)
         run!(m_free; days = 1.0, verbose = false)
         @test m_free.U.present == m_def.U.present
@@ -429,7 +429,7 @@ end
 
         # No-slip at the grounding line changes the solution and stays physical.
         m_ns = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                            params = Params(; FT, glbc = NoSlipGL()))
+                            params = Params(; FT, grline_bc = NoSlipGL()))
         run!(m_ns; days = 1.0, verbose = false)
         @test all(isfinite, m_ns.D.present) && all(isfinite, m_ns.melt)
         @test all(m_ns.melt[m_ns.tmask .> 0] .>= 0)
@@ -458,13 +458,13 @@ end
         # Run metadata records the active stepper for both default and adaptive.
         tmp = mktempdir()
         build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                     rc = RunConfig(; name = "tsfix", resultdir = tmp, saveday = 0.5))
+                     config = RunConfig(; name = "tsfix", resultdir = tmp, saveday = 0.5))
         meta = Laddie.TOML.parsefile(joinpath(tmp, "tsfix", "run_metadata.toml"))
         @test meta["params"]["time_stepper"]["type"] == "FixedDt"
 
         build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                      params = Params(; FT, tstep = AdaptiveDt(; cfl_target = 0.4)),
-                     rc = RunConfig(; name = "tsadp", resultdir = tmp, saveday = 0.5))
+                     config = RunConfig(; name = "tsadp", resultdir = tmp, saveday = 0.5))
         meta2 = Laddie.TOML.parsefile(joinpath(tmp, "tsadp", "run_metadata.toml"))
         @test meta2["params"]["time_stepper"]["type"] == "AdaptiveDt"
         @test meta2["params"]["time_stepper"]["cfl_target"] ≈ 0.4
@@ -475,16 +475,16 @@ end
         # yields a fully Float32 parameter set (no silent Float64 leakage that
         # would crash a Float32→Float64 setfield in the physics kernels).
         p = Params(; FT = Float32,
-                   entpar  = GasparEntrainment(2.5),
-                   meltpar = FixedGamT(0.00018),
-                   convpar = ResetToAmbient(0.005),
+                   entrainment  = GasparEntrainment(2.5),
+                   melting = FixedGamT(0.00018),
+                   convection_scheme = ResetToAmbient(0.005),
                    tstep   = AdaptiveDt(; cfl_target = 0.4))
-        @test p.entpar  isa GasparEntrainment{Float32}
-        @test p.meltpar isa FixedGamT{Float32}
-        @test p.convpar isa ResetToAmbient{Float32}
+        @test p.entrainment  isa GasparEntrainment{Float32}
+        @test p.melting isa FixedGamT{Float32}
+        @test p.convection_scheme isa ResetToAmbient{Float32}
         @test p.tstep   isa AdaptiveDt{Float32}
         @test p.tstep.ncheck isa Int                  # integer field not converted
-        @test p.openbc isa ZeroGradientInflow && p.glbc isa FreeSlipGL   # singletons pass through
+        @test p.open_bc isa ZeroGradientInflow && p.grline_bc isa FreeSlipGL   # singletons pass through
 
         # The payoff: a Float32 build + run from an explicit Params no longer
         # errors on a Float64-typed parameterization.
@@ -495,7 +495,7 @@ end
     end
 
     @testset "ClampDensity convection scheme: build and short run" begin
-        params = Params(; FT, convpar = ClampDensity(FT(0.005)))
+        params = Params(; FT, convection_scheme = ClampDensity(FT(0.005)))
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
         @test all(isfinite, m.melt)
         run!(m; days=0.5, verbose=false)
@@ -504,7 +504,7 @@ end
     end
 
     @testset "RelaxToAmbient convection scheme: build and short run" begin
-        params = Params(; FT, convpar = RelaxToAmbient(FT(10000.0)))
+        params = Params(; FT, convection_scheme = RelaxToAmbient(FT(10000.0)))
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
         @test all(isfinite, m.melt)
         run!(m; days=0.5, verbose=false)
@@ -624,7 +624,7 @@ end
         tmp = mktempdir()
         ml = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                           params = Params(; FT, tstep = AdaptiveDt()),
-                          rc = RunConfig(; name = "adlog", resultdir = tmp, saveday = 10.0))
+                          config = RunConfig(; name = "adlog", resultdir = tmp, saveday = 10.0))
         run!(ml; days = 1.0, verbose = false)
         @test occursin(r"dt .* → .* s \(CFL", read(joinpath(tmp, "adlog", "log.txt"), String))
     end
@@ -660,12 +660,12 @@ end
         tmp = mktempdir()
         m1 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                           params = Params(; FT, tstep = AdaptiveDt()),
-                          rc = RunConfig(; name = "ar1", resultdir = tmp,
+                          config = RunConfig(; name = "ar1", resultdir = tmp,
                                          saveday = 0.5, restday = 0.5))
         run!(m1; days = 1.0, verbose = false)
         m2 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                           params = Params(; FT, tstep = AdaptiveDt()),
-                          rc = RunConfig(; name = "ar2", resultdir = tmp, saveday = 0.5,
+                          config = RunConfig(; name = "ar2", resultdir = tmp, saveday = 0.5,
                                          fromrestart = true,
                                          restartfile = joinpath(tmp, "ar1", "restart_latest.jld2")))
         @test m2.dt ≈ m1.dt
@@ -735,7 +735,7 @@ end
 
     @testset "Model property forwarding: collision guard" begin
         m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
-        parts = (getfield(m, :io), getfield(m, :rc), getfield(m, :grid),
+        parts = (getfield(m, :io), getfield(m, :config), getfield(m, :grid),
                  getfield(m, :state), getfield(m, :cache), getfield(m, :params))
         v = zeros(2)
         @test_throws "ambiguous" Model(parts..., CollidingForcing(v, v, v, 1.0, -5000.0, 0.0))
@@ -780,9 +780,9 @@ end
         configs = (
             Params(; FT),
             Params(; FT,
-                   meltpar = TurbulentGamT(FT(13.8), FT(2432.0), FT(1.95e-6)),
-                   convpar = RelaxToAmbient(FT(10000.0)),
-                   entpar  = HollandEntrainment(FT(0.01775))),
+                   melting = TurbulentGamT(FT(13.8), FT(2432.0), FT(1.95e-6)),
+                   convection_scheme = RelaxToAmbient(FT(10000.0)),
+                   entrainment  = HollandEntrainment(FT(0.01775))),
         )
         for params in configs
             m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
@@ -844,25 +844,25 @@ end
         @test m.D.future ≈ D_past .+ src .* (2 * m.dt)
     end
 
-    @testset "Conservation: D ≥ minD after 1-day run" begin
+    @testset "Conservation: D ≥ D_min after 1-day run" begin
         m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
         run!(m; days=1.0, verbose=false)
         active = m.tmask .> 0
-        @test all(m.D.present[active] .>= m.minD - 1e-10)
+        @test all(m.D.present[active] .>= m.D_min - 1e-10)
     end
 
-    @testset "Conservation: D ≥ minD after 1-day run (cold)" begin
+    @testset "Conservation: D ≥ D_min after 1-day run (cold)" begin
         m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold)
         run!(m; days=1.0, verbose=false)
         active = m.tmask .> 0
-        @test all(m.D.present[active] .>= m.minD - 1e-10)
+        @test all(m.D.present[active] .>= m.D_min - 1e-10)
     end
 
     @testset "I/O: NetCDF output, log, and JLD2 restart round-trip" begin
         tmpdir = mktempdir()
-        rc = RunConfig(; name = "iotest", resultdir = tmpdir,
+        config = RunConfig(; name = "iotest", resultdir = tmpdir,
                        saveday = 0.5, diagday = 0.5, restday = 0.5)
-        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, rc)
+        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, config)
         run!(m; days = 1.0, verbose = false)
 
         rundir = joinpath(tmpdir, "iotest")
@@ -905,7 +905,7 @@ end
         rc2 = RunConfig(; name = "iotest2", resultdir = tmpdir, saveday = 0.5,
                         fromrestart = true,
                         restartfile = joinpath(rundir, "restart_latest.jld2"))
-        m2 = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, rc = rc2)
+        m2 = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, config = rc2)
         @test m2.t_start ≈ 1.0 atol = 0.01
         @test m2.D.present ≈ m.D.present
         @test m2.T.present ≈ m.T.present
@@ -1031,9 +1031,9 @@ end
 
         @testset "NoSlipGL (GPU): matches CPU" begin
             m_c = build_isomip(CPU();       nx = 20, ny = 10, isomipcond = :warm,
-                               params = Params(; glbc = NoSlipGL()))
+                               params = Params(; grline_bc = NoSlipGL()))
             m_g = build_isomip(gpu_backend; nx = 20, ny = 10, isomipcond = :warm,
-                               params = Params(; glbc = NoSlipGL()))
+                               params = Params(; grline_bc = NoSlipGL()))
             run!(m_c; days = 0.5, verbose = false)
             run!(m_g; days = 0.5, verbose = false)
             @test Array(m_g.melt)      ≈ m_c.melt

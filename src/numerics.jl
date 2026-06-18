@@ -146,14 +146,14 @@ end
 # TODO this should have a better name
 _update_conv2!(::Any, ::ClampDensity) = nothing
 _update_conv2!(::Any, ::ResetToAmbient) = nothing
-function _update_conv2!(m, cp::RelaxToAmbient)
-    @. m.conv2 = (m.drho < 0) * m.D.present / cp.upwind_advection_Time
+function _update_conv2!(m, c_p::RelaxToAmbient)
+    @. m.conv2 = (m.drho < 0) * m.D.present / c_p.convection_time
 end
 
 function precompute_integration_terms!(m)
     @. m.dDdt = (m.D.future - m.D.past) / (m.dt + m.dt)
     @. m.Ddrho = m.D.present * m.drho
-    _update_conv2!(m, m.convpar)
+    _update_conv2!(m, m.convection_scheme)
     return
 end
 
@@ -195,8 +195,8 @@ end
     @Const(umask),
     g,
     f,
-    Cd,
-    Ah,
+    C_d,
+    A_h,
     dx,
     dt,
     Ny,
@@ -222,8 +222,8 @@ end
             g * ip_D_dzdx +                                             # pressure: ice-shelf slope
             -half * g * ip_D^2 * (drho[i, e] - drho[i, j]) / dx +     # pressure: density gradient
             f * ip_D_Vjm +                                              # Coriolis
-            -Cd * U1[i, j] * sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
-            Ah * lU[i, j] +                                             # horizontal viscosity
+            -C_d * U1[i, j] * sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
+            A_h * lU[i, j] +                                             # horizontal viscosity
             -detr[i, j] * U1[i, j]                                     # momentum loss by detrainment
         out[i, j] = Up[i, j] + _safe_div(rhs, ip_D) * umask[i, j] * dt
     end
@@ -248,8 +248,8 @@ end
     @Const(vmask),
     g,
     f,
-    Cd,
-    Ah,
+    C_d,
+    A_h,
     dy,
     dt,
     Ny,
@@ -275,8 +275,8 @@ end
             g * jp_D_dzdy +                                             # pressure: ice-shelf slope
             -half * g * jp_D^2 * (drho[n, j] - drho[i, j]) / dy +     # pressure: density gradient
             -f * jp_D_Uim +                                             # Coriolis
-            -Cd * V1[i, j] * sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
-            Ah * lV[i, j] +                                             # horizontal viscosity
+            -C_d * V1[i, j] * sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
+            A_h * lV[i, j] +                                             # horizontal viscosity
             -detr[i, j] * V1[i, j]                                     # momentum loss by detrainment
         out[i, j] = Vp[i, j] + _safe_div(rhs, jp_D) * vmask[i, j] * dt
     end
@@ -296,7 +296,7 @@ end
     @Const(D1),
     @Const(tmask),
     gamT,
-    Kh,
+    K_h,
     conv2,
     dt,
 )
@@ -308,7 +308,7 @@ end
             nentr[i, j] * Ta[i, j] +                 # entrainment of ambient water at Ta
             melt[i, j] * Tb[i, j] +                  # meltwater input at freezing point
             -gamT * (T_present[i, j] - Tb[i, j]) +           # turbulent ice-ocean heat exchange
-            Kh * lT[i, j] +                                   # horizontal diffusion
+            K_h * lT[i, j] +                                   # horizontal diffusion
             -(T_past[i, j] - Ta[i, j]) * conv2                # convective restoring to ambient
         out[i, j] = T_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
     end
@@ -328,7 +328,7 @@ end
     @Const(D1),
     @Const(tmask),
     @Const(gamT),
-    Kh,
+    K_h,
     conv2,
     dt,
 )
@@ -340,7 +340,7 @@ end
             nentr[i, j] * Ta[i, j] +                 # entrainment of ambient water at Ta
             melt[i, j] * Tb[i, j] +                  # meltwater input at freezing point
             -gamT[i, j] * (T_present[i, j] - Tb[i, j]) +     # turbulent ice-ocean heat exchange
-            Kh * lT[i, j] +                                   # horizontal diffusion
+            K_h * lT[i, j] +                                   # horizontal diffusion
             -(T_past[i, j] - Ta[i, j]) * conv2                # convective restoring to ambient
         out[i, j] = T_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
     end
@@ -360,7 +360,7 @@ end
     @Const(D1),
     @Const(tmask),
     gamT,
-    Kh,
+    K_h,
     @Const(conv2),
     dt,
 )
@@ -372,7 +372,7 @@ end
             nentr[i, j] * Ta[i, j] +                 # entrainment of ambient water at Ta
             melt[i, j] * Tb[i, j] +                  # meltwater input at freezing point
             -gamT * (T_present[i, j] - Tb[i, j]) +           # turbulent ice-ocean heat exchange
-            Kh * lT[i, j] +                                   # horizontal diffusion
+            K_h * lT[i, j] +                                   # horizontal diffusion
             -(T_past[i, j] - Ta[i, j]) * conv2[i, j]          # convective restoring to ambient
         out[i, j] = T_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
     end
@@ -392,7 +392,7 @@ end
     @Const(D1),
     @Const(tmask),
     @Const(gamT),
-    Kh,
+    K_h,
     @Const(conv2),
     dt,
 )
@@ -404,7 +404,7 @@ end
             nentr[i, j] * Ta[i, j] +                 # entrainment of ambient water at Ta
             melt[i, j] * Tb[i, j] +                  # meltwater input at freezing point
             -gamT[i, j] * (T_present[i, j] - Tb[i, j]) +     # turbulent ice-ocean heat exchange
-            Kh * lT[i, j] +                                   # horizontal diffusion
+            K_h * lT[i, j] +                                   # horizontal diffusion
             -(T_past[i, j] - Ta[i, j]) * conv2[i, j]          # convective restoring to ambient
         out[i, j] = T_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
     end
@@ -421,7 +421,7 @@ end
     @Const(lS),
     @Const(D1),
     @Const(tmask),
-    Kh,
+    K_h,
     conv2,
     dt,
 )
@@ -431,7 +431,7 @@ end
             -S_present[i, j] * dDdt[i, j] +              # thickness-tendency correction
             cS[i, j] +                                    # horizontal advection
             nentr[i, j] * Sa[i, j] +                     # entrainment of ambient water at Sa
-            Kh * lS[i, j] +                              # horizontal diffusion
+            K_h * lS[i, j] +                              # horizontal diffusion
             -(S_past[i, j] - Sa[i, j]) * conv2           # convective restoring to ambient
         out[i, j] = S_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
     end
@@ -448,7 +448,7 @@ end
     @Const(lS),
     @Const(D1),
     @Const(tmask),
-    Kh,
+    K_h,
     @Const(conv2),
     dt,
 )
@@ -458,7 +458,7 @@ end
             -S_present[i, j] * dDdt[i, j] +              # thickness-tendency correction
             cS[i, j] +                                    # horizontal advection
             nentr[i, j] * Sa[i, j] +                     # entrainment of ambient water at Sa
-            Kh * lS[i, j] +                              # horizontal diffusion
+            K_h * lS[i, j] +                              # horizontal diffusion
             -(S_past[i, j] - Sa[i, j]) * conv2[i, j]    # convective restoring to ambient
         out[i, j] = S_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
     end
@@ -503,8 +503,8 @@ function step_u_momentum(m, dt)
         m.umask,
         m.g,
         m.f,
-        m.Cd,
-        m.Ah,
+        m.C_d,
+        m.A_h,
         m.dx,
         dt,
         ny,
@@ -537,8 +537,8 @@ function step_v_momentum(m, dt)
         m.vmask,
         m.g,
         m.f,
-        m.Cd,
-        m.Ah,
+        m.C_d,
+        m.A_h,
         m.dy,
         dt,
         ny,
@@ -548,19 +548,19 @@ function step_v_momentum(m, dt)
 end
 # Kernel selection dispatches on the concrete types of gamT and conv2, which are
 # fixed at model-construction time by the MP and CS type parameters.
-_launch_T!(args, gamT::Number, Kh, conv2::Number, dt) =
-    launch!(_step_temperature_kernel!, args..., gamT, Kh, conv2, dt)
-_launch_T!(args, gamT::Number, Kh, conv2::AbstractArray, dt) =
-    launch!(_step_temperature_mat_conv2_kernel!, args..., gamT, Kh, conv2, dt)
-_launch_T!(args, gamT::AbstractArray, Kh, conv2::Number, dt) =
-    launch!(_step_temperature_mat_gamT_kernel!, args..., gamT, Kh, conv2, dt)
-_launch_T!(args, gamT::AbstractArray, Kh, conv2::AbstractArray, dt) =
-    launch!(_step_temperature_mat_both_kernel!, args..., gamT, Kh, conv2, dt)
+_launch_T!(args, gamT::Number, K_h, conv2::Number, dt) =
+    launch!(_step_temperature_kernel!, args..., gamT, K_h, conv2, dt)
+_launch_T!(args, gamT::Number, K_h, conv2::AbstractArray, dt) =
+    launch!(_step_temperature_mat_conv2_kernel!, args..., gamT, K_h, conv2, dt)
+_launch_T!(args, gamT::AbstractArray, K_h, conv2::Number, dt) =
+    launch!(_step_temperature_mat_gamT_kernel!, args..., gamT, K_h, conv2, dt)
+_launch_T!(args, gamT::AbstractArray, K_h, conv2::AbstractArray, dt) =
+    launch!(_step_temperature_mat_both_kernel!, args..., gamT, K_h, conv2, dt)
 
-_launch_S!(args, Kh, conv2::Number, dt) =
-    launch!(_step_salinity_kernel!, args..., Kh, conv2, dt)
-_launch_S!(args, Kh, conv2::AbstractArray, dt) =
-    launch!(_step_salinity_mat_conv2_kernel!, args..., Kh, conv2, dt)
+_launch_S!(args, K_h, conv2::Number, dt) =
+    launch!(_step_salinity_kernel!, args..., K_h, conv2, dt)
+_launch_S!(args, K_h, conv2::AbstractArray, dt) =
+    launch!(_step_salinity_mat_conv2_kernel!, args..., K_h, conv2, dt)
 
 function step_temperature(m, dt)
     @. m.DT = m.D.present * m.T.present
@@ -581,7 +581,7 @@ function step_temperature(m, dt)
         m.D.present,
         m.tmask,
     )
-    _launch_T!(args, m.gamT, m.Kh, m.conv2, dt)
+    _launch_T!(args, m.gamT, m.K_h, m.conv2, dt)
     return
 end
 function step_salinity(m, dt)
@@ -601,21 +601,14 @@ function step_salinity(m, dt)
         m.D.present,
         m.tmask,
     )
-    _launch_S!(args, m.Kh, m.conv2, dt)
+    _launch_S!(args, m.K_h, m.conv2, dt)
     return
 end
 
 
 function _clamp_thickness!(m)
-    @. m.D.future = min(m.D.future, m.zb - m.z_bed)
-    @. m.D.future = min(m.D.future, 100)
-    @. m.D.future = max(m.D.future, m.minD)
-
-    # @. m.D.future = ifelse(
-    #     m.tmask > 0,
-    #     clamp(m.D.future, m.minD, m.zb - m.z_bed),
-    #     m.D.future,
-    # )
+    max_layer_thickness!(m, m.params.max_layer_thickness)
+    @. m.D.future = max(m.D.future, m.D_min)
     return
 end
 
@@ -626,20 +619,20 @@ end
 
 function leapfrog_step!(m, nsteps)
     dt = nsteps * m.dt
-    dbg = m.rc.dbg
+    dbg = m.config.dbg
     step_thickness(m, dt)
     _clamp_thickness!(m)
     precompute_integration_terms!(m)
     dbg.check_nans && _check_nans_shelf!(m, "D", m.D.future)
     
     step_u_momentum(m, dt)
-    @. m.U.future = min(m.U.future, m.vcut)
-    @. m.U.future = max(m.U.future, -m.vcut)
+    @. m.U.future = min(m.U.future, m.v_cut)
+    @. m.U.future = max(m.U.future, -m.v_cut)
     dbg.check_nans && _check_nans_shelf!(m, "U", m.U.future)
 
     step_v_momentum(m, dt)
-    @. m.V.future = min(m.V.future, m.vcut)
-    @. m.V.future = max(m.V.future, -m.vcut)
+    @. m.V.future = min(m.V.future, m.v_cut)
+    @. m.V.future = max(m.V.future, -m.v_cut)
     dbg.check_nans && _check_nans_shelf!(m, "V", m.V.future)
     
     step_temperature(m, dt)
@@ -702,7 +695,7 @@ function advance_leapfrog!(m)
 end
 
 function clamp_velocities!(m)
-    launch!(_clamp_kernel!, m.U.future, m.U.future, -m.vcut, m.vcut)
-    launch!(_clamp_kernel!, m.V.future, m.V.future, -m.vcut, m.vcut)
+    launch!(_clamp_kernel!, m.U.future, m.U.future, -m.v_cut, m.v_cut)
+    launch!(_clamp_kernel!, m.V.future, m.V.future, -m.v_cut, m.v_cut)
     return
 end

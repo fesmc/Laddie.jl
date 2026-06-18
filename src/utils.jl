@@ -1,3 +1,23 @@
+abstract type AbstractMaxLayerThickness end
+
+struct TopographicMaxLayerThicness <: AbstractMaxLayerThickness end
+@kwdef struct AbsoluteMaxLayerThickness{FT} <: AbstractMaxLayerThickness
+    D_max::FT = 100
+end
+
+@kwdef struct RelativeMaxLayerThickness{FT} <: AbstractMaxLayerThickness
+    f_D_max::FT = 4/5
+end
+
+function max_layer_thickness!(m, ::TopographicMaxLayerThicness)
+    @. m.D.future = min(m.D.future, m.zb - m.z_bed)
+end
+function max_layer_thickness!(m, c::AbsoluteMaxLayerThickness)
+    @. m.D.future = min(m.D.present, c.D_max, m.zb - m.z_bed)
+end
+function max_layer_thickness!(m, c::RelativeMaxLayerThickness)
+    @. m.D.present = min(m.D.future, c.f_D_max * (m.zb - m.z_bed))
+end
 
 # ============================================================================
 # Shift / interpolation primitives  (≡ np.roll & tools.py, GPU-capable)

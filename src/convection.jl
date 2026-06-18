@@ -9,11 +9,10 @@ minimum positive value so the plume remains denser than ambient.
 
 - `mindrho`: minimum density contrast, kg m⁻³ (default `0.005`).
 
-Select via `Params(; convpar = ClampDensity(0.005))`.
+Select via `Params(; convection_scheme = ClampDensity(0.005))`.
 """
 struct ClampDensity{FT} <: AbstractConvectionScheme
-    ;
-    mindrho::FT;
+    mindrho::FT
 end
 
 """
@@ -24,11 +23,10 @@ to their ambient values, restoring a stable density contrast.
 
 - `mindrho`: threshold density contrast triggering the reset, kg m⁻³ (default `0.005`).
 
-Select via `Params(; convpar = ResetToAmbient(0.005))`.
+Select via `Params(; convection_scheme = ResetToAmbient(0.005))`.
 """
 struct ResetToAmbient{FT} <: AbstractConvectionScheme
-    ;
-    mindrho::FT;
+    mindrho::FT
 end
 
 """
@@ -38,11 +36,10 @@ Handle convective instability by relaxing T and S of unstable cells toward
 ambient values over a prescribed timescale (applied implicitly in the tracer
 time step via the `conv2` term).
 
-- `upwind_advection_Time`: relaxation timescale, s (default `10000.0`).
+- `convection_time`: relaxation timescale, s (default `10000.0`).
 
-Select via `Params(; convpar = RelaxToAmbient(10000.0))`.
+Select via `Params(; convection_scheme = RelaxToAmbient(10000.0))`.
 """
 struct RelaxToAmbient{FT} <: AbstractConvectionScheme
-    ;
-    upwind_advection_Time::FT;
+    convection_time::FT
 end

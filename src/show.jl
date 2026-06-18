@@ -117,20 +117,23 @@ function Base.show(io::IO, p::Params{FT}) where {FT}
         "Params{",
         FT,
         "}(",
-        nameof(typeof(p.entpar)),
+        nameof(typeof(p.entrainment)),
         " + ",
-        nameof(typeof(p.meltpar)),
+        nameof(typeof(p.melting)),
         " + ",
-        nameof(typeof(p.convpar)),
+        nameof(typeof(p.convection_scheme)),
         " + ",
-        nameof(typeof(p.openbc)),
+        nameof(typeof(p.open_bc)),
         " + ",
-        nameof(typeof(p.glbc)),
+        nameof(typeof(p.grline_bc)),
         " + ",
         nameof(typeof(p.tstep)),
         ")",
     )
 end
+
+Base.show(io::IO, ::ConservativeCFL) = print(io, "ConservativeCFL()")
+Base.show(io::IO, ::ExactCFL) = print(io, "ExactCFL()")
 
 Base.show(io::IO, ::FixedDt) = print(io, "FixedDt()")
 Base.show(io::IO, ts::AdaptiveDt) = print(
@@ -161,11 +164,11 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
             join((rpad(string(k, " = ", v), 22) for (k, v) in chunk), " "),
         )
     end
-    println(io, "  entrainment    = ", p.entpar)
-    println(io, "  melt           = ", p.meltpar)
-    println(io, "  convection     = ", p.convpar)
-    println(io, "  open boundary  = ", p.openbc)
-    println(io, "  grounding line = ", p.glbc)
+    println(io, "  entrainment    = ", p.entrainment)
+    println(io, "  melt           = ", p.melting)
+    println(io, "  convection     = ", p.convection_scheme)
+    println(io, "  open boundary  = ", p.open_bc)
+    println(io, "  grounding line = ", p.grline_bc)
     print(io, "  time stepper   = ", p.tstep)
 end
 
@@ -191,7 +194,7 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", m::Model{FT}) where {FT}
     g = getfield(m, :grid)
-    rc = getfield(m, :rc)
+    config = getfield(m, :config)
     p = getfield(m, :params)
     println(io, "Model{", FT, "} on ", _backend_name(m))
     println(
@@ -214,25 +217,25 @@ function Base.show(io::IO, ::MIME"text/plain", m::Model{FT}) where {FT}
         "  params:  dt0 = ",
         p.dt0,
         " s, ",
-        nameof(typeof(p.entpar)),
+        nameof(typeof(p.entrainment)),
         " + ",
-        nameof(typeof(p.meltpar)),
+        nameof(typeof(p.melting)),
         " + ",
-        nameof(typeof(p.convpar)),
+        nameof(typeof(p.convection_scheme)),
         " + ",
-        nameof(typeof(p.openbc)),
+        nameof(typeof(p.open_bc)),
         " + ",
-        nameof(typeof(p.glbc)),
+        nameof(typeof(p.grline_bc)),
         " + ",
         nameof(typeof(p.tstep)),
     )
-    if rc.saveday > 0
+    if config.saveday > 0
         print(
             io,
             "  output:  every ",
-            rc.saveday,
+            config.saveday,
             " d → ",
-            joinpath(rc.resultdir, rc.name),
+            joinpath(config.resultdir, config.name),
         )
     else
         print(io, "  output:  disabled (saveday = 0)")

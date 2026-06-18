@@ -33,7 +33,7 @@ function TanhForcing(
     forc_z0,
     forc_z1,
     drho0,
-    rho0,
+    rho0_seawater,
     alpha,
     beta,
     l1,
@@ -45,7 +45,7 @@ function TanhForcing(
     T0 = FT(l1) * FT(S0) + FT(l2)
     drho = FT(drho0) .* sqrt.(abs.(z))
     Tz = @. FT(T1) + (T0 - FT(T1)) * (1 + tanh((z - FT(forc_z0)) / FT(forc_z1))) / 2
-    Sz = @. FT(S0) + FT(alpha) * (Tz - T0) / FT(beta) + drho / (FT(beta) * FT(rho0))
+    Sz = @. FT(S0) + FT(alpha) * (Tz - T0) / FT(beta) + drho / (FT(beta) * FT(rho0_seawater))
     TanhForcing(Tz, Sz, z, dz, z0, FT(S0), FT(T1), FT(forc_z0), FT(forc_z1), FT(drho0))
 end
 
@@ -179,9 +179,9 @@ end
 function _initialize_prognostics!(m)
     update_ambient_fields!(m)
     for level in (:past, :present, :future)
-        setfield!(m.D, level, m.Dinit .* m.tmask)
-        setfield!(m.T, level, (m.Ta .+ m.dTinit) .* m.tmask)
-        setfield!(m.S, level, (m.Sa .+ m.dSinit) .* m.tmask)
+        setfield!(m.D, level, m.D_init .* m.tmask)
+        setfield!(m.T, level, (m.Ta .+ m.dT_init) .* m.tmask)
+        setfield!(m.S, level, (m.Sa .+ m.dS_init) .* m.tmask)
     end
     update_secondary_fields!(m)
     leapfrog_step!(m, 1)
@@ -489,10 +489,10 @@ function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int 
         visited[i, j] = true
         touches_border = false
         while !isempty(queue)
-            ci, cj = popfirst!(queue)
-            push!(component, (ci, cj))
+            c_i, cj = popfirst!(queue)
+            push!(component, (c_i, cj))
             for (di, dj) in dirs
-                ni, nj = ci + di, cj + dj
+                ni, nj = c_i + di, cj + dj
                 1 <= ni <= ny && 1 <= nj <= nx || continue
                 mask[ni, nj] == 1 && (touches_border = true)
                 if !visited[ni, nj] && mask[ni, nj] == 2
@@ -503,8 +503,8 @@ function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int 
         end
 
         if !touches_border && length(component) < min_cells
-            for (ci, cj) in component
-                mask[ci, cj] = 3
+            for (c_i, cj) in component
+                mask[c_i, cj] = 3
             end
             n_filled += length(component)
         end
@@ -559,10 +559,10 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
         queue = Tuple{Int,Int}[(i, j)]
         visited[i, j] = true
         while !isempty(queue)
-            ci, cj = popfirst!(queue)
-            push!(component, (ci, cj))
+            c_i, cj = popfirst!(queue)
+            push!(component, (c_i, cj))
             for (di, dj) in dirs
-                ni, nj = ci + di, cj + dj
+                ni, nj = c_i + di, cj + dj
                 if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 3
                     visited[ni, nj] = true
                     push!(queue, (ni, nj))
@@ -571,8 +571,8 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
         end
 
         if length(component) < min_cells
-            for (ci, cj) in component
-                mask[ci, cj] = 2
+            for (c_i, cj) in component
+                mask[c_i, cj] = 2
             end
             n_filled += length(component)
         end

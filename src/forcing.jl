@@ -92,7 +92,7 @@ $(TYPEDSIGNATURES)
 Ambient T/S profiles with a tanh transition between cold surface waters and
 warm deep waters, with an additional density perturbation `drho0·√|z|`.
 
-Construct with `TanhForcing(FT, S0, T1, forc_z0, forc_z1, drho0, rho0, alpha,
+Construct with `TanhForcing(FT, S0, T1, forc_z0, forc_z1, drho0, rho0_seawater, alpha,
 beta, l1, l2)` and pass it as the `forcing` argument of `build_model`.
 """
 struct TanhForcing{FT,V<:AbstractVector{FT}} <: AbstractForcing

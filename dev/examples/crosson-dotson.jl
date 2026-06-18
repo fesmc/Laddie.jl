@@ -123,26 +123,19 @@ heatmap!(ax2, z_bed_grounded ./ 1f3, colormap = cmap_grounded, colorrange = (-1,
 heatmap!(ax2, zb_plot ./ 1f3, colormap = cmap_shelfbase, colorrange = (-2, 0))
 fig_map
 
-
-# h_af = h_above_flotation.(z_bed, h_ice)
-# z_base = ice_base.(z_bed, h_ice, h_af)
-# shelf_mask = h_ice .> 0 .&& h_af .< 0
-# fig_map = Figure()
-
-
 # =============================================================================
 # Build and run model — snapshot all fields + masks every 5th step
 # =============================================================================
 # mp = PrescribedMelt{Float64}()
 mp = TurbulentGamT()
 # mp = FixedGamT(0.00018)
-params = Params(; dt = 120, Ah = 25, Kh = 25, minD = 2.8, nu = 0.1, Dinit = 2.8,
-    tstep = AdaptiveDt(), meltpar = mp, glbc = NoSlipGL())
+params = Params(; dt = 120, A_h = 25, K_h = 25, D_min = 2.8, nu = 0.1, D_init = 2.8,
+    tstep = AdaptiveDt(), melting = mp, grline_bc = NoSlipGL(),
+    max_layer_thickness = AbsoluteMaxLayerThickness(30))
 
 m = build_model(mask, zb, dx, dy, forcing, params;
     z_bed_raw = z_bed_m,
-    rc = RunConfig(; saveday = 0.1,
-    dbg = DebugConfig(check_nans = true)),
+    config = RunConfig(; saveday = 0.1, dbg = DebugConfig(check_nans = true)),
     backend = CUDABackend(),
 )
 run!(m; days = 3, verbose = true)

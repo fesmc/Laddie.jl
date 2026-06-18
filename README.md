@@ -80,9 +80,9 @@ Physical parameters and parameterization choices live in a single typed
 `Params` object:
 
 ```julia
-params = Params(; dt = 120.0, Ah = 25.0,
-                meltpar = TurbulentGamT(13.8, 2432.0, 1.95e-6),
-                convpar = RelaxToAmbient(10000.0))
+params = Params(; dt = 120.0, A_h = 25.0,
+                melting = TurbulentGamT(13.8, 2432.0, 1.95e-6),
+                convection_scheme = RelaxToAmbient(10000.0))
 ```
 
 ## GPU
@@ -96,8 +96,8 @@ run!(m; days = 30)
 ## Output and restarts
 
 ```julia
-rc = RunConfig(name = "warm0", saveday = 1.0, restday = 30.0)
-m  = build_isomip(; isomipcond = :warm, rc)
+config = RunConfig(name = "warm0", saveday = 1.0, restday = 30.0)
+m  = build_isomip(; isomipcond = :warm, config)
 run!(m)
 ```
 

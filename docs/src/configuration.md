@@ -37,7 +37,7 @@ at call time (default `Float64`).
 | `maskoption` | String | — | `"ISOMIP"` (separate `groundedMask`/`floatingMask` variables) or `"BM"` (single `mask` variable, BedMachine convention: 0=ocean, 1/2=grounded, 3=ice shelf). |
 | `geomyear` | Int | `0` | Year index to read from a time-varying geometry file. |
 | `coarsen` | Int | `1` | Coarsening factor applied to the raw grid (1 = no coarsening). |
-| `calvthresh` | Float | `0.0` | Remove ice shelf cells whose draft is shallower than `−rhoi/rho0 * calvthresh` m (0 = disabled). |
+| `calvthresh` | Float | `0.0` | Remove ice shelf cells whose draft is shallower than `−rhoi/rho0_seawater * calvthresh` m (0 = disabled). |
 | `cutdomain` | Bool | `true` | Crop the domain to the minimal bounding box around floating-ice cells before adding the border ring. |
 
 The geometry NetCDF file must contain `x` and `y` coordinate vectors and one
@@ -113,7 +113,7 @@ Only relevant when `convop = 0` or `convop = 1` (`ClampDensity` /
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `mindrho` | Float | `0.005` | Minimum density contrast δρ (kg m⁻³); used by `ClampDensity` and `ResetToAmbient`. |
-| `upwind_advection_Time` | Float | `10000.0` | Relaxation timescale (s); used by `RelaxToAmbient`. |
+| `convection_time` | Float | `10000.0` | Relaxation timescale (s); used by `RelaxToAmbient`. |
 
 ---
 
@@ -121,20 +121,20 @@ Only relevant when `convop = 0` or `convop = 1` (`ClampDensity` /
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| `utide` | Float | yes | Tidal velocity amplitude used in u★ (m s⁻¹). |
-| `Ti` | Float | yes | Ice temperature for the latent-heat correction (°C). |
+| `u_tide` | Float | yes | Tidal velocity amplitude used in u★ (m s⁻¹). |
+| `T_i` | Float | yes | Ice temperature for the latent-heat correction (°C). |
 | `f` | Float | yes | Coriolis parameter (s⁻¹; negative in Southern Hemisphere). |
-| `rhofw` | Float | yes | Fresh-water density (kg m⁻³; typically `1000`). |
-| `rho0` | Float | yes | Reference ocean density (kg m⁻³; typically `1028`). |
-| `rhoi` | Float | yes | Ice density (kg m⁻³; typically `910`). |
-| `Cd` | Float | yes | Bottom drag coefficient. |
-| `Cdtop` | Float | yes | Top (ice–ocean) drag coefficient used in u★. |
-| `Ah` | Float | yes | Laplacian viscosity (m² s⁻¹). |
-| `Kh` | Float | yes | Laplacian diffusivity for T and S (m² s⁻¹). |
-| `entpar` | String | yes | `"Lambert"` (default), `"Gaspar"`, or `"Holland"` — selects the entrainment parameterisation. `"Lambert"` is the reference LADDIE form; `"Gaspar"` is the literal Eq. 14. |
-| `maxdetr` | Float | yes | Maximum detrainment rate (m s⁻¹). |
-| `minD` | Float | yes | Minimum layer thickness enforced by extra entrainment (m). |
-| `vcut` | Float | `1.414` | Velocity cutoff — U and V are clipped to ±`vcut` m s⁻¹. |
+| `rho_freshwater` | Float | yes | Fresh-water density (kg m⁻³; typically `1000`). |
+| `rho0_seawater` | Float | yes | Reference ocean density (kg m⁻³; typically `1028`). |
+| `rho_ice` | Float | yes | Ice density (kg m⁻³; typically `910`). |
+| `C_d` | Float | yes | Bottom drag coefficient. |
+| `C_d_top` | Float | yes | Top (ice–ocean) drag coefficient used in u★. |
+| `A_h` | Float | yes | Laplacian viscosity (m² s⁻¹). |
+| `K_h` | Float | yes | Laplacian diffusivity for T and S (m² s⁻¹). |
+| `entrainment` | String | yes | `"Lambert"` (default), `"Gaspar"`, or `"Holland"` — selects the entrainment parameterisation. `"Lambert"` is the reference LADDIE form; `"Gaspar"` is the literal Eq. 14. |
+| `max_detrainment` | Float | yes | Maximum detrainment rate (m s⁻¹). |
+| `D_min` | Float | yes | Minimum layer thickness enforced by extra entrainment (m). |
+| `v_cut` | Float | `1.414` | Velocity cutoff — U and V are clipped to ±`v_cut` m s⁻¹. |
 | `mu` | Float | Lambert/Gaspar only | Entrainment efficiency parameter for `LambertEntrainment` / `GasparEntrainment`. |
 | `cl` | Float | `0.01775` | Drag coefficient for `HollandEntrainment`. |
 | `gamTfix` | Float | FixedGamT only | Fixed heat transfer coefficient γ_T (used when `usegamtfix = true`). |
@@ -159,8 +159,8 @@ Only relevant when `convop = 0` or `convop = 1` (`ClampDensity` /
 |-----|------|---------|-------------|
 | `g` | Float | `9.81` | Gravitational acceleration (m s⁻²). |
 | `L` | Float | `3.34e5` | Latent heat of fusion for ice (J kg⁻¹). |
-| `cp` | Float | `3.974e3` | Specific heat capacity of sea water (J kg⁻¹ K⁻¹). |
-| `ci` | Float | `2009.0` | Specific heat capacity of ice (J kg⁻¹ K⁻¹). |
+| `c_p` | Float | `3.974e3` | Specific heat capacity of sea water (J kg⁻¹ K⁻¹). |
+| `c_i` | Float | `2009.0` | Specific heat capacity of ice (J kg⁻¹ K⁻¹). |
 | `Pr` | Float | `13.8` | Prandtl number (TurbulentGamT only). |
 | `Sc` | Float | `2432.0` | Schmidt number (TurbulentGamT only). |
 | `nu0` | Float | `1.95e-6` | Molecular kinematic viscosity (m² s⁻¹; TurbulentGamT only). |
@@ -181,9 +181,9 @@ Only relevant when `convop = 0` or `convop = 1` (`ClampDensity` /
 |-----|------|----------|-------------|
 | `fromrestart` | Bool | yes | `true` = initialise from a restart file; `false` = cold start. |
 | `restartfile` | String | if `fromrestart` | Path to the NetCDF restart file. |
-| `Dinit` | Float | `10.0` | Initial layer thickness for cold start (m). |
-| `dTinit` | Float | `0.0` | Initial temperature offset from ambient (°C). |
-| `dSinit` | Float | `-0.1` | Initial salinity offset from ambient (psu). |
+| `D_init` | Float | `10.0` | Initial layer thickness for cold start (m). |
+| `dT_init` | Float | `0.0` | Initial temperature offset from ambient (°C). |
+| `dS_init` | Float | `-0.1` | Initial salinity offset from ambient (psu). |
 
 ---
 
@@ -256,23 +256,23 @@ usegamtfix = true
 
 [Initialisation]
 fromrestart = false
-Dinit       = 10.0
+D_init       = 10.0
 
 [Parameters]
-utide   = 0.01
-Ti      = -25.0
+u_tide   = 0.01
+T_i      = -25.0
 f       = -1.37e-4
-rhofw   = 1000.0
-rho0    = 1028.0
-rhoi    = 910.0
-Cd      = 2.5e-3
-Cdtop   = 1.1e-3
-Ah      = 6.0
-Kh      = 1.0
-entpar  = "Gaspar"
+rho_freshwater   = 1000.0
+rho0_seawater    = 1028.0
+rho_ice    = 910.0
+C_d      = 2.5e-3
+C_d_top   = 1.1e-3
+A_h      = 6.0
+K_h      = 1.0
+entrainment  = "Gaspar"
 mu      = 2.5
-maxdetr = 0.5
-minD    = 1.0
+max_detrainment = 0.5
+D_min    = 1.0
 gamTfix = 1.8e-4
 
 [EOS]

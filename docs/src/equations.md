@@ -44,9 +44,9 @@ kernels in `src/numerics.jl` are asserted equal to it by the test suite.
 | ``z_b`` | `m.zb` | ice-base depth (negative below sea level) | m |
 | ``f`` | `m.f` | Coriolis parameter | s⁻¹ |
 | ``g`` | `m.g` | gravitational acceleration | m s⁻² |
-| ``C_d`` | `m.Cd` | quadratic drag coefficient (momentum) | – |
-| ``C_d^{\text{top}}`` | `m.Cdtop` | drag coefficient (friction velocity) | – |
-| ``A_h, K_h`` | `m.Ah`, `m.Kh` | horizontal viscosity / diffusivity | m² s⁻¹ |
+| ``C_d`` | `m.C_d` | quadratic drag coefficient (momentum) | – |
+| ``C_d^{\text{top}}`` | `m.C_d_top` | drag coefficient (friction velocity) | – |
+| ``A_h, K_h`` | `m.A_h`, `m.K_h` | horizontal viscosity / diffusivity | m² s⁻¹ |
 | ``\gamma_T, \gamma_S`` | `m.gamT`, `m.gamS` | turbulent exchange velocities | m s⁻¹ |
 | ``u_\star`` | `m.ustar` | friction velocity | m s⁻¹ |
 | ``\lambda_1,\lambda_2,\lambda_3`` | `m.l1,m.l2,m.l3` | linear-liquidus coefficients | – |
@@ -125,7 +125,7 @@ Kernel `_step_v_momentum_kernel!`, structurally identical to (2) with
 Kernel `_step_temperature_kernel!` (and `mat_*` variants for array-valued
 ``\gamma_T``/`conv2`). The implemented `rhs` adds one Laddie.jl term beyond the
 paper — the convective relaxation ``-(T^{p}-T_a)\,\mathrm{conv2}`` (zero unless
-`convpar = RelaxToAmbient`, see [Convective relaxation](@ref)):
+`convection_scheme = RelaxToAmbient`, see [Convective relaxation](@ref)):
 
 ```math
 \mathrm{rhs} = -T\,\partial_t D + \mathrm{cT} + \dot e\,T_a + \dot m\,T_b
@@ -200,8 +200,8 @@ The interface temperature is then
 ```
 
 Computed by `_compute_turbulent_transfer_coefficients!` for
-`meltpar = TurbulentGamT` (the log argument carries a `+1e-12` floor for
-``D\to 0``). For `meltpar = FixedGamT`, ``\gamma_T`` is a prescribed constant
+`melting = TurbulentGamT` (the log argument carries a `+1e-12` floor for
+``D\to 0``). For `melting = FixedGamT`, ``\gamma_T`` is a prescribed constant
 and ``\gamma_S = \gamma_T/35``.
 
 ### (13) Friction velocity
@@ -226,10 +226,10 @@ where ``g_b' = g\,\delta\rho_b`` uses the **plume–interface** density contrast
 and detrainment term is the same in every variant below; with
 ``\delta\rho^{+} = \max(10^{-4}, \delta\rho)`` and
 ``\mathrm{entr} = \max(\dot e,0)``,
-``\mathrm{detr} = \min(\mathrm{maxdetr}, \max(-\dot e,0))``.
+``\mathrm{detr} = \min(\mathrm{max_detrainment}, \max(-\dot e,0))``.
 
 Laddie.jl exposes **two** buoyancy-flux schemes that differ *only* in the
-production term — pick via `entpar`:
+production term — pick via `entrainment`:
 
 `LambertEntrainment` **(default)** — `_lambert_entrainment_kernel!`, the form the
 reference Python LADDIE actually integrates and which the verification test
@@ -262,7 +262,7 @@ with ``g_a' = g\,\delta\rho``):
     `LambertEntrainment` so the Python verification stays valid; `GasparEntrainment`
     is provided for users who want the textbook Eq. (14).
 
-**Alternative (`entpar = HollandEntrainment`)** — shear entrainment after
+**Alternative (`entrainment = HollandEntrainment`)** — shear entrainment after
 Holland & Jenkins (1999), *not* a Lambert et al. equation:
 
 ```math
@@ -281,10 +281,10 @@ the Python-LADDIE verification stays valid.
 ### Minimum-thickness correction
 
 `update_entrainment!` adds a non-negative `ent2` so ``D`` cannot fall below
-`minD`, and assembles the net entrainment used in Eq. (1):
+`D_min`, and assembles the net entrainment used in Eq. (1):
 
 ```math
-\mathrm{ent2} = \max\!\Big(0,\;\frac{\mathrm{minD} - D^{\text{past}}}{2\Delta t}
+\mathrm{ent2} = \max\!\Big(0,\;\frac{\mathrm{D_min} - D^{\text{past}}}{2\Delta t}
 - (\mathrm{convD} + \dot m + \mathrm{entr} - \mathrm{detr})\Big),
 \qquad
 \dot e = \mathrm{entr} + \mathrm{ent2} - \mathrm{detr}.
@@ -292,11 +292,11 @@ the Python-LADDIE verification stays valid.
 
 ### Convective relaxation
 
-For `convpar = RelaxToAmbient`, unstable cells (``\delta\rho < 0``) relax T/S
-toward ambient over `upwind_advection_Time` via the `conv2` field appearing in (4)–(5):
+For `convection_scheme = RelaxToAmbient`, unstable cells (``\delta\rho < 0``) relax T/S
+toward ambient over `convection_time` via the `conv2` field appearing in (4)–(5):
 
 ```math
-\mathrm{conv2} = \frac{[\delta\rho < 0]\,D}{\mathrm{upwind_advection_Time}}.
+\mathrm{conv2} = \frac{[\delta\rho < 0]\,D}{\mathrm{convection_time}}.
 ```
 
 `ClampDensity` (clamp ``\delta\rho`` to a positive floor) and `ResetToAmbient`

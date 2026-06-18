@@ -192,6 +192,8 @@ end
 # Geometry ingestion utilities
 # ============================================================================
 
+const _cardinal_dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
+
 """
 $(TYPEDSIGNATURES)
 
@@ -335,10 +337,9 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
     queue = Tuple{Int,Int}[]
 
     # Seed: ocean cells touching the border ring (mask == 1)
-    dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
     for i in 1:ny, j in 1:nx
         if mask[i, j] == 0 && !visited[i, j]
-            for (di, dj) in dirs
+            for (di, dj) in _cardinal_dirs
                 ni, nj = i + di, j + dj
                 if 1 <= ni <= ny && 1 <= nj <= nx && mask[ni, nj] == 1
                     visited[i, j] = true
@@ -352,7 +353,7 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
     # BFS to mark all reachable ocean cells
     while !isempty(queue)
         i, j = popfirst!(queue)
-        for (di, dj) in dirs
+        for (di, dj) in _cardinal_dirs
             ni, nj = i + di, j + dj
             if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 0
                 visited[ni, nj] = true
@@ -403,12 +404,10 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
     visited = falses(ny, nx)
     queue = Tuple{Int,Int}[]
 
-    dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
-
     # Seed: shelf cells adjacent to at least one ocean cell
     for i in 1:ny, j in 1:nx
         if mask[i, j] == 3 && !visited[i, j]
-            for (di, dj) in dirs
+            for (di, dj) in _cardinal_dirs
                 ni, nj = i + di, j + dj
                 if 1 <= ni <= ny && 1 <= nj <= nx && mask[ni, nj] == 0
                     visited[i, j] = true
@@ -422,7 +421,7 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
     # BFS through shelf cells only
     while !isempty(queue)
         i, j = popfirst!(queue)
-        for (di, dj) in dirs
+        for (di, dj) in _cardinal_dirs
             ni, nj = i + di, j + dj
             if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 3
                 visited[ni, nj] = true
@@ -478,7 +477,6 @@ println("Reclassified \$n cells in undersized isolated grounded patches")
 function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
     ny, nx = size(mask)
     visited = falses(ny, nx)
-    dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
     n_filled = 0
 
     for i in 1:ny, j in 1:nx
@@ -491,7 +489,7 @@ function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int 
         while !isempty(queue)
             c_i, cj = popfirst!(queue)
             push!(component, (c_i, cj))
-            for (di, dj) in dirs
+            for (di, dj) in _cardinal_dirs
                 ni, nj = c_i + di, cj + dj
                 1 <= ni <= ny && 1 <= nj <= nx || continue
                 mask[ni, nj] == 1 && (touches_border = true)
@@ -548,7 +546,6 @@ println("Removed \$n cells in undersized shelf patches")
 function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
     ny, nx = size(mask)
     visited = falses(ny, nx)
-    dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
     n_filled = 0
 
     for i in 1:ny, j in 1:nx
@@ -561,7 +558,7 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
         while !isempty(queue)
             c_i, cj = popfirst!(queue)
             push!(component, (c_i, cj))
-            for (di, dj) in dirs
+            for (di, dj) in _cardinal_dirs
                 ni, nj = c_i + di, cj + dj
                 if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 3
                     visited[ni, nj] = true

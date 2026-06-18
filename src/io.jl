@@ -311,7 +311,7 @@ _int(a) = Array(a)[2:(end-1), 2:(end-1)]
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(av)
-        half = FT(1) / (FT(1) + FT(1))
+        half = FT(0.5)
         w = _west(j, Nx)
         av[i, j] += (U[i, j] + U[i, w]) * half * dt
     end
@@ -321,7 +321,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(av)
-        half = FT(1) / (FT(1) + FT(1))
+        half = FT(0.5)
         s = _south(i, Ny)
         av[i, j] += (V[i, j] + V[s, j]) * half * dt
     end
@@ -398,6 +398,16 @@ function _create_output_file!(m)
             attrib = [
                 "units" => "days",
                 "long_name" => "simulation time (end of averaging window)",
+            ],
+        )
+        defVar(
+            ds,
+            "walltime",
+            Float64,
+            ("time",);
+            attrib = [
+                "units" => "s",
+                "long_name" => "elapsed wall-clock time since run start",
             ],
         )
 
@@ -481,6 +491,7 @@ function _write_output!(m, t_days)
 
     NCDataset(path, "a") do ds
         ds["time"][k] = t_days
+        ds["walltime"][k] = time() - m.walltime_start
 
         function wv(name, av, scale)
             av_int = _int(av)

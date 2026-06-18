@@ -31,9 +31,9 @@ _cfl_number(m) = _cfl_number(m, m.cfl)
 # Overestimates the true CFL but cheap (three scalar reductions).
 function _cfl_number(m, ::ConservativeCFL)
     FT = m.FT
-    umax = maximum(ifelse.(m.umask .> 0, abs.(m.U.present), zero(FT)))
-    vmax = maximum(ifelse.(m.vmask .> 0, abs.(m.V.present), zero(FT)))
-    gDdrho = maximum(ifelse.(m.tmask .> 0, m.drho .* m.D.present, zero(FT)))
+    umax = maximum(abs.(m.U.present) .* m.umask)
+    vmax = maximum(abs.(m.V.present) .* m.vmask)
+    gDdrho = maximum(m.drho .* m.D.present .* m.tmask)
     c = sqrt(m.g * max(zero(FT), gDdrho))
     return Float64(m.dt) * (
         (Float64(umax) + Float64(c)) / Float64(m.dx) +
@@ -65,7 +65,7 @@ end
 function _cfl_worstcase(m)
     FT = m.FT
     v_cut = Float64(m.v_cut)
-    gDdrho = maximum(ifelse.(m.tmask .> 0, m.drho .* m.D.present, zero(FT)))
+    gDdrho = maximum(m.drho .* m.D.present .* m.tmask)
     c = Float64(sqrt(m.g * max(zero(FT), gDdrho)))
     return Float64(m.dt) * ((v_cut + c) / Float64(m.dx) + (v_cut + c) / Float64(m.dy))
 end

@@ -45,7 +45,6 @@ end
         Dxm1yp1[i, j] = D[s, e] * tmask[s, e]
     end
 end
-# TODO verify this
 
 @kernel function _precompute_staggered_kernel!(
     Vip,
@@ -143,7 +142,6 @@ end
 # Time integration (Lambert et al. 2023)
 # ==================================================================
 
-# TODO this should have a better name
 _update_conv2!(::Any, ::ClampDensity) = nothing
 _update_conv2!(::Any, ::ResetToAmbient) = nothing
 function _update_conv2!(m, c_p::RelaxToAmbient)
@@ -258,7 +256,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(g)
-        half = FT(1) / (FT(1) + FT(1))
+        half = FT(0.5)
         n = _north(i, Ny);
         w = _west(j, Nx);
         tmjp = tmask_jp[i, j]
@@ -608,8 +606,6 @@ end
 
 function _clamp_thickness!(m)
     max_layer_thickness!(m, m.params.max_layer_thickness)
-    # @. m.D.future = min(m.D.future, m.zb - m.z_bed)
-    # @. m.D.future = min(m.D.future, m.max_layer_thickness.D_max)
     @. m.D.future = max(m.D.future, m.D_min)
     return
 end
@@ -628,23 +624,19 @@ function leapfrog_step!(m, nsteps)
     dbg.check_nans && _check_nans_shelf!(m, "D", m.D.future)
     
     step_u_momentum(m, dt)
-    @. m.U.future = min(m.U.future, m.v_cut)
-    @. m.U.future = max(m.U.future, -m.v_cut)
+    @. m.U.future = clamp(m.U.future, -m.v_cut, m.v_cut)
     dbg.check_nans && _check_nans_shelf!(m, "U", m.U.future)
 
     step_v_momentum(m, dt)
-    @. m.V.future = min(m.V.future, m.v_cut)
-    @. m.V.future = max(m.V.future, -m.v_cut)
+    @. m.V.future = clamp(m.V.future, -m.v_cut, m.v_cut)
     dbg.check_nans && _check_nans_shelf!(m, "V", m.V.future)
-    
+
     step_temperature(m, dt)
-    @. m.T.future = min(m.T.future, 5)
-    @. m.T.future = max(m.T.future, -5)
+    @. m.T.future = clamp(m.T.future, -5, 5)
     dbg.check_nans && _check_nans_shelf!(m, "T", m.T.future)
 
     step_salinity(m, dt)
-    @. m.S.future = min(m.S.future, 36)
-    @. m.S.future = max(m.S.future, 32)
+    @. m.S.future = clamp(m.S.future, 32, 36)
     dbg.check_nans && _check_nans_shelf!(m, "S", m.S.future)
     return
 end

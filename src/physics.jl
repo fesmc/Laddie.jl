@@ -46,8 +46,7 @@ end
         quad_c = cp_over_Leff * gamT * gamS * (Tf_depth - T[i, j] + l1 * S[i, j])
         disc = quad_b * quad_b - FT(4) * quad_c
         disc = ifelse(disc < zero(FT), zero(FT), disc)
-        # TODO check / 2
-        melt_rate = (-quad_b + sqrt(disc)) / (FT(1) + FT(1))
+        melt_rate = (-quad_b + sqrt(disc)) / FT(2)
         melt[i, j] = iszero(tmask[i, j]) ? zero(FT) : melt_rate
         Tb_denom = cp_over_Leff * gamT + cp_over_Leff * ci_over_cp * melt_rate
         Tb[i, j] =
@@ -57,7 +56,6 @@ end
 end
 
 # Matrix-gamT variant for TurbulentGamT: reads per-element gamT[i,j] / gamS[i,j].
-# TODO rm redundancy with previous function?
 @kernel function _three_eq_melt_mat_gamT_kernel!(
     melt,
     Tb,
@@ -85,7 +83,7 @@ end
         quad_c = cp_over_Leff * gT * gS * (Tf_depth - T[i, j] + l1 * S[i, j])
         disc = quad_b * quad_b - FT(4) * quad_c
         disc = ifelse(disc < zero(FT), zero(FT), disc)
-        melt_rate = (-quad_b + sqrt(disc)) / (FT(1) + FT(1))
+        melt_rate = (-quad_b + sqrt(disc)) / FT(2)
         melt[i, j] = iszero(tmask[i, j]) ? zero(FT) : melt_rate
         Tb_denom = cp_over_Leff * gT + cp_over_Leff * ci_over_cp * melt_rate
         Tb[i, j] =
@@ -247,8 +245,7 @@ function update_melt!(m, mp::FixedGamT)
         ny,
         nx,
     )
-    cp_over_Leff = m.c_p / (m.L - m.c_i * m.T_i)
-    ci_over_cp = m.c_i / m.c_p
+    cp_over_Leff, ci_over_cp = _melt_ratios(m)
     m.gamT = mp.gamTfix
     m.gamS = m.gamT / FT(35)    # TODO could be 35
     launch!(
@@ -296,8 +293,7 @@ function update_melt!(m, mp::TurbulentGamT)
         ny,
         nx,
     )
-    cp_over_Leff = m.c_p / (m.L - m.c_i * m.T_i)
-    ci_over_cp = m.c_i / m.c_p
+    cp_over_Leff, ci_over_cp = _melt_ratios(m)
     _compute_turbulent_transfer_coefficients!(m, mp)
     launch!(
         _three_eq_melt_mat_gamT_kernel!,
@@ -317,6 +313,8 @@ function update_melt!(m, mp::TurbulentGamT)
         m.l3,
     )
 end
+
+_melt_ratios(m) = m.c_p / (m.L - m.c_i * m.T_i), m.c_i / m.c_p
 
 update_melt!(m) = update_melt!(m, m.melting)
 
@@ -456,7 +454,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(C_d_top)
-        half = FT(1) / (FT(1) + FT(1))
+        half = FT(0.5)
         w = _west(j, Nx)
         s = _south(i, Ny)
         u_im = (U[i, j] + U[i, w]) * half
@@ -575,7 +573,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(coeff)
-        half = FT(1) / (FT(1) + FT(1))
+        half = FT(0.5)
         w = _west(j, Nx)
         s = _south(i, Ny)
         u_im = (U[i, j] + U[i, w]) * half
@@ -587,7 +585,6 @@ end
     end
 end
 
-# TODO feels like this could be removed altogether if reduced cache
 @kernel function _upwind_split_kernel!(
     Upos,
     Uneg,
@@ -620,7 +617,6 @@ end
     end
 end
 
-# TODO don't like this name, consider new one + add docstring
 function update_secondary_fields!(m)
     update_ambient_fields!(m)
     update_freezing_temperature!(m)

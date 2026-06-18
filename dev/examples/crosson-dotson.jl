@@ -4,6 +4,9 @@ using CairoMakie
 using DelimitedFiles
 using KernelAbstractions
 using CUDA
+using Statistics
+
+FT = Float32
 
 # =============================================================================
 # Ocean forcing profile
@@ -25,7 +28,7 @@ S_forc = Laddie._interp1d(reverse(S_data[:, 2] .* 1e3), reverse(S_data[:, 1]), z
 
 # ProfileForcing sorts by depth and resamples to the 1-m grid the model needs,
 # with flat extrapolation beyond the data range.
-forcing = ProfileForcing(T_forc, S_forc, z_forc)
+forcing = ProfileForcing(T_forc, S_forc, z_forc, FT = FT)
 
 fig = Figure()
 ax1 = Axis(fig[1, 1], xlabel = "Temperature (°C)", ylabel = "Depth (m)")
@@ -48,9 +51,6 @@ close(ds)
 dx = 500.0   # BedMachine v3 resolution: 500 m
 dy = 500.0
 
-
-
-
 # Derive the 4-class LADDIE mask and ice-base draft from BedMachine arrays.
 # build_laddie_mask classifies each interior cell as:
 #   0 = open ocean, 1 = border, 2 = grounded ice, 3 = floating shelf
@@ -67,23 +67,23 @@ Colorbar(fig_map[2, 1], hm, vertical = false, flipaxis = false, label = "LADDIE 
     ticks = ([0, 1, 2, 3], ["ocean", "border", "grounded", "shelf"]))
 fig_map
 
-n = fill_ocean_holes!(mask)
-n > 0 && @info "fill_ocean_holes!: reclassified $n isolated ocean cells as grounded"
-hm = heatmap!(
-    ax1,
-    mask,
-    colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
-    colorrange = (0, 3))
-fig_map
+# n = fill_ocean_holes!(mask)
+# n > 0 && @info "fill_ocean_holes!: reclassified $n isolated ocean cells as grounded"
+# hm = heatmap!(
+#     ax1,
+#     mask,
+#     colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
+#     colorrange = (0, 3))
+# fig_map
 
-n = fill_shelf_holes!(mask)
-n > 0 && @info "fill_shelf_holes!: reclassified $n isolated shelf cells as grounded"
-hm = heatmap!(
-    ax1,
-    mask,
-    colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
-    colorrange = (0, 3))
-fig_map
+# n = fill_shelf_holes!(mask)
+# n > 0 && @info "fill_shelf_holes!: reclassified $n isolated shelf cells as grounded"
+# hm = heatmap!(
+#     ax1,
+#     mask,
+#     colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
+#     colorrange = (0, 3))
+# fig_map
 
 n = fill_small_shelf_patches!(mask, 10)
 n > 0 && @info "fill_small_shelf_patches!: removed $n cells in undersized shelf patches"
@@ -94,14 +94,14 @@ hm = heatmap!(
     colorrange = (0, 3))
 fig_map
 
-n = fill_small_grounded_patches!(mask, 8)
-n > 0 && @info "fill_small_grounded_patches!: reclassified $n cells in undersized isolated grounded patches"
-hm = heatmap!(
-    ax1,
-    mask,
-    colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
-    colorrange = (0, 3))
-fig_map
+# n = fill_small_grounded_patches!(mask, 8)
+# n > 0 && @info "fill_small_grounded_patches!: reclassified $n cells in undersized isolated grounded patches"
+# hm = heatmap!(
+#     ax1,
+#     mask,
+#     colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
+#     colorrange = (0, 3))
+# fig_map
 
 
 zb       = ice_base_depth(z_bed, h_ice)
@@ -126,22 +126,42 @@ fig_map
 # =============================================================================
 # Build and run model — snapshot all fields + masks every 5th step
 # =============================================================================
-# mp = PrescribedMelt{Float64}()
-mp = TurbulentGamT()
-# mp = FixedGamT(0.00018)
+# mp = PrescribedMelting{Float64}()
+mp = TurbulentGamTMelting()
+# mp = FixedGamTMelting(0.00018)
 params = Params(; dt = 120, A_h = 25, K_h = 25, D_min = 2.8, nu = 0.1, D_init = 2.8,
     tstep = AdaptiveDt(), melting = mp, grline_bc = NoSlipGL(),
+    FT = FT,
+    entrainment = GaspariniEntrainment(),
     # max_layer_thickness = AbsoluteMaxLayerThickness(400),
-    max_layer_thickness = TopographicMaxLayerThickness(),
+    max_layer_thickness = RelativeMaxLayerThickness(),
 )
 
 m = build_model(mask, zb, dx, dy, forcing, params;
     z_bed_raw = z_bed_m,
     config = RunConfig(; saveday = 0.1, dbg = DebugConfig(check_nans = true)),
     backend = CUDABackend(),
+    FT = FT,
 )
 run!(m; days = 30, verbose = true)
 
+fn = "output/run/output.nc"
+ds_out = Dataset(fn)
+D = ds_out["D"][:, :, :]
+U = ds_out["Ut"][:, :, :]
+V = ds_out["Vt"][:, :, :]
+T = ds_out["T"][:, :, :]
+S = ds_out["S"][:, :, :]
+melt = ds_out["melt"][:, :, :]
+close(ds_out)
+
+i_mean = 10
+D_mean = mean(D[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+U_mean = mean(U[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+V_mean = mean(V[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+T_mean = mean(T[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+S_mean = mean(S[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+melt_mean = mean(melt[:, :, end-i_mean:end], dims = 3)[:, :, 1]
 
 # Colors sampled directly from the source figure (pale cyan -> blue -> dark navy
 # -> magenta -> orange -> pale yellow), 40 stops, light->dark->light diverging map
@@ -159,12 +179,13 @@ colors = [
 ]
 cmap = cgrad(colors)
 
+set_theme!(theme_latexfonts())
 fig_melt = Figure()
 ax = Axis(fig_melt[1, 1], aspect = DataAspect())
 hidedecorations!(ax)
 hm = heatmap!(
     ax,
-    Array(m.cache.melt) .* (3600 * 24 * 365.25),
+    melt_mean,
     colormap = cmap,
     colorrange = (-10, 100),
     colorscale = Makie.Symlog10(0.3),
@@ -174,8 +195,8 @@ hm = heatmap!(
 Colorbar(fig_melt[2, 1], hm;
     vertical   = false,
     flipaxis   = false,
-    ticks      = [-10, -3, -1, -0.3, 0, 0.3, 1, 3, 10, 30, 100],
-    label      = L"\mathrm{Freezing\ /\ Melt\ rate\ } \dot{n}\ [\mathrm{m\ yr^{-1}}]",
+    ticks      = ([-10, -3, -1, -0.3, 0, 0.3, 1, 3, 10, 30, 100], ["-10", "-3", "-1", "-0.3", "0", "0.3", "1", "3", "10", "30", "100"]),
+    label      = L"Melt rate $\dot{m} \: \mathrm{(m\ yr^{-1})}$",
     width = Relative(0.5),
     height = 20,
 )

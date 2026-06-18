@@ -28,9 +28,9 @@ end
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny);
+        n = _north(i, Ny)
         s = _south(i, Ny)
-        e = _east(j, Nx);
+        e = _east(j, Nx)
         w = _west(j, Nx)
         Dn = D[n, j] * tmask[n, j]
         Ds = D[s, j] * tmask[s, j]
@@ -74,11 +74,11 @@ end
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny);
+        n = _north(i, Ny)
         s = _south(i, Ny)
-        e = _east(j, Nx);
+        e = _east(j, Nx)
         w = _west(j, Nx)
-        Vij = V[i, j];
+        Vij = V[i, j]
         Uij = U[i, j]
         Vip[i, j] = _safe_div(Vij + V[i, e], vmask_ip[i, j])
         Vim[i, j] = _safe_div(Vij + V[i, w], vmask_im[i, j])
@@ -110,9 +110,9 @@ end
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny);
+        n = _north(i, Ny)
         s = _south(i, Ny)
-        e = _east(j, Nx);
+        e = _east(j, Nx)
         w = _west(j, Nx)
         Dij = D[i, j]
         D0ip[i, j] = _safe_div(Dij + D[i, e], tmask_ip[i, j])
@@ -257,8 +257,8 @@ end
     @inbounds begin
         FT = typeof(g)
         half = FT(0.5)
-        n = _north(i, Ny);
-        w = _west(j, Nx);
+        n = _north(i, Ny)
+        w = _west(j, Nx)
         tmjp = tmask_jp[i, j]
         jp_dDdt = _safe_div(dDdt[i, j] + dDdt[n, j], tmjp)
         jp_D_drho = _safe_div(Ddrho[i, j] + Ddrho[n, j], tmjp)
@@ -681,8 +681,8 @@ end
 
 function advance_leapfrog!(m)
     for var in (m.D, m.U, m.V, m.T, m.S)
-        ;
-        rotate!(var);
+        
+        rotate!(var)
     end
     update_secondary_fields!(m)
     return

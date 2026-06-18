@@ -99,19 +99,19 @@ mutable struct IOState{FT,A<:AbstractMatrix{FT}}
     x::Vector{FT}
     y::Vector{FT}
     # Time-average accumulators
-    Utav::A;
-    Uuav::A;
-    Vtav::A;
+    Utav::A
+    Uuav::A
+    Vtav::A
     Vvav::A
-    Dav::A;
-    Tav::A;
-    Sav::A;
+    Dav::A
+    Tav::A
+    Sav::A
     meltav::A
-    entrav::A;
-    ent2av::A;
+    entrav::A
+    ent2av::A
     detrav::A
-    Tbav::A;
-    Taav::A;
+    Tbav::A
+    Taav::A
     gamTav::A
 end
 

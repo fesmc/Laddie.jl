@@ -354,10 +354,10 @@ end
         @test mn_warm > mn_cold
     end
 
-    @testset "TurbulentGamT: build and short run" begin
+    @testset "TurbulentGamTMelting: build and short run" begin
         params = Params(;
             FT,
-            melting = TurbulentGamT(FT(13.8), FT(2432.0), FT(1.95e-6)),
+            melting = TurbulentGamTMelting(FT(13.8), FT(2432.0), FT(1.95e-6)),
             entrainment  = GasparEntrainment(FT(2.5)),
             convection_scheme = ResetToAmbient(FT(0.005)),
         )
@@ -374,7 +374,7 @@ end
         params = Params(;
             FT,
             entrainment  = HollandEntrainment(FT(0.01775)),
-            melting = FixedGamT(FT(0.00018)),
+            melting = FixedGamTMelting(FT(0.00018)),
             convection_scheme = ResetToAmbient(FT(0.005)),
         )
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
@@ -394,7 +394,7 @@ end
               LambertEntrainment
         mk(ep) = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm,
             gradient = PyGradient(),
-            params = Params(; FT, entrainment = ep, melting = FixedGamT(FT(0.00018)),
+            params = Params(; FT, entrainment = ep, melting = FixedGamTMelting(FT(0.00018)),
                             convection_scheme = ResetToAmbient(FT(0.005))))
         ml = mk(LambertEntrainment(FT(2.5)))
         mg = mk(GasparEntrainment(FT(2.5)))
@@ -476,11 +476,11 @@ end
         # would crash a Float32→Float64 setfield in the physics kernels).
         p = Params(; FT = Float32,
                    entrainment  = GasparEntrainment(2.5),
-                   melting = FixedGamT(0.00018),
+                   melting = FixedGamTMelting(0.00018),
                    convection_scheme = ResetToAmbient(0.005),
                    tstep   = AdaptiveDt(; cfl_target = 0.4))
         @test p.entrainment  isa GasparEntrainment{Float32}
-        @test p.melting isa FixedGamT{Float32}
+        @test p.melting isa FixedGamTMelting{Float32}
         @test p.convection_scheme isa ResetToAmbient{Float32}
         @test p.tstep   isa AdaptiveDt{Float32}
         @test p.tstep.ncheck isa Int                  # integer field not converted
@@ -775,12 +775,12 @@ end
         # functions in physics.jl implement the same governing equations.
         # Reconstruct one leapfrog step from the term functions and require
         # the kernels to reproduce it, for both the scalar-coefficient
-        # (FixedGamT/ResetToAmbient) and matrix-coefficient
-        # (TurbulentGamT/RelaxToAmbient) kernel variants.
+        # (FixedGamTMelting/ResetToAmbient) and matrix-coefficient
+        # (TurbulentGamTMelting/RelaxToAmbient) kernel variants.
         configs = (
             Params(; FT),
             Params(; FT,
-                   melting = TurbulentGamT(FT(13.8), FT(2432.0), FT(1.95e-6)),
+                   melting = TurbulentGamTMelting(FT(13.8), FT(2432.0), FT(1.95e-6)),
                    convection_scheme = RelaxToAmbient(FT(10000.0)),
                    entrainment  = HollandEntrainment(FT(0.01775))),
         )
@@ -879,7 +879,7 @@ end
         @test meta["run"]["laddie_version"] isa String
         @test meta["grid"]["nx"] == 20 && meta["grid"]["ny"] == 10
         @test meta["params"]["dt0"] == 210.0
-        @test meta["params"]["melt"]["type"] == "FixedGamT"
+        @test meta["params"]["melt"]["type"] == "FixedGamTMelting"
         @test meta["params"]["melt"]["gamTfix"] ≈ 0.00018
         @test meta["params"]["grounding_line"]["type"] == "FreeSlipGL"
         @test meta["forcing"]["type"] == "ISOMIPForcing"

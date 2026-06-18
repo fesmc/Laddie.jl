@@ -54,14 +54,14 @@ Construct with `LinearForcing(FT, S0, S1, T1, forc_z0, l1, l2)` and pass it as
 the `forcing` argument of `build_model`.
 """
 struct LinearForcing{FT,V<:AbstractVector{FT}} <: AbstractForcing
-    Tz::V;
-    Sz::V;
-    z::V;
-    dz::FT;
+    Tz::V
+    Sz::V
+    z::V
+    dz::FT
     z0::FT
-    S0::FT;
-    S1::FT;
-    T1::FT;
+    S0::FT
+    S1::FT
+    T1::FT
     forc_z0::FT
 end
 
@@ -75,14 +75,14 @@ Construct with `Linear2Forcing(FT, S0, S1, T1, forc_z0, l1, l2)` and pass it
 as the `forcing` argument of `build_model`.
 """
 struct Linear2Forcing{FT,V<:AbstractVector{FT}} <: AbstractForcing
-    Tz::V;
-    Sz::V;
-    z::V;
-    dz::FT;
+    Tz::V
+    Sz::V
+    z::V
+    dz::FT
     z0::FT
-    S0::FT;
-    S1::FT;
-    T1::FT;
+    S0::FT
+    S1::FT
+    T1::FT
     forc_z0::FT
 end
 
@@ -90,21 +90,21 @@ end
 $(TYPEDSIGNATURES)
 
 Ambient T/S profiles with a tanh transition between cold surface waters and
-warm deep waters, with an additional density perturbation `drho0·√|z|`.
+warm deep waters, with an additional density perturbation ``\\mathrm{drho0} \\cdot \\sqrt{|z|}``.
 
 Construct with `TanhForcing(FT, S0, T1, forc_z0, forc_z1, drho0, rho0_seawater, alpha,
 beta, l1, l2)` and pass it as the `forcing` argument of `build_model`.
 """
 struct TanhForcing{FT,V<:AbstractVector{FT}} <: AbstractForcing
-    Tz::V;
-    Sz::V;
-    z::V;
-    dz::FT;
+    Tz::V
+    Sz::V
+    z::V
+    dz::FT
     z0::FT
-    S0::FT;
-    T1::FT;
-    forc_z0::FT;
-    forc_z1::FT;
+    S0::FT
+    T1::FT
+    forc_z0::FT
+    forc_z1::FT
     drho0::FT
 end
 
@@ -122,10 +122,10 @@ For profile data from other sources (CSV, in-memory vectors), use
 `ProfileForcing` instead.
 """
 struct FileForcing{FT,V<:AbstractVector{FT}} <: AbstractForcing
-    Tz::V;
-    Sz::V;
-    z::V;
-    dz::FT;
+    Tz::V
+    Sz::V
+    z::V
+    dz::FT
     z0::FT
     path::String
 end

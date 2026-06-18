@@ -6,7 +6,7 @@
 struct Params{
     FT,
     EP,     #<:AbstractEntrainment,
-    MP,     #<:AbstractMeltParam,
+    MP,     #<:AbstractMelting,
     CS,     #<:AbstractConvectionScheme,
     OB,     #<:AbstractOpenBoundary,
     GL,     #<:AbstractGroundingLineBC,
@@ -58,7 +58,7 @@ struct Params{
 end
 
 # Promote a parameterization object's floating-point fields to FT so it stays
-# consistent with Params{FT} (e.g. Params(; FT = Float32, melting = FixedGamT(...))
+# consistent with Params{FT} (e.g. Params(; FT = Float32, melting = FixedGamTMelting(...))
 # where the default object was built at Float64).  Integer fields (such as
 # AdaptiveDt's ncheck) and field-less singletons (open/grounding-line BCs) pass
 # through unchanged.  Generic over the field list, so new parameterization types
@@ -79,7 +79,7 @@ All parameters default to ISOMIP+-canonical values, so `Params()` is a valid
 ready-to-use parameter set.  Override individual fields as needed:
 
 ```julia
-params = Params(; f = 0.0, melting = TurbulentGamT(), FT = Float32)
+params = Params(; f = 0.0, melting = TurbulentGamTMelting(), FT = Float32)
 ```
 """
 function Params(;
@@ -113,7 +113,7 @@ function Params(;
     dT_init = 0.0,
     dS_init = -0.1,
     entrainment = LambertEntrainment(2.5),
-    melting = FixedGamT(0.00018),
+    melting = FixedGamTMelting(0.00018),
     convection_scheme = ResetToAmbient(0.005),
     open_bc = ZeroGradientInflow(),
     grline_bc = FreeSlipGL(),

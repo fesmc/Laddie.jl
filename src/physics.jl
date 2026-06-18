@@ -55,7 +55,7 @@ end
     end
 end
 
-# Matrix-gamT variant for TurbulentGamT: reads per-element gamT[i,j] / gamS[i,j].
+# Matrix-gamT variant for TurbulentGamTMelting: reads per-element gamT[i,j] / gamS[i,j].
 @kernel function _three_eq_melt_mat_gamT_kernel!(
     melt,
     Tb,
@@ -147,11 +147,11 @@ function update_ambient_fields!(m)
     return
 end
 
-"Linear liquidus: Tf = l1·S + l2 + l3·zb  (Lambert et al. 2023, Eq. 10)."
+"Linear liquidus: ``T_f = l_1 S + l_2 + l_3 z_b``  (Lambert et al. 2023, Eq. 10)."
 update_freezing_temperature!(m) =
     launch!(_freezing_point_kernel!, m.Tf, m.Tf, m.S.present, m.zb, m.l1, m.l2, m.l3)
 
-"Reduced (dimensionless) density δρ = Δρₐ/ρ₀ = β·(Sa − S) − α·(Ta − T)  (Lambert et al. 2023, Eqs. 6–7)."
+"Reduced (dimensionless) density ``\\delta\\rho = \\Delta\\rho_a/\\rho_0 = \\beta(S_a - S) - \\alpha(T_a - T)``  (Lambert et al. 2023, Eqs. 6–7)."
 update_density!(m) = launch!(
     _density_kernel!,
     m.drho,
@@ -168,11 +168,11 @@ update_density!(m) = launch!(
 """
 $(TYPEDSIGNATURES)
 
-Flag convectively unstable cells and clamp δρ to a minimum positive value
+Flag convectively unstable cells and clamp ``\\delta\\rho`` to a minimum positive value
 so the plume remains denser than ambient.
 """
 function update_convection!(m, c_p::ClampDensity)
-    thr = c_p.mindrho / m.rho0_seawater
+    thr = c_p.d_rho_min / m.rho0_seawater
     @. m.convection = m.drho < 0
     @. m.drho = max(m.drho, thr)
 end
@@ -184,8 +184,8 @@ Flag convectively unstable cells, then instantly reset their T/S to ambient
 values so the density remains stable.
 """
 function update_convection!(m, c_p::ResetToAmbient)
-    thr = c_p.mindrho / m.rho0_seawater
-    S_adj = c_p.mindrho / (m.rho0_seawater * m.beta)
+    thr = c_p.d_rho_min / m.rho0_seawater
+    S_adj = c_p.d_rho_min / (m.rho0_seawater * m.beta)
     @. m.convection = m.drho < 0
     @. m.T.present = ifelse(m.drho < thr, m.Ta, m.T.present)
     @. m.S.present = ifelse(m.drho < thr, m.Sa - S_adj, m.S.present)
@@ -204,7 +204,7 @@ end
 
 update_convection!(m) = update_convection!(m, m.convection_scheme)
 
-function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamT)
+function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamTMelting)
     FT = typeof(mp.Pr)
     PrCorr = FT(12.5) * mp.Pr^(FT(2)/FT(3)) - FT(8.68)
     ScCorr = FT(12.5) * mp.Sc^(FT(2)/FT(3)) - FT(8.68)
@@ -227,10 +227,10 @@ end
 $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with a fixed heat transfer
-coefficient γ_T (Jenkins 1991; Lambert et al. 2023, Eqs. 8–10 and 13).
+coefficient ``\\gamma_T`` (Jenkins 1991; Lambert et al. 2023, Eqs. 8–10 and 13).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
-function update_melt!(m, mp::FixedGamT)
+function update_melt!(m, mp::FixedGamTMelting)
     FT = m.FT
     ny, nx = size(m.ustar)
     launch!(
@@ -267,7 +267,7 @@ function update_melt!(m, mp::FixedGamT)
     )
 end
 
-function update_melt!(m, mp::PrescribedMelt)
+function update_melt!(m, mp::PrescribedMelting)
     @. m.melt = 0
 end
 
@@ -275,11 +275,11 @@ end
 $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with turbulence-dependent
-transfer coefficients γ_T, γ_S via the log-layer formulation
+transfer coefficients ``\\gamma_T``, ``\\gamma_S`` via the log-layer formulation
 (Holland & Jenkins 1999; Lambert et al. 2023, Eqs. 8–13).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
-function update_melt!(m, mp::TurbulentGamT)
+function update_melt!(m, mp::TurbulentGamTMelting)
     ny, nx = size(m.ustar)
     launch!(
         _ustar_kernel!,
@@ -321,7 +321,7 @@ update_melt!(m) = update_melt!(m, m.melting)
 """
 $(TYPEDSIGNATURES)
 
-Holland–Jenkins shear entrainment: e ∝ √max(0, |u|² − gₐ′·Kh/Ah·D)
+Holland–Jenkins shear entrainment: ``e \\propto \\sqrt{\\max(0,\\,|u|^2 - g_a' K_h / A_h \\cdot D)}``
 (Holland & Jenkins 1999). This is an alternative to the Gaspar scheme of
 Lambert et al. (2023, Eq. 14); see `docs/src/equations.md`.
 """
@@ -349,7 +349,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Reference-LADDIE mechanical-energy entrainment: e = 2μ·u★³/(g·D·δρ) minus a melt
+Reference-LADDIE mechanical-energy entrainment: ``e = 2\\mu u_\\star^3 / (g D \\delta\\rho)`` minus a melt
 detrainment correction. This is the form verified against the Python reference
 (Lambert et al. 2023; see `docs/src/equations.md`). Contrast
 [`_compute_entrainment!`](@ref)`(m, ::GasparEntrainment)`, the literal Eq. 14.
@@ -386,10 +386,10 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Literal Eq. 14 entrainment: e = μ·u★³/(g·D²·δρ) minus the same melt detrainment
+Literal Eq. 14 entrainment: ``e = \\mu u_\\star^3 / (g D^2 \\delta\\rho)`` minus the same melt detrainment
 correction (Lambert et al. 2023, Eq. 14; see `docs/src/equations.md`). Differs
-from the reference [`LambertEntrainment`](@ref) by the `D²` denominator and the
-`μ` (not `2μ`) prefactor.
+from the reference [`LambertEntrainment`](@ref) by the ``D^2`` denominator and the
+``\\mu`` (not ``2\\mu``) prefactor.
 """
 function _compute_entrainment!(m, ep::GasparEntrainment)
     mu_over_g = ep.mu / m.g
@@ -424,7 +424,7 @@ end
 $(TYPEDSIGNATURES)
 
 Compute entrainment/detrainment rates and assemble the net entrainment
-`m.nentr = entr + ent2 − detr` that enters the thickness and tracer equations.
+`m.nentr = entr + ent2 - detr` that enters the thickness and tracer equations.
 `ent2` is the minimum additional entrainment rate needed to prevent D falling
 below `D_min` after the upcoming thickness step; it is computed here (before
 stepping) from `D.past`, matching the reference Python LADDIE implementation.
@@ -602,9 +602,9 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         z = zero(eltype(U))
-        u = U[i, j];
+        u = U[i, j]
         v = V[i, j]
-        vy1 = Vyp1[i, j];
+        vy1 = Vyp1[i, j]
         ux1 = Uxp1[i, j]
         Upos[i, j] = max(u, z)
         Uneg[i, j] = min(u, z)

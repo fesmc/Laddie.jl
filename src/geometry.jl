@@ -6,7 +6,7 @@ using NCDatasets
 
 function LinearForcing(FT::Type, S0, S1, T1, forc_z0, l1, l2)
     z = FT.(-5000.0:1.0:-1.0)
-    dz = FT(1.0);
+    dz = FT(1.0)
     z0 = z[1]
     T0 = FT(l1) * FT(S0) + FT(l2)
     Tz = @. T0 + z * (FT(T1) - T0) / FT(forc_z0)
@@ -16,7 +16,7 @@ end
 
 function Linear2Forcing(FT::Type, S0, S1, T1, forc_z0, l1, l2)
     z = FT.(-5000.0:1.0:-1.0)
-    dz = FT(1.0);
+    dz = FT(1.0)
     z0 = z[1]
     T0 = FT(l1) * FT(S0) + FT(l2)
     raw_T = @. T0 + z * (FT(T1) - T0) / FT(forc_z0)
@@ -40,7 +40,7 @@ function TanhForcing(
     l2,
 )
     z = FT.(-5000.0:1.0:-1.0)
-    dz = FT(1.0);
+    dz = FT(1.0)
     z0 = z[1]
     T0 = FT(l1) * FT(S0) + FT(l2)
     drho = FT(drho0) .* sqrt.(abs.(z))
@@ -80,7 +80,7 @@ function FileForcing(FT::Type, forcfile::String, forcfile_T::String, forcfile_S:
         Sz_raw = _interp1d(z_raw, Sz_raw, z_new)
         z_raw = z_new
     end
-    dz = FT(1.0);
+    dz = FT(1.0)
     z0 = FT(z_raw[1])
     FileForcing(FT.(Tz_raw), FT.(Sz_raw), FT.(z_raw), dz, z0, forcfile)
 end
@@ -121,13 +121,13 @@ function ProfileForcing(
     )
     isempty(z) && throw(ArgumentError("profile vectors must be non-empty"))
     p = sortperm(Float64.(z))
-    z_s = Float64.(z[p]);
-    T_s = Float64.(Tz[p]);
+    z_s = Float64.(z[p])
+    T_s = Float64.(Tz[p])
     S_s = Float64.(Sz[p])
     # Drop duplicate depths (keep first occurrence) so _interp1d never divides by zero.
     keep = [k == 1 || z_s[k] != z_s[k-1] for k in eachindex(z_s)]
-    z_s = z_s[keep];
-    T_s = T_s[keep];
+    z_s = z_s[keep]
+    T_s = T_s[keep]
     S_s = S_s[keep]
     if length(z_s) > 1 && all(≈(1.0), diff(z_s))
         z_new, T_new, S_new = z_s, T_s, S_s
@@ -255,7 +255,7 @@ $(TYPEDSIGNATURES)
 Pad a bed-elevation array into the `(ny+2, nx+2)` format expected by `build_model`.
 The one-cell border ring is zeroed; interior values are copied from `bed` unchanged.
 Pass the result as the `z_bed_raw` keyword argument to `build_model` to enable the
-water-column upper bound on plume thickness (`D ≤ zb − z_bed`).
+water-column upper bound on plume thickness (`D <= zb - z_bed`).
 
 # Arguments
 - `bed`: bed elevation (m, positive above sea level), size `(ny, nx)`.
@@ -275,8 +275,8 @@ $(TYPEDSIGNATURES)
 Compute ice-base depth (m, negative below sea level) from BedMachine-style arrays.
 Returns a `(ny+2, nx+2)` matrix (interior domain with border ring zeroed).
 
-- **Floating cells** (`h_af < 0`): `zb = −thickness × rho_ice/rho_sw` (Archimedes).
-- **Grounded cells** (`h_af ≥ 0`): `zb = bed` (ice base rests on the bed).
+- **Floating cells** (`h_af < 0`): `zb = -thickness * rho_ice/rho_sw` (Archimedes).
+- **Grounded cells** (`h_af >= 0`): `zb = bed` (ice base rests on the bed).
 - **Ocean / border cells**: `zb = 0`.
 
 Pass the result directly as `zb_raw` to `build_model`; `_adjust_zb` will clamp

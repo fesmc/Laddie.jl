@@ -19,7 +19,7 @@ No-slip momentum boundary condition at the grounding line: the tangential
 velocity is forced to zero at walls bordering grounded ice (mask value `2`),
 while land/border walls (mask value `1`) keep the global `Params.slip`
 factor.  Implemented as a slip factor of `2` on grounding-line faces
-(ghost velocity = −interior velocity).
+(ghost velocity = -interior velocity).
 
 Motivated by LADDIE v2.0 (Lambert et al., in review, 2026), where a no-slip
 grounding-line condition improves melt patterns near the grounding line

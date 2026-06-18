@@ -1,86 +1,85 @@
 # ============================================================================
 # Cache{FT, A, GamT, Conv2} — pre-allocated diagnostic + stencil scratch arrays.
 # A    is the concrete matrix type (matches Grid and State).
-# GamT is FT for FixedGamT, A for TurbulentGamT.
+# GamT is FT for FixedGamTMelting, A for TurbulentGamTMelting.
 # Conv2 is FT for ClampDensity/ResetToAmbient, A for RelaxToAmbient.
 # ============================================================================
-
 mutable struct Cache{FT,A<:AbstractMatrix{FT},GamT,Conv2}
     # Physics outputs
-    melt::A;
-    Tb::A;
+    melt::A
+    Tb::A
     Tf::A
-    Ta::A;
-    Sa::A;
+    Ta::A
+    Sa::A
     drho::A
-    ustar::A;
-    entr::A;
+    ustar::A
+    entr::A
     detr::A
-    ent2::A;
-    nentr::A;
+    ent2::A
+    nentr::A
     ent::A
-    Sb::A;
-    drhob::A;
+    Sb::A
+    drhob::A
     convection::A
-    convD::A;
-    dDdt::A;
+    convD::A
+    dDdt::A
     Ddrho::A
     conv2::Conv2
-    gamT::GamT;
+    gamT::GamT
     gamS::GamT
     # Advection stencil temporaries
-    Dym1::A;
+    Dym1::A
     Dyp1::A
-    Dxm1::A;
+    Dxm1::A
     Dxp1::A
-    Dxm1ym1::A;
-    Dxp1ym1::A;
+    Dxm1ym1::A
+    Dxp1ym1::A
     Dxm1yp1::A
-    Vyp1::A;
+    Vyp1::A
     Uxp1::A
-    Upos::A;
-    Uneg::A;
-    Vpos::A;
+    Upos::A
+    Uneg::A
+    Vpos::A
     Vneg::A
-    Vyp1pos::A;
-    Vyp1neg::A;
-    Uxp1pos::A;
+    Vyp1pos::A
+    Vyp1neg::A
+    Uxp1pos::A
     Uxp1neg::A
-    Vip::A;
-    Vim::A;
-    Uip::A;
+    Vip::A
+    Vim::A
+    Uip::A
     Uim::A
-    Vjp::A;
-    Vjm::A;
-    Ujp::A;
+    Vjp::A
+    Vjm::A
+    Ujp::A
     Ujm::A
-    signU::A;
+    signU::A
     signV::A
     # Laplacian stencil temporaries
-    D0ip::A;
-    D0im::A;
-    D0jp::A;
+    D0ip::A
+    D0im::A
+    D0jp::A
     D0jm::A
     # laplace_U/laplace_V thickness grids (D0ip/D0jp * tmask, precomputed with laplacian stencils)
-    D_on_ugrid::A;
+    D_on_ugrid::A
     D_on_vgrid::A
     # Stencil output arrays (eliminate similar() per step)
-    cU::A;
-    cV::A;
-    cT::A;
+    cU::A
+    cV::A
+    cT::A
     cS::A
-    lU::A;
-    lV::A;
-    lT::A;
+    lU::A
+    lV::A
+    lT::A
     lS::A
     # Tracer flux intermediates (eliminate D*q allocation per step)
-    DT::A;
+    DT::A
     DS::A
 end
 
-_gamT_init(FT, _, _, ::Type{<:FixedGamT}) = zero(FT)
-_gamT_init(FT, _, _, ::Type{<:PrescribedMelt}) = zero(FT)
-_gamT_init(FT, ny, nx, ::Type{<:TurbulentGamT}) = zeros(FT, ny, nx)
+_gamT_init(FT, _, _, ::Type{<:FixedGamTMelting}) = zero(FT)
+_gamT_init(FT, _, _, ::Type{<:PrescribedMelting}) = zero(FT)
+_gamT_init(FT, ny, nx, ::Type{<:TurbulentGamTMelting}) = zeros(FT, ny, nx)
 _conv2_init(FT, _, _, ::Type{<:Union{ClampDensity,ResetToAmbient}}) = zero(FT)
 _conv2_init(FT, ny, nx, ::Type{<:RelaxToAmbient}) = zeros(FT, ny, nx)
 

@@ -219,7 +219,7 @@ function build_isomip(
         Params(;
             FT,
             entrainment = LambertEntrainment(FT(2.5)),
-            melting = FixedGamT(FT(0.00018)),
+            melting = FixedGamTMelting(FT(0.00018)),
             convection_scheme = ResetToAmbient(FT(0.005)),
             open_bc = ZeroGradientInflow(),
         ) : params

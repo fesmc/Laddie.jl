@@ -78,9 +78,9 @@ end
 # ============================================================================
 
 struct Grid{FT,A<:AbstractMatrix{FT}}
-    Nx::Int;
+    Nx::Int
     Ny::Int
-    dx::FT;
+    dx::FT
     dy::FT
 
     mask::Matrix{Int}
@@ -93,60 +93,60 @@ struct Grid{FT,A<:AbstractMatrix{FT}}
     grd::A
     ocn::A
 
-    ocnym1::A;
+    ocnym1::A
     ocnyp1::A
-    ocnxm1::A;
+    ocnxm1::A
     ocnxp1::A
 
-    tmaskym1::A;
+    tmaskym1::A
     tmaskyp1::A
-    tmaskxm1::A;
+    tmaskxm1::A
     tmaskxp1::A
-    tmaskxm1ym1::A;
+    tmaskxm1ym1::A
     tmaskxm1yp1::A
     tmaskxp1ym1::A
 
-    grdNu::A;
+    grdNu::A
     grdSu::A
-    grdEv::A;
+    grdEv::A
     grdWv::A
-    glNu::A;
+    glNu::A
     glSu::A
-    glEv::A;
+    glEv::A
     glWv::A
-    isfE::A;
+    isfE::A
     isfW::A
-    isfN::A;
-    isfS::A;
+    isfN::A
+    isfS::A
     isf::A
-    grlE::A;
+    grlE::A
     grlW::A
-    grlN::A;
-    grlS::A;
+    grlN::A
+    grlS::A
     grl::A
 
-    umask::A;
+    umask::A
     vmask::A
-    umaskym1::A;
+    umaskym1::A
     umaskyp1::A
-    umaskxm1::A;
+    umaskxm1::A
     umaskxp1::A
-    vmaskym1::A;
+    vmaskym1::A
     vmaskyp1::A
-    vmaskxm1::A;
+    vmaskxm1::A
     vmaskxp1::A
 
-    tmask_im::A;
+    tmask_im::A
     tmask_ip::A
-    tmask_jm::A;
+    tmask_jm::A
     tmask_jp::A
-    umask_im::A;
+    umask_im::A
     umask_ip::A
-    umask_jm::A;
+    umask_jm::A
     umask_jp::A
-    vmask_im::A;
+    vmask_im::A
     vmask_ip::A
-    vmask_jm::A;
+    vmask_jm::A
     vmask_jp::A
 end
 
@@ -157,7 +157,7 @@ Build all masks and stagger-count denominators from the raw integer `mask` and
 ice-draft array `zb`.  Returns an immutable typed struct.
 """
 function Grid(mask::AbstractMatrix{Int}, zb::AbstractMatrix, z_bed_raw::AbstractMatrix, dx, dy; FT = Float64, gradient = JlGradient())
-    dx_ft = FT(dx);
+    dx_ft = FT(dx)
     dy_ft = FT(dy)
     zb_ft = FT.(zb)
     z_bed_ft = FT.(z_bed_raw)
@@ -167,16 +167,16 @@ function Grid(mask::AbstractMatrix{Int}, zb::AbstractMatrix, z_bed_raw::Abstract
     grd = FT.((mask .== 2) .| (mask .== 1))
     ocn = FT.(mask .== 0)
 
-    ocnym1 = ym1(ocn);
+    ocnym1 = ym1(ocn)
     ocnyp1 = yp1(ocn)
-    ocnxm1 = xm1(ocn);
+    ocnxm1 = xm1(ocn)
     ocnxp1 = xp1(ocn)
 
     dzdx, dzdy = _icebase_slope(gradient, tmask, zb_ft, dx_ft, dy_ft, FT)
 
-    tmaskym1 = ym1(tmask);
+    tmaskym1 = ym1(tmask)
     tmaskyp1 = yp1(tmask)
-    tmaskxm1 = xm1(tmask);
+    tmaskxm1 = xm1(tmask)
     tmaskxp1 = xp1(tmask)
     tmaskxm1ym1 = ym1(xm1(tmask))
     tmaskxm1yp1 = yp1(xm1(tmask))
@@ -197,41 +197,41 @@ function Grid(mask::AbstractMatrix{Int}, zb::AbstractMatrix, z_bed_raw::Abstract
     glSu = o .- yp1((o .- gl) .* (o .- xm1(gl)))
     glEv = o .- xm1((o .- gl) .* (o .- ym1(gl)))
     glWv = o .- xp1((o .- gl) .* (o .- ym1(gl)))
-    isfE = ocn .* tmaskxp1;
+    isfE = ocn .* tmaskxp1
     isfW = ocn .* tmaskxm1
-    isfN = ocn .* tmaskyp1;
+    isfN = ocn .* tmaskyp1
     isfS = ocn .* tmaskym1
     isf = isfE .+ isfN .+ isfW .+ isfS
-    grlE = grd .* tmaskxp1;
+    grlE = grd .* tmaskxp1
     grlW = grd .* tmaskxm1
-    grlN = grd .* tmaskyp1;
+    grlN = grd .* tmaskyp1
     grlS = grd .* tmaskym1
     grl = grlE .+ grlN .+ grlW .+ grlS
 
     # Velocity masks
     umask = (tmask .+ isfW) .* (o .- xm1(grlE))
     vmask = (tmask .+ isfS) .* (o .- ym1(grlN))
-    umaskym1 = ym1(umask);
+    umaskym1 = ym1(umask)
     umaskyp1 = yp1(umask)
-    umaskxm1 = xm1(umask);
+    umaskxm1 = xm1(umask)
     umaskxp1 = xp1(umask)
-    vmaskym1 = ym1(vmask);
+    vmaskym1 = ym1(vmask)
     vmaskyp1 = yp1(vmask)
-    vmaskxm1 = xm1(vmask);
+    vmaskxm1 = xm1(vmask)
     vmaskxp1 = xp1(vmask)
 
     # Stagger-count denominators
-    tmask_im = tmask .+ tmaskxp1;
+    tmask_im = tmask .+ tmaskxp1
     tmask_ip = tmask .+ tmaskxm1
-    tmask_jm = tmask .+ tmaskyp1;
+    tmask_jm = tmask .+ tmaskyp1
     tmask_jp = tmask .+ tmaskym1
-    umask_im = umask .+ umaskxp1;
+    umask_im = umask .+ umaskxp1
     umask_ip = umask .+ umaskxm1
-    umask_jm = umask .+ umaskyp1;
+    umask_jm = umask .+ umaskyp1
     umask_jp = umask .+ umaskym1
-    vmask_im = vmask .+ vmaskxp1;
+    vmask_im = vmask .+ vmaskxp1
     vmask_ip = vmask .+ vmaskxm1
-    vmask_jm = vmask .+ vmaskyp1;
+    vmask_jm = vmask .+ vmaskyp1
     vmask_jp = vmask .+ vmaskym1
 
     ny, nx = size(mask)

@@ -108,8 +108,8 @@ The physical (melting) root is
 \dot{m} = \frac{-b + \sqrt{b^2 - 4c}}{2}.
 ```
 
-For `FixedGamT`, ``\gamma_T`` is a prescribed constant and
-``\gamma_S = \gamma_T / 35``; for `TurbulentGamT` both are computed from
+For `FixedGamTMelting`, ``\gamma_T`` is a prescribed constant and
+``\gamma_S = \gamma_T / 35``; for `TurbulentGamTMelting` both are computed from
 ``u_\star`` via a log-layer formulation (Holland & Jenkins 1999).
 
 **Entrainment** ``\dot e`` (Gaspar 1988 / Gladish 2012). Turbulence at the base

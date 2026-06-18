@@ -123,6 +123,7 @@ instead of integrating NaNs.
 Returns `m` for chaining.
 """
 function run!(m; days = nothing, until = nothing, verbose = true)
+    FT = eltype(m.state.D.present)
     if days !== nothing && until !== nothing
         throw(ArgumentError("pass either `days` or `until`, not both"))
     end
@@ -218,7 +219,7 @@ function run!(m; days = nothing, until = nothing, verbose = true)
             _maybe_adapt_dt!(m, m.tstep, cfl)
             if verbose
                 mx, mn, sp = meltstats(m)
-                Dmax = maximum(ifelse.(m.tmask .> 0, m.D.present, -Inf))
+                Dmax = maximum(ifelse.(m.tmask .> 0, m.D.present, FT(-Inf)))
                 showvals = [
                     ("simulated days", round(_t_days(m), digits = 2)),
                     (

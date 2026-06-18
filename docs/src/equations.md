@@ -200,8 +200,8 @@ The interface temperature is then
 ```
 
 Computed by `_compute_turbulent_transfer_coefficients!` for
-`melting = TurbulentGamT` (the log argument carries a `+1e-12` floor for
-``D\to 0``). For `melting = FixedGamT`, ``\gamma_T`` is a prescribed constant
+`melting = TurbulentGamTMelting` (the log argument carries a `+1e-12` floor for
+``D\to 0``). For `melting = FixedGamTMelting`, ``\gamma_T`` is a prescribed constant
 and ``\gamma_S = \gamma_T/35``.
 
 ### (13) Friction velocity

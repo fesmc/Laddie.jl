@@ -42,8 +42,8 @@ HollandEntrainment
 #### Melt
 
 ```@docs
-FixedGamT
-TurbulentGamT
+FixedGamTMelting
+TurbulentGamTMelting
 ```
 
 #### Convection

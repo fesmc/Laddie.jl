@@ -81,7 +81,7 @@ Physical parameters and parameterization choices live in a single typed
 
 ```julia
 params = Params(; dt = 120.0, A_h = 25.0,
-                melting = TurbulentGamT(13.8, 2432.0, 1.95e-6),
+                melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
                 convection_scheme = RelaxToAmbient(10000.0))
 ```
 

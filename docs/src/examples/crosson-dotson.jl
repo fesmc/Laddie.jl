@@ -6,6 +6,8 @@ using KernelAbstractions
 using CUDA
 using Statistics
 
+FT = Float32
+
 # =============================================================================
 # Ocean forcing profile
 # =============================================================================
@@ -26,7 +28,7 @@ S_forc = Laddie._interp1d(reverse(S_data[:, 2] .* 1e3), reverse(S_data[:, 1]), z
 
 # ProfileForcing sorts by depth and resamples to the 1-m grid the model needs,
 # with flat extrapolation beyond the data range.
-forcing = ProfileForcing(T_forc, S_forc, z_forc)
+forcing = ProfileForcing(T_forc, S_forc, z_forc, FT = FT)
 
 fig = Figure()
 ax1 = Axis(fig[1, 1], xlabel = "Temperature (°C)", ylabel = "Depth (m)")
@@ -124,11 +126,13 @@ fig_map
 # =============================================================================
 # Build and run model — snapshot all fields + masks every 5th step
 # =============================================================================
-# mp = PrescribedMelt{Float64}()
-mp = TurbulentGamT()
-# mp = FixedGamT(0.00018)
+# mp = PrescribedMelting{Float64}()
+mp = TurbulentGamTMelting()
+# mp = FixedGamTMelting(0.00018)
 params = Params(; dt = 120, A_h = 25, K_h = 25, D_min = 2.8, nu = 0.1, D_init = 2.8,
     tstep = AdaptiveDt(), melting = mp, grline_bc = NoSlipGL(),
+    FT = FT,
+    entrainment = GaspariniEntrainment(),
     # max_layer_thickness = AbsoluteMaxLayerThickness(400),
     max_layer_thickness = RelativeMaxLayerThickness(),
 )
@@ -137,6 +141,7 @@ m = build_model(mask, zb, dx, dy, forcing, params;
     z_bed_raw = z_bed_m,
     config = RunConfig(; saveday = 0.1, dbg = DebugConfig(check_nans = true)),
     backend = CUDABackend(),
+    FT = FT,
 )
 run!(m; days = 30, verbose = true)
 

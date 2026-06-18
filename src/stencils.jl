@@ -23,9 +23,9 @@
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny);
-        s = _south(i, Ny);
-        e = _east(j, Nx);
+        n = _north(i, Ny)
+        s = _south(i, Ny)
+        e = _east(j, Nx)
         w = _west(j, Nx)
         flux_N = D0jp[i, j] * (var[n, j] - var[i, j]) * tmaskym1[i, j] / dy2
         flux_S = D0jm[i, j] * (var[s, j] - var[i, j]) * tmaskyp1[i, j] / dy2
@@ -65,9 +65,9 @@ end
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny);
-        s = _south(i, Ny);
-        e = _east(j, Nx);
+        n = _north(i, Ny)
+        s = _south(i, Ny)
+        e = _east(j, Nx)
         w = _west(j, Nx)
         v = var[i, j]
         flux_N =
@@ -116,9 +116,9 @@ end
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny);
-        s = _south(i, Ny);
-        e = _east(j, Nx);
+        n = _north(i, Ny)
+        s = _south(i, Ny)
+        e = _east(j, Nx)
         w = _west(j, Nx)
         v = var[i, j]
         flux_N = -(Vpos[i, j] * v + Vneg[i, j] * var[n, j]) / dy * vmask[i, j]
@@ -290,9 +290,9 @@ end
     i, j = @index(Global, NTuple)
     FT = typeof(slip)
     @inbounds begin
-        n = _north(i, Ny);
-        s = _south(i, Ny);
-        e = _east(j, Nx);
+        n = _north(i, Ny)
+        s = _south(i, Ny)
+        e = _east(j, Nx)
         w = _west(j, Nx)
         o = one(FT)
         v = var[i, j]
@@ -335,9 +335,9 @@ end
     FT = typeof(slip)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny);
-        s = _south(i, Ny);
-        e = _east(j, Nx);
+        n = _north(i, Ny)
+        s = _south(i, Ny)
+        e = _east(j, Nx)
         w = _west(j, Nx)
         o = one(FT)
         v = var[i, j]

@@ -58,7 +58,7 @@ jp_v(m, a) = div0(a .+ ym1(a), m.vmask_jp)
 # Numpy-style gradient: second-order central differences on the interior,
 # first-order one-sided at the two boundary rows/columns.
 function gradient_x(a, dx)
-    g = similar(a);
+    g = similar(a)
     n = size(a, 2)
     @views g[:, 2:(n-1)] .= (a[:, 3:n] .- a[:, 1:(n-2)]) ./ (2dx)
     @views g[:, 1] .= (a[:, 2] .- a[:, 1]) ./ dx
@@ -66,7 +66,7 @@ function gradient_x(a, dx)
     return g
 end
 function gradient_y(a, dy)
-    g = similar(a);
+    g = similar(a)
     n = size(a, 1)
     @views g[2:(n-1), :] .= (a[3:n, :] .- a[1:(n-2), :]) ./ (2dy)
     @views g[1, :] .= (a[2, :] .- a[1, :]) ./ dy

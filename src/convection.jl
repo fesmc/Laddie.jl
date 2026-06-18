@@ -4,15 +4,15 @@ abstract type AbstractConvectionScheme end
 """
 $(TYPEDSIGNATURES)
 
-Handle convective instability (δρ < 0) by clamping the density contrast to a
+Handle convective instability (``\\delta\\rho < 0``) by clamping the density contrast to a
 minimum positive value so the plume remains denser than ambient.
 
-- `mindrho`: minimum density contrast, kg m⁻³ (default `0.005`).
+- `d_rho_min`: minimum density contrast, kg m⁻³ (default `0.005`).
 
 Select via `Params(; convection_scheme = ClampDensity(0.005))`.
 """
-struct ClampDensity{FT} <: AbstractConvectionScheme
-    mindrho::FT
+@kwdef struct ClampDensity{FT} <: AbstractConvectionScheme
+    d_rho_min::FT = 0.005
 end
 
 """
@@ -21,12 +21,12 @@ $(TYPEDSIGNATURES)
 Handle convective instability by instantly resetting T and S of unstable cells
 to their ambient values, restoring a stable density contrast.
 
-- `mindrho`: threshold density contrast triggering the reset, kg m⁻³ (default `0.005`).
+- `d_rho_min`: threshold density contrast triggering the reset, kg m⁻³ (default `0.005`).
 
 Select via `Params(; convection_scheme = ResetToAmbient(0.005))`.
 """
-struct ResetToAmbient{FT} <: AbstractConvectionScheme
-    mindrho::FT
+@kwdef struct ResetToAmbient{FT} <: AbstractConvectionScheme
+    d_rho_min::FT = 0.005
 end
 
 """
@@ -40,6 +40,6 @@ time step via the `conv2` term).
 
 Select via `Params(; convection_scheme = RelaxToAmbient(10000.0))`.
 """
-struct RelaxToAmbient{FT} <: AbstractConvectionScheme
-    convection_time::FT
+@kwdef struct RelaxToAmbient{FT} <: AbstractConvectionScheme
+    convection_time::FT = 10000.0
 end

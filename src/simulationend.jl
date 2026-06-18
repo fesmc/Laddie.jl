@@ -27,8 +27,8 @@ whichever comes first.  Steadiness is detected when the **relative** change in
 the domain-mean basal melt rate (over floating ice) between successive
 diagnostic samples falls below `tol`:
 
-```
-|mean_meltₖ₊₁ − mean_meltₖ| / |mean_meltₖ| < tol
+```math
+|\\bar{m}_{k+1} - \\bar{m}_k| / |\\bar{m}_k| < \\mathrm{tol}
 ```
 
 `tol` is dimensionless, so it means the same thing in a warm cavity (melt of

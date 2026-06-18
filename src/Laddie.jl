@@ -40,7 +40,7 @@ export build_model,
     run!, meltstats, to_backend
 
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
-export AbstractMeltParam, FixedGamT, TurbulentGamT, PrescribedMelt
+export AbstractMelting, FixedGamTMelting, TurbulentGamTMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
 export AbstractMaximumLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThickness
 

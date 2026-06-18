@@ -97,7 +97,7 @@ Profiles are resampled to a 1-m depth grid covering −5000 m to −1 m.
 | `slip` | Float | yes | Partial-slip factor at grounding-line walls (0 = free-slip, 1 = no-slip). |
 | `convop` | Int | yes | Convection scheme: `0` = `ClampDensity`, `1` = `ResetToAmbient`, `2` = `RelaxToAmbient`. |
 | `boundop` | Int | yes | Open-boundary condition: `1` = `ZeroGradientInflow`, any other value = `NoInflow`. |
-| `usegamtfix` | Bool | yes | `true` = `FixedGamT`; `false` = `TurbulentGamT`. |
+| `usegamtfix` | Bool | yes | `true` = `FixedGamTMelting`; `false` = `TurbulentGamTMelting`. |
 | `border_N` | Int | `1` | Mask value for the north border ring (1 = grounded). |
 | `border_S` | Int | `1` | Mask value for the south border ring. |
 | `border_E` | Int | `1` | Mask value for the east border ring. |
@@ -112,7 +112,7 @@ Only relevant when `convop = 0` or `convop = 1` (`ClampDensity` /
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `mindrho` | Float | `0.005` | Minimum density contrast δρ (kg m⁻³); used by `ClampDensity` and `ResetToAmbient`. |
+| `d_rho_min` | Float | `0.005` | Minimum density contrast δρ (kg m⁻³); used by `ClampDensity` and `ResetToAmbient`. |
 | `convection_time` | Float | `10000.0` | Relaxation timescale (s); used by `RelaxToAmbient`. |
 
 ---
@@ -137,7 +137,7 @@ Only relevant when `convop = 0` or `convop = 1` (`ClampDensity` /
 | `v_cut` | Float | `1.414` | Velocity cutoff — U and V are clipped to ±`v_cut` m s⁻¹. |
 | `mu` | Float | Lambert/Gaspar only | Entrainment efficiency parameter for `LambertEntrainment` / `GasparEntrainment`. |
 | `cl` | Float | `0.01775` | Drag coefficient for `HollandEntrainment`. |
-| `gamTfix` | Float | FixedGamT only | Fixed heat transfer coefficient γ_T (used when `usegamtfix = true`). |
+| `gamTfix` | Float | FixedGamTMelting only | Fixed heat transfer coefficient γ_T (used when `usegamtfix = true`). |
 
 ---
 
@@ -161,9 +161,9 @@ Only relevant when `convop = 0` or `convop = 1` (`ClampDensity` /
 | `L` | Float | `3.34e5` | Latent heat of fusion for ice (J kg⁻¹). |
 | `c_p` | Float | `3.974e3` | Specific heat capacity of sea water (J kg⁻¹ K⁻¹). |
 | `c_i` | Float | `2009.0` | Specific heat capacity of ice (J kg⁻¹ K⁻¹). |
-| `Pr` | Float | `13.8` | Prandtl number (TurbulentGamT only). |
-| `Sc` | Float | `2432.0` | Schmidt number (TurbulentGamT only). |
-| `nu0` | Float | `1.95e-6` | Molecular kinematic viscosity (m² s⁻¹; TurbulentGamT only). |
+| `Pr` | Float | `13.8` | Prandtl number (TurbulentGamTMelting only). |
+| `Sc` | Float | `2432.0` | Schmidt number (TurbulentGamTMelting only). |
+| `nu0` | Float | `1.95e-6` | Molecular kinematic viscosity (m² s⁻¹; TurbulentGamTMelting only). |
 
 ---
 

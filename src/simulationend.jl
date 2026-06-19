@@ -44,7 +44,7 @@ Base.@kwdef struct SteadyStateEnd <: AbstractSimulationEnd
 end
 
 # Hard time cap in seconds (both criteria carry one).
-_end_seconds(e::AbstractSimulationEnd) = e.t_end * 86400.0
+_end_seconds(e::AbstractSimulationEnd, spd) = e.t_end * spd
 
 # Whether `run!` must sample the mean melt rate at each diagnostic check.
 _needs_melt_sample(::AbstractSimulationEnd) = false

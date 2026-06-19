@@ -612,7 +612,7 @@ end
 
 function _check_nans_shelf!(m, varname, arr)
     any(isnan.(arr) .& (m.tmask .> 0)) &&
-        error("NaN in $varname at t = $(round(m.t / 86400, digits=4)) days (step $(m.count))")
+        error("NaN in $varname at t = $(round(m.t / m.seconds_per_day, digits=4)) days (step $(m.count))")
 end
 
 function leapfrog_step!(m, nsteps)

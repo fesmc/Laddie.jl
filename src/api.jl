@@ -17,7 +17,7 @@ CPU scalars.
 function meltstats(m)
     mask = m.tmask
     n = sum(mask)
-    meltyr = m.melt .* spy
+    meltyr = m.melt .* m.seconds_per_year
     max_meltrate = maximum(meltyr .* mask)
     mean_meltrate = sum(meltyr .* mask) / n
     max_speed = maximum(sqrt.(im_half(m.U.present) .^ 2 .+ jm_half(m.V.present) .^ 2) .* mask)
@@ -130,15 +130,15 @@ function run!(m; days = nothing, until = nothing, verbose = true)
     until =
         until !== nothing ? until :
         FixedSimulationEnd(t_end = days !== nothing ? Float64(days) : m.config.days)
-    total = _end_seconds(until)                    # hard time cap (s) for this run
+    total = _end_seconds(until, m.seconds_per_day)  # hard time cap (s) for this run
     io_on = m.config.saveday > 0
     # Fresh time accounting for this run; next-event times are relative to it.
     m.t = 0
     m.t_sim = 0.0
     if io_on
-        m.nextsave = m.saveday * 86400.0
-        m.nextdiag = m.diagday * 86400.0
-        m.nextrest = m.restday * 86400.0
+        m.nextsave = m.saveday * m.seconds_per_day
+        m.nextdiag = m.diagday * m.seconds_per_day
+        m.nextrest = m.restday * m.seconds_per_day
     end
     # Predictive adaptive dt: rescue a too-large dt0 before the first step
     # (no-op for FixedDt). nt/checkint below then reflect the adjusted dt.
@@ -171,7 +171,7 @@ function run!(m; days = nothing, until = nothing, verbose = true)
     # (independent of run length, so `tol` means the same thing for any cap).
     # Disabled (next_steady = Inf) unless the criterion needs it.
     prev_mean = NaN
-    next_steady = _needs_melt_sample(until) ? 86400.0 : Inf
+    next_steady = _needs_melt_sample(until) ? Float64(m.seconds_per_day) : Inf
     # Time cap (round-half-up rule: round(total/dt) steps for fixed dt); a
     # SteadyStateEnd may break out earlier once the mean melt rate is steady.
     while m.t_sim + m.dt / 2 < total
@@ -205,7 +205,7 @@ function run!(m; days = nothing, until = nothing, verbose = true)
                 break
             end
             prev_mean = mean_melt
-            next_steady += 86400.0
+            next_steady += Float64(m.seconds_per_day)
         end
         # Device-reduction diagnostics force a GPU sync, so they run only at
         # this cadence (~5 %, or every `ncheck` steps under AdaptiveDt — the

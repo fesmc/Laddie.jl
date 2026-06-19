@@ -3,8 +3,6 @@ using KernelAbstractions
 using DocStringExtensions
 const KA = KernelAbstractions
 
-const spy = 365.25 * 24 * 3600   # seconds per year
-
 include("entrainment.jl")
 include("melting.jl")
 include("convection.jl")
@@ -30,7 +28,6 @@ include("backend.jl")
 include("api.jl")
 include("build.jl")
 include("show.jl")
-
 
 export Model, Grid, State, Cache, Params, RunConfig, DebugConfig
 export build_model,

@@ -139,7 +139,7 @@ end
 # Absolute simulation time in days: accumulated simulated time of this run
 # offset by the restart time, so output/restart files of a continuation run
 # never collide with the files of the run they restarted from.
-_t_days(m) = m.t_start + m.t_sim / 86400.0
+_t_days(m) = m.t_start + m.t_sim / m.seconds_per_day
 
 # ============================================================================
 # Run directory + log
@@ -506,10 +506,10 @@ function _write_output!(m, t_days)
         m.save_D      && wv("D",      m.Dav,    1.0)
         m.save_T      && wv("T",      m.Tav,    1.0)
         m.save_S      && wv("S",      m.Sav,    1.0)
-        m.save_melt   && wv("melt",   m.meltav, spy)
-        m.save_entr   && wv("entr",   m.entrav, spy)
-        m.save_ent2   && wv("ent2",   m.ent2av, spy)
-        m.save_detr   && wv("detr",   m.detrav, spy)
+        m.save_melt   && wv("melt",   m.meltav, m.seconds_per_year)
+        m.save_entr   && wv("entr",   m.entrav, m.seconds_per_year)
+        m.save_ent2   && wv("ent2",   m.ent2av, m.seconds_per_year)
+        m.save_detr   && wv("detr",   m.detrav, m.seconds_per_year)
         m.save_Tbase  && wv("Tbase",  m.Tbav,   1.0)
         m.save_Tamb   && wv("Tamb",   m.Taav,   1.0)
         m.save_gammaT && wv("gammaT", m.gamTav, 1.0)
@@ -534,7 +534,7 @@ function savefields!(m)
     if _event_due(m, m.nextsave)
         _write_output!(m, _t_days(m))
         _reset_accum!(m)
-        m.nextsave += m.saveday * 86400.0
+        m.nextsave += m.saveday * m.seconds_per_day
     end
 end
 
@@ -586,7 +586,7 @@ backend-agnostic; the native `FT` precision is preserved.
 function saverestart!(m)
     _event_due(m, m.nextrest) || return
     _write_restart!(m, _t_days(m))
-    m.nextrest += m.restday * 86400.0
+    m.nextrest += m.restday * m.seconds_per_day
 end
 
 """
@@ -628,7 +628,7 @@ Write a one-line diagnostic to the log file at every `m.diagday`-day interval.
 """
 function printdiags(m)
     _event_due(m, m.nextdiag) || return
-    m.nextdiag += m.diagday * 86400.0
+    m.nextdiag += m.diagday * m.seconds_per_day
     t_days = _t_days(m)
 
     tmask = Array(m.tmask)
@@ -651,8 +651,8 @@ function printdiags(m)
     d_Dmin = minimum(D[icecells])
     d_Dmax = maximum(D[icecells])
 
-    d_Mmax = spy * maximum(melt)
-    d_Mav = spy * sum(melt .* tmask) * dxdy / area
+    d_Mmax = m.seconds_per_year * maximum(melt)
+    d_Mav = m.seconds_per_year * sum(melt .* tmask) * dxdy / area
 
     total = sum((melt .+ entr .+ ent2 .- detr) .* tmask) * dxdy
     d_MWF = total > 0 ? 100.0 * sum(melt .* tmask) * dxdy / total : 0.0

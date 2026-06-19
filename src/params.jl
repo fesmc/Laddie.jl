@@ -47,6 +47,9 @@ struct Params{
     D_init::FT
     dT_init::FT
     dS_init::FT
+    # Unit conversions
+    seconds_per_day::FT
+    seconds_per_year::FT
     # Typed parameterization objects
     entrainment::EP
     melting::MP
@@ -112,6 +115,8 @@ function Params(;
     D_init = 10.0,
     dT_init = 0.0,
     dS_init = -0.1,
+    seconds_per_day = 86400.0,
+    seconds_per_year = 365.25 * 24 * 3600,
     entrainment = LambertEntrainment(2.5),
     melting = FixedGamTMelting(0.00018),
     convection_scheme = ResetToAmbient(0.005),
@@ -157,6 +162,8 @@ function Params(;
         FT(D_init),
         FT(dT_init),
         FT(dS_init),
+        FT(seconds_per_day),
+        FT(seconds_per_year),
         entrainment,
         melting,
         convection_scheme,

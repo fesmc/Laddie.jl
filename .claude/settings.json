@@ -13,7 +13,10 @@
       "Bash(julia --project -e 'import Pkg; Pkg.test\\(\\)')",
       "Bash(julia --project=. -e 'using Pkg; Pkg.test\\(\\)')",
       "Bash(julia --project -e \"include\\(\\\\\"test/runtests.jl\\\\\"\\)\")",
-      "Bash(julia --project=test -e \"using Pkg; Pkg.test\\(\\\\\"Laddie\\\\\"\\)\")"
+      "Bash(julia --project=test -e \"using Pkg; Pkg.test\\(\\\\\"Laddie\\\\\"\\)\")",
+      "Bash(julia --project=. -e ' *)",
+      "Bash(julia --project=test -e ' *)",
+      "Bash(git checkout *)"
     ]
   }
 }

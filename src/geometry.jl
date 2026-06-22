@@ -1,90 +1,3 @@
-using NCDatasets
-
-# ============================================================================
-# Typed forcing constructors
-# ============================================================================
-
-function LinearForcing(FT::Type, S0, S1, T1, forc_z0, l1, l2)
-    z = FT.(-5000.0:1.0:-1.0)
-    dz = FT(1.0)
-    z0 = z[1]
-    T0 = FT(l1) * FT(S0) + FT(l2)
-    Tz = @. T0 + z * (FT(T1) - T0) / FT(forc_z0)
-    Sz = @. FT(S0) + z * (FT(S1) - FT(S0)) / FT(forc_z0)
-    LinearForcing(Tz, Sz, z, dz, z0, FT(S0), FT(S1), FT(T1), FT(forc_z0))
-end
-
-function Linear2Forcing(FT::Type, S0, S1, T1, forc_z0, l1, l2)
-    z = FT.(-5000.0:1.0:-1.0)
-    dz = FT(1.0)
-    z0 = z[1]
-    T0 = FT(l1) * FT(S0) + FT(l2)
-    raw_T = @. T0 + z * (FT(T1) - T0) / FT(forc_z0)
-    raw_S = @. FT(S0) + z * (FT(S1) - FT(S0)) / FT(forc_z0)
-    Tz = FT(T1) > T0 ? min.(raw_T, FT(T1)) : max.(raw_T, FT(T1))
-    Sz = min.(raw_S, FT(S1))
-    Linear2Forcing(Tz, Sz, z, dz, z0, FT(S0), FT(S1), FT(T1), FT(forc_z0))
-end
-
-function TanhForcing(
-    FT::Type,
-    S0,
-    T1,
-    forc_z0,
-    forc_z1,
-    drho0,
-    rho0_seawater,
-    alpha,
-    beta,
-    l1,
-    l2,
-)
-    z = FT.(-5000.0:1.0:-1.0)
-    dz = FT(1.0)
-    z0 = z[1]
-    T0 = FT(l1) * FT(S0) + FT(l2)
-    drho = FT(drho0) .* sqrt.(abs.(z))
-    Tz = @. FT(T1) + (T0 - FT(T1)) * (1 + tanh((z - FT(forc_z0)) / FT(forc_z1))) / 2
-    Sz = @. FT(S0) + FT(alpha) * (Tz - T0) / FT(beta) + drho / (FT(beta) * FT(rho0_seawater))
-    TanhForcing(Tz, Sz, z, dz, z0, FT(S0), FT(T1), FT(forc_z0), FT(forc_z1), FT(drho0))
-end
-
-function _load_file_profiles(forcfile::String, forcfile_T::String, forcfile_S::String)
-    if !isempty(forcfile) && isfile(forcfile)
-        return NCDataset(forcfile, "r") do ds
-            z = Float64.(Array(ds["z"][:]))
-            Tz = Float64.(coalesce.(Array(ds["T"][:]), 0.0))
-            Sz = Float64.(coalesce.(Array(ds["S"][:]), 34.0))
-            z, Tz, Sz
-        end
-    end
-    if !isempty(forcfile_T) || !isempty(forcfile_S)
-        z, Tz = NCDataset(forcfile_T, "r") do ds
-            z = Float64.(Array(ds["z"][:]))
-            Tz = Float64.(coalesce.(Array(ds["temperature"][:]), 0.0))
-            z, Tz
-        end
-        Sz = NCDataset(forcfile_S, "r") do ds
-            Float64.(coalesce.(Array(ds["salinity"][:]), 34.0))
-        end
-        return z, Tz, Sz
-    end
-    error("Could not open forcing file(s): $forcfile")
-end
-
-function FileForcing(FT::Type, forcfile::String, forcfile_T::String, forcfile_S::String)
-    z_raw, Tz_raw, Sz_raw = _load_file_profiles(forcfile, forcfile_T, forcfile_S)
-    if !all(≈(1.0), diff(z_raw))
-        z_new = collect(-5000.0:1.0:-1.0)
-        Tz_raw = _interp1d(z_raw, Tz_raw, z_new)
-        Sz_raw = _interp1d(z_raw, Sz_raw, z_new)
-        z_raw = z_new
-    end
-    dz = FT(1.0)
-    z0 = FT(z_raw[1])
-    FileForcing(FT.(Tz_raw), FT.(Sz_raw), FT.(z_raw), dz, z0, forcfile)
-end
-
 """
 $(TYPEDSIGNATURES)
 
@@ -160,19 +73,19 @@ end
 # Geometry helpers for builders
 # ============================================================================
 
-# Adjust zb before Grid construction.  zb is defined by mask category:
+# Adjust z_draft before Grid construction.  z_draft is defined by mask category:
 #   ocean  (0): 0        (no ice above, sea-surface reference)
 #   border (1): 0        (not physically active)
-#   grounded (2): z_bed  (ice base coincides with bed; keep zb_raw)
-#   shelf  (3): zb_raw   (actual ice-base depth, clamped to ≤ -1 m)
+#   grounded (2): z_bed  (ice base coincides with bed; keep z_draft_raw)
+#   shelf  (3): z_draft_raw   (actual ice-base depth, clamped to ≤ -1 m)
 # Any NaN fill values from the raw data are stripped before the mask logic.
-function _adjust_zb(mask::AbstractMatrix{Int}, zb_raw::AbstractMatrix, FT)
+function _adjust_z_draft(mask::AbstractMatrix{Int}, z_draft_raw::AbstractMatrix, FT)
     tmask = FT.(mask .== 3)
-    zb = FT.(zb_raw)
-    zb = ifelse.(isnan.(zb), zero(FT), zb)              # strip NaN fill values
-    zb = ifelse.((mask .== 0) .| (mask .== 1), zero(FT), zb)  # ocean + border → 0
-    zb = ifelse.((tmask .> 0) .& (zb .> FT(-1)), FT(-1), zb)  # clamp shallow shelf
-    return zb
+    z_draft = FT.(z_draft_raw)
+    z_draft = ifelse.(isnan.(z_draft), zero(FT), z_draft)              # strip NaN fill values
+    z_draft = ifelse.((mask .== 0) .| (mask .== 1), zero(FT), z_draft)  # ocean + border → 0
+    z_draft = ifelse.((tmask .> 0) .& (z_draft .> FT(-1)), FT(-1), z_draft)  # clamp shallow shelf
+    return z_draft
 end
 
 # Initialise prognostic fields from scratch (no restart file).
@@ -252,10 +165,10 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Pad a bed-elevation array into the `(ny+2, nx+2)` format expected by `build_model`.
+Pad a bed-elevation array into the `(ny+2, nx+2)` format expected by `Model`.
 The one-cell border ring is zeroed; interior values are copied from `bed` unchanged.
-Pass the result as the `z_bed_raw` keyword argument to `build_model` to enable the
-water-column upper bound on plume thickness (`D <= zb - z_bed`).
+Pass the result as the `z_bed_raw` keyword argument to `Model` to enable the
+water-column upper bound on plume thickness (`D <= z_draft - z_bed`).
 
 # Arguments
 - `bed`: bed elevation (m, positive above sea level), size `(ny, nx)`.
@@ -275,11 +188,11 @@ $(TYPEDSIGNATURES)
 Compute ice-base depth (m, negative below sea level) from BedMachine-style arrays.
 Returns a `(ny+2, nx+2)` matrix (interior domain with border ring zeroed).
 
-- **Floating cells** (`h_af < 0`): `zb = -thickness * rho_ice/rho_sw` (Archimedes).
-- **Grounded cells** (`h_af >= 0`): `zb = bed` (ice base rests on the bed).
-- **Ocean / border cells**: `zb = 0`.
+- **Floating cells** (`h_af < 0`): `z_draft = -thickness * rho_ice/rho_sw` (Archimedes).
+- **Grounded cells** (`h_af >= 0`): `z_draft = bed` (ice base rests on the bed).
+- **Ocean / border cells**: `z_draft = 0`.
 
-Pass the result directly as `zb_raw` to `build_model`; `_adjust_zb` will clamp
+Pass the result directly as `z_draft_raw` to `Model`; `_adjust_z_draft` will clamp
 very shallow shelf cells and zero the ice-front ocean strip.
 
 # Arguments
@@ -295,16 +208,16 @@ function ice_base_depth(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
             "bed and thickness must have the same size, got $(size(bed)) vs $(size(thickness))",
         ),
     )
-    zb = zeros(Float64, ny + 2, nx + 2)
+    z_draft = zeros(Float64, ny + 2, nx + 2)
     r = rho_ice / rho_sw
     for j = 1:nx, i = 1:ny
         h = Float64(thickness[i, j])
         b = Float64(bed[i, j])
         if h > 0
-            zb[i+1, j+1] = (h * r + b >= 0) ? b : -h * r
+            z_draft[i+1, j+1] = (h * r + b >= 0) ? b : -h * r
         end
     end
-    return zb
+    return z_draft
 end
 
 """
@@ -575,4 +488,63 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
         end
     end
     return n_filled
+end
+
+# ============================================================================
+# Mask preprocessing pipeline
+# ============================================================================
+
+abstract type AbstractPreprocess end
+
+struct FillOceanHolesPreprocess <: AbstractPreprocess end
+struct FillShelfHolesPreprocess <: AbstractPreprocess end
+
+@kwdef struct FillSmallShelfPatchesPreprocess <: AbstractPreprocess
+    min_size::Int = 10
+end
+
+@kwdef struct FillSmallGroundedPatchesPreprocess <: AbstractPreprocess
+    min_size::Int = 10
+end
+
+preprocess!(mask, ::FillOceanHolesPreprocess)       = fill_ocean_holes!(mask)
+preprocess!(mask, ::FillShelfHolesPreprocess)        = fill_shelf_holes!(mask)
+preprocess!(mask, p::FillSmallShelfPatchesPreprocess)    = fill_small_shelf_patches!(mask, p.min_size)
+preprocess!(mask, p::FillSmallGroundedPatchesPreprocess) = fill_small_grounded_patches!(mask, p.min_size)
+
+# ============================================================================
+# Domain cropping
+# ============================================================================
+
+abstract type AbstractDomainCropping end
+
+struct NoDomainCropping <: AbstractDomainCropping end
+
+"""
+$(TYPEDSIGNATURES)
+
+Crop `mask`, `z_draft_raw`, and (optionally) `z_bed_raw` to the smallest rectangle
+that contains all floating-shelf cells (`mask == 3`), expanded by one cell in
+every direction to preserve the required border ring.
+
+If the domain is already minimal, the arrays are returned unchanged.
+"""
+struct MinRectangleDomainCropping <: AbstractDomainCropping end
+
+_crop_domain(mask, z_draft_raw, z_bed_raw, ::NoDomainCropping) = mask, z_draft_raw, z_bed_raw
+
+function _crop_domain(mask, z_draft_raw, z_bed_raw, ::MinRectangleDomainCropping)
+    shelf_inds = findall(==(3), mask)
+    isempty(shelf_inds) && return mask, z_draft_raw, z_bed_raw  # let validation catch it
+    rows = getindex.(shelf_inds, 1)
+    cols = getindex.(shelf_inds, 2)
+    rmin, rmax = extrema(rows)
+    cmin, cmax = extrema(cols)
+    r = max(1, rmin - 1) : min(size(mask, 1), rmax + 1)
+    c = max(1, cmin - 1) : min(size(mask, 2), cmax + 1)
+    if length(r) < size(mask, 1) || length(c) < size(mask, 2)
+        @info "Domain cropped from $(size(mask)) to ($(length(r)), $(length(c)))"
+    end
+    new_zbed = z_bed_raw === nothing ? nothing : z_bed_raw[r, c]
+    return mask[r, c], z_draft_raw[r, c], new_zbed
 end

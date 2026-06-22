@@ -40,7 +40,7 @@ nothing #hide
 # shelf to `NaN` (so it renders transparent), and orient the array so that `x`
 # (along-cavity) is horizontal and `y` (across-cavity) vertical.
 function field(m, A; peryr = false)
-    a = peryr ? A .* Laddie.spy : A
+    a = peryr ? A .* m.seconds_per_year : A
     a = ifelse.(m.tmask .> 0, a, NaN)
     Z = permutedims(a[2:end-1, 2:end-1])          # [y,x] → [x,y]
     x = (0:size(Z, 1)-1) .* (m.dx / 1000)
@@ -105,7 +105,7 @@ Melt rate along the channel centreline, from grounding line to ice front.
 =#
 
 jmid = size(m.tmask, 1) ÷ 2
-mline = ifelse.(m.tmask[jmid, 2:end-1] .> 0, m.melt[jmid, 2:end-1] .* Laddie.spy, NaN)
+mline = ifelse.(m.tmask[jmid, 2:end-1] .> 0, m.melt[jmid, 2:end-1] .* m.seconds_per_year, NaN)
 xx = (0:length(mline)-1) .* (m.dx / 1000)
 fig5 = Figure(size = (760, 320))
 ax = Axis(fig5[1, 1], xlabel = "x (km)", ylabel = "melt (m/yr)",

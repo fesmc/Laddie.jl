@@ -13,7 +13,7 @@ function max_layer_thickness!(m, ::TopographicMaxLayerThickness)
     @. m.D.future = min(m.D.future, m.zb - m.z_bed) .* m.tmask
 end
 function max_layer_thickness!(m, c::AbsoluteMaxLayerThickness)
-    @. m.D.future = min(m.D.present, c.D_max, m.zb - m.z_bed) .* m.tmask
+    @. m.D.future = min(m.D.future, c.D_max, m.zb - m.z_bed) .* m.tmask
 end
 function max_layer_thickness!(m, c::RelativeMaxLayerThickness)
     @. m.D.future = min(m.D.future, c.f_D_max * (m.zb - m.z_bed)) .* m.tmask

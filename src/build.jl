@@ -222,6 +222,7 @@ function build_isomip(
             melting = FixedGamTMelting(FT(0.00018)),
             convection_scheme = ResetToAmbient(FT(0.005)),
             open_bc = ZeroGradientInflow(),
+            max_layer_thickness = TopographicMaxLayerThickness(),
         ) : params
 
     return build_model(mask, zb_raw, dx, dy, forcing, _params; backend, FT, config, gradient)

@@ -41,7 +41,7 @@ kernels in `src/numerics.jl` are asserted equal to it by the test suite.
 | ``\Delta\rho_a`` | ``\rho_0\,```m.drho` | dimensional plume–ambient density anomaly | kg m⁻³ |
 | ``\delta\rho`` | `m.drho` | dimensionless reduced density ``\Delta\rho_a/\rho_0`` | – |
 | ``g_a'`` | `m.g * m.drho` | reduced gravity, Eq. (6) | m s⁻² |
-| ``z_b`` | `m.zb` | ice-base depth (negative below sea level) | m |
+| ``z_b`` | `m.z_draft` | ice-base depth (negative below sea level) | m |
 | ``f`` | `m.f` | Coriolis parameter | s⁻¹ |
 | ``g`` | `m.g` | gravitational acceleration | m s⁻² |
 | ``C_d`` | `m.C_d` | quadratic drag coefficient (momentum) | – |

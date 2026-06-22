@@ -6,7 +6,7 @@
 ### Entry points
 
 ```@docs
-build_model
+Model
 build_isomip
 run!
 meltstats
@@ -86,9 +86,5 @@ SteadyStateEnd
 
 ```@docs
 ISOMIPForcing
-LinearForcing
-Linear2Forcing
-TanhForcing
-FileForcing
 ProfileForcing
 ```

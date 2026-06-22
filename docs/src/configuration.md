@@ -41,7 +41,7 @@ at call time (default `Float64`).
 | `cutdomain` | Bool | `true` | Crop the domain to the minimal bounding box around floating-ice cells before adding the border ring. |
 
 The geometry NetCDF file must contain `x` and `y` coordinate vectors and one
-of the following ice-draft variables: `draft`, `Hib`, `zb`, `lowerSurface`.
+of the following ice-draft variables: `draft`, `Hib`, `z_draft`, `lowerSurface`.
 If none are found, the code attempts `surface − thickness`.
 
 ---

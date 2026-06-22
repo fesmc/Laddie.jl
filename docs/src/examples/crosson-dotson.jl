@@ -1,3 +1,5 @@
+using Pkg
+Pkg.activate(".")
 using Laddie
 using NCDatasets
 using CairoMakie
@@ -6,7 +8,7 @@ using KernelAbstractions
 using CUDA
 using Statistics
 
-FT = Float32
+FT = Float64
 
 # =============================================================================
 # Ocean forcing profile
@@ -126,14 +128,14 @@ fig_map
 # =============================================================================
 # Build and run model — snapshot all fields + masks every 5th step
 # =============================================================================
-# mp = PrescribedMelting{Float64}()
-mp = TurbulentGamTMelting()
-# mp = FixedGamTMelting(0.00018)
 params = Params(; dt = 120, A_h = 25, K_h = 25, D_min = 2.8, nu = 0.1, D_init = 2.8,
-    tstep = AdaptiveDt(), melting = mp, grline_bc = NoSlipGL(),
     FT = FT,
-    entrainment = GaspariniEntrainment(),
-    # max_layer_thickness = AbsoluteMaxLayerThickness(400),
+    tstep = AdaptiveDt(),
+    melting = TurbulentGamTMelting(),
+    grline_bc = FreeSlipGL(),
+    # grline_bc = NoSlipGL(),
+    entrainment = LambertEntrainment(),
+    # entrainment = GasparEntrainment(),
     max_layer_thickness = RelativeMaxLayerThickness(),
 )
 
@@ -145,62 +147,62 @@ m = build_model(mask, zb, dx, dy, forcing, params;
 )
 run!(m; days = 30, verbose = true)
 
-fn = "output/run/output.nc"
-ds_out = Dataset(fn)
-D = ds_out["D"][:, :, :]
-U = ds_out["Ut"][:, :, :]
-V = ds_out["Vt"][:, :, :]
-T = ds_out["T"][:, :, :]
-S = ds_out["S"][:, :, :]
-melt = ds_out["melt"][:, :, :]
-close(ds_out)
+# fn = "output/run/output.nc"
+# ds_out = Dataset(fn)
+# D = ds_out["D"][:, :, :]
+# U = ds_out["Ut"][:, :, :]
+# V = ds_out["Vt"][:, :, :]
+# T = ds_out["T"][:, :, :]
+# S = ds_out["S"][:, :, :]
+# melt = ds_out["melt"][:, :, :]
+# close(ds_out)
 
-i_mean = 10
-D_mean = mean(D[:, :, end-i_mean:end], dims = 3)[:, :, 1]
-U_mean = mean(U[:, :, end-i_mean:end], dims = 3)[:, :, 1]
-V_mean = mean(V[:, :, end-i_mean:end], dims = 3)[:, :, 1]
-T_mean = mean(T[:, :, end-i_mean:end], dims = 3)[:, :, 1]
-S_mean = mean(S[:, :, end-i_mean:end], dims = 3)[:, :, 1]
-melt_mean = mean(melt[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+# i_mean = 10
+# D_mean = mean(D[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+# U_mean = mean(U[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+# V_mean = mean(V[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+# T_mean = mean(T[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+# S_mean = mean(S[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+# melt_mean = mean(melt[:, :, end-i_mean:end], dims = 3)[:, :, 1]
 
-# Colors sampled directly from the source figure (pale cyan -> blue -> dark navy
-# -> magenta -> orange -> pale yellow), 40 stops, light->dark->light diverging map
-colors = [
-    colorant"#ebfcfc", colorant"#d8f2f3", colorant"#bce4e4", colorant"#9dd4d7",
-    colorant"#83c5d3", colorant"#6fb5ce", colorant"#5fa4c5", colorant"#5194c1",
-    colorant"#4783bb", colorant"#4071b3", colorant"#3e61ab", colorant"#3e509a",
-    colorant"#3c3f84", colorant"#323267", colorant"#2a2850", colorant"#1b1a37",
-    colorant"#210b4b", colorant"#350960", colorant"#450a68", colorant"#560f6d",
-    colorant"#64156e", colorant"#741b6d", colorant"#842069", colorant"#932669",
-    colorant"#a32d61", colorant"#b33259", colorant"#c23a50", colorant"#d04447",
-    colorant"#db503b", colorant"#e55c30", colorant"#ee6923", colorant"#f47d15",
-    colorant"#f98c09", colorant"#fc9f06", colorant"#feb117", colorant"#fbc42b",
-    colorant"#f3d848", colorant"#f4ea6e", colorant"#f4f992", colorant"#fbffa2",
-]
-cmap = cgrad(colors)
+# # Colors sampled directly from the source figure (pale cyan -> blue -> dark navy
+# # -> magenta -> orange -> pale yellow), 40 stops, light->dark->light diverging map
+# colors = [
+#     colorant"#ebfcfc", colorant"#d8f2f3", colorant"#bce4e4", colorant"#9dd4d7",
+#     colorant"#83c5d3", colorant"#6fb5ce", colorant"#5fa4c5", colorant"#5194c1",
+#     colorant"#4783bb", colorant"#4071b3", colorant"#3e61ab", colorant"#3e509a",
+#     colorant"#3c3f84", colorant"#323267", colorant"#2a2850", colorant"#1b1a37",
+#     colorant"#210b4b", colorant"#350960", colorant"#450a68", colorant"#560f6d",
+#     colorant"#64156e", colorant"#741b6d", colorant"#842069", colorant"#932669",
+#     colorant"#a32d61", colorant"#b33259", colorant"#c23a50", colorant"#d04447",
+#     colorant"#db503b", colorant"#e55c30", colorant"#ee6923", colorant"#f47d15",
+#     colorant"#f98c09", colorant"#fc9f06", colorant"#feb117", colorant"#fbc42b",
+#     colorant"#f3d848", colorant"#f4ea6e", colorant"#f4f992", colorant"#fbffa2",
+# ]
+# cmap = cgrad(colors)
 
-set_theme!(theme_latexfonts())
-fig_melt = Figure()
-ax = Axis(fig_melt[1, 1], aspect = DataAspect())
-hidedecorations!(ax)
-hm = heatmap!(
-    ax,
-    melt_mean,
-    colormap = cmap,
-    colorrange = (-10, 100),
-    colorscale = Makie.Symlog10(0.3),
-    lowclip    = colors[1],
-    highclip   = colors[end],
-)
-Colorbar(fig_melt[2, 1], hm;
-    vertical   = false,
-    flipaxis   = false,
-    ticks      = ([-10, -3, -1, -0.3, 0, 0.3, 1, 3, 10, 30, 100], ["-10", "-3", "-1", "-0.3", "0", "0.3", "1", "3", "10", "30", "100"]),
-    label      = L"Melt rate $\dot{m} \: \mathrm{(m\ yr^{-1})}$",
-    width = Relative(0.5),
-    height = 20,
-)
-fig_melt
+# set_theme!(theme_latexfonts())
+# fig_melt = Figure()
+# ax = Axis(fig_melt[1, 1], aspect = DataAspect())
+# hidedecorations!(ax)
+# hm = heatmap!(
+#     ax,
+#     melt_mean,
+#     colormap = cmap,
+#     colorrange = (-10, 100),
+#     colorscale = Makie.Symlog10(1),
+#     lowclip    = colors[1],
+#     highclip   = colors[end],
+# )
+# Colorbar(fig_melt[2, 1], hm;
+#     vertical   = false,
+#     flipaxis   = false,
+#     ticks      = ([-10, -3, -1, -0.3, 0, 0.3, 1, 3, 10, 30, 100], ["-10", "-3", "-1", "-0.3", "0", "0.3", "1", "3", "10", "30", "100"]),
+#     label      = L"Melt rate $\dot{m} \: \mathrm{(m\ yr^{-1})}$",
+#     width = Relative(0.8),
+#     height = 20,
+# )
+# fig_melt
 
-mx, mn, sp = meltstats(m)
-println("max melt = $(round(mx, digits=2)) m/yr,  mean = $(round(mn, digits=2)) m/yr")
+# mx, mn, sp = meltstats(m)
+# println("max melt = $(round(mx, digits=2)) m/yr,  mean = $(round(mn, digits=2)) m/yr")

@@ -29,7 +29,7 @@ using CairoMakie
 CairoMakie.activate!(type = "png")
 
 # Run Julia for one day (warm ISOMIP+, CPU broadcast — same settings as Python)
-m = build_isomip(; isomipcond = :warm)
+m = build_isomip(; isomipcond = :warm, gradient = PyGradient())
 run!(m; days = 1.0, verbose = false)
 
 # Helper: strip the 1-cell grounded border, mask non-shelf cells to `NaN`,
@@ -51,7 +51,7 @@ nothing #hide
 fig_melt = Figure(size = (900, 270))
 ax = Axis(fig_melt[1,1], xlabel = "x (km)", ylabel = "y (km)",
           title = "Basal melt rate — Julia, end of day 1 (m yr⁻¹)")
-hm = heatmap!(ax, x_km, y_km, mk(inner(m.melt) .* Laddie.spy); colormap = :thermal)
+hm = heatmap!(ax, x_km, y_km, mk(inner(m.melt) .* m.seconds_per_year); colormap = :thermal)
 Colorbar(fig_melt[1,2], hm)
 fig_melt
 

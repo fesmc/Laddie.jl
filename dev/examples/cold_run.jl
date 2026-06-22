@@ -24,7 +24,7 @@ nothing #hide
 # Helper: strip the 1-cell grounded border, mask non-shelf cells to `NaN`,
 # and transpose to (nx, ny) for CairoMakie's `heatmap!`.
 function field(m, A; peryr = false)
-    a = peryr ? A .* Laddie.spy : A
+    a = peryr ? A .* m.seconds_per_year : A
     a = ifelse.(m.tmask .> 0, a, NaN)
     Z = permutedims(a[2:end-1, 2:end-1])
     x = (0:size(Z, 1)-1) .* (m.dx / 1000)
@@ -64,7 +64,7 @@ the cold profile is indistinguishable from zero on this scale.
 
 jmid = size(mw.tmask, 1) ÷ 2
 mk_line(m) = ifelse.(m.tmask[jmid, 2:end-1] .> 0,
-                     m.melt[jmid, 2:end-1] .* Laddie.spy, NaN)
+                     m.melt[jmid, 2:end-1] .* m.seconds_per_year, NaN)
 xx = (0:size(mw.tmask, 2)-3) .* (mw.dx / 1000)
 
 fig2 = Figure(size = (760, 320))

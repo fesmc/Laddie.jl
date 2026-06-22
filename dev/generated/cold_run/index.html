@@ -7,7 +7,7 @@ mw = build_isomip(; isomipcond = :warm)
 mc = build_isomip(; isomipcond = :cold)
 run!(mw; days = 3.0, verbose = false)
 run!(mc; days = 3.0, verbose = false)</code></pre><p>Helper: strip the 1-cell grounded border, mask non-shelf cells to <code>NaN</code>, and transpose to (nx, ny) for CairoMakie&#39;s <code>heatmap!</code>.</p><pre><code class="language-julia hljs">function field(m, A; peryr = false)
-    a = peryr ? A .* Laddie.spy : A
+    a = peryr ? A .* m.seconds_per_year : A
     a = ifelse.(m.tmask .&gt; 0, a, NaN)
     Z = permutedims(a[2:end-1, 2:end-1])
     x = (0:size(Z, 1)-1) .* (m.dx / 1000)
@@ -24,9 +24,9 @@ hm1 = heatmap!(ax1, x, y, Mw; colormap = :thermal, colorrange = clim)
 hm2 = heatmap!(ax2, x, y, Mc; colormap = :thermal, colorrange = clim)
 Colorbar(fig1[1, 2], hm1)
 Colorbar(fig1[1, 4], hm2)
-fig1</code></pre><img src="7b6f41a2.png" alt="Example block output"/><h2 id="Centreline-melt-transect"><a class="docs-heading-anchor" href="#Centreline-melt-transect">Centreline melt transect</a><a id="Centreline-melt-transect-1"></a><a class="docs-heading-anchor-permalink" href="#Centreline-melt-transect" title="Permalink"></a></h2><p>Melt rate along the channel centreline (y = mid) for both cases overlaid. The warm profile peaks at the grounding line and decays toward the ice front; the cold profile is indistinguishable from zero on this scale.</p><pre><code class="language-julia hljs">jmid = size(mw.tmask, 1) ÷ 2
+fig1</code></pre><img src="a6b90333.png" alt="Example block output"/><h2 id="Centreline-melt-transect"><a class="docs-heading-anchor" href="#Centreline-melt-transect">Centreline melt transect</a><a id="Centreline-melt-transect-1"></a><a class="docs-heading-anchor-permalink" href="#Centreline-melt-transect" title="Permalink"></a></h2><p>Melt rate along the channel centreline (y = mid) for both cases overlaid. The warm profile peaks at the grounding line and decays toward the ice front; the cold profile is indistinguishable from zero on this scale.</p><pre><code class="language-julia hljs">jmid = size(mw.tmask, 1) ÷ 2
 mk_line(m) = ifelse.(m.tmask[jmid, 2:end-1] .&gt; 0,
-                     m.melt[jmid, 2:end-1] .* Laddie.spy, NaN)
+                     m.melt[jmid, 2:end-1] .* m.seconds_per_year, NaN)
 xx = (0:size(mw.tmask, 2)-3) .* (mw.dx / 1000)
 
 fig2 = Figure(size = (760, 320))
@@ -35,7 +35,7 @@ ax = Axis(fig2[1, 1], xlabel = &quot;x (km)&quot;, ylabel = &quot;melt rate (m y
 lines!(ax, xx, mk_line(mw); color = :firebrick,  label = &quot;warm&quot;)
 lines!(ax, xx, mk_line(mc); color = :steelblue,  label = &quot;cold&quot;)
 axislegend(ax; position = :rt)
-fig2</code></pre><img src="e74d17d4.png" alt="Example block output"/><h2 id="Layer-thickness"><a class="docs-heading-anchor" href="#Layer-thickness">Layer thickness</a><a id="Layer-thickness-1"></a><a class="docs-heading-anchor-permalink" href="#Layer-thickness" title="Permalink"></a></h2><p>In the warm cavity the plume thickens rapidly away from the grounding line as entrainment mixes in ambient water; in the cold cavity the plume stays close to the initialisation thickness <code>D_init = 10 m</code> because entrainment is weak.</p><pre><code class="language-julia hljs">x, y, Dw = field(mw, mw.D.present)
+fig2</code></pre><img src="912203fe.png" alt="Example block output"/><h2 id="Layer-thickness"><a class="docs-heading-anchor" href="#Layer-thickness">Layer thickness</a><a id="Layer-thickness-1"></a><a class="docs-heading-anchor-permalink" href="#Layer-thickness" title="Permalink"></a></h2><p>In the warm cavity the plume thickens rapidly away from the grounding line as entrainment mixes in ambient water; in the cold cavity the plume stays close to the initialisation thickness <code>D_init = 10 m</code> because entrainment is weak.</p><pre><code class="language-julia hljs">x, y, Dw = field(mw, mw.D.present)
 x, y, Dc = field(mc, mc.D.present)
 clim_D = (0.0, max(maximum(filter(isfinite, Dw)), maximum(filter(isfinite, Dc))))
 
@@ -46,10 +46,10 @@ hm1 = heatmap!(ax1, x, y, Dw; colormap = :viridis, colorrange = clim_D)
 hm2 = heatmap!(ax2, x, y, Dc; colormap = :viridis, colorrange = clim_D)
 Colorbar(fig3[1, 2], hm1)
 Colorbar(fig3[1, 4], hm2)
-fig3</code></pre><img src="520a847c.png" alt="Example block output"/><h2 id="Summary-statistics"><a class="docs-heading-anchor" href="#Summary-statistics">Summary statistics</a><a id="Summary-statistics-1"></a><a class="docs-heading-anchor-permalink" href="#Summary-statistics" title="Permalink"></a></h2><pre><code class="language-julia hljs">_, mnw, _ = meltstats(mw)
+fig3</code></pre><img src="8dbf9de0.png" alt="Example block output"/><h2 id="Summary-statistics"><a class="docs-heading-anchor" href="#Summary-statistics">Summary statistics</a><a id="Summary-statistics-1"></a><a class="docs-heading-anchor-permalink" href="#Summary-statistics" title="Permalink"></a></h2><pre><code class="language-julia hljs">_, mnw, _ = meltstats(mw)
 _, mnc, _ = meltstats(mc)
 println(&quot;Warm: mean melt = &quot;, round(mnw, digits = 2), &quot; m yr⁻¹&quot;)
 println(&quot;Cold: mean melt = &quot;, round(mnc, digits = 3), &quot; m yr⁻¹&quot;)
-println(&quot;Ratio warm/cold = &quot;, round(mnw / mnc, digits = 1), &quot;×&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Warm: mean melt = 87.48 m yr⁻¹
-Cold: mean melt = 49.771 m yr⁻¹
-Ratio warm/cold = 1.8×</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../isomip_run/">« Run</a><a class="docs-footer-nextpage" href="../spinup/">Spin-up »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Thursday 18 June 2026 14:04">Thursday 18 June 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+println(&quot;Ratio warm/cold = &quot;, round(mnw / mnc, digits = 1), &quot;×&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Warm: mean melt = 1.97 m yr⁻¹
+Cold: mean melt = 0.608 m yr⁻¹
+Ratio warm/cold = 3.2×</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../isomip_run/">« Run</a><a class="docs-footer-nextpage" href="../spinup/">Spin-up »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Monday 22 June 2026 13:41">Monday 22 June 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

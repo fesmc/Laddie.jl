@@ -72,7 +72,7 @@ mask    = build_laddie_mask(bed, h)         # 0 ocean / 1 land / 2 grounded / 3 
 zb      = ice_base_depth(bed, h)            # ice-base depth (m, negative)
 forcing = ProfileForcing(Tz, Sz, z)         # T (°C), S (psu), z (m) vectors
 
-m = build_model(mask, zb, 500.0, 500.0, forcing, Params())
+m = Model(mask, zb, 500.0, 500.0, forcing, Params())
 run!(m; days = 90)
 ```
 

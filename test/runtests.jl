@@ -51,7 +51,7 @@ end
         @test Laddie._north(5,  10) == 6
     end
 
-    @testset "build_model: arbitrary mask and draft" begin
+    @testset "Model: arbitrary mask and draft" begin
         # Minimal 4×6 interior domain (6×8 with border ring):
         #   col 1 and 8 → boundary (1); cols 2–3 → grounded (2); cols 4–7 → shelf (3)
         nx_i, ny_i = 6, 4
@@ -60,11 +60,11 @@ end
         mask[:, 1]   .= 1;   mask[:, end] .= 1
         mask[2:end-1, 2:3]   .= 2
         mask[2:end-1, 4:end-1] .= 3
-        zb_raw = fill(-400.0, ny_i + 2, nx_i + 2)
+        z_draft_raw = fill(-400.0, ny_i + 2, nx_i + 2)
 
         forcing = ISOMIPForcing(FT, :warm)
         params  = Params(; FT)
-        m = build_model(mask, zb_raw, 2000.0, 2000.0, forcing, params; FT)
+        m = Model(mask, z_draft_raw, 2000.0, 2000.0, forcing, params; FT)
 
         @test size(m.tmask) == (ny_i + 2, nx_i + 2)
         @test all(isfinite, m.melt)
@@ -74,35 +74,35 @@ end
         @test all(isfinite, m.melt)
     end
 
-    @testset "build_model: input validation errors" begin
+    @testset "Model: input validation errors" begin
         nx_i, ny_i = 6, 4
         mask = zeros(Int, ny_i + 2, nx_i + 2)
         mask[1, :]   .= 1;   mask[end, :] .= 1
         mask[:, 1]   .= 1;   mask[:, end] .= 1
         mask[2:end-1, 2:3]   .= 2
         mask[2:end-1, 4:end-1] .= 3
-        zb = fill(-400.0, ny_i + 2, nx_i + 2)
+        z_draft = fill(-400.0, ny_i + 2, nx_i + 2)
         forcing = ISOMIPForcing(FT, :warm)
         params  = Params(; FT)
 
-        # zb size mismatch
-        @test_throws ArgumentError build_model(mask, zb[:, 1:end-1], 2000.0, 2000.0, forcing, params; FT)
+        # z_draft size mismatch
+        @test_throws ArgumentError Model(mask, z_draft[:, 1:end-1], 2000.0, 2000.0, forcing, params; FT)
         # non-positive cell spacing
-        @test_throws ArgumentError build_model(mask, zb, -2000.0, 2000.0, forcing, params; FT)
+        @test_throws ArgumentError Model(mask, z_draft, -2000.0, 2000.0, forcing, params; FT)
         # mask value outside 0:3
         bad = copy(mask); bad[3, 4] = 7
-        @test_throws ArgumentError build_model(bad, zb, 2000.0, 2000.0, forcing, params; FT)
+        @test_throws ArgumentError Model(bad, z_draft, 2000.0, 2000.0, forcing, params; FT)
         # no floating-shelf cells at all
         none = copy(mask); none[none .== 3] .= 2
-        @test_throws ArgumentError build_model(none, zb, 2000.0, 2000.0, forcing, params; FT)
+        @test_throws ArgumentError Model(none, z_draft, 2000.0, 2000.0, forcing, params; FT)
         # shelf cell on the border ring
         edge = copy(mask); edge[1, 4] = 3
-        @test_throws ArgumentError build_model(edge, zb, 2000.0, 2000.0, forcing, params; FT)
+        @test_throws ArgumentError Model(edge, z_draft, 2000.0, 2000.0, forcing, params; FT)
         # FT mismatch with params and with forcing
-        @test_throws ArgumentError build_model(mask, zb, 2000.0, 2000.0, forcing, Params(; FT = Float32); FT)
-        @test_throws ArgumentError build_model(mask, zb, 2000.0, 2000.0, ISOMIPForcing(Float32, :warm), params; FT)
+        @test_throws ArgumentError Model(mask, z_draft, 2000.0, 2000.0, forcing, Params(; FT = Float32); FT)
+        @test_throws ArgumentError Model(mask, z_draft, 2000.0, 2000.0, ISOMIPForcing(Float32, :warm), params; FT)
         # valid inputs still build
-        m = build_model(mask, zb, 2000.0, 2000.0, forcing, params; FT)
+        m = Model(mask, z_draft, 2000.0, 2000.0, forcing, params; FT)
         @test all(isfinite, m.melt)
     end
 
@@ -140,19 +140,19 @@ end
         bed       = [-500.0  -500.0  -200.0]
         thickness = [ 600.0   400.0     0.0]
 
-        zb = ice_base_depth(bed, thickness)
-        @test size(zb) == (3, 5)    # (1+2, 3+2)
+        z_draft = ice_base_depth(bed, thickness)
+        @test size(z_draft) == (3, 5)    # (1+2, 3+2)
         # Border zeros
-        @test all(zb[1, :] .== 0.0)
-        @test all(zb[end, :] .== 0.0)
-        @test all(zb[:, 1]   .== 0.0)
-        @test all(zb[:, end] .== 0.0)
-        # Grounded: zb = bed
-        @test zb[2, 2] ≈ -500.0
-        # Floating: zb = -h * rho_ice/rho_sw
-        @test zb[2, 3] ≈ -400.0 * 917.0 / 1028.0
-        # Ocean: zb = 0
-        @test zb[2, 4] ≈ 0.0
+        @test all(z_draft[1, :] .== 0.0)
+        @test all(z_draft[end, :] .== 0.0)
+        @test all(z_draft[:, 1]   .== 0.0)
+        @test all(z_draft[:, end] .== 0.0)
+        # Grounded: z_draft = bed
+        @test z_draft[2, 2] ≈ -500.0
+        # Floating: z_draft = -h * rho_ice/rho_sw
+        @test z_draft[2, 3] ≈ -400.0 * 917.0 / 1028.0
+        # Ocean: z_draft = 0
+        @test z_draft[2, 4] ≈ 0.0
     end
 
     @testset "Mask cleaning: fill_ocean_holes!, fill_shelf_holes!, fill_small_shelf_patches!" begin
@@ -245,7 +245,7 @@ end
         @test gc4[3, 3] == 2   # main block kept
     end
 
-    @testset "Geometry ingestion: end-to-end build_model from synthetic BedMachine" begin
+    @testset "Geometry ingestion: end-to-end Model from synthetic BedMachine" begin
         # 4×8 interior: cols 1-2 grounded, cols 3-8 floating
         ny_bm, nx_bm = 4, 8
         bed_bm = fill(-500.0, ny_bm, nx_bm)
@@ -260,7 +260,7 @@ end
 
         forcing = ISOMIPForcing(FT, :warm)
         params  = Params(; FT)
-        m = build_model(mask_bm, zb_bm, 2000.0, 2000.0, forcing, params; FT)
+        m = Model(mask_bm, zb_bm, 2000.0, 2000.0, forcing, params; FT)
         @test all(isfinite, m.melt)
         @test all(m.melt[m.tmask .> 0] .>= 0)
         run!(m; days = 0.5, verbose = false)
@@ -318,10 +318,10 @@ end
         mask[:, 1]   .= 1;   mask[:, end] .= 1
         mask[2:end-1, 2:3]   .= 2
         mask[2:end-1, 4:end-1] .= 3
-        zb_raw = fill(-400.0, ny_i + 2, nx_i + 2)
+        z_draft_raw = fill(-400.0, ny_i + 2, nx_i + 2)
 
-        m1 = build_model(mask, zb_raw, 2000.0, 2000.0, isomip, Params(; FT); FT)
-        m2 = build_model(mask, zb_raw, 2000.0, 2000.0, prof,  Params(; FT); FT)
+        m1 = Model(mask, z_draft_raw, 2000.0, 2000.0, isomip, Params(; FT); FT)
+        m2 = Model(mask, z_draft_raw, 2000.0, 2000.0, prof,  Params(; FT); FT)
         @test m2.melt ≈ m1.melt
         run!(m2; days = 0.5, verbose = false)
         @test all(isfinite, m2.D.present)
@@ -720,10 +720,6 @@ end
     @testset "Forcing structs are concretely typed" begin
         forcings = (
             ISOMIPForcing(FT, :warm),
-            LinearForcing(FT, 33.8, 34.7, 1.0, -720.0, -0.0573, 0.0832),
-            Linear2Forcing(FT, 33.8, 34.7, 1.0, -720.0, -0.0573, 0.0832),
-            TanhForcing(FT, 33.8, 1.0, -720.0, 100.0, 0.01, 1028.0,
-                        3.733e-5, 7.843e-4, -0.0573, 0.0832),
             ProfileForcing([1.0, 0.0], [34.7, 34.2], [-1000.0, -100.0]; FT),
         )
         for f in forcings

@@ -172,7 +172,7 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     print(io, "  time stepper   = ", p.tstep)
 end
 
-_backend_name(m::Model) = nameof(typeof(KA.get_backend(getfield(m, :grid).zb)))
+_backend_name(m::Model) = nameof(typeof(KA.get_backend(getfield(m, :grid).z_draft)))
 
 function Base.show(io::IO, m::Model{FT}) where {FT}
     g = getfield(m, :grid)

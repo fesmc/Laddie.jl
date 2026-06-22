@@ -1,6 +1,6 @@
-@kernel function _freezing_point_kernel!(Tf, @Const(S), @Const(zb), l1, l2, l3)
+@kernel function _freezing_point_kernel!(Tf, @Const(S), @Const(z_draft), l1, l2, l3)
     i, j = @index(Global, NTuple)
-    @inbounds Tf[i, j] = l1 * S[i, j] + l2 + l3 * zb[i, j]
+    @inbounds Tf[i, j] = l1 * S[i, j] + l2 + l3 * z_draft[i, j]
 end
 
 @kernel function _density_kernel!(
@@ -26,7 +26,7 @@ end
     Tb,
     @Const(T),
     @Const(S),
-    @Const(zb),
+    @Const(z_draft),
     @Const(tmask),
     gamT,
     gamS,
@@ -39,7 +39,7 @@ end
     i, j = @index(Global, NTuple)
     FT = typeof(gamT)
     @inbounds begin
-        Tf_depth = l2 + l3 * zb[i, j]
+        Tf_depth = l2 + l3 * z_draft[i, j]
         quad_b =
             cp_over_Leff * gamT * (Tf_depth - T[i, j]) +
             gamS * (1 + cp_over_Leff * ci_over_cp * (Tf_depth + l1 * S[i, j]))
@@ -61,7 +61,7 @@ end
     Tb,
     @Const(T),
     @Const(S),
-    @Const(zb),
+    @Const(z_draft),
     @Const(tmask),
     @Const(gamT),
     @Const(gamS),
@@ -76,7 +76,7 @@ end
     @inbounds begin
         gT = gamT[i, j]
         gS = gamS[i, j]
-        Tf_depth = l2 + l3 * zb[i, j]
+        Tf_depth = l2 + l3 * z_draft[i, j]
         quad_b =
             cp_over_Leff * gT * (Tf_depth - T[i, j]) +
             gS * (one(FT) + cp_over_Leff * ci_over_cp * (Tf_depth + l1 * S[i, j]))
@@ -95,7 +95,7 @@ end
 @kernel function _ambient_interp_kernel!(
     Ta,
     Sa,
-    @Const(zb),
+    @Const(z_draft),
     @Const(D),
     @Const(Tz),
     @Const(Sz),
@@ -106,7 +106,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(z0)
-        depth_idx = -z0 + (zb[i, j] - D[i, j]) / dz
+        depth_idx = -z0 + (z_draft[i, j] - D[i, j]) / dz
         # Guard against non-finite or out-of-range depth_idx before the integer
         # conversion: trunc(Int, x) throws InexactError on CPU and is UB on GPU
         # when x overflows Int64 (~9.2e18).  Clamp to [0, nz-1] in float first
@@ -126,7 +126,7 @@ end
 $(TYPEDSIGNATURES)
 
 Vertically interpolate the ambient T/S profiles to the depth of each grid cell's
-plume base (zb − D), writing results into `m.Ta` and `m.Sa`. This sampling has
+plume base (z_draft − D), writing results into `m.Ta` and `m.Sa`. This sampling has
 no numbered equation in Lambert et al. (2023); see `docs/src/equations.md`.
 """
 function update_ambient_fields!(m)
@@ -136,7 +136,7 @@ function update_ambient_fields!(m)
         m.Ta,
         m.Ta,
         m.Sa,
-        m.zb,
+        m.z_draft,
         m.D.present,
         m.Tz,
         m.Sz,
@@ -149,7 +149,7 @@ end
 
 "Linear liquidus: ``T_f = l_1 S + l_2 + l_3 z_b``  (Lambert et al. 2023, Eq. 10)."
 update_freezing_temperature!(m) =
-    launch!(_freezing_point_kernel!, m.Tf, m.Tf, m.S.present, m.zb, m.l1, m.l2, m.l3)
+    launch!(_freezing_point_kernel!, m.Tf, m.Tf, m.S.present, m.z_draft, m.l1, m.l2, m.l3)
 
 "Reduced (dimensionless) density ``\\delta\\rho = \\Delta\\rho_a/\\rho_0 = \\beta(S_a - S) - \\alpha(T_a - T)``  (Lambert et al. 2023, Eqs. 6–7)."
 update_density!(m) = launch!(
@@ -255,7 +255,7 @@ function update_melt!(m, mp::FixedGamTMelting)
         m.Tb,
         m.T.present,
         m.S.present,
-        m.zb,
+        m.z_draft,
         m.tmask,
         m.gamT,
         m.gamS,
@@ -302,7 +302,7 @@ function update_melt!(m, mp::TurbulentGamTMelting)
         m.Tb,
         m.T.present,
         m.S.present,
-        m.zb,
+        m.z_draft,
         m.tmask,
         m.gamT,
         m.gamS,
@@ -367,7 +367,7 @@ function _compute_entrainment!(m, ep::LambertEntrainment)
         m.T.present,
         m.S.present,
         m.Tb,
-        m.zb,
+        m.z_draft,
         m.ustar,
         m.D.present,
         m.drho,
@@ -404,7 +404,7 @@ function _compute_entrainment!(m, ep::GasparEntrainment)
         m.T.present,
         m.S.present,
         m.Tb,
-        m.zb,
+        m.z_draft,
         m.ustar,
         m.D.present,
         m.drho,
@@ -478,7 +478,7 @@ end
     @Const(T),
     @Const(S),
     @Const(Tb),
-    @Const(zb),
+    @Const(z_draft),
     @Const(ustar),
     @Const(D),
     @Const(drho),
@@ -496,7 +496,7 @@ end
     @inbounds begin
         FT = typeof(mu2_over_g)
         drho_pos = max(FT(0.0001), drho[i, j])
-        sb = (Tb[i, j] - l2 - l3 * zb[i, j]) / l1
+        sb = (Tb[i, j] - l2 - l3 * z_draft[i, j]) / l1
         Sb[i, j] = sb
         db_ij = (beta * (S[i, j] - sb) - alpha * (T[i, j] - Tb[i, j])) * tmask[i, j]
         drhob[i, j] = db_ij
@@ -523,7 +523,7 @@ end
     @Const(T),
     @Const(S),
     @Const(Tb),
-    @Const(zb),
+    @Const(z_draft),
     @Const(ustar),
     @Const(D),
     @Const(drho),
@@ -541,7 +541,7 @@ end
     @inbounds begin
         FT = typeof(mu_over_g)
         drho_pos = max(FT(0.0001), drho[i, j])
-        sb = (Tb[i, j] - l2 - l3 * zb[i, j]) / l1
+        sb = (Tb[i, j] - l2 - l3 * z_draft[i, j]) / l1
         Sb[i, j] = sb
         db_ij = (beta * (S[i, j] - sb) - alpha * (T[i, j] - Tb[i, j])) * tmask[i, j]
         drhob[i, j] = db_ij
@@ -656,7 +656,7 @@ end
 #   f       Coriolis parameter [s⁻¹]
 #   g       gravitational acceleration [m s⁻²]
 #   ρ₀      reference seawater density [kg m⁻³]
-#   zb      ice-base depth, negative below sea level [m]
+#   z_draft      ice-base depth, negative below sea level [m]
 #   C_d      quadratic bottom drag coefficient [–]
 #   |u|     current speed, √(U² + V²) [m s⁻¹]
 #   A_h      horizontal viscosity [m² s⁻¹]
@@ -671,7 +671,7 @@ end
 @inline u_advection(m) = upwind_advection_U(m)
 # g·D̄·ρ̄·∂D/∂x  (pressure gradient from plume-thickness depth)
 @inline u_pressure_depth(m) = m.g .* ip_t(m, m.Ddrho) .* (m.Dxm1 .- m.D.present) ./ m.dx
-# g·D̄·ρ̄·∂zb/∂x  (baroclinic pressure via ice-base slope)
+# g·D̄·ρ̄·∂z_draft/∂x  (baroclinic pressure via ice-base slope)
 @inline u_pressure_slope(m) = m.g .* ip_t(m, m.Ddrho .* m.dzdx)
 # ½g·D̄²·∂δρ/∂x  (internal pressure gradient)
 @inline u_pressure_density(m) =
@@ -694,7 +694,7 @@ end
 @inline v_advection(m) = upwind_advection_V(m)
 # g·D̄·ρ̄·∂D/∂y  (pressure gradient from plume-thickness depth)
 @inline v_pressure_depth(m) = m.g .* jp_t(m, m.Ddrho) .* (m.Dym1 .- m.D.present) ./ m.dy
-# g·D̄·ρ̄·∂zb/∂y  (baroclinic pressure via ice-base slope)
+# g·D̄·ρ̄·∂z_draft/∂y  (baroclinic pressure via ice-base slope)
 @inline v_pressure_slope(m) = m.g .* jp_t(m, m.Ddrho .* m.dzdy)
 # ½g·D̄²·∂δρ/∂y  (internal pressure gradient)
 @inline v_pressure_density(m) =

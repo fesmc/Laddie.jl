@@ -5,15 +5,15 @@
 _float_type(::Params{FT}) where {FT} = FT
 _float_type(f::AbstractForcing) = eltype(f.Tz)
 
-function _validate_build_inputs(mask, zb_raw, dx, dy, forcing, params, FT)
+function _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
     (size(mask, 1) >= 3 && size(mask, 2) >= 3) || throw(
         ArgumentError(
             "mask must be at least 3×3 — interior cells plus the one-cell border ring — got $(size(mask))",
         ),
     )
-    size(zb_raw) == size(mask) || throw(
+    size(z_draft_raw) == size(mask) || throw(
         ArgumentError(
-            "zb_raw and mask must have the same size, got $(size(zb_raw)) vs $(size(mask))",
+            "z_draft_raw and mask must have the same size, got $(size(z_draft_raw)) vs $(size(mask))",
         ),
     )
     (dx > 0 && dy > 0) ||
@@ -42,13 +42,13 @@ function _validate_build_inputs(mask, zb_raw, dx, dy, forcing, params, FT)
     )
     _float_type(params) === FT || throw(
         ArgumentError(
-            "params is Params{$(_float_type(params))} but build_model was called with FT = $FT; " *
+            "params is Params{$(_float_type(params))} but Model was called with FT = $FT; " *
             "construct the parameters with Params(; FT = $FT, ...) or pass the matching FT",
         ),
     )
     _float_type(forcing) === FT || throw(
         ArgumentError(
-            "forcing holds $(_float_type(forcing)) profiles but build_model was called with FT = $FT; " *
+            "forcing holds $(_float_type(forcing)) profiles but Model was called with FT = $FT; " *
             "construct the forcing with FT = $FT or pass the matching FT",
         ),
     )
@@ -69,17 +69,17 @@ arbitrary domain mask and ice-draft, a forcing profile, and a parameter set.
 | `2`   | grounded ice (sets inflow boundary for the plume) |
 | `3`   | floating ice shelf (active plume cells) |
 
-The `mask` and `zb_raw` arrays must include the full domain with the one-cell
+The `mask` and `z_draft_raw` arrays must include the full domain with the one-cell
 border ring, i.e. size `(ny+2, nx+2)` where `ny × nx` are the interior cells.
 
-`zb_raw` gives the ice-base depth in metres (negative downward) at each cell;
+`z_draft_raw` gives the ice-base depth in metres (negative downward) at each cell;
 values at non-shelf cells (mask ≠ 3) are ignored and zeroed internally.
 
 # Arguments
 - `mask`:    integer mask matrix, size `(ny+2, nx+2)`.
-- `zb_raw`:  raw ice-draft matrix (same size); need not be pre-processed.
+- `z_draft_raw`:  raw ice-draft matrix (same size); need not be pre-processed.
 - `dx`, `dy`: cell spacing in metres.
-- `forcing`: an `AbstractForcing` (e.g. `ISOMIPForcing`, `LinearForcing`, `FileForcing`).
+- `forcing`: an `AbstractForcing` (e.g. `ISOMIPForcing`, `ProfileForcing`).
 - `params`:  a `Params` object with all physical constants and parameterizations.
 - `backend`: KernelAbstractions backend (default `CPU()`).
 - `FT`:      floating-point precision type (default `Float64`); must match the
@@ -91,16 +91,16 @@ The returned model is fully initialised and ready for `run!`.
 # Example
 ```julia
 mask   = build_laddie_mask(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
-zb_raw = ice_base_depth(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
+z_draft_raw = ice_base_depth(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
 forcing = ISOMIPForcing(Float64, :warm)
 params  = Params()
-m = build_model(mask, zb_raw, 2000.0, 2000.0, forcing, params)
+m = Model(mask, z_draft_raw, 2000.0, 2000.0, forcing, params)
 run!(m; days=30)
 ```
 """
-function build_model(
+function Model(
     mask::AbstractMatrix{Int},
-    zb_raw::AbstractMatrix,
+    z_draft_raw::AbstractMatrix,
     dx::Real,
     dy::Real,
     forcing::AbstractForcing,
@@ -110,18 +110,24 @@ function build_model(
     config = RunConfig(),
     gradient = JlGradient(),
     z_bed_raw = nothing,
+    domain_cropping = MinRectangleDomainCropping(),
+    preprocess = AbstractPreprocess[],
 )
-    _validate_build_inputs(mask, zb_raw, dx, dy, forcing, params, FT)
+    for p in preprocess
+        preprocess!(mask, p)
+    end
+    mask, z_draft_raw, z_bed_raw = _crop_domain(mask, z_draft_raw, z_bed_raw, domain_cropping)
+    _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
     ny_total, nx_total = size(mask)
     nx, ny = nx_total - 2, ny_total - 2
 
-    zb = _adjust_zb(mask, zb_raw, FT)
+    z_draft = _adjust_z_draft(mask, z_draft_raw, FT)
     z_bed = if z_bed_raw === nothing
         fill(FT(-Inf), ny_total, nx_total)  # no upper cap on D
     else
         FT.(z_bed_raw)
     end
-    grid = Grid(mask, zb, z_bed, FT(dx), FT(dy); FT, gradient)
+    grid = Grid(mask, z_draft, z_bed, FT(dx), FT(dy); FT, gradient)
     state = State(FT, ny_total, nx_total)
     cache =
         Cache(FT, typeof(params.melting), typeof(params.convection_scheme), ny_total, nx_total)
@@ -158,7 +164,7 @@ $(TYPEDSIGNATURES)
 
 Convenience constructor for the idealised ISOMIP+ channel geometry
 (Asay-Davis et al. 2016).  Builds the mask and ice draft analytically, then
-delegates to `build_model`.
+delegates to `Model`.
 
 # Arguments
 - `backend`: KernelAbstractions backend.  Default `CPU()`; use `CUDABackend()`
@@ -167,7 +173,7 @@ delegates to `build_model`.
 - `dx`, `dy`: cell size in metres (default 2 km).
 - `xgl`: grounding-line x-position in metres (default 20 km).
 - `xfront`: ice-front x-position in metres (default 460 km).
-- `zb_gl`, `zb_front`: ice-draft depth at grounding line and ice front in
+- `z_draft_gl`, `z_draft_front`: ice-draft depth at grounding line and ice front in
   metres (default −720 m and −200 m).
 - `isomipcond`: `:warm` (1 °C at depth) or `:cold` (nearly freezing).
 - `FT`: floating-point precision type (default `Float64`; use `Float32` for GPU).
@@ -183,20 +189,22 @@ function build_isomip(
     dy = 2000.0,
     xgl = 20_000.0,
     xfront = 460_000.0,
-    zb_gl = -720.0,
-    zb_front = -200.0,
+    z_draft_gl = -720.0,
+    z_draft_front = -200.0,
     isomipcond = :warm,
     params = nothing,
     config = RunConfig(),
     gradient = JlGradient(),
+    domain_cropping = NoDomainCropping(),
+    preprocess = AbstractPreprocess[],
 )
     ny_total, nx_total = ny + 2, nx + 2
     mask = zeros(Int, ny_total, nx_total)
-    zb_raw = zeros(FT, ny_total, nx_total)
+    z_draft_raw = zeros(FT, ny_total, nx_total)
     xgl_ft = FT(xgl);
     xfront_ft = FT(xfront)
-    zgl_ft = FT(zb_gl);
-    zfr_ft = FT(zb_front)
+    zgl_ft = FT(z_draft_gl);
+    zfr_ft = FT(z_draft_front)
     for j = 1:ny, i = 1:nx
         x = FT((i - 1) * dx)
         jp, ip = j + 1, i + 1
@@ -204,7 +212,7 @@ function build_isomip(
             mask[jp, ip] = 2
         elseif x <= xfront_ft
             mask[jp, ip] = 3
-            zb_raw[jp, ip] =
+            z_draft_raw[jp, ip] =
                 zgl_ft + (zfr_ft - zgl_ft) * (x - xgl_ft) / (xfront_ft - xgl_ft)
         end
     end
@@ -225,5 +233,5 @@ function build_isomip(
             max_layer_thickness = TopographicMaxLayerThickness(),
         ) : params
 
-    return build_model(mask, zb_raw, dx, dy, forcing, _params; backend, FT, config, gradient)
+    return Model(mask, z_draft_raw, dx, dy, forcing, _params; backend, FT, config, gradient, domain_cropping, preprocess)
 end

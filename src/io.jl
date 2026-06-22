@@ -380,7 +380,7 @@ end
 # Create output.nc once at the start of a run: defines all dimensions,
 # coordinate variables, and time-varying/static field variables.  Time-varying
 # fields are 3D (y, x, time) with an unlimited time dimension; static fields
-# (mask, zb) are 2D and written here.
+# (mask, z_draft) are 2D and written here.
 function _create_output_file!(m)
     path = joinpath(m.rundir, "output.nc")
     NCDataset(path, "c") do ds
@@ -472,8 +472,8 @@ function _create_output_file!(m)
             )[:, :] = Int8.(at_grl)
         end
         if m.save_zb
-            defVar(ds, "zb", Float64, ("y", "x"); attrib = ["units" => "m"])[:, :] =
-                _int(m.zb)
+            defVar(ds, "z_draft", Float64, ("y", "x"); attrib = ["units" => "m"])[:, :] =
+                _int(m.z_draft)
         end
     end
     _print2log(m, "Created output file → output.nc")
@@ -596,7 +596,7 @@ Load D, U, V, T, S from the JLD2 restart file at `m.restartfile` into all
 three leapfrog levels of the existing `Var` structs, then call
 `update_secondary_fields!` and one bootstrap integration step.
 
-Geometry (masks, zb) must already be initialised before calling this.
+Geometry (masks, z_draft) must already be initialised before calling this.
 """
 function init_from_restart!(m)
     jldopen(m.restartfile, "r") do f

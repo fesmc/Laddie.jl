@@ -46,7 +46,7 @@ Fields are accessed directly on `m` through a flat forwarding layer:
 |----------------|--------------|---------|
 | `m.D`, `m.U`, `m.V`, `m.T`, `m.S` | `State` | `m.D.present`, `m.U.past` |
 | `m.melt`, `m.entr`, `m.drho`, `m.Ta`, `m.Sa`, … | `Cache` | `m.melt .* m.seconds_per_year` |
-| `m.tmask`, `m.zb`, `m.dx`, `m.dy`, … | `Grid` | `m.tmask .> 0` |
+| `m.tmask`, `m.z_draft`, `m.dx`, `m.dy`, … | `Grid` | `m.tmask .> 0` |
 | `m.dt`, `m.f`, `m.C_d`, `m.A_h`, `m.D_min`, … | `Params` | `m.dt` |
 | `m.name`, `m.saveday`, `m.save_D`, … | `RunConfig` | `m.config.saveday` |
 | `m.Tz`, `m.Sz`, `m.z` | Forcing | ambient profile arrays |

@@ -50,7 +50,7 @@ end
 nothing #hide
 
 # ## Geometry: ice-shelf draft
-x, y, ZB = field(m, m.zb)
+x, y, ZB = field(m, m.z_draft)
 fig1 = Figure(size = (900, 250))
 ax = Axis(fig1[1, 1], xlabel = "x (km)", ylabel = "y (km)", title = "Ice-shelf draft z_b (m)")
 hm = heatmap!(ax, x, y, ZB; colormap = :deep)

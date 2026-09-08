@@ -6,8 +6,7 @@ const KA = KernelAbstractions
 include("entrainment.jl")
 include("melting.jl")
 include("convection.jl")
-include("openboundary.jl")
-include("groundingline.jl")
+include("boundary_conditions.jl")
 include("timestepping.jl")
 include("simulationend.jl")
 include("forcing.jl")
@@ -30,8 +29,7 @@ include("build.jl")
 include("show.jl")
 
 export Model, Grid, State, Cache, Params, RunConfig, DebugConfig
-export build_model,
-    build_isomip, build_laddie_mask, ice_base_depth, bed_elevation,
+export build_isomip, build_laddie_mask, ice_base_depth, bed_elevation,
     fill_ocean_holes!, fill_shelf_holes!, fill_small_shelf_patches!,
     fill_small_grounded_patches!,
     run!, meltstats, to_backend
@@ -39,15 +37,17 @@ export build_model,
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
 export AbstractMelting, FixedGamTMelting, TurbulentGamTMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
-export AbstractMaximumLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThickness
+export AbstractMaxLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThickness
+export AbstractDomainCropping, NoDomainCropping, MinRectangleDomainCropping
+export AbstractPreprocess, FillOceanHolesPreprocess, FillShelfHolesPreprocess,
+    FillSmallShelfPatchesPreprocess, FillSmallGroundedPatchesPreprocess
 
-export AbstractOpenBoundary, ZeroGradientInflow, NoInflow
+export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow
 export AbstractGroundingLineBC, FreeSlipGL, NoSlipGL
 export AbstractIceSlopeGradient, PyGradient, JlGradient
 export AbstractTimeStepper, FixedDt, AdaptiveDt
 export AbstractCFL, ConservativeCFL, ExactCFL
 export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateEnd
-export AbstractForcing, ISOMIPForcing, LinearForcing, Linear2Forcing
-export TanhForcing, FileForcing, ProfileForcing
+export AbstractForcing, ISOMIPForcing, ProfileForcing
 
 end # module Laddie

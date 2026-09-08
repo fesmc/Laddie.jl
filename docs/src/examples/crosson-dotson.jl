@@ -8,7 +8,7 @@ using KernelAbstractions
 using CUDA
 using Statistics
 
-FT = Float64
+FT = Float32
 
 # =============================================================================
 # Ocean forcing profile
@@ -87,8 +87,6 @@ fig_map
 #     colorrange = (0, 3))
 # fig_map
 
-n = fill_small_shelf_patches!(mask, 10)
-n > 0 && @info "fill_small_shelf_patches!: removed $n cells in undersized shelf patches"
 hm = heatmap!(
     ax1,
     mask,
@@ -106,7 +104,7 @@ fig_map
 # fig_map
 
 
-zb       = ice_base_depth(z_bed, h_ice)
+z_draft       = ice_base_depth(z_bed, h_ice)
 z_bed_m  = bed_elevation(z_bed)
 
 z_bed_ocean = copy(z_bed)
@@ -115,14 +113,14 @@ cmap_ocean = cgrad([:midnightblue, :cornflowerblue])
 z_bed_grounded = copy(z_bed)
 z_bed_grounded[h_ice .<= 0] .= NaN
 cmap_grounded = cgrad([:gray20, :gray80])
-zb_plot = copy(zb)
-zb_plot[mask .< 3] .= NaN
+z_draft_plot = copy(z_draft)
+z_draft_plot[mask .< 3] .= NaN
 cmap_shelfbase = cgrad(:tempo, rev = true)
 
 ax2 = Axis(fig_map[1, 2], aspect = DataAspect())
 heatmap!(ax2, z_bed_ocean ./ 1f3, colormap = cmap_ocean, colorrange = (-1, 1))
 heatmap!(ax2, z_bed_grounded ./ 1f3, colormap = cmap_grounded, colorrange = (-1, 1))
-heatmap!(ax2, zb_plot ./ 1f3, colormap = cmap_shelfbase, colorrange = (-2, 0))
+heatmap!(ax2, z_draft_plot ./ 1f3, colormap = cmap_shelfbase, colorrange = (-2, 0))
 fig_map
 
 # =============================================================================
@@ -130,7 +128,7 @@ fig_map
 # =============================================================================
 params = Params(; dt = 120, A_h = 25, K_h = 25, D_min = 2.8, nu = 0.1, D_init = 2.8,
     FT = FT,
-    tstep = AdaptiveDt(),
+    tstep = AdaptiveDt(cfl_target = 0.2, q = 0.5),
     melting = TurbulentGamTMelting(),
     grline_bc = FreeSlipGL(),
     # grline_bc = NoSlipGL(),
@@ -139,11 +137,13 @@ params = Params(; dt = 120, A_h = 25, K_h = 25, D_min = 2.8, nu = 0.1, D_init = 
     max_layer_thickness = RelativeMaxLayerThickness(),
 )
 
-m = build_model(mask, zb, dx, dy, forcing, params;
+m = Model(mask, z_draft, dx, dy, forcing, params;
     z_bed_raw = z_bed_m,
-    config = RunConfig(; saveday = 0.1, dbg = DebugConfig(check_nans = true)),
+    config = RunConfig(; saveday = 0.5, dbg = DebugConfig(check_nans = true)),
     backend = CUDABackend(),
     FT = FT,
+    domain_cropping = MinRectangleDomainCropping(),
+    preprocess = [FillSmallShelfPatchesPreprocess()],
 )
 run!(m; days = 30, verbose = true)
 

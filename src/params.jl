@@ -8,7 +8,7 @@ struct Params{
     EP,     #<:AbstractEntrainment,
     MP,     #<:AbstractMelting,
     CS,     #<:AbstractConvectionScheme,
-    OB,     #<:AbstractOpenBoundary,
+    OB,     #<:AbstractOpenOceanBC,
     GL,     #<:AbstractGroundingLineBC,
     TS,     #<:AbstractTimeStepper,
     MLT,    #<:AbstractMaximumLayerThickness,

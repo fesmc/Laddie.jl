@@ -16,7 +16,18 @@
       "Bash(julia --project=test -e \"using Pkg; Pkg.test\\(\\\\\"Laddie\\\\\"\\)\")",
       "Bash(julia --project=. -e ' *)",
       "Bash(julia --project=test -e ' *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(julia --project -e 'using Laddie; @show NoDomainCropping\\(\\); @show MinRectangleDomainCropping\\(\\)')",
+      "Bash(julia --project -e 'using Laddie; m = build_isomip\\(; isomipcond = :warm\\); println\\(\"build_isomip OK, size=\", size\\(m.tmask\\)\\)')",
+      "Bash(julia --project -e 'using Laddie; println\\(\"OK — exported: \", names\\(Laddie, all=false\\) |> x -> filter\\(s -> occursin\\(\"Forcing\", string\\(s\\)\\), x\\)\\)')",
+      "Bash(julia --project=test -e 'include\\(\"test/runtests.jl\"\\)')",
+      "Bash(grep -n \"^function\\\\|^struct\\\\|^mutable struct\\\\|^abstract type\" /home/jan/.julia/dev/Laddie/src/*.jl > /tmp/defs.txt && wc -l /tmp/defs.txt)",
+      "Bash(sort -t: -k1,1)",
+      "Bash(julia --project -e 'using Laddie; m = build_isomip\\(; isomipcond=:warm\\); println\\(\"z_draft field: \", size\\(m.z_draft\\)\\); println\\(\"OK\"\\)')",
+      "Bash(julia --project=. -e 'using Laddie; m = build_isomip\\(\\); println\\(\"Model: \", typeof\\(m\\)\\); println\\(\"OK\"\\)')"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }

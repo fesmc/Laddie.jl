@@ -1,3 +1,6 @@
+#############################
+# Grounding Line BC
+#############################
 
 abstract type AbstractGroundingLineBC end
 
@@ -33,3 +36,45 @@ struct NoSlipGL <: AbstractGroundingLineBC end
 # Ghost tangential velocity is (1 − factor)·u: 1 → free slip, 2 → no slip.
 _gl_slip(::FreeSlipGL, slip) = slip
 _gl_slip(::NoSlipGL, slip) = oftype(slip, 2)
+
+#############################
+# Open BC
+#############################
+
+abstract type AbstractOpenOceanBC end
+
+"""
+$(TYPEDSIGNATURES)
+
+Open-boundary condition at the ice front: zero-gradient extrapolation of all
+fields, with inflow from the ambient ocean permitted.
+
+Select via `Params(; open_bc = ZeroGradientInflow())` (the default).
+"""
+struct ZeroGradientInflow <: AbstractOpenOceanBC end
+
+"""
+$(TYPEDSIGNATURES)
+
+Open-boundary condition at the ice front: outflow only — inflow velocities are
+clipped to zero so ambient water cannot advect into the domain.
+
+Select via `Params(; open_bc = NoInflow())`.
+"""
+struct NoInflow <: AbstractOpenOceanBC end
+
+#############################
+# Gaps BC
+#############################
+
+abstract type AbstractGapsBC end
+
+"""
+$(TYPEDSIGNATURES)
+"""
+struct SinkGapsBC <: AbstractGapsBC end
+
+"""
+$(TYPEDSIGNATURES)
+"""
+struct ConnectedGapsBC <: AbstractGapsBC end

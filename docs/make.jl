@@ -28,7 +28,6 @@ makedocs(;
         "Physics"        => "physics.md",
         "Numerics"       => "numerics.md",
         # "Implementation" => "implementation.md",
-        # "Configuration"  => "configuration.md",
         "Examples" => [
             "ISOMIP+"   => [
                 "Forcing"           => "generated/forcing.md",

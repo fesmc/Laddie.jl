@@ -30,14 +30,7 @@ GPU (CUDA example):
 ```julia
 using CUDA, Laddie
 m = build_isomip(CUDABackend(); isomipcond = :warm)
-m.fused = true     # enable fused kernel path
 run!(m; days = 30.0)
-```
-
-Config-file driven run:
-```julia
-m = build_from_config("config.toml")
-run!(m)
 ```
 
 ## Performance
@@ -55,7 +48,6 @@ In particular, kernels were fused to eliminate the ~15-20 intermediate arrays th
 | [Physics](physics.md) | what the model represents and the governing balances |
 | [Numerics](numerics.md) | grid, time stepping, boundaries, stability |
 | [Implementation](implementation.md) | how the Julia/GPU port was built and verified |
-| [Configuration](configuration.md) | complete TOML config-file reference |
 | [ISOMIP+ forcing](generated/forcing.md) | the warm/cold ambient profiles |
 | [ISOMIP+ run](generated/isomip_run.md) | a full simulation with result plots |
 | [Python validation](generated/python_comparison.md) | end-state comparison against the Python reference |

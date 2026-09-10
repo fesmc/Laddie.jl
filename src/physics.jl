@@ -684,8 +684,15 @@ end
 @inline u_thickness_tendency(m) = m.U.present .* ip_t(m, m.dDdt)
 # ∇·(DUu)  (momentum advection)
 @inline u_advection(m) = upwind_advection_U(m)
+# Per-face weight on the depth-gradient PGF term: always 1 on a fully-interior
+# face; at a one-sided face (ice front, SinkGapsBC gap-sink edge) 1 under
+# FullDepthGradient and 0 under TruncatedDepthGradient.  See AbstractFrontPressure.
+@inline _pgf_gate(m, tmask_stag) =
+    one(m.FT) .+ _front_pgf_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
+
 # g·D̄·ρ̄·∂D/∂x  (pressure gradient from plume-thickness depth)
-@inline u_pressure_depth(m) = m.g .* ip_t(m, m.Ddrho) .* (m.Dxm1 .- m.D.present) ./ m.dx
+@inline u_pressure_depth(m) =
+    m.g .* ip_t(m, m.Ddrho) .* (m.Dxm1 .- m.D.present) ./ m.dx .* _pgf_gate(m, m.tmask_ip)
 # g·D̄·ρ̄·∂z_draft/∂x  (baroclinic pressure via ice-base slope)
 @inline u_pressure_slope(m) = m.g .* ip_t(m, m.Ddrho .* m.dzdx)
 # ½g·D̄²·∂δρ/∂x  (internal pressure gradient)
@@ -696,8 +703,9 @@ end
 # Cd·U·|u|  (quadratic bottom drag)
 @inline u_bottom_drag(m) =
     m.C_d .* m.U.present .* sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
-# Ah·∇²(DU)  (lateral diffusion)
-@inline u_diffusion(m) = m.A_h .* laplace_U(m)
+# Ah·∇²(DU)  (lateral diffusion; the A_h/shear scaling is applied inside
+# laplace_U, since it dispatches on `Params.lateral_viscosity`)
+@inline u_diffusion(m) = laplace_U(m)
 # e·U  (detrainment momentum loss)
 @inline u_detrainment(m) = m.detr .* m.U.present
 
@@ -707,8 +715,9 @@ end
 @inline v_thickness_tendency(m) = m.V.present .* jp_t(m, m.dDdt)
 # ∇·(DVv)  (momentum advection)
 @inline v_advection(m) = upwind_advection_V(m)
-# g·D̄·ρ̄·∂D/∂y  (pressure gradient from plume-thickness depth)
-@inline v_pressure_depth(m) = m.g .* jp_t(m, m.Ddrho) .* (m.Dym1 .- m.D.present) ./ m.dy
+# g·D̄·ρ̄·∂D/∂y  (pressure gradient from plume-thickness depth; see u_pressure_depth)
+@inline v_pressure_depth(m) =
+    m.g .* jp_t(m, m.Ddrho) .* (m.Dym1 .- m.D.present) ./ m.dy .* _pgf_gate(m, m.tmask_jp)
 # g·D̄·ρ̄·∂z_draft/∂y  (baroclinic pressure via ice-base slope)
 @inline v_pressure_slope(m) = m.g .* jp_t(m, m.Ddrho .* m.dzdy)
 # ½g·D̄²·∂δρ/∂y  (internal pressure gradient)
@@ -719,8 +728,9 @@ end
 # Cd·V·|u|  (quadratic bottom drag)
 @inline v_bottom_drag(m) =
     m.C_d .* m.V.present .* sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)
-# Ah·∇²(DV)  (lateral diffusion)
-@inline v_diffusion(m) = m.A_h .* laplace_V(m)
+# Ah·∇²(DV)  (lateral diffusion; the A_h/shear scaling is applied inside
+# laplace_V, since it dispatches on `Params.lateral_viscosity`)
+@inline v_diffusion(m) = laplace_V(m)
 # ė·V  (detrainment momentum loss)
 @inline v_detrainment(m) = m.detr .* m.V.present
 

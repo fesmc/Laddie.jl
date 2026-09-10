@@ -189,7 +189,7 @@ end
     g,
     f,
     C_d,
-    A_h,
+    pgf_w,
     dx,
     dt,
     Ny,
@@ -208,15 +208,23 @@ end
         ip_D = _safe_div(D1[i, j] + D1[i, e], tmip)
         ip_D_Vjm = _safe_div(D1[i, j] * Vjm[i, j] + D1[i, e] * Vjm[i, e], tmip)
         ipjmV = half * (half * (V1[i, j] + V1[s, j]) + half * (V1[i, e] + V1[s, e]))
+        # tmip is 2 at a fully-interior face (both neighbours active) and 1 at a
+        # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where Dxm1
+        # is a masked-to-zero stand-in rather than a real neighbour thickness.
+        # pgf_w selects what happens there: 0 (FullDepthGradient, the Python
+        # v1.x behaviour) keeps the term and leaves this an exact multiply by
+        # 1.0; 1 (TruncatedDepthGradient) drops it, as LADDIE v2 does at
+        # mask_cf_b faces.  See AbstractFrontPressure and f90-diffs.md §4.
+        pgf_gate = one(FT) + pgf_w * (tmip - FT(2))
         rhs =
             -U1[i, j] * ip_dDdt +                                      # thickness-tendency correction
             cU[i, j] +                                                  # horizontal advection
-            -g * ip_D_drho * (Dxm1[i, j] - D1[i, j]) / dx +           # pressure: D gradient
+            -g * ip_D_drho * (Dxm1[i, j] - D1[i, j]) / dx * pgf_gate +  # pressure: D gradient
             g * ip_D_dzdx +                                             # pressure: ice-shelf slope
             -half * g * ip_D^2 * (drho[i, e] - drho[i, j]) / dx +     # pressure: density gradient
             f * ip_D_Vjm +                                              # Coriolis
             -C_d * U1[i, j] * sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
-            A_h * lU[i, j] +                                             # horizontal viscosity
+            lU[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * U1[i, j]                                     # momentum loss by detrainment
         out[i, j] = Up[i, j] + _safe_div(rhs, ip_D) * umask[i, j] * dt
     end
@@ -242,7 +250,7 @@ end
     g,
     f,
     C_d,
-    A_h,
+    pgf_w,
     dy,
     dt,
     Ny,
@@ -261,15 +269,17 @@ end
         jp_D = _safe_div(D1[i, j] + D1[n, j], tmjp)
         jp_D_Uim = _safe_div(D1[i, j] * Uim[i, j] + D1[n, j] * Uim[n, j], tmjp)
         jpimU = half * (half * (U1[i, j] + U1[i, w]) + half * (U1[n, j] + U1[n, w]))
+        # See _step_u_momentum_kernel! for the ice-front gate.
+        pgf_gate = one(FT) + pgf_w * (tmjp - FT(2))
         rhs =
             -V1[i, j] * jp_dDdt +                                      # thickness-tendency correction
             cV[i, j] +                                                  # horizontal advection
-            -g * jp_D_drho * (Dym1[i, j] - D1[i, j]) / dy +           # pressure: D gradient
+            -g * jp_D_drho * (Dym1[i, j] - D1[i, j]) / dy * pgf_gate +  # pressure: D gradient
             g * jp_D_dzdy +                                             # pressure: ice-shelf slope
             -half * g * jp_D^2 * (drho[n, j] - drho[i, j]) / dy +     # pressure: density gradient
             -f * jp_D_Uim +                                             # Coriolis
             -C_d * V1[i, j] * sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
-            A_h * lV[i, j] +                                             # horizontal viscosity
+            lV[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * V1[i, j]                                     # momentum loss by detrainment
         out[i, j] = Vp[i, j] + _safe_div(rhs, jp_D) * vmask[i, j] * dt
     end
@@ -497,7 +507,7 @@ function step_u_momentum(m, dt)
         m.g,
         m.f,
         m.C_d,
-        m.A_h,
+        _front_pgf_weight(m.front_pressure, m.g),
         m.dx,
         dt,
         ny,
@@ -531,7 +541,7 @@ function step_v_momentum(m, dt)
         m.g,
         m.f,
         m.C_d,
-        m.A_h,
+        _front_pgf_weight(m.front_pressure, m.g),
         m.dy,
         dt,
         ny,

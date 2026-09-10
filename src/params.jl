@@ -1,5 +1,5 @@
 # ============================================================================
-# Params{FT,EP,MP,CS,OB,GL,GB,TS} — all scalar physical constants + parameterization
+# Params{FT,EP,MP,CS,OB,GL,LB,GB,TS} — all scalar physical constants + parameterization
 # objects bundled in one immutable typed struct.
 # ============================================================================
 
@@ -10,9 +10,12 @@ struct Params{
     CS,     #<:AbstractConvectionScheme,
     OB,     #<:AbstractOpenOceanBC,
     GL,     #<:AbstractGroundingLineBC,
+    LB,     #<:AbstractLandBC,
     GB,     #<:AbstractGapsBC,
     TS,     #<:AbstractTimeStepper,
     MLT,    #<:AbstractMaximumLayerThickness,
+    LV,     #<:AbstractLateralViscosity,
+    FP,     #<:AbstractFrontPressure,
 }
     # Time stepping (dt0 is the initial step; the runtime dt lives in IOState
     # so it can vary under adaptive time stepping — `m.dt` resolves there)
@@ -57,9 +60,12 @@ struct Params{
     convection_scheme::CS
     open_bc::OB
     grline_bc::GL
+    land_bc::LB
     gaps_bc::GB
     tstep::TS
     max_layer_thickness::MLT
+    lateral_viscosity::LV
+    front_pressure::FP
 end
 
 # Promote a parameterization object's floating-point fields to FT so it stays
@@ -67,7 +73,7 @@ end
 # where the default object was built at Float64).  Integer fields (such as
 # AdaptiveDt's ncheck) and field-less singletons (open/grounding-line/gaps BCs) pass
 # through unchanged.  Generic over the field list, so new parameterization types
-# are handled automatically.
+# (e.g. `AbstractLandBC`) are handled automatically.
 _to_ft(v::AbstractFloat, ::Type{FT}) where {FT} = FT(v)
 _to_ft(v, ::Type) = v
 function _promote_param(x, ::Type{FT}) where {FT}
@@ -124,9 +130,12 @@ function Params(;
     convection_scheme = ResetToAmbient(0.005),
     open_bc = ZeroGradientInflow(),
     grline_bc = FreeSlipGL(),
+    land_bc = FreeSlipLand(),
     gaps_bc = SinkGapsBC(),
     tstep = FixedDt(),
     max_layer_thickness = TopographicMaxLayerThickness(),
+    lateral_viscosity = PrescribedLateralViscosity(),
+    front_pressure = FullDepthGradient(),
 )
     # Keep every parameterization object's precision aligned with Params{FT}.
     entrainment = _promote_param(entrainment, FT)
@@ -134,9 +143,12 @@ function Params(;
     convection_scheme = _promote_param(convection_scheme, FT)
     open_bc = _promote_param(open_bc, FT)
     grline_bc = _promote_param(grline_bc, FT)
+    land_bc = _promote_param(land_bc, FT)
     gaps_bc = _promote_param(gaps_bc, FT)
     tstep = _promote_param(tstep, FT)
     max_layer_thickness = _promote_param(max_layer_thickness, FT)
+    lateral_viscosity = _promote_param(lateral_viscosity, FT)
+    front_pressure = _promote_param(front_pressure, FT)
     Params(
         FT(dt),
         FT(nu),
@@ -173,8 +185,11 @@ function Params(;
         convection_scheme,
         open_bc,
         grline_bc,
+        land_bc,
         gaps_bc,
         tstep,
         max_layer_thickness,
+        lateral_viscosity,
+        front_pressure,
     )
 end

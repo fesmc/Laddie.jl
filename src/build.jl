@@ -88,9 +88,11 @@ arbitrary domain mask and ice-draft, a forcing profile, and a parameter set.
 
 Land (`1`) and grounded ice (`2`) are both walls to the plume and are unioned into
 `Grid.grd`, but they stay distinct throughout: only `2` is a grounding line
-(`Grid.gl`, and the `AbstractGroundingLineBC` slip condition), while `1` is rock
-(`Grid.lnd`).  Keeping them apart matters because an ice-free island misclassified
-as ocean turns into an open-boundary sink inside the cavity.
+(`Grid.gl`, and the `Params.grline_bc` slip condition), while `1` is rock
+(`Grid.lnd`, and `Params.land_bc`).  Both slip conditions default to the global
+`Params.slip` (free slip) and can be set independently; keeping the two masks
+apart also matters because an ice-free island misclassified as ocean turns into
+an open-boundary sink inside the cavity.
 
 Value `4` marks an ice-free cell *inside* the ice-shelf domain — a gap opened by
 melt-through.  Whether it is simulated as an active cell or demoted to open ocean

@@ -158,8 +158,11 @@ end
     @Const(grdSu),
     @Const(glNu),
     @Const(glSu),
+    @Const(lndNu),
+    @Const(lndSu),
     slip,
-    dslip,
+    dslip_gl,
+    dslip_land,
     dx,
     dy,
     Ny,
@@ -180,16 +183,14 @@ end
         FT = typeof(slip)
         D_E = Dxm1[i, j] + ocnxm1[i, j] * D0
         D_W = D0 + ocn[i, j] * Dxm1[i, j]
-        # Per-face slip factor: land walls use slip, grounding-line walls
-        # slip + dslip (dslip = 0 for FreeSlipGL → bitwise v1 behaviour).
-        flux_N =
-            -D_N *
-            Vip[i, j] *
-            (Ujp[i, j] - (slip + dslip * glNu[i, j]) * U[i, j] * grdNu[i, j]) / dy
-        flux_S =
-            D_S *
-            Vip[s, j] *
-            (Ujm[i, j] - (slip + dslip * glSu[i, j]) * U[i, j] * grdSu[i, j]) / dy
+        # Per-face slip factor: `slip` at every wall, plus dslip_gl at grounding-line
+        # faces and dslip_land at land faces (both 0 under the free-slip defaults →
+        # bitwise v1 behaviour).  gl?? and lnd?? partition the wall faces (Grid gives
+        # the grounding line precedence at mixed corners), so at most one applies.
+        slipN = slip + dslip_gl * glNu[i, j] + dslip_land * lndNu[i, j]
+        slipS = slip + dslip_gl * glSu[i, j] + dslip_land * lndSu[i, j]
+        flux_N = -D_N * Vip[i, j] * (Ujp[i, j] - slipN * U[i, j] * grdNu[i, j]) / dy
+        flux_S = D_S * Vip[s, j] * (Ujm[i, j] - slipS * U[i, j] * grdSu[i, j]) / dy
         flux_E =
             -D_E *
             Uip[i, j] *
@@ -226,8 +227,11 @@ end
     @Const(grdWv),
     @Const(glEv),
     @Const(glWv),
+    @Const(lndEv),
+    @Const(lndWv),
     slip,
-    dslip,
+    dslip_gl,
+    dslip_land,
     dx,
     dy,
     Ny,
@@ -253,14 +257,11 @@ end
             Vjp[i, j] *
             (Vjp[i, j] - (one(FT) - signV[i, j]) * V[i, j] * ocnym1[i, j]) / dy
         flux_S = D_S * Vjm[i, j] * (Vjm[i, j] - signV[i, j] * V[i, j] * ocn[i, j]) / dy
-        flux_E =
-            -D_E *
-            Ujp[i, j] *
-            (Vip[i, j] - (slip + dslip * glEv[i, j]) * V[i, j] * grdEv[i, j]) / dx
-        flux_W =
-            D_W *
-            Ujp[i, w] *
-            (Vim[i, j] - (slip + dslip * glWv[i, j]) * V[i, j] * grdWv[i, j]) / dx
+        # Per-face slip factor: see _upwind_advection_U_kernel! for the composition.
+        slipE = slip + dslip_gl * glEv[i, j] + dslip_land * lndEv[i, j]
+        slipW = slip + dslip_gl * glWv[i, j] + dslip_land * lndWv[i, j]
+        flux_E = -D_E * Ujp[i, j] * (Vip[i, j] - slipE * V[i, j] * grdEv[i, j]) / dx
+        flux_W = D_W * Ujp[i, w] * (Vim[i, j] - slipW * V[i, j] * grdWv[i, j]) / dx
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -280,8 +281,11 @@ end
     @Const(grdSu),
     @Const(glNu),
     @Const(glSu),
+    @Const(lndNu),
+    @Const(lndSu),
     slip,
-    dslip,
+    dslip_gl,
+    dslip_land,
     dx2,
     dy2,
     Ny,
@@ -296,10 +300,11 @@ end
         w = _west(j, Nx)
         o = one(FT)
         v = var[i, j]
-        # Per-face wall drag: grounding-line walls add dslip to the factor
-        # (dslip = 0 for FreeSlipGL → bitwise v1 behaviour).
-        dragN = (slip + dslip * glNu[i, j]) * D_on_ugrid[i, j] * v / dy2
-        dragS = (slip + dslip * glSu[i, j]) * D_on_ugrid[i, j] * v / dy2
+        # Per-face wall drag: `slip` at every wall, plus dslip_gl at grounding-line
+        # faces and dslip_land at land faces (both 0 under the free-slip defaults
+        # → bitwise v1 behaviour).
+        dragN = (slip + dslip_gl * glNu[i, j] + dslip_land * lndNu[i, j]) * D_on_ugrid[i, j] * v / dy2
+        dragS = (slip + dslip_gl * glSu[i, j] + dslip_land * lndSu[i, j]) * D_on_ugrid[i, j] * v / dy2
         jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[n, j], tmask_jp[i, j])
         jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[s, j], tmask_jm[i, j])
         flux_N = jpD * (var[n, j] - v) / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
@@ -325,8 +330,11 @@ end
     @Const(grdWv),
     @Const(glEv),
     @Const(glWv),
+    @Const(lndEv),
+    @Const(lndWv),
     slip,
-    dslip,
+    dslip_gl,
+    dslip_land,
     dx2,
     dy2,
     Ny,
@@ -341,14 +349,140 @@ end
         w = _west(j, Nx)
         o = one(FT)
         v = var[i, j]
-        dragE = (slip + dslip * glEv[i, j]) * D_on_vgrid[i, j] * v / dx2
-        dragW = (slip + dslip * glWv[i, j]) * D_on_vgrid[i, j] * v / dx2
+        # See _laplace_U_kernel! for the slip-factor composition.
+        dragE = (slip + dslip_gl * glEv[i, j] + dslip_land * lndEv[i, j]) * D_on_vgrid[i, j] * v / dx2
+        dragW = (slip + dslip_gl * glWv[i, j] + dslip_land * lndWv[i, j]) * D_on_vgrid[i, j] * v / dx2
         ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, e], tmask_ip[i, j])
         imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, w], tmask_im[i, j])
         flux_N = D0[n, j] * (var[n, j] - v) / dy2 * (o - ocnym1[i, j])
         flux_S = D0[i, j] * (var[s, j] - v) / dy2 * (o - ocn[i, j])
         flux_E = ipD * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
         flux_W = imD * (var[i, w] - v) / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
+        out[i, j] = flux_N + flux_S + flux_E + flux_W
+    end
+end
+
+# Shear-scaled (NonlinearLateralViscosity) counterparts of _laplace_U_kernel!/
+# _laplace_V_kernel!: same geometry and masking, but each interior flux term gets
+# its own coefficient visc_? * |Δvar| in place of a single constant A_h, where
+# visc_x/visc_y = C_visc * dx/100 and C_visc * dy/100 carry the reference's
+# dUabs * triCw / 100 scaling (laddie_velocity.f90:260).  The grounding-line/land
+# wall-drag terms keep the plain, unscaled A_h_wall — mirroring the reference,
+# which never scales its border term by dUabs (laddie_velocity.f90:249-254).
+@kernel function _nonlinear_laplace_U_kernel!(
+    out,
+    @Const(var),
+    @Const(D0),
+    @Const(D_on_ugrid),
+    @Const(tmask_jp),
+    @Const(tmask_jm),
+    @Const(ocnym1),
+    @Const(ocnyp1),
+    @Const(ocnxm1),
+    @Const(ocn),
+    @Const(grdNu),
+    @Const(grdSu),
+    @Const(glNu),
+    @Const(glSu),
+    @Const(lndNu),
+    @Const(lndSu),
+    slip,
+    dslip_gl,
+    dslip_land,
+    A_h_wall,
+    visc_x,
+    visc_y,
+    dx2,
+    dy2,
+    Ny,
+    Nx,
+)
+    i, j = @index(Global, NTuple)
+    FT = typeof(slip)
+    @inbounds begin
+        n = _north(i, Ny)
+        s = _south(i, Ny)
+        e = _east(j, Nx)
+        w = _west(j, Nx)
+        o = one(FT)
+        v = var[i, j]
+        dragN =
+            A_h_wall *
+            (slip + dslip_gl * glNu[i, j] + dslip_land * lndNu[i, j]) *
+            D_on_ugrid[i, j] * v / dy2
+        dragS =
+            A_h_wall *
+            (slip + dslip_gl * glSu[i, j] + dslip_land * lndSu[i, j]) *
+            D_on_ugrid[i, j] * v / dy2
+        jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[n, j], tmask_jp[i, j])
+        jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[s, j], tmask_jm[i, j])
+        dN = var[n, j] - v
+        dS = var[s, j] - v
+        dE = var[i, e] - v
+        dW = var[i, w] - v
+        flux_N = visc_y * abs(dN) * jpD * dN / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
+        flux_S = visc_y * abs(dS) * jmD * dS / dy2 * (o - ocnyp1[i, j]) - dragS * grdSu[i, j]
+        flux_E = visc_x * abs(dE) * D0[i, e] * dE / dx2 * (o - ocnxm1[i, j])
+        flux_W = visc_x * abs(dW) * D0[i, j] * dW / dx2 * (o - ocn[i, j])
+        out[i, j] = flux_N + flux_S + flux_E + flux_W
+    end
+end
+
+@kernel function _nonlinear_laplace_V_kernel!(
+    out,
+    @Const(var),
+    @Const(D0),
+    @Const(D_on_vgrid),
+    @Const(tmask_ip),
+    @Const(tmask_im),
+    @Const(ocnym1),
+    @Const(ocn),
+    @Const(ocnxm1),
+    @Const(ocnxp1),
+    @Const(grdEv),
+    @Const(grdWv),
+    @Const(glEv),
+    @Const(glWv),
+    @Const(lndEv),
+    @Const(lndWv),
+    slip,
+    dslip_gl,
+    dslip_land,
+    A_h_wall,
+    visc_x,
+    visc_y,
+    dx2,
+    dy2,
+    Ny,
+    Nx,
+)
+    FT = typeof(slip)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        n = _north(i, Ny)
+        s = _south(i, Ny)
+        e = _east(j, Nx)
+        w = _west(j, Nx)
+        o = one(FT)
+        v = var[i, j]
+        dragE =
+            A_h_wall *
+            (slip + dslip_gl * glEv[i, j] + dslip_land * lndEv[i, j]) *
+            D_on_vgrid[i, j] * v / dx2
+        dragW =
+            A_h_wall *
+            (slip + dslip_gl * glWv[i, j] + dslip_land * lndWv[i, j]) *
+            D_on_vgrid[i, j] * v / dx2
+        ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, e], tmask_ip[i, j])
+        imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, w], tmask_im[i, j])
+        dN = var[n, j] - v
+        dS = var[s, j] - v
+        dE = var[i, e] - v
+        dW = var[i, w] - v
+        flux_N = visc_y * abs(dN) * D0[n, j] * dN / dy2 * (o - ocnym1[i, j])
+        flux_S = visc_y * abs(dS) * D0[i, j] * dS / dy2 * (o - ocn[i, j])
+        flux_E = visc_x * abs(dE) * ipD * dE / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
+        flux_W = visc_x * abs(dW) * imD * dW / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -414,7 +548,8 @@ function upwind_advection_T(out, m, var)
 end
 function upwind_advection_U(m)
     ny, nx = size(m.U.present)
-    dslip = _gl_slip(m.grline_bc, m.slip) - m.slip
+    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
+    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
     launch!(
         _upwind_advection_U_kernel!,
         m.cU,
@@ -444,8 +579,11 @@ function upwind_advection_U(m)
         m.grdSu,
         m.glNu,
         m.glSu,
+        m.lndNu,
+        m.lndSu,
         m.slip,
-        dslip,
+        dslip_gl,
+        dslip_land,
         m.dx,
         m.dy,
         ny,
@@ -455,7 +593,8 @@ function upwind_advection_U(m)
 end
 function upwind_advection_V(m)
     ny, nx = size(m.V.present)
-    dslip = _gl_slip(m.grline_bc, m.slip) - m.slip
+    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
+    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
     launch!(
         _upwind_advection_V_kernel!,
         m.cV,
@@ -485,8 +624,11 @@ function upwind_advection_V(m)
         m.grdWv,
         m.glEv,
         m.glWv,
+        m.lndEv,
+        m.lndWv,
         m.slip,
-        dslip,
+        dslip_gl,
+        dslip_land,
         m.dx,
         m.dy,
         ny,
@@ -516,9 +658,16 @@ function laplace_T(out, m, var)
     )
     return out
 end
-function laplace_U(m)
+laplace_U(m) = laplace_U(m, m.lateral_viscosity)
+laplace_V(m) = laplace_V(m, m.lateral_viscosity)
+
+# PrescribedLateralViscosity: unchanged geometry-only kernel (bit-identical with
+# pre-AbstractLateralViscosity Laddie.jl), scaled by the global A_h afterwards —
+# exactly what the momentum kernels used to do themselves.
+function laplace_U(m, ::PrescribedLateralViscosity)
     ny, nx = size(m.U.past)
-    dslip = _gl_slip(m.grline_bc, m.slip) - m.slip
+    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
+    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
     launch!(
         _laplace_U_kernel!,
         m.lU,
@@ -536,18 +685,23 @@ function laplace_U(m)
         m.grdSu,
         m.glNu,
         m.glSu,
+        m.lndNu,
+        m.lndSu,
         m.slip,
-        dslip,
+        dslip_gl,
+        dslip_land,
         m.dx^2,
         m.dy^2,
         ny,
         nx,
     )
+    m.lU .*= m.A_h
     return m.lU
 end
-function laplace_V(m)
+function laplace_V(m, ::PrescribedLateralViscosity)
     ny, nx = size(m.V.past)
-    dslip = _gl_slip(m.grline_bc, m.slip) - m.slip
+    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
+    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
     launch!(
         _laplace_V_kernel!,
         m.lV,
@@ -565,8 +719,88 @@ function laplace_V(m)
         m.grdWv,
         m.glEv,
         m.glWv,
+        m.lndEv,
+        m.lndWv,
         m.slip,
-        dslip,
+        dslip_gl,
+        dslip_land,
+        m.dx^2,
+        m.dy^2,
+        ny,
+        nx,
+    )
+    m.lV .*= m.A_h
+    return m.lV
+end
+
+# NonlinearLateralViscosity: the shear-scaled coefficient is per-face, so it must
+# be applied inside the kernel rather than as a post-hoc scalar multiply; wall
+# drag keeps using the plain, unscaled m.A_h (see _nonlinear_laplace_U_kernel!).
+function laplace_U(m, lv::NonlinearLateralViscosity)
+    ny, nx = size(m.U.past)
+    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
+    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
+    launch!(
+        _nonlinear_laplace_U_kernel!,
+        m.lU,
+        m.lU,
+        m.U.past,
+        m.D.present,
+        m.D_on_ugrid,
+        m.tmask_jp,
+        m.tmask_jm,
+        m.ocnym1,
+        m.ocnyp1,
+        m.ocnxm1,
+        m.ocn,
+        m.grdNu,
+        m.grdSu,
+        m.glNu,
+        m.glSu,
+        m.lndNu,
+        m.lndSu,
+        m.slip,
+        dslip_gl,
+        dslip_land,
+        m.A_h,
+        lv.C_visc * m.dx / 100,
+        lv.C_visc * m.dy / 100,
+        m.dx^2,
+        m.dy^2,
+        ny,
+        nx,
+    )
+    return m.lU
+end
+function laplace_V(m, lv::NonlinearLateralViscosity)
+    ny, nx = size(m.V.past)
+    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
+    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
+    launch!(
+        _nonlinear_laplace_V_kernel!,
+        m.lV,
+        m.lV,
+        m.V.past,
+        m.D.present,
+        m.D_on_vgrid,
+        m.tmask_ip,
+        m.tmask_im,
+        m.ocnym1,
+        m.ocn,
+        m.ocnxm1,
+        m.ocnxp1,
+        m.grdEv,
+        m.grdWv,
+        m.glEv,
+        m.glWv,
+        m.lndEv,
+        m.lndWv,
+        m.slip,
+        dslip_gl,
+        dslip_land,
+        m.A_h,
+        lv.C_visc * m.dx / 100,
+        lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
         ny,

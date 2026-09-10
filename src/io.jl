@@ -222,8 +222,11 @@ function _write_run_metadata(m)
     params_d["convection"] = _scalar_fields(p.convection_scheme)
     params_d["open_boundary"] = _scalar_fields(p.open_bc)
     params_d["grounding_line"] = _scalar_fields(p.grline_bc)
+    params_d["land"] = _scalar_fields(p.land_bc)
     params_d["shelf_gaps"] = _scalar_fields(p.gaps_bc)
     params_d["time_stepper"] = _scalar_fields(p.tstep)
+    params_d["lateral_viscosity"] = _scalar_fields(p.lateral_viscosity)
+    params_d["front_pressure"] = _scalar_fields(p.front_pressure)
     meta = Dict{String,Any}(
         "run" => Dict{String,Any}(
             "created" => Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),

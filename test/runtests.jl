@@ -207,12 +207,16 @@ end
         @test any(isf_here[2:11, 20])    # the real ice front is still detected
 
         # The island is a free-slip wall, not a grounding line: grd?? indicators
-        # fire around it while the gl?? ones (mask == 2 only) stay off.
+        # fire around it while the gl?? ones (mask == 2 only) stay off — and the
+        # land-only lnd?? ones (AbstractLandBC) fire there instead, mirroring how
+        # gl?? does for grounded ice.
         g = getfield(m, :grid)
         @test g.grdEv[5, 9] > 0 || g.grdWv[5, 12] > 0 || g.grdNu[7, 10] > 0 || g.grdSu[4, 10] > 0
         @test all(g.glNu[isl] .== 0) && all(g.glSu[isl] .== 0)
         @test all(g.glEv[isl] .== 0) && all(g.glWv[isl] .== 0)
         @test all(g.glNu .<= g.grdNu) && all(g.glEv .<= g.grdEv)
+        @test g.lndEv[5, 9] > 0 || g.lndWv[5, 12] > 0 || g.lndNu[7, 10] > 0 || g.lndSu[4, 10] > 0
+        @test all(g.lndNu .<= g.grdNu) && all(g.lndEv .<= g.grdEv)
 
         run!(m; days = 0.5, verbose = false)
         @test all(isfinite, m.D.present) && all(isfinite, m.melt)
@@ -518,6 +522,129 @@ end
         @test m_ns.V.present != m_def.V.present
     end
 
+    @testset "Land BC: FreeSlipLand bit-identical, NoSlipLand differs, independent of grline_bc" begin
+        # Same structure as the grounding-line BC testset above: FreeSlipLand is
+        # the default and must reproduce it bit-for-bit (dslip_land = 0 leaves the
+        # kernel arithmetic unchanged).  ISOMIP+'s channel is narrow enough (10
+        # interior rows) that its side walls (the outer border ring, mask == 1)
+        # are physical land walls, not just an inert numerical buffer, so this
+        # geometry already exercises the land wall stencils without needing a
+        # hand-built island.
+        m_def  = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        m_free = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                              params = Params(; FT, land_bc = FreeSlipLand()))
+        run!(m_def;  days = 1.0, verbose = false)
+        run!(m_free; days = 1.0, verbose = false)
+        @test m_free.U.present == m_def.U.present
+        @test m_free.V.present == m_def.V.present
+        @test m_free.melt == m_def.melt
+
+        # Land wall indicators are a pointwise subset of the generic wall ones,
+        # and fire along the channel side walls (disjoint from the meridional
+        # grounding line, which lives on gl?? instead).
+        g = getfield(m_def, :grid)
+        @test all(g.lndNu .<= g.grdNu) && all(g.lndSu .<= g.grdSu)
+        @test all(g.lndEv .<= g.grdEv) && all(g.lndWv .<= g.grdWv)
+        @test sum(g.lndNu) + sum(g.lndSu) > 0
+
+        # No-slip at land changes the solution and stays physical.
+        m_ns = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                            params = Params(; FT, land_bc = NoSlipLand()))
+        run!(m_ns; days = 1.0, verbose = false)
+        @test all(isfinite, m_ns.D.present) && all(isfinite, m_ns.melt)
+        @test all(m_ns.melt[m_ns.tmask .> 0] .>= 0)
+        @test m_ns.V.present != m_def.V.present
+
+        # grline_bc and land_bc are independent switches: engaging one alone must
+        # not reproduce engaging the other, and engaging both must differ from
+        # either alone (no accidental aliasing between gl?? and lnd??).
+        m_gl   = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                              params = Params(; FT, grline_bc = NoSlipGL()))
+        m_both = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                              params = Params(; FT, grline_bc = NoSlipGL(), land_bc = NoSlipLand()))
+        run!(m_gl;   days = 1.0, verbose = false)
+        run!(m_both; days = 1.0, verbose = false)
+        @test m_ns.V.present != m_gl.V.present      # land-only ≠ grounding-line-only
+        @test m_both.V.present != m_gl.V.present    # both ≠ grounding-line-only
+        @test m_both.V.present != m_ns.V.present    # both ≠ land-only
+        @test all(isfinite, m_both.D.present) && all(isfinite, m_both.melt)
+    end
+
+    @testset "Wall slip: gl/land indicators partition mixed coastline corners" begin
+        # The momentum kernels compose the two wall conditions additively
+        # (slip + dslip_gl*gl?? + dslip_land*lnd??) but gate on grd?? = OR(gl,lnd).
+        # A face whose stencil touches BOTH grounded ice and exposed rock would
+        # therefore collect both increments and land at slip 3 instead of 2 under
+        # NoSlipGL + NoSlipLand — the very pairing needed to mirror LADDIE v2.
+        # Grid must hand such faces to the grounding line alone.
+        mk = zeros(Int, 12, 22)
+        mk[1, :] .= 1;  mk[end, :] .= 1
+        mk[:, 1] .= 1;  mk[:, end] .= 1
+        mk[2:11, 2:3]  .= 2
+        mk[2:11, 4:20] .= 3
+        mk[2:11, 21]   .= 0
+        mk[6:7, 6:7]   .= 1          # rock island inside the shelf
+        mk[8, 6:7]     .= 2          # grounded ice abutting it -> mixed corners
+        z_draft = zeros(FT, size(mk))
+        z_draft[mk .== 3] .= FT(-200.0)
+        m = Model(mk, z_draft, FT(2000.0), FT(2000.0), ISOMIPForcing(FT, :warm),
+                  Params(; FT); domain_cropping = NoDomainCropping())
+        g = getfield(m, :grid)
+
+        for (gl, ln, gd) in ((g.glNu, g.lndNu, g.grdNu), (g.glSu, g.lndSu, g.grdSu),
+                             (g.glEv, g.lndEv, g.grdEv), (g.glWv, g.lndWv, g.grdWv))
+            @test !any((gl .== 1) .& (ln .== 1))   # disjoint...
+            @test gl .+ ln ≈ gd                    # ...and exhaustive
+        end
+        # The geometry really does contain such corners, i.e. this is not vacuous:
+        # without the partition, glNu and lndNu would overlap here.
+        raw_lndNu = 1 .- Laddie.ym1((1 .- g.lnd) .* (1 .- Laddie.xm1(g.lnd)))
+        @test count((g.glNu .== 1) .& (raw_lndNu .== 1)) > 0
+
+        # And the composed slip factor stays at the no-slip value of 2 everywhere.
+        p = Params(; FT, grline_bc = NoSlipGL(), land_bc = NoSlipLand())
+        dgl = Laddie._gl_slip(p.grline_bc, p.slip) - p.slip
+        dln = Laddie._land_slip(p.land_bc, p.slip) - p.slip
+        slipN = p.slip .+ dgl .* g.glNu .+ dln .* g.lndNu
+        @test maximum(slipN[g.grdNu .== 1]) ≈ 2
+    end
+
+    @testset "Lateral viscosity: PrescribedLateralViscosity bit-identical, NonlinearLateralViscosity differs" begin
+        # PrescribedLateralViscosity is the default and must reproduce the
+        # pre-AbstractLateralViscosity behaviour bit-for-bit: laplace_U/V now
+        # dispatch on m.lateral_viscosity, but the Prescribed path is the exact
+        # same kernel followed by the same `.*= A_h` that used to live in the
+        # momentum-step kernels.
+        m_def  = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        m_presc = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                               params = Params(; FT, lateral_viscosity = PrescribedLateralViscosity()))
+        run!(m_def;   days = 1.0, verbose = false)
+        run!(m_presc; days = 1.0, verbose = false)
+        @test m_presc.U.present == m_def.U.present
+        @test m_presc.V.present == m_def.V.present
+        @test m_presc.melt == m_def.melt
+
+        # NonlinearLateralViscosity changes the solution and stays physical.
+        m_nl = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                            params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(10.0))))
+        run!(m_nl; days = 1.0, verbose = false)
+        @test all(isfinite, m_nl.D.present) && all(isfinite, m_nl.melt)
+        @test all(m_nl.melt[m_nl.tmask .> 0] .>= 0)
+        @test m_nl.V.present != m_def.V.present
+
+        # Decision (a): grounding-line/land wall drag stays linear in the plain
+        # A_h even under the nonlinear interior scheme, so switching grline_bc
+        # to no-slip must still change the solution under NonlinearLateralViscosity
+        # (i.e. the wall-drag term isn't accidentally zeroed or folded into the
+        # shear-scaled interior term).
+        m_nl_ns = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                               params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(10.0)),
+                                              grline_bc = NoSlipGL()))
+        run!(m_nl_ns; days = 1.0, verbose = false)
+        @test all(isfinite, m_nl_ns.D.present) && all(isfinite, m_nl_ns.melt)
+        @test m_nl_ns.V.present != m_nl.V.present
+    end
+
     @testset "Gaps BC: mask plumbing, SinkGapsBC bit-identical, ConnectedGapsBC differs" begin
         # 10x20 interior domain (12x22 with border ring), no cropping so mask
         # indices map 1:1 onto grid indices:
@@ -670,6 +797,13 @@ end
         @test p.tstep   isa AdaptiveDt{Float32}
         @test p.tstep.ncheck isa Int                  # integer field not converted
         @test p.open_bc isa ZeroGradientInflow && p.grline_bc isa FreeSlipGL   # singletons pass through
+        @test p.land_bc isa FreeSlipLand
+        @test p.lateral_viscosity isa PrescribedLateralViscosity
+
+        p_nl = Params(; FT = Float32, lateral_viscosity = NonlinearLateralViscosity(10.0))
+        @test p_nl.lateral_viscosity isa NonlinearLateralViscosity{Float32}
+        @test p_nl.lateral_viscosity.C_visc isa Float32
+        @test p_nl.lateral_viscosity.C_visc isa Float32
 
         # The payoff: a Float32 build + run from an explicit Params no longer
         # errors on a Float64-typed parameterization.
@@ -1046,6 +1180,72 @@ end
             @test m.T.future ≈ T_ref rtol = 1e-10 atol = 1e-12
             @test m.S.future ≈ S_ref rtol = 1e-10 atol = 1e-12
         end
+    end
+
+    @testset "Front pressure: FullDepthGradient is default/v1, TruncatedDepthGradient drops the term" begin
+        # The depth-gradient part of the PGF at a one-sided face (ice front, or a
+        # SinkGapsBC gap-sink edge) differs between references: Python LADDIE v1.x
+        # keeps the one-sided difference toward a masked-to-zero neighbour, LADDIE
+        # v2 drops the term (mask_cf_b truncation).  See f90-diffs.md §4.
+        p_full = Params(; FT, front_pressure = FullDepthGradient())
+        p_trunc = Params(; FT, front_pressure = TruncatedDepthGradient())
+        @test Params(; FT).front_pressure isa FullDepthGradient   # v1 is the default
+
+        m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        run!(m; days = 0.5, verbose = false)
+        g = getfield(m, :grid)
+        # Under the default the interior term is live and the gate is exactly 1.0,
+        # so nothing is altered anywhere.
+        up = Laddie.u_pressure_depth(m)
+        @test any(!iszero, up[g.tmask_ip.==2])
+        @test all(Laddie._pgf_gate(m, g.tmask_ip) .== 1)
+
+        # Selecting the truncation is bit-identical in the interior and exactly
+        # zero on one-sided faces.
+        m_t = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p_trunc)
+        run!(m_t; days = 0.5, verbose = false)
+        g_t = getfield(m_t, :grid)
+        up_t = Laddie.u_pressure_depth(m_t)
+        vp_t = Laddie.v_pressure_depth(m_t)
+        @test all(iszero, up_t[g_t.tmask_ip.!=2])
+        @test all(iszero, vp_t[g_t.tmask_jp.!=2])
+
+        # A SinkGapsBC gap edge is exactly such a one-sided face once the gap
+        # is demoted to ocean, so it must be gated the same way as the true
+        # ice front — build a hand-made domain with an interior gap to check.
+        mk = zeros(Int, 12, 22)
+        mk[1, :] .= 1;  mk[end, :] .= 1
+        mk[:, 1] .= 1;  mk[:, end] .= 1
+        mk[2:11, 2:3]  .= 2
+        mk[2:11, 4:20] .= 3
+        mk[2:11, 21]   .= 0
+        mk[5:7, 10:12] .= 4
+        z_draft = zeros(FT, size(mk))
+        z_draft[mk .== 3] .= FT(-200.0)
+        forcing = ISOMIPForcing(FT, :warm)
+        m_gap = Model(mk, z_draft, FT(2000.0), FT(2000.0), forcing, p_trunc;
+                      domain_cropping = NoDomainCropping())
+        run!(m_gap; days = 0.5, verbose = false)
+        g_gap = getfield(m_gap, :grid)
+        up_gap = Laddie.u_pressure_depth(m_gap)
+        vp_gap = Laddie.v_pressure_depth(m_gap)
+        @test all(iszero, up_gap[g_gap.tmask_ip.!=2])
+        @test all(iszero, vp_gap[g_gap.tmask_jp.!=2])
+
+        # Guard against the assertions above going vacuous: the gate only has
+        # teeth on faces where momentum is actually solved (umask/vmask == 1),
+        # and the ISOMIP channel has no such face in y at all — the gap domain
+        # must supply both, or this testset stops testing the fix.
+        @test count((g_gap.tmask_ip .== 1) .& (g_gap.umask .== 1)) > 0
+        @test count((g_gap.tmask_jp .== 1) .& (g_gap.vmask .== 1)) > 0
+
+        # The choice is not cosmetic: on a domain that has an ice front, the two
+        # settings must actually integrate to different states.
+        m_full2 = Model(mk, z_draft, FT(2000.0), FT(2000.0), forcing, p_full;
+                        domain_cropping = NoDomainCropping())
+        run!(m_full2; days = 0.5, verbose = false)
+        @test m_full2.U.present != m_gap.U.present
+        @test all(isfinite, m_gap.melt) && all(isfinite, m_full2.melt)
     end
 
     @testset "Conservation: D equation exact over one step" begin

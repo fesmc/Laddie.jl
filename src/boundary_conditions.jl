@@ -8,8 +8,10 @@ abstract type AbstractGroundingLineBC end
 $(TYPEDSIGNATURES)
 
 Grounding-line momentum boundary condition of LADDIE v1.x (the default):
-grounding-line walls use the same slip factor as land walls, i.e.
-`Params.slip` (`1.0` = free slip).
+grounding-line walls (mask value `2`) use the global `Params.slip` factor
+(`1.0` = free slip) — the same factor land walls get from the default
+[`FreeSlipLand`](@ref), so the two wall types are indistinguishable unless
+`grline_bc` and/or `land_bc` are changed independently.
 
 Select via `Params(; grline_bc = FreeSlipGL())` (the default).
 """
@@ -19,10 +21,11 @@ struct FreeSlipGL <: AbstractGroundingLineBC end
 $(TYPEDSIGNATURES)
 
 No-slip momentum boundary condition at the grounding line: the tangential
-velocity is forced to zero at walls bordering grounded ice (mask value `2`),
-while land/border walls (mask value `1`) keep the global `Params.slip`
-factor.  Implemented as a slip factor of `2` on grounding-line faces
-(ghost velocity = -interior velocity).
+velocity is forced to zero at walls bordering grounded ice (mask value `2`).
+Implemented as a slip factor of `2` on grounding-line faces (ghost velocity =
+-interior velocity).  Land walls (mask value `1`) are governed independently
+by `Params.land_bc` and are unaffected by this choice — see [`NoSlipLand`](@ref)
+to apply the same no-slip treatment there too.
 
 Motivated by LADDIE v2.0 (Lambert et al., in review, 2026), where a no-slip
 grounding-line condition improves melt patterns near the grounding line
@@ -32,10 +35,58 @@ Select via `Params(; grline_bc = NoSlipGL())`.
 """
 struct NoSlipGL <: AbstractGroundingLineBC end
 
-# Slip factor applied at grounding-line faces (land faces always use `slip`).
-# Ghost tangential velocity is (1 − factor)·u: 1 → free slip, 2 → no slip.
+# Slip factor applied at grounding-line faces.  Ghost tangential velocity is
+# (1 − factor)·u: 1 → free slip, 2 → no slip.
 _gl_slip(::FreeSlipGL, slip) = slip
 _gl_slip(::NoSlipGL, slip) = oftype(slip, 2)
+
+#############################
+# Land BC
+#############################
+
+abstract type AbstractLandBC end
+
+"""
+$(TYPEDSIGNATURES)
+
+Land momentum boundary condition (the default): land walls — exposed bedrock
+(mask value `1`), which includes islands and ice-free coastline inside the
+domain as well as the outer border ring — use the global `Params.slip` factor
+(`1.0` = free slip).  Reproduces LADDIE v1.x behaviour, where land was not
+distinguished from any other wall.
+
+Select via `Params(; land_bc = FreeSlipLand())` (the default).
+
+See also [`AbstractGroundingLineBC`](@ref), the analogous choice for walls
+bordering grounded ice.
+"""
+struct FreeSlipLand <: AbstractLandBC end
+
+"""
+$(TYPEDSIGNATURES)
+
+No-slip momentum boundary condition at land walls: the tangential velocity is
+forced to zero at walls bordering exposed bedrock (mask value `1`).
+Implemented the same way as [`NoSlipGL`](@ref) — a slip factor of `2` on land
+faces (ghost velocity = -interior velocity) — so the two can be composed
+independently: e.g. no-slip at the grounding line but free-slip at islands,
+or vice versa.
+
+At a coastline corner whose stencil touches both grounded ice and exposed rock,
+the grounding-line condition takes precedence (`Grid.lnd??` excludes faces
+already flagged by `Grid.gl??`), so the two slip factors partition the wall
+faces instead of both applying to the same face.
+
+Select via `Params(; land_bc = NoSlipLand())`.
+"""
+struct NoSlipLand <: AbstractLandBC end
+
+# Slip factor applied at land faces.  Mirrors `_gl_slip` exactly; kept as a
+# separate dispatch point (rather than sharing one function across both
+# abstract types) so land and grounding-line treatments can diverge later
+# without disturbing each other.
+_land_slip(::FreeSlipLand, slip) = slip
+_land_slip(::NoSlipLand, slip) = oftype(slip, 2)
 
 #############################
 # Open BC
@@ -62,6 +113,60 @@ clipped to zero so ambient water cannot advect into the domain.
 Select via `Params(; open_bc = NoInflow())`.
 """
 struct NoInflow <: AbstractOpenOceanBC end
+
+#############################
+# Ice-front pressure gradient
+#############################
+
+abstract type AbstractFrontPressure end
+
+"""
+$(TYPEDSIGNATURES)
+
+Keep the layer-thickness-gradient part of the pressure-gradient force at
+one-sided faces — the ice front, and the edges of a gap demoted to ocean by
+[`SinkGapsBC`](@ref) — evaluating it as `(D_neighbour - D)/Δ` with the
+neighbour's stored thickness, which masking pins to `0` there. The term is thus
+a full one-sided gradient, as if `D` fell to zero across one grid cell.
+
+This is what Python LADDIE v1.x does (`integrate.py`, `-g·ip_t(Ddrho)·(Dxm1 -
+D)/dx` with `Dxm1 = roll(D*tmask)`), so it is **the default** and the setting
+under which Laddie.jl reproduces the Python reference.
+
+Select via `Params(; front_pressure = FullDepthGradient())` (the default).
+
+See also [`TruncatedDepthGradient`](@ref).
+"""
+struct FullDepthGradient <: AbstractFrontPressure end
+
+"""
+$(TYPEDSIGNATURES)
+
+Drop the layer-thickness-gradient part of the pressure-gradient force at
+one-sided faces — the ice front, and the edges of a gap demoted to ocean by
+[`SinkGapsBC`](@ref) — keeping only the ice-base-slope and density-gradient
+parts there.
+
+This is what the LADDIE v2 Fortran reference does at calving-front faces
+(`laddie_velocity.f90:118-126`, `IF (mask_cf_b .OR. mask_gl_b) ... assume
+dH/dx = 0`). It avoids treating a masked neighbour's stored `D = 0` as a real
+thickness: under [`FullDepthGradient`](@ref) that term is roughly 150× larger
+at the ice front than in the interior on a warm ISOMIP+ run.
+
+Neither choice affects the grounding line, where `Grid.umask`/`vmask` are zero
+and no momentum equation is solved at all.
+
+Select via `Params(; front_pressure = TruncatedDepthGradient())`.
+"""
+struct TruncatedDepthGradient <: AbstractFrontPressure end
+
+# Weight `w` in the per-face gate `1 + w*(tmask_stag - 2)`, which is 1 on a
+# fully-interior face (tmask_stag == 2) either way, and at a one-sided face
+# (tmask_stag == 1) is 1 for FullDepthGradient / 0 for TruncatedDepthGradient.
+# w = 0 multiplies the term by exactly 1.0, so the default stays bit-identical
+# to the pre-AbstractFrontPressure (and Python v1.x) behaviour.
+_front_pgf_weight(::FullDepthGradient, x) = zero(x)
+_front_pgf_weight(::TruncatedDepthGradient, x) = one(x)
 
 #############################
 # Gaps BC

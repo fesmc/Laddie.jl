@@ -68,6 +68,27 @@ FreeSlipGL
 NoSlipGL
 ```
 
+#### Land
+
+```@docs
+FreeSlipLand
+NoSlipLand
+```
+
+#### Lateral viscosity
+
+```@docs
+PrescribedLateralViscosity
+NonlinearLateralViscosity
+```
+
+#### Ice-front pressure gradient
+
+```@docs
+FullDepthGradient
+TruncatedDepthGradient
+```
+
 #### Time stepping
 
 ```@docs

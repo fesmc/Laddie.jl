@@ -47,6 +47,17 @@ kernels in `src/numerics.jl` are asserted equal to it by the test suite.
 | ``C_d`` | `m.C_d` | quadratic drag coefficient (momentum) | – |
 | ``C_d^{\text{top}}`` | `m.C_d_top` | drag coefficient (friction velocity) | – |
 | ``A_h, K_h`` | `m.A_h`, `m.K_h` | horizontal viscosity / diffusivity | m² s⁻¹ |
+
+!!! note "``A_h`` is the coefficient only under the default viscosity scheme"
+    The momentum equations below write lateral viscosity as ``A_h\nabla^2\mathbf{u}``,
+    which is [`PrescribedLateralViscosity`](@ref), the default. Under
+    [`NonlinearLateralViscosity`](@ref) the coefficient becomes the shear-dependent
+    ``(C_\mathrm{visc}/100)\,\Delta\,|\delta u|`` instead, and `m.A_h` retains only its
+    wall-drag role in the grounding-line/land slip terms (it also always sets the
+    entrainment length scale in [`HollandEntrainment`](@ref), independent of either
+    choice). Note that `dt` control (`_cfl_number`) accounts for advection and gravity
+    waves only — there is no viscous stability constraint, so a large viscosity on a
+    fine grid is not caught automatically.
 | ``\gamma_T, \gamma_S`` | `m.gamT`, `m.gamS` | turbulent exchange velocities | m s⁻¹ |
 | ``u_\star`` | `m.ustar` | friction velocity | m s⁻¹ |
 | ``\lambda_1,\lambda_2,\lambda_3`` | `m.l1,m.l2,m.l3` | linear-liquidus coefficients | – |
@@ -99,6 +110,21 @@ Kernel `_step_u_momentum_kernel!` integrates the **expanded** form (per unit
 then ``U^{+} = U^{p} + (\mathrm{rhs}/\bar D)\,\Delta t``. Overbars denote C-grid
 face interpolation to the ``U``-node. The detrainment-momentum-loss term is a
 Laddie.jl addition (see [Entrainment](@ref)).
+
+At a **one-sided face** — the ice front, or a `SinkGapsBC` gap-sink edge — the neighbour
+needed for ``D_{x-1}`` is not part of the active domain, and masking pins its stored
+thickness to `0`. The depth-gradient term ``g\,\overline{D\delta\rho}\,(D_{x-1}-D)/\Delta x``
+is then a full one-sided gradient, as if ``D`` collapsed to zero across one grid cell.
+The two reference implementations disagree on what to do about this, so
+[`AbstractFrontPressure`](@ref) makes it a choice:
+
+- [`FullDepthGradient`](@ref) (**default**) keeps the term, reproducing Python LADDIE
+  v1.x, which Laddie.jl is ported from and validated against.
+- [`TruncatedDepthGradient`](@ref) drops it, as the LADDIE v2 Fortran reference does at
+  calving-front faces. Measured on a warm ISOMIP+ run, the term is ~150× larger at the
+  ice front than in the interior under the default.
+
+Neither affects the grounding line, where no momentum equation is solved.
 
 ### (3) ``V``-momentum
 

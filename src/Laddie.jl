@@ -7,6 +7,7 @@ include("entrainment.jl")
 include("melting.jl")
 include("convection.jl")
 include("boundary_conditions.jl")
+include("viscosity.jl")
 include("timestepping.jl")
 include("simulationend.jl")
 include("forcing.jl")
@@ -44,7 +45,10 @@ export AbstractPreprocess, FillOceanHolesPreprocess, FillShelfHolesPreprocess,
 
 export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow
 export AbstractGroundingLineBC, FreeSlipGL, NoSlipGL
+export AbstractLandBC, FreeSlipLand, NoSlipLand
 export AbstractGapsBC, SinkGapsBC, ConnectedGapsBC
+export AbstractLateralViscosity, PrescribedLateralViscosity, NonlinearLateralViscosity
+export AbstractFrontPressure, FullDepthGradient, TruncatedDepthGradient
 export AbstractIceSlopeGradient, PyGradient, JlGradient
 export AbstractTimeStepper, FixedDt, AdaptiveDt
 export AbstractCFL, ConservativeCFL, ExactCFL

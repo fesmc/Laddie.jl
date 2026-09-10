@@ -116,6 +116,10 @@ struct Grid{FT,A<:AbstractMatrix{FT}}
     glSu::A
     glEv::A
     glWv::A
+    lndNu::A
+    lndSu::A
+    lndEv::A
+    lndWv::A
     isfE::A
     isfW::A
     isfN::A
@@ -208,6 +212,23 @@ function Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, z_bed_raw::Abs
     glSu = o .- yp1((o .- gl) .* (o .- xm1(gl)))
     glEv = o .- xm1((o .- gl) .* (o .- ym1(gl)))
     glWv = o .- xp1((o .- gl) .* (o .- ym1(gl)))
+    # Land-only wall indicators: the exact same construction as gl??, but from
+    # `lnd` (mask == 1) instead of `gl` (mask == 2), so AbstractLandBC can apply
+    # its own slip factor at walls bordering exposed bedrock/border, independent
+    # of AbstractGroundingLineBC.
+    #
+    # The momentum kernels compose the two additively
+    # (`slip + dslip_gl*gl?? + dslip_land*lnd??`) while gating the result on
+    # `grd?? = max(gl??, lnd??)`, so the indicators must *partition* the wall
+    # faces rather than overlap: a face whose two-cell stencil touches both
+    # grounded ice and exposed rock (a coastline corner, ubiquitous in real
+    # geometry) would otherwise receive both increments and end up at slip 3
+    # instead of 2 under NoSlipGL + NoSlipLand.  Grounding line takes precedence
+    # there, which leaves gl?? + lnd?? == grd?? exactly.
+    lndNu = (o .- ym1((o .- lnd) .* (o .- xm1(lnd)))) .* (o .- glNu)
+    lndSu = (o .- yp1((o .- lnd) .* (o .- xm1(lnd)))) .* (o .- glSu)
+    lndEv = (o .- xm1((o .- lnd) .* (o .- ym1(lnd)))) .* (o .- glEv)
+    lndWv = (o .- xp1((o .- lnd) .* (o .- ym1(lnd)))) .* (o .- glWv)
     isfE = ocn .* tmaskxp1
     isfW = ocn .* tmaskxm1
     isfN = ocn .* tmaskyp1
@@ -280,6 +301,10 @@ function Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, z_bed_raw::Abs
         glSu,
         glEv,
         glWv,
+        lndNu,
+        lndSu,
+        lndEv,
+        lndWv,
         isfE,
         isfW,
         isfN,

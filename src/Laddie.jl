@@ -44,6 +44,7 @@ export AbstractPreprocess, FillOceanHolesPreprocess, FillShelfHolesPreprocess,
 
 export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow
 export AbstractGroundingLineBC, FreeSlipGL, NoSlipGL
+export AbstractGapsBC, SinkGapsBC, ConnectedGapsBC
 export AbstractIceSlopeGradient, PyGradient, JlGradient
 export AbstractTimeStepper, FixedDt, AdaptiveDt
 export AbstractCFL, ConservativeCFL, ExactCFL

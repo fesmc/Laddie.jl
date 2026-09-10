@@ -28,6 +28,7 @@ end
     @Const(S),
     @Const(z_draft),
     @Const(tmask),
+    @Const(imask),
     gamT,
     gamS,
     cp_over_Leff,
@@ -47,10 +48,18 @@ end
         disc = quad_b * quad_b - FT(4) * quad_c
         disc = ifelse(disc < zero(FT), zero(FT), disc)
         melt_rate = (-quad_b + sqrt(disc)) / FT(2)
-        melt[i, j] = iszero(tmask[i, j]) ? zero(FT) : melt_rate
+        # Only ice-covered cells melt.  Gap cells (in tmask, not in imask) are ice-free,
+        # so they add no meltwater volume and no buoyancy — and their Tb is set to T,
+        # which makes the ice-ocean heat exchange -gamT*(T - Tb) in the temperature
+        # equation vanish identically.  That is exactly what the reference gets from
+        # its melt = min(melt, Hi/dt) limiter: with melt = 0 the three-equation
+        # solution for Tb collapses to Tb = T.
+        melt[i, j] = iszero(imask[i, j]) ? zero(FT) : melt_rate
         Tb_denom = cp_over_Leff * gamT + cp_over_Leff * ci_over_cp * melt_rate
         Tb[i, j] =
-            (iszero(tmask[i, j]) || iszero(Tb_denom)) ? zero(FT) :
+            iszero(tmask[i, j]) ? zero(FT) :
+            iszero(imask[i, j]) ? T[i, j] :
+            iszero(Tb_denom) ? zero(FT) :
             (cp_over_Leff * gamT * T[i, j] - melt_rate) / Tb_denom
     end
 end
@@ -63,6 +72,7 @@ end
     @Const(S),
     @Const(z_draft),
     @Const(tmask),
+    @Const(imask),
     @Const(gamT),
     @Const(gamS),
     cp_over_Leff,
@@ -84,10 +94,13 @@ end
         disc = quad_b * quad_b - FT(4) * quad_c
         disc = ifelse(disc < zero(FT), zero(FT), disc)
         melt_rate = (-quad_b + sqrt(disc)) / FT(2)
-        melt[i, j] = iszero(tmask[i, j]) ? zero(FT) : melt_rate
+        # See _three_eq_melt_kernel! for why gap cells take Tb = T.
+        melt[i, j] = iszero(imask[i, j]) ? zero(FT) : melt_rate
         Tb_denom = cp_over_Leff * gT + cp_over_Leff * ci_over_cp * melt_rate
         Tb[i, j] =
-            (iszero(tmask[i, j]) || iszero(Tb_denom)) ? zero(FT) :
+            iszero(tmask[i, j]) ? zero(FT) :
+            iszero(imask[i, j]) ? T[i, j] :
+            iszero(Tb_denom) ? zero(FT) :
             (cp_over_Leff * gT * T[i, j] - melt_rate) / Tb_denom
     end
 end
@@ -257,6 +270,7 @@ function update_melt!(m, mp::FixedGamTMelting)
         m.S.present,
         m.z_draft,
         m.tmask,
+        m.imask,
         m.gamT,
         m.gamS,
         cp_over_Leff,
@@ -304,6 +318,7 @@ function update_melt!(m, mp::TurbulentGamTMelting)
         m.S.present,
         m.z_draft,
         m.tmask,
+        m.imask,
         m.gamT,
         m.gamS,
         cp_over_Leff,

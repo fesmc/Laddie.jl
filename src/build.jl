@@ -5,7 +5,11 @@
 _float_type(::Params{FT}) where {FT} = FT
 _float_type(f::AbstractForcing) = eltype(f.Tz)
 
-function _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
+# Shape and spacing checks.  These run *before* preprocessing and cropping, because
+# `_crop_domain` slices z_draft_raw/z_bed_raw with index ranges derived from the mask:
+# a size mismatch there surfaces as an opaque BoundsError from an internal helper
+# instead of the ArgumentError the caller should see.
+function _validate_input_shapes(mask, z_draft_raw, z_bed_raw, dx, dy)
     (size(mask, 1) >= 3 && size(mask, 2) >= 3) || throw(
         ArgumentError(
             "mask must be at least 3×3 — interior cells plus the one-cell border ring — got $(size(mask))",
@@ -16,12 +20,23 @@ function _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
             "z_draft_raw and mask must have the same size, got $(size(z_draft_raw)) vs $(size(mask))",
         ),
     )
+    z_bed_raw === nothing || size(z_bed_raw) == size(mask) || throw(
+        ArgumentError(
+            "z_bed_raw and mask must have the same size, got $(size(z_bed_raw)) vs $(size(mask))",
+        ),
+    )
     (dx > 0 && dy > 0) ||
         throw(ArgumentError("dx and dy must be positive, got dx = $dx, dy = $dy"))
-    bad = setdiff(unique(mask), 0:3)
+    return
+end
+
+# Mask semantics and precision checks.  These run after gap resolution and cropping,
+# on the geometry the model will actually be built from.
+function _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
+    bad = setdiff(unique(mask), 0:4)
     isempty(bad) || throw(
         ArgumentError(
-            "mask may only contain 0 (ocean), 1 (land), 2 (grounded), 3 (shelf); found $(sort(bad))",
+            "mask may only contain 0 (ocean), 1 (land), 2 (grounded), 3 (shelf), 4 (gap); found $(sort(bad))",
         ),
     )
     any(==(3), mask) || throw(
@@ -29,15 +44,16 @@ function _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
             "mask contains no floating-shelf cells (value 3) — nothing to simulate",
         ),
     )
+    _is_active(v) = v == 3 || v == 4
     border_shelf =
-        any(==(3), @view mask[1, :]) ||
-        any(==(3), @view mask[end, :]) ||
-        any(==(3), @view mask[:, 1]) ||
-        any(==(3), @view mask[:, end])
+        any(_is_active, @view mask[1, :]) ||
+        any(_is_active, @view mask[end, :]) ||
+        any(_is_active, @view mask[:, 1]) ||
+        any(_is_active, @view mask[:, end])
     border_shelf && throw(
         ArgumentError(
-            "floating-shelf cells (3) on the domain border: the stencils wrap periodically, " *
-            "so the outermost ring must be ocean/land/grounded (0–2)",
+            "active cells (3 = shelf, 4 = gap) on the domain border: the stencils wrap " *
+            "periodically, so the outermost ring must be ocean/land/grounded (0–2)",
         ),
     )
     _float_type(params) === FT || throw(
@@ -65,9 +81,20 @@ arbitrary domain mask and ice-draft, a forcing profile, and a parameter set.
 | Value | Meaning |
 |-------|---------|
 | `0`   | open ocean (outside domain, passive) |
-| `1`   | land / boundary (one-cell border ring) |
+| `1`   | land — exposed bedrock, and the one-cell border ring |
 | `2`   | grounded ice (sets inflow boundary for the plume) |
 | `3`   | floating ice shelf (active plume cells) |
+| `4`   | ice-shelf gap (ice-free but active; see [`AbstractGapsBC`](@ref)) |
+
+Land (`1`) and grounded ice (`2`) are both walls to the plume and are unioned into
+`Grid.grd`, but they stay distinct throughout: only `2` is a grounding line
+(`Grid.gl`, and the `AbstractGroundingLineBC` slip condition), while `1` is rock
+(`Grid.lnd`).  Keeping them apart matters because an ice-free island misclassified
+as ocean turns into an open-boundary sink inside the cavity.
+
+Value `4` marks an ice-free cell *inside* the ice-shelf domain — a gap opened by
+melt-through.  Whether it is simulated as an active cell or demoted to open ocean
+is decided by `Params.gaps_bc`, so the same mask can drive both treatments.
 
 The `mask` and `z_draft_raw` arrays must include the full domain with the one-cell
 border ring, i.e. size `(ny+2, nx+2)` where `ny × nx` are the interior cells.
@@ -113,9 +140,14 @@ function Model(
     domain_cropping = MinRectangleDomainCropping(),
     preprocess = AbstractPreprocess[],
 )
+    _validate_input_shapes(mask, z_draft_raw, z_bed_raw, dx, dy)
     for p in preprocess
         preprocess!(mask, p)
     end
+    # Gap resolution runs on the cleaned geometry but before cropping: `preprocess!` is
+    # size-preserving, so a ConnectedGapsBC reference footprint lines up with the mask
+    # here, whereas after cropping it would not.
+    mask = _apply_gaps_bc(mask, params.gaps_bc)
     mask, z_draft_raw, z_bed_raw = _crop_domain(mask, z_draft_raw, z_bed_raw, domain_cropping)
     _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
     ny_total, nx_total = size(mask)

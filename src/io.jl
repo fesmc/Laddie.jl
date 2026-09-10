@@ -222,6 +222,7 @@ function _write_run_metadata(m)
     params_d["convection"] = _scalar_fields(p.convection_scheme)
     params_d["open_boundary"] = _scalar_fields(p.open_bc)
     params_d["grounding_line"] = _scalar_fields(p.grline_bc)
+    params_d["shelf_gaps"] = _scalar_fields(p.gaps_bc)
     params_d["time_stepper"] = _scalar_fields(p.tstep)
     meta = Dict{String,Any}(
         "run" => Dict{String,Any}(
@@ -454,13 +455,16 @@ function _create_output_file!(m)
                 ("y", "x");
                 attrib = ["long_name" => "shelf cell at ice-shelf front (ocean neighbour)"],
             )[:, :] = Int8.(at_isf)
+            # Wall diagnostics are split by wall type so a margin can be told apart
+            # at a glance: `at_grl` is the grounding line (grounded ice, mask 2) and
+            # `at_lnd` is rock (land, mask 1) — an island shore or an ice-free coast.
+            # A cell may carry more than one of at_isf/at_grl/at_lnd; that is genuine
+            # where a shelf cell has several different neighbours.
             mask_c = m.mask
-            at_grl = _int(
-                (mask_c .== 3) .& (
-                    (xm1(mask_c) .== 2) .| (xp1(mask_c) .== 2) .|
-                    (ym1(mask_c) .== 2) .| (yp1(mask_c) .== 2)
-                ),
-            )
+            _touches(v) =
+                (xm1(mask_c) .== v) .| (xp1(mask_c) .== v) .|
+                (ym1(mask_c) .== v) .| (yp1(mask_c) .== v)
+            at_grl = _int((mask_c .== 3) .& _touches(2))
             defVar(
                 ds,
                 "at_grl",
@@ -470,6 +474,16 @@ function _create_output_file!(m)
                     "long_name" => "shelf cell at grounding line (grounded-ice neighbour)",
                 ],
             )[:, :] = Int8.(at_grl)
+            at_lnd = _int((mask_c .== 3) .& _touches(1))
+            defVar(
+                ds,
+                "at_lnd",
+                Int8,
+                ("y", "x");
+                attrib = [
+                    "long_name" => "shelf cell at a land margin (bedrock neighbour)",
+                ],
+            )[:, :] = Int8.(at_lnd)
         end
         if m.save_zb
             defVar(ds, "z_draft", Float64, ("y", "x"); attrib = ["units" => "m"])[:, :] =

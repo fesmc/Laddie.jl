@@ -75,6 +75,9 @@ mutable struct Cache{FT,A<:AbstractMatrix{FT},GamT,Conv2}
     # Tracer flux intermediates (eliminate D*q allocation per step)
     DT::A
     DS::A
+    # Per-point scale factors for the speed-preserving velocity limiter
+    scaleU::A
+    scaleV::A
 end
 
 _gamT_init(FT, _, _, ::Type{<:FixedGamTMelting}) = zero(FT)
@@ -162,5 +165,7 @@ function Cache(FT::Type, MP::Type, CS::Type, ny::Int, nx::Int)
         copy(z), # lU, lV, lT, lS
         copy(z),
         copy(z),                   # DT, DS
+        copy(z),
+        copy(z),                   # scaleU, scaleV
     )
 end

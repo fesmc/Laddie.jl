@@ -75,16 +75,19 @@ end
 
 # Adjust z_draft before Grid construction.  z_draft is defined by mask category:
 #   ocean  (0): 0        (no ice above, sea-surface reference)
-#   border (1): 0        (not physically active)
+#   land   (1): 0        (bedrock at/above sea level, or the border ring; inactive)
 #   grounded (2): z_bed  (ice base coincides with bed; keep z_draft_raw)
 #   shelf  (3): z_draft_raw   (actual ice-base depth, clamped to ≤ -1 m)
-# Any NaN fill values from the raw data are stripped before the mask logic.
+#   gap    (4): 0        (ice-free, so the layer's upper boundary is the sea surface)
+# The gap draft is deliberately not clamped to -1 m: the layer sits directly beneath
+# the surface there, matching LADDIE v2 where `Hib = Hs - Hi` is exactly 0 for ice-free
+# cells.  Any NaN fill values from the raw data are stripped before the mask logic.
 function _adjust_z_draft(mask::AbstractMatrix{Int}, z_draft_raw::AbstractMatrix, FT)
-    tmask = FT.(mask .== 3)
+    ice = FT.(mask .== 3)
     z_draft = FT.(z_draft_raw)
     z_draft = ifelse.(isnan.(z_draft), zero(FT), z_draft)              # strip NaN fill values
-    z_draft = ifelse.((mask .== 0) .| (mask .== 1), zero(FT), z_draft)  # ocean + border → 0
-    z_draft = ifelse.((tmask .> 0) .& (z_draft .> FT(-1)), FT(-1), z_draft)  # clamp shallow shelf
+    z_draft = ifelse.((mask .== 0) .| (mask .== 1) .| (mask .== 4), zero(FT), z_draft)  # ocean + border + gap → 0
+    z_draft = ifelse.((ice .> 0) .& (z_draft .> FT(-1)), FT(-1), z_draft)  # clamp shallow shelf
     return z_draft
 end
 
@@ -107,6 +110,11 @@ end
 
 const _cardinal_dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
 
+# Dynamically active mask values: floating shelf and ice-shelf gap.  Gaps are ice-free
+# but still carry the plume, so connectivity-based mask cleaning must not treat them as
+# a barrier (that would strand the shelf beyond a gap and silently ground it).
+_is_active(v::Integer) = v == 3 || v == 4
+
 """
 $(TYPEDSIGNATURES)
 
@@ -115,14 +123,21 @@ ice-thickness arrays.  Both arrays should cover the *interior* domain of size
 `(ny, nx)`; the returned mask has size `(ny+2, nx+2)` with a one-cell border
 ring of `1` (land/boundary).
 
-| Value | Meaning         | Condition                          |
-|-------|-----------------|------------------------------------|
-| `0`   | open ocean      | `thickness ≤ 0`                    |
-| `1`   | land / boundary | border ring                        |
-| `2`   | grounded ice    | `thickness > 0` and `h_af ≥ 0`    |
-| `3`   | floating shelf  | `thickness > 0` and `h_af < 0`    |
+| Value | Meaning         | Condition                             |
+|-------|-----------------|---------------------------------------|
+| `0`   | open ocean      | `thickness ≤ 0` and `bed < 0`         |
+| `1`   | land            | `thickness ≤ 0` and `bed ≥ 0`; border ring |
+| `2`   | grounded ice    | `thickness > 0` and `h_af ≥ 0`        |
+| `3`   | floating shelf  | `thickness > 0` and `h_af < 0`        |
 
 Height above flotation: `h_af = thickness × (rho_ice/rho_sw) + bed`.
+
+Ice-free cells are split by bed elevation, which is the `thickness → 0` limit of the
+flotation test: exposed bedrock — nunataks, rock islands inside a shelf, ice-free
+coastline — is **land**, not ocean.  Classifying it as ocean (as this function did
+before) makes every such island an open-boundary sink in the middle of the cavity:
+`Grid.ocn` drives the ice-front indicators, so the surrounding shelf cells grow a
+velocity point into the island and lose heat and momentum through it.
 
 # Arguments
 - `bed`:      bed elevation (m, positive above sea level).
@@ -155,8 +170,10 @@ function build_laddie_mask(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
     for j = 1:nx, i = 1:ny
         h = Float64(thickness[i, j])
         b = Float64(bed[i, j])
-        if h > 0
-            mask[i+1, j+1] = (h * r + b >= 0) ? 2 : 3
+        mask[i+1, j+1] = if h > 0
+            (h * r + b >= 0) ? 2 : 3     # grounded ice / floating shelf
+        else
+            (b >= 0) ? 1 : 0             # exposed bedrock / open ocean
         end
     end
     return mask
@@ -225,12 +242,15 @@ $(TYPEDSIGNATURES)
 
 Remove isolated ocean pockets from a LADDIE mask by flood-filling from the main
 ocean.  Ocean cells (`mask == 0`) that are not connected (4-connectivity) to the
-outer ocean are reclassified as grounded ice (`mask == 2`).
+outer ocean are reclassified as land (`mask == 1`).
 
-The outer ocean is identified as all ocean cells reachable from the border ring
-(`mask == 1`).  Noisy topography (e.g. BedMachine) occasionally creates small
+The outer ocean is identified as all ocean cells reachable from the outermost ring
+of the array.  Noisy topography (e.g. BedMachine) occasionally creates small
 enclosed ocean patches fully surrounded by ice; these cause spurious ice-front
 dynamics and numerical instabilities.
+
+An enclosed pocket becomes **land**, not grounded ice: there is no ice there, and
+conflating the two hides which walls are rock and which are the grounding line.
 
 Modifies `mask` in-place and returns the number of cells that were reclassified.
 
@@ -249,17 +269,16 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
     visited = falses(ny, nx)
     queue = Tuple{Int,Int}[]
 
-    # Seed: ocean cells touching the border ring (mask == 1)
+    # Seed: ocean cells on the outermost ring of the array, or directly inside it.
+    # The ring is the domain boundary and is normally land, so the seeds are the
+    # ocean cells of the second ring — the same set the old `mask == 1` adjacency
+    # test picked out.  It has to be positional now: land also marks interior
+    # bedrock (nunataks, rock islands), and seeding off those would declare every
+    # pocket beside an island part of the open ocean.
     for i in 1:ny, j in 1:nx
-        if mask[i, j] == 0 && !visited[i, j]
-            for (di, dj) in _cardinal_dirs
-                ni, nj = i + di, j + dj
-                if 1 <= ni <= ny && 1 <= nj <= nx && mask[ni, nj] == 1
-                    visited[i, j] = true
-                    push!(queue, (i, j))
-                    break
-                end
-            end
+        if mask[i, j] == 0 && (i <= 2 || j <= 2 || i >= ny - 1 || j >= nx - 1)
+            visited[i, j] = true
+            push!(queue, (i, j))
         end
     end
 
@@ -275,11 +294,11 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
         end
     end
 
-    # Reclassify unreachable ocean cells as grounded ice
+    # Reclassify unreachable ocean cells as land
     n_filled = 0
     for i in 1:ny, j in 1:nx
         if mask[i, j] == 0 && !visited[i, j]
-            mask[i, j] = 2
+            mask[i, j] = 1
             n_filled += 1
         end
     end
@@ -317,9 +336,9 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
     visited = falses(ny, nx)
     queue = Tuple{Int,Int}[]
 
-    # Seed: shelf cells adjacent to at least one ocean cell
+    # Seed: active cells adjacent to at least one ocean cell
     for i in 1:ny, j in 1:nx
-        if mask[i, j] == 3 && !visited[i, j]
+        if _is_active(mask[i, j]) && !visited[i, j]
             for (di, dj) in _cardinal_dirs
                 ni, nj = i + di, j + dj
                 if 1 <= ni <= ny && 1 <= nj <= nx && mask[ni, nj] == 0
@@ -331,12 +350,13 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
         end
     end
 
-    # BFS through shelf cells only
+    # BFS through active cells only.  Gaps (4) conduct connectivity: a shelf region
+    # reachable only through a gap is still attached to the ocean.
     while !isempty(queue)
         i, j = popfirst!(queue)
         for (di, dj) in _cardinal_dirs
             ni, nj = i + di, j + dj
-            if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 3
+            if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && _is_active(mask[ni, nj])
                 visited[ni, nj] = true
                 push!(queue, (ni, nj))
             end
@@ -359,7 +379,7 @@ $(TYPEDSIGNATURES)
 
 Remove undersized isolated grounded-ice patches from a LADDIE mask.  Each
 4-connected component of grounded cells (`mask == 2`) that is *not* connected
-to the domain border ring (`mask == 1`) is identified; any such component with
+to the outermost ring of the array is identified; any such component with
 fewer than `min_cells` cells is reclassified as floating shelf (`mask == 3`).
 
 Components that touch the border ring are part of the main grounded ice sheet
@@ -405,7 +425,9 @@ function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int 
             for (di, dj) in _cardinal_dirs
                 ni, nj = c_i + di, cj + dj
                 1 <= ni <= ny && 1 <= nj <= nx || continue
-                mask[ni, nj] == 1 && (touches_border = true)
+                # Positional border test: `mask == 1` now also marks interior
+                # bedrock, which must not count as "attached to the ice sheet".
+                (ni == 1 || ni == ny || nj == 1 || nj == nx) && (touches_border = true)
                 if !visited[ni, nj] && mask[ni, nj] == 2
                     visited[ni, nj] = true
                     push!(queue, (ni, nj))
@@ -462,9 +484,10 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
     n_filled = 0
 
     for i in 1:ny, j in 1:nx
-        mask[i, j] == 3 && !visited[i, j] || continue
+        _is_active(mask[i, j]) && !visited[i, j] || continue
 
-        # BFS to collect the full connected component
+        # BFS to collect the full connected component.  Gaps (4) belong to the
+        # component they sit in, so a gap never splits one shelf into two.
         component = Tuple{Int,Int}[]
         queue = Tuple{Int,Int}[(i, j)]
         visited[i, j] = true
@@ -473,7 +496,7 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
             push!(component, (c_i, cj))
             for (di, dj) in _cardinal_dirs
                 ni, nj = c_i + di, cj + dj
-                if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 3
+                if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && _is_active(mask[ni, nj])
                     visited[ni, nj] = true
                     push!(queue, (ni, nj))
                 end
@@ -482,7 +505,9 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
 
         if length(component) < min_cells
             for (c_i, cj) in component
-                mask[c_i, cj] = 2
+                # Shelf becomes grounded; a gap has no ice to ground, so it reverts
+                # to open ocean.
+                mask[c_i, cj] = mask[c_i, cj] == 4 ? 0 : 2
             end
             n_filled += length(component)
         end
@@ -524,26 +549,56 @@ struct NoDomainCropping <: AbstractDomainCropping end
 $(TYPEDSIGNATURES)
 
 Crop `mask`, `z_draft_raw`, and (optionally) `z_bed_raw` to the smallest rectangle
-that contains all floating-shelf cells (`mask == 3`), expanded by one cell in
-every direction to preserve the required border ring.
+that contains all dynamically active cells (floating shelf `mask == 3` and gaps
+`mask == 4`), expanded by `margin` cells in every direction.
 
-If the domain is already minimal, the arrays are returned unchanged.
+`margin` must be at least 1, since the outermost ring has to stay free of active
+cells (the stencils wrap periodically).  The default of 4 leaves a little context
+around the cavity, which mostly matters for plotting — a tight crop puts the ice
+front hard against the frame.  Use `margin = 1` for the tightest domain the
+solver accepts.
+
+The result is clipped to the input array, so a `margin` larger than the available
+padding simply keeps what is there.  If the domain is already minimal, the arrays
+are returned unchanged.
+
+# Fields
+ - `margin`: cells of padding kept around the active region (default 4, minimum 1).
 """
-struct MinRectangleDomainCropping <: AbstractDomainCropping end
+@kwdef struct MinRectangleDomainCropping <: AbstractDomainCropping
+    margin::Int = 4
+end
 
 _crop_domain(mask, z_draft_raw, z_bed_raw, ::NoDomainCropping) = mask, z_draft_raw, z_bed_raw
 
-function _crop_domain(mask, z_draft_raw, z_bed_raw, ::MinRectangleDomainCropping)
-    shelf_inds = findall(==(3), mask)
+function _crop_domain(mask, z_draft_raw, z_bed_raw, cropping::MinRectangleDomainCropping)
+    margin = cropping.margin
+    margin >= 1 || throw(
+        ArgumentError(
+            "MinRectangleDomainCropping margin must be at least 1 — the outermost " *
+            "ring must stay free of active cells — got $margin",
+        ),
+    )
+    # Gaps (4) are active cells too — cropping them away would silently remove the
+    # very region the connected-gaps treatment is about.
+    shelf_inds = findall(m -> m == 3 || m == 4, mask)
     isempty(shelf_inds) && return mask, z_draft_raw, z_bed_raw  # let validation catch it
     rows = getindex.(shelf_inds, 1)
     cols = getindex.(shelf_inds, 2)
     rmin, rmax = extrema(rows)
     cmin, cmax = extrema(cols)
-    r = max(1, rmin - 1) : min(size(mask, 1), rmax + 1)
-    c = max(1, cmin - 1) : min(size(mask, 2), cmax + 1)
+    r = max(1, rmin - margin) : min(size(mask, 1), rmax + margin)
+    c = max(1, cmin - margin) : min(size(mask, 2), cmax + margin)
     if length(r) < size(mask, 1) || length(c) < size(mask, 2)
-        @info "Domain cropped from $(size(mask)) to ($(length(r)), $(length(c)))"
+        # Report the margin actually achieved on each side, not just the requested
+        # one: the active region is rarely centred, so `margin` is clipped by the
+        # array edge on whichever side runs out of room first and the padding ends
+        # up asymmetric.
+        pad = (rmin - first(r), last(r) - rmax, cmin - first(c), last(c) - cmax)
+        note = all(==(margin), pad) ? "" :
+               "  (clipped by the array edge; kept top/bottom/left/right = $pad)"
+        @info "Domain cropped from $(size(mask)) to ($(length(r)), $(length(c))) " *
+              "with margin = $margin" * note
     end
     new_zbed = z_bed_raw === nothing ? nothing : z_bed_raw[r, c]
     return mask[r, c], z_draft_raw[r, c], new_zbed

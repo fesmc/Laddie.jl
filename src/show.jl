@@ -127,6 +127,8 @@ function Base.show(io::IO, p::Params{FT}) where {FT}
         " + ",
         nameof(typeof(p.grline_bc)),
         " + ",
+        nameof(typeof(p.gaps_bc)),
+        " + ",
         nameof(typeof(p.tstep)),
         ")",
     )
@@ -169,6 +171,7 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  convection     = ", p.convection_scheme)
     println(io, "  open boundary  = ", p.open_bc)
     println(io, "  grounding line = ", p.grline_bc)
+    println(io, "  shelf gaps     = ", p.gaps_bc)
     print(io, "  time stepper   = ", p.tstep)
 end
 
@@ -226,6 +229,8 @@ function Base.show(io::IO, ::MIME"text/plain", m::Model{FT}) where {FT}
         nameof(typeof(p.open_bc)),
         " + ",
         nameof(typeof(p.grline_bc)),
+        " + ",
+        nameof(typeof(p.gaps_bc)),
         " + ",
         nameof(typeof(p.tstep)),
     )

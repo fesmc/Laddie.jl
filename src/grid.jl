@@ -90,7 +90,9 @@ struct Grid{FT,A<:AbstractMatrix{FT}}
     dzdy::A
 
     tmask::A
+    imask::A
     grd::A
+    lnd::A
     ocn::A
 
     ocnym1::A
@@ -162,9 +164,18 @@ function Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, z_bed_raw::Abs
     z_draft_ft = FT.(z_draft)
     z_bed_ft = FT.(z_bed_raw)
 
-    # Primary classification
-    tmask = FT.(mask .== 3)
+    # Primary classification.  Shelf (3) and gap (4) cells are both dynamically
+    # active — every prognostic is stepped there — so they share `tmask`.  Only
+    # shelf cells carry ice, so `imask` is the subset that can melt; see
+    # `AbstractGapsBC` in boundary_conditions.jl.
+    tmask = FT.((mask .== 3) .| (mask .== 4))
+    imask = FT.(mask .== 3)
+    # `grd` is the wall mask — everything the plume cannot flow into — so it unions
+    # land and grounded ice.  The two are kept separately as well: `gl` (below) is
+    # the grounding line proper and `lnd` is rock, and only the former takes the
+    # grounding-line slip condition.
     grd = FT.((mask .== 2) .| (mask .== 1))
+    lnd = FT.(mask .== 1)
     ocn = FT.(mask .== 0)
 
     ocnym1 = ym1(ocn)
@@ -246,7 +257,9 @@ function Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, z_bed_raw::Abs
         dzdx,
         dzdy,
         tmask,
+        imask,
         grd,
+        lnd,
         ocn,
         ocnym1,
         ocnyp1,

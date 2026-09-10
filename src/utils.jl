@@ -1,5 +1,20 @@
 abstract type AbstractMaxLayerThickness end
 
+"""
+$(TYPEDSIGNATURES)
+
+Cap the layer thickness at the local water-column depth, `D <= z_draft - z_bed`
+(the default).
+
+This bound is only meaningful when a bed elevation was supplied: `Model` fills
+`z_bed` with `-Inf` when `z_bed_raw` is not given, in which case the cap is
+`+Inf` and `D` is effectively unbounded from above.  Pass `z_bed_raw` (see
+[`bed_elevation`](@ref)) to make it bite, or choose
+[`AbsoluteMaxLayerThickness`](@ref) / [`RelativeMaxLayerThickness`](@ref) for a
+bound that does not depend on bathymetry.
+
+Select via `Params(; max_layer_thickness = TopographicMaxLayerThickness())`.
+"""
 struct TopographicMaxLayerThickness <: AbstractMaxLayerThickness end
 @kwdef struct AbsoluteMaxLayerThickness{FT} <: AbstractMaxLayerThickness
     D_max::FT = 100

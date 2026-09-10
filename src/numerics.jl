@@ -122,11 +122,6 @@ end
     end
 end
 
-@kernel function _clamp_kernel!(a, lo, hi)
-    i, j = @index(Global, NTuple)
-    @inbounds a[i, j] = clamp(a[i, j], lo, hi)
-end
-
 # Infer backend from array `A`, launch `kernel!` over the full array extent.
 _workgroup(::CPU) = (8, 8)
 _workgroup(::Any) = (32, 8)   # GPU: 256 threads, warp-aligned x-dimension
@@ -606,7 +601,15 @@ end
 
 function _clamp_thickness!(m)
     max_layer_thickness!(m, m.params.max_layer_thickness)
-    @. m.D.future = max(m.D.future, m.D_min)
+    # The D_min floor must respect the domain mask.  `max_layer_thickness!` zeroes D
+    # outside tmask; an unmasked `max(D, D_min)` raises those cells straight back to
+    # D_min, so inactive cells end up holding D = D_min instead of 0 (they start at 0
+    # from `_initialize_prognostics!`, so the invariant breaks on the first step).
+    # That leaks into the interior: the face-average stencils in
+    # `_precompute_laplacian_kernel!` divide the *sum* over a cell pair by the number
+    # of active cells in it, so a non-zero D outside the domain biases the diffusion
+    # of every boundary cell.
+    @. m.D.future = max(m.D.future, m.D_min) * m.tmask
     return
 end
 
@@ -623,20 +626,31 @@ function leapfrog_step!(m, nsteps)
     precompute_integration_terms!(m)
     dbg.check_nans && _check_nans_shelf!(m, "D", m.D.future)
     
+    # Both momentum components are stepped before the limiter, because it caps the
+    # speed and so needs U and V together (see `clamp_velocities!`).
     step_u_momentum(m, dt)
-    @. m.U.future = clamp(m.U.future, -m.v_cut, m.v_cut)
-    dbg.check_nans && _check_nans_shelf!(m, "U", m.U.future)
-
     step_v_momentum(m, dt)
-    @. m.V.future = clamp(m.V.future, -m.v_cut, m.v_cut)
+    clamp_velocities!(m)
+    dbg.check_nans && _check_nans_shelf!(m, "U", m.U.future)
     dbg.check_nans && _check_nans_shelf!(m, "V", m.V.future)
 
+    # Tracer bounds.  LADDIE v2 has no counterpart — it assigns T and S only from
+    # the flux-form integration and never bounds them — and they carry a real cost:
+    # with the tracers pinned the melt rate is bounded too, so an unstable run stays
+    # finite and `_check_blowup` cannot see it (see laddie-roadmap/connected-gaps.md).
+    # They are kept because they hold real-world domains together.
+    #
+    # Applied inside the domain only.  Unmasked, the salinity floor raises every
+    # inactive cell from S = 0 to S = 32, breaking the invariant that prognostics are
+    # zero outside `tmask` — the same oversight `_clamp_thickness!` used to have.
+    # It is inert for the interior solution either way, but it makes the saved fields
+    # honest and keeps out-of-domain values from looking like data.
     step_temperature(m, dt)
-    @. m.T.future = clamp(m.T.future, -5, 5)
+    @. m.T.future = ifelse(m.tmask > 0, clamp(m.T.future, -5, 5), m.T.future)
     dbg.check_nans && _check_nans_shelf!(m, "T", m.T.future)
 
     step_salinity(m, dt)
-    @. m.S.future = clamp(m.S.future, 32, 36)
+    @. m.S.future = ifelse(m.tmask > 0, clamp(m.S.future, 32, 36), m.S.future)
     dbg.check_nans && _check_nans_shelf!(m, "S", m.S.future)
     return
 end
@@ -688,8 +702,64 @@ function advance_leapfrog!(m)
     return
 end
 
+# Per-point scale factors for the speed limiter.  Reads U and V, writes neither,
+# so the factors are all computed from the unlimited field and the result cannot
+# depend on the order the components are written.
+#
+# On the C-grid U and V are not co-located, so the partner component is averaged
+# onto the point being limited — the same four-point stencil the bottom-drag
+# terms use (`u_bottom_drag` / `v_bottom_drag` in physics.jl).
+@kernel function _speed_scale_kernel!(sU, sV, @Const(U), @Const(V), v_cut, Ny, Nx)
+    i, j = @index(Global, NTuple)
+    FT = typeof(v_cut)
+    @inbounds begin
+        n = _north(i, Ny)
+        s = _south(i, Ny)
+        e = _east(j, Nx)
+        w = _west(j, Nx)
+        Vbar = (V[i, j] + V[s, j] + V[i, e] + V[s, e]) / FT(4)   # V at the U-point
+        Ubar = (U[i, j] + U[i, w] + U[n, j] + U[n, w]) / FT(4)   # U at the V-point
+        spdU = sqrt(U[i, j] * U[i, j] + Vbar * Vbar)
+        spdV = sqrt(V[i, j] * V[i, j] + Ubar * Ubar)
+        sU[i, j] = spdU > v_cut ? v_cut / spdU : one(FT)
+        sV[i, j] = spdV > v_cut ? v_cut / spdV : one(FT)
+    end
+end
+
+@kernel function _apply_scale_kernel!(U, V, @Const(sU), @Const(sV))
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        U[i, j] = U[i, j] * sU[i, j]
+        V[i, j] = V[i, j] * sV[i, j]
+    end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Cap the flow **speed** at `Params.v_cut` by scaling both velocity components with
+one factor, `(U, V) *= min(1, v_cut / |u|)`, so the flow direction is preserved.
+
+This mirrors LADDIE v2 (`laddie_velocity.f90`, "Cutoff velocities to ensure
+Uabs <= Uabs_max").  Clamping each component independently — as LADDIE.jl did
+before — rotates the velocity vector whenever one component saturates and the
+other does not, and admits speeds up to `√2 · v_cut` along the diagonal.
+
+Idempotent, so applying it twice in a step is harmless.
+"""
 function clamp_velocities!(m)
-    launch!(_clamp_kernel!, m.U.future, m.U.future, -m.v_cut, m.v_cut)
-    launch!(_clamp_kernel!, m.V.future, m.V.future, -m.v_cut, m.v_cut)
+    ny, nx = size(m.U.future)
+    launch!(
+        _speed_scale_kernel!,
+        m.U.future,
+        m.scaleU,
+        m.scaleV,
+        m.U.future,
+        m.V.future,
+        m.v_cut,
+        ny,
+        nx,
+    )
+    launch!(_apply_scale_kernel!, m.U.future, m.U.future, m.V.future, m.scaleU, m.scaleV)
     return
 end

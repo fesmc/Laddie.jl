@@ -2,6 +2,14 @@
 # Lateral momentum viscosity
 #############################
 
+"""
+Abstract supertype for lateral (horizontal) momentum viscosity closures.
+Pass a concrete instance as `Params(; lateral_viscosity = ...)`:
+[`PrescribedLateralViscosity`](@ref) (constant coefficient, the default) or
+[`NonlinearLateralViscosity`](@ref) (shear-scaled, as in LADDIE v2).
+
+Tracer diffusivity `Params.K_h` is always a constant and is unaffected.
+"""
 abstract type AbstractLateralViscosity end
 
 """
@@ -27,12 +35,15 @@ implementation (`laddie_velocity.f90:260`). Instead of a constant coefficient,
 the viscosity at each interior face is
 
 ```math
-A_h^{\\mathrm{eff}} = \\frac{C_{\\mathrm{visc}}}{100}\\,\\Delta\\,|\\delta u|,
+A_h^{\\mathrm{eff}} = \\frac{C_{\\mathrm{visc}}}{100}\\,\\Delta\\,\\lVert\\delta\\mathbf{u}\\rVert,
 ```
 
 with `Δ` the grid spacing across that face (`dx` for east/west faces, `dy` for
-north/south) and `δu` the velocity difference across it, so the diffusive flux
-goes as `|δu|·δu`. This is a Smagorinsky-type closure — near-zero viscosity in
+north/south) and ``\\lVert\\delta\\mathbf{u}\\rVert = \\sqrt{\\delta U^2 + \\delta V^2}``
+the magnitude of the full velocity-difference *vector* across it — the
+reference's `dUabs`, so one isotropic coefficient serves both momentum
+components on a face. The flux of each component then goes as
+``\\lVert\\delta\\mathbf{u}\\rVert\\,\\delta U``. This is a Smagorinsky-type closure — near-zero viscosity in
 smooth flow, large viscosity where shear is strong — rather than the plain
 Laplacian of [`PrescribedLateralViscosity`](@ref).
 
@@ -52,14 +63,12 @@ by always scaling the `grline_bc`/`land_bc` wall-drag terms with the global
 `Params.A_h`, never with `C_visc`. Wall slip itself (free-slip vs no-slip) is
 controlled independently by `Params.grline_bc` / `Params.land_bc`.
 
-!!! note "Deviation from the reference"
-    The reference builds its coefficient from the magnitude of the full
-    velocity-difference *vector*, `√(ΔU² + ΔV²)`, so one isotropic coefficient
-    serves both momentum components on a face. Laddie.jl uses the difference of
-    the component being diffused (`|ΔU|` in the `U` equation, `|ΔV|` in `V`),
-    because on a staggered C-grid the cross-component difference is not
-    collocated with the face and would need extra interpolation. The closure is
-    therefore slightly anisotropic compared with the reference.
+!!! note "C-grid staggering"
+    The reference collocates `U` and `V` at triangle centres, so `dUabs` is a
+    direct difference. On Laddie.jl's staggered C-grid the cross-component must
+    first be interpolated onto this component's points; the same 4-point average
+    the quadratic-drag term uses for the speed magnitude is applied
+    (`ip_half(jm_half(V))` for the `U` equation, `jp_half(im_half(U))` for `V`).
 
 Select via `Params(; lateral_viscosity = NonlinearLateralViscosity(10.0))`.
 """

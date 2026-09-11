@@ -1,3 +1,9 @@
+"""
+Abstract supertype for the upper bound applied to the layer thickness `D` after
+each step.  Pass a concrete instance as `Params(; max_layer_thickness = ...)`:
+[`TopographicMaxLayerThickness`](@ref) (the default),
+[`AbsoluteMaxLayerThickness`](@ref), or [`RelativeMaxLayerThickness`](@ref).
+"""
 abstract type AbstractMaxLayerThickness end
 
 """
@@ -16,10 +22,35 @@ bound that does not depend on bathymetry.
 Select via `Params(; max_layer_thickness = TopographicMaxLayerThickness())`.
 """
 struct TopographicMaxLayerThickness <: AbstractMaxLayerThickness end
+"""
+$(TYPEDSIGNATURES)
+
+Cap the layer thickness at a fixed value, `D <= D_max`, independent of
+bathymetry.  Useful when no bed elevation is available.
+
+- `D_max`: maximum layer thickness in metres (default `100`).
+
+Select via `Params(; max_layer_thickness = AbsoluteMaxLayerThickness(100.0))`.
+
+See also [`TopographicMaxLayerThickness`](@ref) (the default) and
+[`RelativeMaxLayerThickness`](@ref).
+"""
 @kwdef struct AbsoluteMaxLayerThickness{FT} <: AbstractMaxLayerThickness
     D_max::FT = 100
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Cap the layer thickness at a fraction of the local water-column depth,
+`D <= f_D_max * (z_draft - z_bed)`, leaving some ambient column beneath the
+plume.  Like [`TopographicMaxLayerThickness`](@ref) this only bites when
+`z_bed_raw` was supplied to `Model`.
+
+- `f_D_max`: fraction of the water column (default `4/5`).
+
+Select via `Params(; max_layer_thickness = RelativeMaxLayerThickness(0.8))`.
+"""
 @kwdef struct RelativeMaxLayerThickness{FT} <: AbstractMaxLayerThickness
     f_D_max::FT = 4/5
 end

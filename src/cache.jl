@@ -78,6 +78,11 @@ mutable struct Cache{FT,A<:AbstractMatrix{FT},GamT,Conv2}
     # Per-point scale factors for the speed-preserving velocity limiter
     scaleU::A
     scaleV::A
+    # Cross-component velocity collocated onto the other grid's points, so
+    # NonlinearLateralViscosity can form |Δu| = √(ΔU² + ΔV²) across a face the
+    # way the reference does.  Unused by PrescribedLateralViscosity.
+    VatU::A
+    UatV::A
 end
 
 _gamT_init(FT, _, _, ::Type{<:FixedGamTMelting}) = zero(FT)
@@ -167,5 +172,7 @@ function Cache(FT::Type, MP::Type, CS::Type, ny::Int, nx::Int)
         copy(z),                   # DT, DS
         copy(z),
         copy(z),                   # scaleU, scaleV
+        copy(z),
+        copy(z),                   # VatU, UatV
     )
 end

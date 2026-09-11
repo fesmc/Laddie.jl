@@ -367,7 +367,7 @@ $(TYPEDSIGNATURES)
 Reference-LADDIE mechanical-energy entrainment: ``e = 2\\mu u_\\star^3 / (g D \\delta\\rho)`` minus a melt
 detrainment correction. This is the form verified against the Python reference
 (Lambert et al. 2023; see `docs/src/equations.md`). Contrast
-[`_compute_entrainment!`](@ref)`(m, ::GasparEntrainment)`, the literal Eq. 14.
+`_compute_entrainment!(m, ::GasparEntrainment)`, the literal Eq. 14.
 """
 function _compute_entrainment!(m, ep::LambertEntrainment)
     mu2_over_g = (ep.mu + ep.mu) / m.g

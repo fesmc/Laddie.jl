@@ -286,6 +286,7 @@ end
     slip,
     dslip_gl,
     dslip_land,
+    A_h,
     dx2,
     dy2,
     Ny,
@@ -311,7 +312,7 @@ end
         flux_S = jmD * (var[s, j] - v) / dy2 * (o - ocnyp1[i, j]) - dragS * grdSu[i, j]
         flux_E = D0[i, e] * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j])
         flux_W = D0[i, j] * (var[i, w] - v) / dx2 * (o - ocn[i, j])
-        out[i, j] = flux_N + flux_S + flux_E + flux_W
+        out[i, j] = (flux_N + flux_S + flux_E + flux_W) * A_h
     end
 end
 
@@ -335,6 +336,7 @@ end
     slip,
     dslip_gl,
     dslip_land,
+    A_h,
     dx2,
     dy2,
     Ny,
@@ -358,13 +360,16 @@ end
         flux_S = D0[i, j] * (var[s, j] - v) / dy2 * (o - ocn[i, j])
         flux_E = ipD * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
         flux_W = imD * (var[i, w] - v) / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
-        out[i, j] = flux_N + flux_S + flux_E + flux_W
+        out[i, j] = (flux_N + flux_S + flux_E + flux_W) * A_h
     end
 end
 
 # Shear-scaled (NonlinearLateralViscosity) counterparts of _laplace_U_kernel!/
 # _laplace_V_kernel!: same geometry and masking, but each interior flux term gets
-# its own coefficient visc_? * |Δvar| in place of a single constant A_h, where
+# its own coefficient visc_? * |Δu| in place of a single constant A_h, where |Δu|
+# is the magnitude of the full velocity-difference *vector* across that face
+# (the reference's dUabs), not just the component being diffused — hence `other`,
+# the cross-component collocated onto this component's points.  Where
 # visc_x/visc_y = C_visc * dx/100 and C_visc * dy/100 carry the reference's
 # dUabs * triCw / 100 scaling (laddie_velocity.f90:260).  The grounding-line/land
 # wall-drag terms keep the plain, unscaled A_h_wall — mirroring the reference,
@@ -372,6 +377,7 @@ end
 @kernel function _nonlinear_laplace_U_kernel!(
     out,
     @Const(var),
+    @Const(other),
     @Const(D0),
     @Const(D_on_ugrid),
     @Const(tmask_jp),
@@ -416,14 +422,21 @@ end
             D_on_ugrid[i, j] * v / dy2
         jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[n, j], tmask_jp[i, j])
         jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[s, j], tmask_jm[i, j])
+        ov = other[i, j]
         dN = var[n, j] - v
         dS = var[s, j] - v
         dE = var[i, e] - v
         dW = var[i, w] - v
-        flux_N = visc_y * abs(dN) * jpD * dN / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
-        flux_S = visc_y * abs(dS) * jmD * dS / dy2 * (o - ocnyp1[i, j]) - dragS * grdSu[i, j]
-        flux_E = visc_x * abs(dE) * D0[i, e] * dE / dx2 * (o - ocnxm1[i, j])
-        flux_W = visc_x * abs(dW) * D0[i, j] * dW / dx2 * (o - ocn[i, j])
+        # |Δu| across each face: this component's difference combined with the
+        # cross-component's difference over the same displacement.
+        aN = sqrt(dN * dN + (other[n, j] - ov)^2)
+        aS = sqrt(dS * dS + (other[s, j] - ov)^2)
+        aE = sqrt(dE * dE + (other[i, e] - ov)^2)
+        aW = sqrt(dW * dW + (other[i, w] - ov)^2)
+        flux_N = visc_y * aN * jpD * dN / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
+        flux_S = visc_y * aS * jmD * dS / dy2 * (o - ocnyp1[i, j]) - dragS * grdSu[i, j]
+        flux_E = visc_x * aE * D0[i, e] * dE / dx2 * (o - ocnxm1[i, j])
+        flux_W = visc_x * aW * D0[i, j] * dW / dx2 * (o - ocn[i, j])
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -431,6 +444,7 @@ end
 @kernel function _nonlinear_laplace_V_kernel!(
     out,
     @Const(var),
+    @Const(other),
     @Const(D0),
     @Const(D_on_vgrid),
     @Const(tmask_ip),
@@ -475,14 +489,20 @@ end
             D_on_vgrid[i, j] * v / dx2
         ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, e], tmask_ip[i, j])
         imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, w], tmask_im[i, j])
+        ov = other[i, j]
         dN = var[n, j] - v
         dS = var[s, j] - v
         dE = var[i, e] - v
         dW = var[i, w] - v
-        flux_N = visc_y * abs(dN) * D0[n, j] * dN / dy2 * (o - ocnym1[i, j])
-        flux_S = visc_y * abs(dS) * D0[i, j] * dS / dy2 * (o - ocn[i, j])
-        flux_E = visc_x * abs(dE) * ipD * dE / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
-        flux_W = visc_x * abs(dW) * imD * dW / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
+        # See _nonlinear_laplace_U_kernel! for the |Δu| composition.
+        aN = sqrt(dN * dN + (other[n, j] - ov)^2)
+        aS = sqrt(dS * dS + (other[s, j] - ov)^2)
+        aE = sqrt(dE * dE + (other[i, e] - ov)^2)
+        aW = sqrt(dW * dW + (other[i, w] - ov)^2)
+        flux_N = visc_y * aN * D0[n, j] * dN / dy2 * (o - ocnym1[i, j])
+        flux_S = visc_y * aS * D0[i, j] * dS / dy2 * (o - ocn[i, j])
+        flux_E = visc_x * aE * ipD * dE / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
+        flux_W = visc_x * aW * imD * dW / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -661,9 +681,9 @@ end
 laplace_U(m) = laplace_U(m, m.lateral_viscosity)
 laplace_V(m) = laplace_V(m, m.lateral_viscosity)
 
-# PrescribedLateralViscosity: unchanged geometry-only kernel (bit-identical with
-# pre-AbstractLateralViscosity Laddie.jl), scaled by the global A_h afterwards —
-# exactly what the momentum kernels used to do themselves.
+# PrescribedLateralViscosity: the plain Laplacian kernel, with the global A_h
+# folded into its output — exactly the product the momentum kernels used to form
+# themselves, so this stays bit-identical to pre-AbstractLateralViscosity Laddie.jl.
 function laplace_U(m, ::PrescribedLateralViscosity)
     ny, nx = size(m.U.past)
     dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
@@ -690,12 +710,12 @@ function laplace_U(m, ::PrescribedLateralViscosity)
         m.slip,
         dslip_gl,
         dslip_land,
+        m.A_h,
         m.dx^2,
         m.dy^2,
         ny,
         nx,
     )
-    m.lU .*= m.A_h
     return m.lU
 end
 function laplace_V(m, ::PrescribedLateralViscosity)
@@ -724,12 +744,12 @@ function laplace_V(m, ::PrescribedLateralViscosity)
         m.slip,
         dslip_gl,
         dslip_land,
+        m.A_h,
         m.dx^2,
         m.dy^2,
         ny,
         nx,
     )
-    m.lV .*= m.A_h
     return m.lV
 end
 
@@ -740,11 +760,15 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
     ny, nx = size(m.U.past)
     dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
     dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
+    # V collocated onto the U points, so the kernel can form |Δu| across a face.
+    # Same 4-point average the drag term uses for the speed magnitude.
+    m.VatU .= ip_half(jm_half(m.V.past))
     launch!(
         _nonlinear_laplace_U_kernel!,
         m.lU,
         m.lU,
         m.U.past,
+        m.VatU,
         m.D.present,
         m.D_on_ugrid,
         m.tmask_jp,
@@ -776,11 +800,14 @@ function laplace_V(m, lv::NonlinearLateralViscosity)
     ny, nx = size(m.V.past)
     dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
     dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
+    # U collocated onto the V points; mirrors laplace_U above.
+    m.UatV .= jp_half(im_half(m.U.past))
     launch!(
         _nonlinear_laplace_V_kernel!,
         m.lV,
         m.lV,
         m.V.past,
+        m.UatV,
         m.D.present,
         m.D_on_vgrid,
         m.tmask_ip,

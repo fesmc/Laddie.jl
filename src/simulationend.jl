@@ -5,6 +5,11 @@
 # shorthand for `until = FixedSimulationEnd(t_end = days)`.
 # ============================================================================
 
+"""
+Abstract supertype for the stopping criterion of `run!`.  Pass a concrete
+instance via `RunConfig`/`run!`: [`FixedSimulationEnd`](@ref) (run a set
+duration) or [`SteadyStateEnd`](@ref) (stop once the solution settles).
+"""
 abstract type AbstractSimulationEnd end
 
 """

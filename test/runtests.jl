@@ -643,6 +643,22 @@ end
         run!(m_nl_ns; days = 1.0, verbose = false)
         @test all(isfinite, m_nl_ns.D.present) && all(isfinite, m_nl_ns.melt)
         @test m_nl_ns.V.present != m_nl.V.present
+
+        # The coefficient uses the full velocity-difference norm √(ΔU² + ΔV²),
+        # as the reference's dUabs does — not just the component being diffused.
+        # So changing V alone must change the U-viscosity, which a per-component
+        # |ΔU| coefficient could not do.  Scale rather than offset V: the norm
+        # sees only *differences*, so a uniform shift would change nothing.  For
+        # the same reason the flux is coeff * ΔU, so this is only visible where
+        # ΔU is itself nonzero — i.e. in the shelf interior, not at a wall.
+        lU_before = copy(Laddie.laplace_U(m_nl))
+        m_nl.V.past .*= 2
+        @test Laddie.laplace_U(m_nl) != lU_before
+        # ...and the same coupling must be absent under the plain Laplacian,
+        # whose coefficient is a constant and never reads V at all.
+        lU0_before = copy(Laddie.laplace_U(m_def))
+        m_def.V.past .*= 2
+        @test Laddie.laplace_U(m_def) == lU0_before
     end
 
     @testset "Gaps BC: mask plumbing, SinkGapsBC bit-identical, ConnectedGapsBC differs" begin

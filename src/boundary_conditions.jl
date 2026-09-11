@@ -2,6 +2,13 @@
 # Grounding Line BC
 #############################
 
+"""
+Abstract supertype for the momentum boundary condition at grounding-line walls
+(mask value `2`).  Pass a concrete instance as `Params(; grline_bc = ...)`:
+[`FreeSlipGL`](@ref) (the default) or [`NoSlipGL`](@ref).
+
+Walls bordering exposed rock are governed separately by [`AbstractLandBC`](@ref).
+"""
 abstract type AbstractGroundingLineBC end
 
 """
@@ -44,6 +51,15 @@ _gl_slip(::NoSlipGL, slip) = oftype(slip, 2)
 # Land BC
 #############################
 
+"""
+Abstract supertype for the momentum boundary condition at land walls (mask value
+`1`: exposed bedrock, islands, and the outer border ring).  Pass a concrete
+instance as `Params(; land_bc = ...)`: [`FreeSlipLand`](@ref) (the default) or
+[`NoSlipLand`](@ref).
+
+The grounding line is governed separately by [`AbstractGroundingLineBC`](@ref);
+at a corner touching both, the grounding line takes precedence.
+"""
 abstract type AbstractLandBC end
 
 """
@@ -118,6 +134,15 @@ struct NoInflow <: AbstractOpenOceanBC end
 # Ice-front pressure gradient
 #############################
 
+"""
+Abstract supertype for the treatment of the layer-thickness-gradient part of the
+pressure-gradient force at one-sided faces — the ice front, and the edges of a gap
+demoted to ocean by [`SinkGapsBC`](@ref).  Pass a concrete instance as
+`Params(; front_pressure = ...)`: [`FullDepthGradient`](@ref) (Python LADDIE v1.x,
+the default) or [`TruncatedDepthGradient`](@ref) (LADDIE v2).
+
+The grounding line is unaffected either way — no momentum equation is solved there.
+"""
 abstract type AbstractFrontPressure end
 
 """
@@ -172,6 +197,12 @@ _front_pgf_weight(::TruncatedDepthGradient, x) = one(x)
 # Gaps BC
 #############################
 
+"""
+Abstract supertype for the treatment of ice-shelf gaps — ice-free cells inside
+the shelf domain, marked `4` in the mask.  Pass a concrete instance as
+`Params(; gaps_bc = ...)`: [`SinkGapsBC`](@ref) (the default, gaps act as sinks)
+or [`ConnectedGapsBC`](@ref) (gaps stay dynamically connected).
+"""
 abstract type AbstractGapsBC end
 
 """

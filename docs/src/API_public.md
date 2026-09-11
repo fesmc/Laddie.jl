@@ -18,6 +18,9 @@ to_backend
 ```@docs
 build_laddie_mask
 ice_base_depth
+bed_elevation
+fill_ocean_holes!
+fill_shelf_holes!
 ```
 
 ### Model container
@@ -44,6 +47,7 @@ HollandEntrainment
 ```@docs
 FixedGamTMelting
 TurbulentGamTMelting
+PrescribedMelting
 ```
 
 #### Convection
@@ -64,6 +68,7 @@ NoInflow
 #### Grounding line
 
 ```@docs
+AbstractGroundingLineBC
 FreeSlipGL
 NoSlipGL
 ```
@@ -71,6 +76,7 @@ NoSlipGL
 #### Land
 
 ```@docs
+AbstractLandBC
 FreeSlipLand
 NoSlipLand
 ```
@@ -78,6 +84,7 @@ NoSlipLand
 #### Lateral viscosity
 
 ```@docs
+AbstractLateralViscosity
 PrescribedLateralViscosity
 NonlinearLateralViscosity
 ```
@@ -85,8 +92,26 @@ NonlinearLateralViscosity
 #### Ice-front pressure gradient
 
 ```@docs
+AbstractFrontPressure
 FullDepthGradient
 TruncatedDepthGradient
+```
+
+#### Shelf gaps
+
+```@docs
+AbstractGapsBC
+SinkGapsBC
+ConnectedGapsBC
+```
+
+#### Maximum layer thickness
+
+```@docs
+AbstractMaxLayerThickness
+TopographicMaxLayerThickness
+AbsoluteMaxLayerThickness
+RelativeMaxLayerThickness
 ```
 
 #### Time stepping
@@ -94,11 +119,14 @@ TruncatedDepthGradient
 ```@docs
 FixedDt
 AdaptiveDt
+ConservativeCFL
+ExactCFL
 ```
 
 #### Simulation end
 
 ```@docs
+AbstractSimulationEnd
 FixedSimulationEnd
 SteadyStateEnd
 ```

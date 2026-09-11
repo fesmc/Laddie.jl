@@ -140,7 +140,9 @@ end
 _update_conv2!(::Any, ::ClampDensity) = nothing
 _update_conv2!(::Any, ::ResetToAmbient) = nothing
 function _update_conv2!(m, c_p::RelaxToAmbient)
-    @. m.conv2 = (m.drho < 0) * m.D.present / c_p.convection_time
+    # `imask`, not `tmask`: gap cells are never relaxed towards ambient.  See
+    # `update_convection!(m, ::RelaxToAmbient)`.
+    @. m.conv2 = (m.drho < 0) * m.imask * m.D.present / c_p.convection_time
 end
 
 function precompute_integration_terms!(m)

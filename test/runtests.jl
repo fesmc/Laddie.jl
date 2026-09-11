@@ -740,12 +740,127 @@ end
         @test all(exch[gap_ix] .== 0)
         @test any(exch[shelf] .!= 0)               # still active under the ice
 
+        # -- Bucket 4: convection must never reset a gap cell ------------------
+        # A gap samples ambient at the sea surface (z_draft = 0), which is the
+        # coldest, freshest water in the column, so `drho < 0` there is close to
+        # unconditional.  Ungated, ResetToAmbient would overwrite the T/S anomaly
+        # the layer carries across the gap every single step, rebuilding the very
+        # sink ConnectedGapsBC exists to remove.
+        cv_params(scheme) = Params(; FT, gaps_bc = ConnectedGapsBC(),
+                                   convection_scheme = scheme)
+        # Cool every active cell to drive the whole domain convectively unstable.
+        function destabilize(scheme)
+            m = build(gappy_mask(), cv_params(scheme))
+            m.T.present[m.tmask .> 0] .-= 5
+            Laddie.update_density!(m)
+            @test all(m.drho[gap_ix] .< 0) && all(m.drho[shelf] .< 0)
+            return m, copy(m.T.present), copy(m.S.present)
+        end
+
+        m_rst, T0, S0 = destabilize(ResetToAmbient(FT(0.005)))
+        Laddie.update_convection!(m_rst)
+        @test m_rst.T.present[gap_ix] == T0[gap_ix]      # gaps keep their heat ...
+        @test m_rst.S.present[gap_ix] == S0[gap_ix]
+        @test all(m_rst.convection[gap_ix] .== 0)        # ... and are never flagged
+        @test all(m_rst.T.present[shelf] .!= T0[shelf])  # ice-covered cells do reset
+        @test all(m_rst.convection[shelf] .== 1)
+
+        # RelaxToAmbient is the same sink applied gradually, so conv2 is gated too.
+        m_rlx, _, _ = destabilize(RelaxToAmbient(FT(10000.0)))
+        Laddie.update_convection!(m_rlx)
+        Laddie.precompute_integration_terms!(m_rlx)
+        @test all(m_rlx.conv2[gap_ix] .== 0)
+        @test all(m_rlx.conv2[shelf] .> 0)
+
+        # ClampDensity is deliberately *not* gated: the buoyancy floor is the one
+        # convection treatment LADDIE v2 also has, and it applies over its whole
+        # active domain, gaps included.
+        m_cld, _, _ = destabilize(ClampDensity(FT(0.005)))
+        Laddie.update_convection!(m_cld)
+        @test all(m_cld.drho[gap_ix] .≈ FT(0.005) / m_cld.rho0_seawater)
+
+        # End-to-end: gap cells really do sit below the reset threshold during a
+        # run — ungated the reset would keep firing there — yet the layer still
+        # arrives warmer than the surface ambient it is crossing.
+        m_cv = build(gappy_mask(), Params(; FT, gaps_bc = ConnectedGapsBC()))
+        @test getfield(m_cv, :params).convection_scheme isa ResetToAmbient
+        run!(m_cv; days = 1.0, verbose = false)
+        @test any(m_cv.drho[gap_ix] .< FT(0.005) / m_cv.rho0_seawater)
+        @test all(m_cv.convection[gap_ix] .== 0)
+        @test all(m_cv.T.present[gap_ix] .> m_cv.Ta[gap_ix])
+
         # -- Connected differs from sink, and stays physical -------------------
         run!(mc; days = 1.0, verbose = false)
         @test all(isfinite, mc.D.present) && all(isfinite, mc.melt)
         @test all(mc.melt[mc.imask .> 0] .>= 0)
         @test all(mc.melt[gap_ix] .== 0)           # still zero after integrating
         @test mc.melt != m_sink.melt
+    end
+
+    @testset "Gaps BC: meltwater crosses a gap in the ISOMIP+ boundary current" begin
+        # The science test for ConnectedGapsBC.  ISOMIP+ channel, coarsened to
+        # 60x20 so three runs stay cheap.  Coriolis steers the plume into a
+        # boundary current against the high-y wall (rows 19-21 of 22), which is
+        # where a gap does the most damage — Jesse et al. (2026), Fig. 3.
+        dx, dy = 8000.0, 4000.0
+        base = build_isomip(CPU(); FT, nx = 60, ny = 20, dx, dy, isomipcond = :warm)
+        mask0, band = copy(base.mask), 19:21
+        rows, cols = 19:21, 30:32              # the gap: 12 km across, 24 km along
+
+        # Melt-through thins the ice it eats through, so taper the draft to zero
+        # over six cells around the gap rather than leaving a 400 m cliff at its
+        # edge.  A cliff is admissible — the reference accepts exactly that — but
+        # its pressure slope, some 40x the shelf's own, would swamp the signal
+        # being measured here.
+        z_draft = copy(base.z_draft)
+        for j in axes(z_draft, 1), i in axes(z_draft, 2)
+            r = max(max(first(rows) - j, j - last(rows), 0),
+                    max(first(cols) - i, i - last(cols), 0))
+            z_draft[j, i] *= clamp(r / 6, 0, 1)
+        end
+        gappy = copy(mask0); gappy[rows, cols] .= 4
+
+        function channel(mask, bc)
+            m = Model(mask, z_draft, dx, dy, ISOMIPForcing(FT, :warm),
+                      Params(; FT, gaps_bc = bc);
+                      FT, domain_cropping = NoDomainCropping())
+            run!(m; days = 20.0, verbose = false)
+            return m
+        end
+        m_sink = channel(gappy, SinkGapsBC())
+        m_conn = channel(gappy, ConnectedGapsBC())
+        m_none = channel(mask0, SinkGapsBC())    # same draft, no gap: the control
+
+        for m in (m_sink, m_conn, m_none)
+            @test all(isfinite, m.melt) && all(isfinite, m.D.present)
+            @test all(m.melt .>= 0)
+        end
+        @test all(m_conn.melt[rows, cols] .== 0)   # a gap has no ice to melt
+
+        mn(a) = sum(a) / length(a)
+        meltsum(m, c) = sum(m.melt[band, c]) * m.seconds_per_year
+        up, down = 5:22, 36:58
+
+        # Upstream of the gap the two treatments are indistinguishable, and both
+        # match the no-gap control: what happens at the gap does not reach back.
+        @test meltsum(m_conn, up) ≈ meltsum(m_sink, up) rtol = 1e-3
+        @test meltsum(m_conn, up) ≈ meltsum(m_none, up) rtol = 1e-3
+
+        # At the gap the two diverge completely: the sink terminates the boundary
+        # current (Fig. 3r), the connected layer carries it through (Fig. 3v).
+        @test maximum(abs.(m_sink.U.present[band, cols])) < 0.05
+        @test minimum(maximum(abs.(m_conn.U.present[band, c])) for c in cols) > 0.2
+
+        # Downstream the sink has drained the cavity and melt collapses, while
+        # the connected layer arrives faster, thicker and warmer and melts almost
+        # as much as if the gap had never opened — which is the point, given the
+        # gap itself melts nothing.
+        @test meltsum(m_conn, down) > 1.4 * meltsum(m_sink, down)
+        @test meltsum(m_conn, down) ≈ meltsum(m_none, down) rtol = 0.05
+        @test mn(abs.(m_conn.U.present[band, down])) >
+              1.2 * mn(abs.(m_sink.U.present[band, down]))
+        @test mn(m_conn.T.present[band, down]) >
+              mn(m_sink.T.present[band, down]) + 0.01
     end
 
     @testset "Time stepper: FixedDt default/equivalence, AdaptiveDt threading" begin

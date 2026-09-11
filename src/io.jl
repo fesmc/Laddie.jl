@@ -447,6 +447,9 @@ function _create_output_file!(m)
         # Static fields — written once
         if m.save_mask
             defVar(ds, "mask", Int32, ("y", "x"))[:, :] = Int32.(_int(m.mask))
+            # Under ConnectedGapsBC a gap (mask 4) is active but not ocean, so it does
+            # not mark an ice front: `at_isf` then traces only the outer edge of the
+            # connected region, which is what the calving front actually is.
             at_isf = _int(
                 (m.tmask .> 0) .&
                 (m.ocnxm1 .+ m.ocnxp1 .+ m.ocnym1 .+ m.ocnyp1 .> 0),
@@ -456,7 +459,7 @@ function _create_output_file!(m)
                 "at_isf",
                 Int8,
                 ("y", "x");
-                attrib = ["long_name" => "shelf cell at ice-shelf front (ocean neighbour)"],
+                attrib = ["long_name" => "active cell at ice-shelf front (ocean neighbour)"],
             )[:, :] = Int8.(at_isf)
             # Wall diagnostics are split by wall type so a margin can be told apart
             # at a glance: `at_grl` is the grounding line (grounded ice, mask 2) and
@@ -487,6 +490,19 @@ function _create_output_file!(m)
                     "long_name" => "shelf cell at a land margin (bedrock neighbour)",
                 ],
             )[:, :] = Int8.(at_lnd)
+            # The internal margin opened by melt-through.  All zeros under
+            # SinkGapsBC, which demotes gaps to ocean before the grid is built —
+            # so this field also records which gap treatment ran.
+            at_gap = _int((mask_c .== 3) .& _touches(4))
+            defVar(
+                ds,
+                "at_gap",
+                Int8,
+                ("y", "x");
+                attrib = [
+                    "long_name" => "shelf cell at a melt-through gap (gap neighbour)",
+                ],
+            )[:, :] = Int8.(at_gap)
         end
         if m.save_zb
             defVar(ds, "z_draft", Float64, ("y", "x"); attrib = ["units" => "m"])[:, :] =

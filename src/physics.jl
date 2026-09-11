@@ -183,6 +183,10 @@ $(TYPEDSIGNATURES)
 
 Flag convectively unstable cells and clamp ``\\delta\\rho`` to a minimum positive value
 so the plume remains denser than ambient.
+
+Applies in gap cells too (`tmask` but not `imask`): the buoyancy floor is the one
+convection treatment LADDIE v2 also has, and it applies there over its whole active
+domain, gaps included.
 """
 function update_convection!(m, c_p::ClampDensity)
     thr = c_p.d_rho_min / m.rho0_seawater
@@ -195,13 +199,19 @@ $(TYPEDSIGNATURES)
 
 Flag convectively unstable cells, then instantly reset their T/S to ambient
 values so the density remains stable.
+
+Restricted to ice-covered cells (`imask`).  In a gap the ambient profile is sampled at
+the sea surface, where it is cold and fresh, so `drho < 0` is close to unconditional
+there; resetting would overwrite the T/S anomaly the layer is carrying across the gap
+and rebuild the meltwater sink that [`ConnectedGapsBC`](@ref) exists to remove.  LADDIE
+v2 has no reset scheme to copy here, so this is a Laddie.jl-only decision.
 """
 function update_convection!(m, c_p::ResetToAmbient)
     thr = c_p.d_rho_min / m.rho0_seawater
     S_adj = c_p.d_rho_min / (m.rho0_seawater * m.beta)
-    @. m.convection = m.drho < 0
-    @. m.T.present = ifelse(m.drho < thr, m.Ta, m.T.present)
-    @. m.S.present = ifelse(m.drho < thr, m.Sa - S_adj, m.S.present)
+    @. m.convection = (m.drho < 0) * m.imask
+    @. m.T.present = ifelse((m.drho < thr) & (m.imask > 0), m.Ta, m.T.present)
+    @. m.S.present = ifelse((m.drho < thr) & (m.imask > 0), m.Sa - S_adj, m.S.present)
     update_density!(m)
 end
 
@@ -210,9 +220,13 @@ $(TYPEDSIGNATURES)
 
 Flag convectively unstable cells; relaxation is applied implicitly during the
 tracer time step via `conv2`.
+
+Restricted to ice-covered cells (`imask`) for the same reason as
+[`ResetToAmbient`](@ref) — relaxing a gap cell towards surface ambient is a slower
+version of the same sink.
 """
 function update_convection!(m, ::RelaxToAmbient)
-    m.convection .= m.drho .< 0
+    @. m.convection = (m.drho < 0) * m.imask
 end
 
 update_convection!(m) = update_convection!(m, m.convection_scheme)

@@ -126,3 +126,44 @@ here.
 **Coriolis** ``fD``. At ice-shelf scale, rotation steers the meltwater into
 boundary currents rather than letting it flow straight up-slope — visible in the
 flow-speed plot of the [ISOMIP+ run](generated/isomip_run.md).
+
+## Gaps in the shelf: melt-through
+
+Where melting thins a shelf all the way through, an ice-free **gap** opens inside the
+domain. There is no ice base there, so no melt — but what happens to the meltwater layer
+arriving from upstream is genuinely uncertain, and the two defensible answers bracket a
+large range of coupled ice-sheet response (Jesse et al., 2026). LADDIE.jl offers both as
+`Params.gaps_bc`, selected on the same input mask:
+
+| | [`SinkGapsBC`](@ref) (default) | [`ConnectedGapsBC`](@ref) |
+|---|---|---|
+| gap cell is | open ocean | dynamically active, ice-free |
+| ``D, T, S`` in the gap | not stepped | stepped |
+| gap edge behaves like | the calving front | the shelf interior |
+| heat and momentum arriving at the gap | leave the cavity | continue downstream |
+
+Real gaps are full of sea ice, mélange and bergs, so neither end-member is right on its
+own; running both is how the uncertainty is quantified.
+
+A cell marked `4` is ice-free but *active*: the grid's `tmask` includes it, `imask`
+(ice-covered cells) does not, and its draft sits at the sea surface, ``z_b = 0``. Three
+consequences follow, and they are the whole of the physics change:
+
+- **No melt.** ``\dot m = 0`` by mask, not by the three-equation solve.
+- **No ice–ocean heat flux.** With ``\dot m = 0`` the three equations collapse to
+  ``T_b = T`` exactly, so the ``\dot m\,T_b - \gamma_T (T - T_b)`` pair in the temperature
+  equation vanishes identically — heat is advected across the gap rather than lost to an
+  ice base that is not there.
+- **Entrainment stays on.** It is a property of the layer's own shear and stratification,
+  not of the ice above; its detrainment term, which scales with ``\dot m``, switches
+  itself off.
+
+**Convection in gaps.** The ambient profile in a gap is sampled at the sea surface, the
+coldest and freshest water in the column, so the layer there reads as convectively
+unstable almost unconditionally. [`ResetToAmbient`](@ref) and [`RelaxToAmbient`](@ref) are
+therefore restricted to ice-covered cells: resetting a gap cell towards surface ambient
+would erase the temperature and salinity anomaly the layer is carrying and quietly rebuild
+the meltwater sink that `ConnectedGapsBC` exists to remove. [`ClampDensity`](@ref) is
+*not* restricted — a buoyancy floor keeps the layer denser than ambient without
+overwriting its tracers, and it is the one convection treatment the reference
+implementation also applies over its whole active domain.

@@ -13,14 +13,22 @@ CPU scalars.
 - `max_meltrate`  — maximum basal melt rate, m yr⁻¹
 - `mean_meltrate` — area-mean basal melt rate over floating ice, m yr⁻¹
 - `max_speed`     — maximum depth-averaged current speed |u|, m s⁻¹
+
+The melt statistics average over `imask` (ice-covered cells), not `tmask`.  Under
+[`ConnectedGapsBC`](@ref) the two differ: gap cells are dynamically active but ice-free
+and melt exactly zero, so averaging over `tmask` would dilute the mean by the gap area.
+This diverges from LADDIE v2, whose `domain_a` integration includes gaps; with no gaps
+in the mask the two masks coincide and the statistics are unchanged.  `max_speed` stays
+on `tmask` — the layer really does flow through gaps, and that flow is the point.
 """
 function meltstats(m)
-    mask = m.tmask
-    n = sum(mask)
+    imask = m.imask
+    n = sum(imask)
     meltyr = m.melt .* m.seconds_per_year
-    max_meltrate = maximum(meltyr .* mask)
-    mean_meltrate = sum(meltyr .* mask) / n
-    max_speed = maximum(sqrt.(im_half(m.U.present) .^ 2 .+ jm_half(m.V.present) .^ 2) .* mask)
+    max_meltrate = maximum(meltyr .* imask)
+    mean_meltrate = sum(meltyr .* imask) / n
+    max_speed =
+        maximum(sqrt.(im_half(m.U.present) .^ 2 .+ jm_half(m.V.present) .^ 2) .* m.tmask)
     return max_meltrate, mean_meltrate, max_speed
 end
 

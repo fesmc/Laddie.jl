@@ -6,6 +6,7 @@ const KA = KernelAbstractions
 include("entrainment.jl")
 include("melting.jl")
 include("convection.jl")
+include("coriolis.jl")
 include("boundary_conditions.jl")
 include("viscosity.jl")
 include("timestepping.jl")
@@ -38,6 +39,7 @@ export build_isomip, build_laddie_mask, ice_base_depth, bed_elevation,
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
 export AbstractMelting, FixedGamTMelting, TurbulentGamTMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
+export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D
 export AbstractMaxLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThickness
 export AbstractDomainCropping, NoDomainCropping, MinRectangleDomainCropping
 export AbstractPreprocess, FillOceanHolesPreprocess, FillShelfHolesPreprocess,
@@ -53,6 +55,8 @@ export AbstractIceSlopeGradient, PyGradient, JlGradient
 export AbstractTimeStepper, FixedDt, AdaptiveDt
 export AbstractCFL, ConservativeCFL, ExactCFL
 export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateEnd
-export AbstractForcing, ISOMIPForcing, ProfileForcing
+export AbstractOceanForcing, OceanForcing1D, ISOMIPForcing
+export AbstractIceForcing, PrescribedIceForcing
+export CavityForcing
 
 end # module Laddie

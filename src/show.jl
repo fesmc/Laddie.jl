@@ -38,9 +38,9 @@ function Base.show(io::IO, s::IOState{FT}) where {FT}
 end
 
 # Generic one-liner for any forcing; relies only on the Tz/Sz/z profile fields
-# that the model requires of every AbstractForcing.  extrema/length are
+# that the model requires of every AbstractOceanForcing.  extrema/length are
 # reductions, so this is GPU-safe (no scalar indexing).
-function _show_forcing(io::IO, f::AbstractForcing)
+function _show_forcing(io::IO, f::AbstractOceanForcing)
     zlo, zhi = extrema(f.z)
     Tlo, Thi = extrema(f.Tz)
     Slo, Shi = extrema(f.Sz)
@@ -67,10 +67,22 @@ function _show_forcing(io::IO, f::AbstractForcing)
     )
 end
 
-Base.show(io::IO, f::AbstractForcing) = _show_forcing(io, f)
-function Base.show(io::IO, f::ISOMIPForcing)
-    _show_forcing(io, f)
-    print(io, " — ISOMIP+ :", f.isomipcond)
+Base.show(io::IO, f::AbstractOceanForcing) = _show_forcing(io, f)
+
+# The ice forcing is one field, so summarise it as a range rather than printing a
+# whole matrix; a uniform field collapses to the single value.
+function Base.show(io::IO, f::AbstractIceForcing)
+    lo, hi = extrema(f.T_ice_base)
+    print(io, nameof(typeof(f)), "(T_ice_base = ")
+    lo == hi ? print(io, round(Float64(lo); digits = 2)) :
+    print(io, round(Float64(lo); digits = 2), " … ", round(Float64(hi); digits = 2))
+    print(io, " °C)")
+end
+
+function Base.show(io::IO, f::CavityForcing)
+    show(io, f.ocean)
+    print(io, "\n  ice: ")
+    show(io, f.ice)
 end
 
 function Base.show(io::IO, g::Grid{FT}) where {FT}
@@ -181,7 +193,8 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  shelf gaps     = ", p.gaps_bc)
     println(io, "  time stepper   = ", p.tstep)
     println(io, "  lat. viscosity = ", p.lateral_viscosity)
-    print(io, "  front pressure = ", p.front_pressure)
+    println(io, "  front pressure = ", p.front_pressure)
+    print(io, "  coriolis       = ", p.coriolis)
 end
 
 _backend_name(m::Model) = nameof(typeof(KA.get_backend(getfield(m, :grid).z_draft)))

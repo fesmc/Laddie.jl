@@ -89,6 +89,14 @@ struct Grid{FT,A<:AbstractMatrix{FT}}
     dzdx::A
     dzdy::A
 
+    # Coriolis parameter.  `f` is the T-point field (diagnostic, and what the
+    # reference writes out); `fu`/`fv` are its face averages, which is what the
+    # momentum kernels need — on a C-grid the two components live on different
+    # faces, so one staggered copy each.
+    f::A
+    fu::A
+    fv::A
+
     tmask::A
     imask::A
     grd::A
@@ -162,11 +170,18 @@ $(TYPEDSIGNATURES)
 Build all masks and stagger-count denominators from the raw integer `mask` and
 ice-draft array `z_draft`.  Returns an immutable typed struct.
 """
-function Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, z_bed_raw::AbstractMatrix, dx, dy; FT = Float64, gradient = JlGradient())
+function Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, z_bed_raw::AbstractMatrix, f_t::AbstractMatrix, dx, dy; FT = Float64, gradient = JlGradient())
     dx_ft = FT(dx)
     dy_ft = FT(dy)
     z_draft_ft = FT.(z_draft)
     z_bed_ft = FT.(z_bed_raw)
+
+    # Plain arithmetic face averages, not the masked `ip_t`/`jp_t` used for
+    # prognostics: `f` is a property of position on Earth and is defined in every
+    # cell, including the ones outside the domain, so there is nothing to mask out.
+    f = FT.(f_t)
+    fu = ip_half(f)
+    fv = jp_half(f)
 
     # Primary classification.  Shelf (3) and gap (4) cells are both dynamically
     # active — every prognostic is stepped there — so they share `tmask`.  Only
@@ -277,6 +292,9 @@ function Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, z_bed_raw::Abs
         z_bed_ft,
         dzdx,
         dzdy,
+        f,
+        fu,
+        fv,
         tmask,
         imask,
         grd,

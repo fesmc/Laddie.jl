@@ -2,8 +2,7 @@
 $(TYPEDSIGNATURES)
 
 Ambient T/S profiles from pre-loaded vectors — use this when the profile data
-comes from a CSV file, an in-memory dataset, or any source other than the
-NetCDF layout that `FileForcing` expects.
+comes from a CSV file, an in-memory dataset, or any other source.
 
 `z` is depth in metres (negative below sea level) and need not be sorted or
 uniformly spaced: the profiles are sorted by depth and resampled to the 1-m
@@ -13,10 +12,10 @@ data range.
 # Example
 ```julia
 data = readdlm("profile-T.csv", ',', skipstart = 1)
-forcing = ProfileForcing(data[:, 1], S_values, data[:, 2] .* 1e3)
+forcing = OceanForcing1D(data[:, 1], S_values, data[:, 2] .* 1e3)
 ```
 """
-function ProfileForcing(
+function OceanForcing1D(
     Tz::AbstractVector,
     Sz::AbstractVector,
     z::AbstractVector;
@@ -49,7 +48,7 @@ function ProfileForcing(
         T_new = _interp1d(z_s, T_s, z_new)
         S_new = _interp1d(z_s, S_s, z_new)
     end
-    ProfileForcing(FT.(T_new), FT.(S_new), FT.(z_new), FT(1.0), FT(z_new[1]))
+    OceanForcing1D(FT.(T_new), FT.(S_new), FT.(z_new), FT(1.0), FT(z_new[1]))
 end
 
 function _interp1d(x, y, xi)
@@ -569,9 +568,12 @@ are returned unchanged.
     margin::Int = 4
 end
 
-_crop_domain(mask, z_draft_raw, z_bed_raw, ::NoDomainCropping) = mask, z_draft_raw, z_bed_raw
+# Index ranges of the kept sub-rectangle.  Returned rather than applied so every
+# full-domain input — mask, draft, bed, and a 2D basal ice temperature — is sliced
+# with one identical pair of ranges.
+_crop_ranges(mask, ::NoDomainCropping) = axes(mask, 1), axes(mask, 2)
 
-function _crop_domain(mask, z_draft_raw, z_bed_raw, cropping::MinRectangleDomainCropping)
+function _crop_ranges(mask, cropping::MinRectangleDomainCropping)
     margin = cropping.margin
     margin >= 1 || throw(
         ArgumentError(
@@ -582,7 +584,8 @@ function _crop_domain(mask, z_draft_raw, z_bed_raw, cropping::MinRectangleDomain
     # Gaps (4) are active cells too — cropping them away would silently remove the
     # very region the connected-gaps treatment is about.
     shelf_inds = findall(m -> m == 3 || m == 4, mask)
-    isempty(shelf_inds) && return mask, z_draft_raw, z_bed_raw  # let validation catch it
+    # Let validation report the empty domain; crop to everything in the meantime.
+    isempty(shelf_inds) && return axes(mask, 1), axes(mask, 2)
     rows = getindex.(shelf_inds, 1)
     cols = getindex.(shelf_inds, 2)
     rmin, rmax = extrema(rows)
@@ -600,6 +603,5 @@ function _crop_domain(mask, z_draft_raw, z_bed_raw, cropping::MinRectangleDomain
         @info "Domain cropped from $(size(mask)) to ($(length(r)), $(length(c))) " *
               "with margin = $margin" * note
     end
-    new_zbed = z_bed_raw === nothing ? nothing : z_bed_raw[r, c]
-    return mask[r, c], z_draft_raw[r, c], new_zbed
+    return r, c
 end

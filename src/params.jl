@@ -16,6 +16,7 @@ struct Params{
     MLT,    #<:AbstractMaximumLayerThickness,
     LV,     #<:AbstractLateralViscosity,
     FP,     #<:AbstractFrontPressure,
+    CP,     #<:AbstractCoriolisParameter,
 }
     # Time stepping (dt0 is the initial step; the runtime dt lives in IOState
     # so it can vary under adaptive time stepping — `m.dt` resolves there)
@@ -23,7 +24,6 @@ struct Params{
     nu::FT
     # Dynamics
     g::FT
-    f::FT
     slip::FT
     C_d::FT
     C_d_top::FT
@@ -34,7 +34,6 @@ struct Params{
     v_cut::FT
     # Thermodynamics
     u_tide::FT
-    T_i::FT
     rho_freshwater::FT
     rho0_seawater::FT
     rho_ice::FT
@@ -66,6 +65,7 @@ struct Params{
     max_layer_thickness::MLT
     lateral_viscosity::LV
     front_pressure::FP
+    coriolis::CP
 end
 
 # Promote a parameterization object's floating-point fields to FT so it stays
@@ -98,7 +98,7 @@ function Params(;
     dt = 210.0,
     nu = 0.8,
     g = 9.81,
-    f = -1.37e-4,
+    coriolis = CoriolisParameter0D(),
     slip = 1.0,
     C_d = 2.5e-3,
     C_d_top = 1.1e-3,
@@ -108,7 +108,6 @@ function Params(;
     D_min = 1.0,
     v_cut = 1.414,
     u_tide = 0.01,
-    T_i = -25.0,
     rho_freshwater = 1000.0,
     rho0_seawater = 1028.0,
     rho_ice = 910.0,
@@ -149,11 +148,11 @@ function Params(;
     max_layer_thickness = _promote_param(max_layer_thickness, FT)
     lateral_viscosity = _promote_param(lateral_viscosity, FT)
     front_pressure = _promote_param(front_pressure, FT)
+    coriolis = _promote_param(coriolis, FT)
     Params(
         FT(dt),
         FT(nu),
         FT(g),
-        FT(f),
         FT(slip),
         FT(C_d),
         FT(C_d_top),
@@ -163,7 +162,6 @@ function Params(;
         FT(D_min),
         FT(v_cut),
         FT(u_tide),
-        FT(T_i),
         FT(rho_freshwater),
         FT(rho0_seawater),
         FT(rho_ice),
@@ -191,5 +189,6 @@ function Params(;
         max_layer_thickness,
         lateral_viscosity,
         front_pressure,
+        coriolis,
     )
 end

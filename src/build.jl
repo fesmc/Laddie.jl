@@ -3,7 +3,44 @@
 # ============================================================================
 
 _float_type(::Params{FT}) where {FT} = FT
-_float_type(f::AbstractForcing) = eltype(f.Tz)
+_float_type(f::OceanForcing1D) = eltype(f.Tz)
+_float_type(f::CavityForcing) = _float_type(f.ocean)
+
+# Bring a user-supplied basal ice temperature onto the full domain: a scalar is
+# broadcast, a matrix is checked against the mask and converted to FT.  Runs
+# before cropping, on the same footing as `z_draft_raw`, so `_crop_ice_forcing`
+# can then slice it with the mask's own ranges.  Materialising once at build keeps
+# the melt kernel to a single indexed path instead of a scalar and a field variant.
+function _expand_ice_forcing(ice::PrescribedIceForcing, sz, FT)
+    T = ice.T_ice_base
+    if T isa AbstractMatrix
+        size(T) == sz || throw(
+            ArgumentError(
+                "T_ice_base is $(size(T)) but the mask is $sz; a 2D basal ice " *
+                "temperature must cover the full domain including the border ring",
+            ),
+        )
+    elseif !(T isa Real)
+        throw(ArgumentError("T_ice_base must be a real scalar or a matrix, got $(typeof(T))"))
+    end
+    Tb = T isa AbstractMatrix ? FT.(T) : fill(FT(T), sz)
+    any(isnan, Tb) && throw(ArgumentError("T_ice_base contains NaN"))
+    all(<=(0), Tb) || throw(
+        ArgumentError(
+            "T_ice_base must be at or below 0 °C (it is ice); found a maximum of " *
+            "$(maximum(Tb)) °C",
+        ),
+    )
+    return PrescribedIceForcing(Tb)
+end
+
+_crop_ice_forcing(ice::PrescribedIceForcing, r, c) =
+    PrescribedIceForcing(ice.T_ice_base[r, c])
+
+# Unknown ice forcings pass through untouched; they are responsible for supplying
+# their own grid-shaped `T_ice_base`.
+_expand_ice_forcing(ice::AbstractIceForcing, sz, FT) = ice
+_crop_ice_forcing(ice::AbstractIceForcing, r, c) = ice
 
 # Shape and spacing checks.  These run *before* preprocessing and cropping, because
 # `_crop_domain` slices z_draft_raw/z_bed_raw with index ranges derived from the mask:
@@ -62,6 +99,13 @@ function _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
             "construct the parameters with Params(; FT = $FT, ...) or pass the matching FT",
         ),
     )
+    forcing.ocean isa OceanForcing1D || throw(
+        ArgumentError(
+            "Model needs an OceanForcing1D (one ambient profile for the whole " *
+            "domain); got $(typeof(forcing.ocean)). A laterally varying ambient field " *
+            "is not implemented.",
+        ),
+    )
     _float_type(forcing) === FT || throw(
         ArgumentError(
             "forcing holds $(_float_type(forcing)) profiles but Model was called with FT = $FT; " *
@@ -108,7 +152,9 @@ values at non-shelf cells (mask ≠ 3) are ignored and zeroed internally.
 - `mask`:    integer mask matrix, size `(ny+2, nx+2)`.
 - `z_draft_raw`:  raw ice-draft matrix (same size); need not be pre-processed.
 - `dx`, `dy`: cell spacing in metres.
-- `forcing`: an `AbstractForcing` (e.g. `ISOMIPForcing`, `ProfileForcing`).
+- `forcing`: a `CavityForcing`, or an ocean forcing alone (e.g. `ISOMIPForcing`,
+  `OceanForcing1D`), which is paired with a uniform
+  `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`.
 - `params`:  a `Params` object with all physical constants and parameterizations.
 - `backend`: KernelAbstractions backend (default `CPU()`).
 - `FT`:      floating-point precision type (default `Float64`); must match the
@@ -132,7 +178,7 @@ function Model(
     z_draft_raw::AbstractMatrix,
     dx::Real,
     dy::Real,
-    forcing::AbstractForcing,
+    forcing,
     params::Params;
     backend = CPU(),
     FT = Float64,
@@ -142,7 +188,14 @@ function Model(
     domain_cropping = MinRectangleDomainCropping(),
     preprocess = AbstractPreprocess[],
 )
+    forcing = _as_cavity_forcing(forcing)
     _validate_input_shapes(mask, z_draft_raw, z_bed_raw, dx, dy)
+    # Expand before preprocessing/cropping so a 2D field is validated against the
+    # mask the caller actually passed, then sliced with it.
+    ice = _expand_ice_forcing(forcing.ice, size(mask), FT)
+    # Same treatment for the Coriolis field: a 2D latitude is checked against the
+    # caller's mask and then sliced with it.
+    f_t = _coriolis_field(params.coriolis, size(mask), FT)
     for p in preprocess
         preprocess!(mask, p)
     end
@@ -150,10 +203,15 @@ function Model(
     # size-preserving, so a ConnectedGapsBC reference footprint lines up with the mask
     # here, whereas after cropping it would not.
     mask = _apply_gaps_bc(mask, params.gaps_bc)
-    mask, z_draft_raw, z_bed_raw = _crop_domain(mask, z_draft_raw, z_bed_raw, domain_cropping)
+    r, c = _crop_ranges(mask, domain_cropping)
+    mask, z_draft_raw, f_t = mask[r, c], z_draft_raw[r, c], f_t[r, c]
+    z_bed_raw = z_bed_raw === nothing ? nothing : z_bed_raw[r, c]
     _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
     ny_total, nx_total = size(mask)
     nx, ny = nx_total - 2, ny_total - 2
+    # The ice forcing is grid-shaped from here on, so `m.T_ice_base` lines up with
+    # `m.z_draft` and the melt kernel can index it directly.
+    forcing = CavityForcing(forcing.ocean, _crop_ice_forcing(ice, r, c))
 
     z_draft = _adjust_z_draft(mask, z_draft_raw, FT)
     z_bed = if z_bed_raw === nothing
@@ -161,7 +219,7 @@ function Model(
     else
         FT.(z_bed_raw)
     end
-    grid = Grid(mask, z_draft, z_bed, FT(dx), FT(dy); FT, gradient)
+    grid = Grid(mask, z_draft, z_bed, f_t, FT(dx), FT(dy); FT, gradient)
     state = State(FT, ny_total, nx_total)
     cache =
         Cache(FT, typeof(params.melting), typeof(params.convection_scheme), ny_total, nx_total)
@@ -210,6 +268,8 @@ delegates to `Model`.
 - `z_draft_gl`, `z_draft_front`: ice-draft depth at grounding line and ice front in
   metres (default −720 m and −200 m).
 - `isomipcond`: `:warm` (1 °C at depth) or `:cold` (nearly freezing).
+- `ice_forcing`: an `AbstractIceForcing` supplying the basal ice temperature
+  (default: uniform `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`).
 - `FT`: floating-point precision type (default `Float64`; use `Float32` for GPU).
 - `params`: `Params` object (default: ISOMIP+-canonical values).
 - `config`: `RunConfig` object (default: `RunConfig()`, I/O disabled).
@@ -226,6 +286,7 @@ function build_isomip(
     z_draft_gl = -720.0,
     z_draft_front = -200.0,
     isomipcond = :warm,
+    ice_forcing = PrescribedIceForcing(),
     params = nothing,
     config = RunConfig(),
     gradient = JlGradient(),
@@ -255,7 +316,7 @@ function build_isomip(
     mask[:, 1] .= 1;
     mask[:, end] .= 1
 
-    forcing = ISOMIPForcing(FT, isomipcond)
+    forcing = CavityForcing(ISOMIPForcing(FT, isomipcond), ice_forcing)
     _params =
         isnothing(params) ?
         Params(;

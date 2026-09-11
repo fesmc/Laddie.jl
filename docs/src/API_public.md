@@ -131,9 +131,37 @@ FixedSimulationEnd
 SteadyStateEnd
 ```
 
-### Ambient forcing
+#### Coriolis parameter
 
 ```@docs
+AbstractCoriolisParameter
+CoriolisParameter0D
+CoriolisParameter2D
+```
+
+### Forcing
+
+A model is driven by a [`CavityForcing`](@ref): an ocean forcing supplying the
+ambient T/S, and an ice forcing supplying the basal ice temperature. Passing an
+ocean forcing on its own to `Model` is shorthand for pairing it with a uniform
+`PrescribedIceForcing(-25.0)`.
+
+```@docs
+CavityForcing
+```
+
+#### Ocean
+
+```@docs
+AbstractOceanForcing
+OceanForcing1D
 ISOMIPForcing
-ProfileForcing
+Laddie.OceanForcing2D
+```
+
+#### Ice
+
+```@docs
+AbstractIceForcing
+PrescribedIceForcing
 ```

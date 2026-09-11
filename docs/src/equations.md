@@ -199,7 +199,8 @@ T_b = \lambda_1 S_b + \lambda_2 + \lambda_3 z_b \tag{10}
 
 Equation (10) is the linear liquidus; `update_freezing_temperature!` also uses
 it for the plume freezing point ``T_f = \lambda_1 S + \lambda_2 + \lambda_3 z_b``.
-Define the **effective latent heat** ``L_\text{eff} = L - c_i T_i``. Eliminating
+Define the **effective latent heat** ``L_\text{eff} = L - c_i T_i``, where the basal
+ice temperature ``T_i`` is supplied per cell by the ice forcing. Eliminating
 ``T_b, S_b`` gives a quadratic in ``\dot m``, solved pointwise in
 `_three_eq_melt_kernel!` with ``\tilde T_f = \lambda_2 + \lambda_3 z_b``:
 

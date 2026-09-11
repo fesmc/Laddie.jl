@@ -15,14 +15,20 @@ function _grid_to_backend(g::Grid{FT,A0}, backend) where {FT,A0}
     Grid{FT,A}(map(fn -> mv(getfield(g, fn)), fieldnames(typeof(g)))...)
 end
 
-# Reconstruct a forcing struct with all float vectors moved to backend.
-# Required so update_ambient_fields! can index Tz/Sz with GPU index arrays.
-# The unparameterized constructor (typename wrapper) re-infers the vector
-# type parameter V from the moved arrays.
-function _forcing_to_backend(f::F, backend) where {F<:AbstractForcing}
+# Reconstruct a forcing struct with all float arrays moved to backend.
+# Required so update_ambient_fields! can index Tz/Sz with GPU index arrays, and so
+# the melt kernel can read T_ice_base on the device.  The unparameterized
+# constructor (typename wrapper) re-infers the type parameters from the moved
+# arrays.
+_forcing_to_backend(f::CavityForcing, backend) = CavityForcing(
+    _forcing_to_backend(f.ocean, backend),
+    _forcing_to_backend(f.ice, backend),
+)
+
+function _forcing_to_backend(f::F, backend) where {F<:Union{AbstractOceanForcing,AbstractIceForcing}}
     fields = map(fieldnames(F)) do fn
         v = getfield(f, fn)
-        v isa AbstractVector && eltype(v) <: AbstractFloat ? _to_device(backend, v) : v
+        v isa AbstractArray && eltype(v) <: AbstractFloat ? _to_device(backend, v) : v
     end
     Base.typename(F).wrapper(fields...)
 end

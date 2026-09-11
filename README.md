@@ -70,10 +70,18 @@ close(ds)
 
 mask    = build_laddie_mask(bed, h)         # 0 ocean / 1 land / 2 grounded / 3 shelf
 zb      = ice_base_depth(bed, h)            # ice-base depth (m, negative)
-forcing = ProfileForcing(Tz, Sz, z)         # T (°C), S (psu), z (m) vectors
+ocean   = OceanForcing1D(Tz, Sz, z)         # T (°C), S (psu), z (m) vectors
 
-m = Model(mask, zb, 500.0, 500.0, forcing, Params())
+m = Model(mask, zb, 500.0, 500.0, ocean, Params())
 run!(m; days = 90)
+```
+
+A model is driven by a `CavityForcing` — an ocean forcing plus an ice forcing.
+Passing the ocean forcing alone, as above, pairs it with a uniform basal ice
+temperature of −25 °C. Supply the ice explicitly to vary it in space:
+
+```julia
+forcing = CavityForcing(ocean, PrescribedIceForcing(T_ice_base))  # same size as mask
 ```
 
 Physical parameters and parameterization choices live in a single typed

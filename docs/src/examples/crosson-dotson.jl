@@ -28,9 +28,9 @@ z_forc = T_data[:, 2] .* 1e3    # km → m
 T_forc = T_data[:, 1]
 S_forc = Laddie._interp1d(reverse(S_data[:, 2] .* 1e3), reverse(S_data[:, 1]), z_forc)
 
-# ProfileForcing sorts by depth and resamples to the 1-m grid the model needs,
+# OceanForcing1D sorts by depth and resamples to the 1-m grid the model needs,
 # with flat extrapolation beyond the data range.
-forcing = ProfileForcing(T_forc, S_forc, z_forc, FT = FT)
+forcing = OceanForcing1D(T_forc, S_forc, z_forc, FT = FT)
 
 fig = Figure()
 ax1 = Axis(fig[1, 1], xlabel = "Temperature (°C)", ylabel = "Depth (m)")

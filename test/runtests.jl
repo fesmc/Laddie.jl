@@ -11,7 +11,7 @@ const gpu_backend = CUDA.functional() ? CUDA.CUDABackend() : nothing
 
 # Fake forcing types for the property-forwarding collision guard tests
 # (type definitions must live at top level, not inside a @testset).
-struct CollidingForcing <: Laddie.AbstractForcing
+struct CollidingForcing <: Laddie.AbstractOceanForcing
     Tz::Vector{Float64}
     Sz::Vector{Float64}
     z::Vector{Float64}
@@ -20,13 +20,19 @@ struct CollidingForcing <: Laddie.AbstractForcing
     melt::Float64   # collides with Cache.melt
 end
 
-struct ReservedNameForcing <: Laddie.AbstractForcing
+struct ReservedNameForcing <: Laddie.AbstractOceanForcing
     Tz::Vector{Float64}
     Sz::Vector{Float64}
     z::Vector{Float64}
     dz::Float64
     z0::Float64
     nx::Int         # collides with the reserved Model property `nx`
+end
+
+struct CollidingIceForcing <: Laddie.AbstractIceForcing
+    T_ice_base::Matrix{Float64}
+    Tz::Vector{Float64}   # collides with the ocean forcing's profile
+    CollidingIceForcing(T) = new(T, Float64[])
 end
 
 @testset verbose=true "Laddie.jl" begin
@@ -354,11 +360,11 @@ end
         @test all(isfinite, m.melt)
     end
 
-    @testset "ProfileForcing: resampling, sorting, flat extrapolation" begin
+    @testset "OceanForcing1D: resampling, sorting, flat extrapolation" begin
         z_c = [-1000.0, -500.0, -100.0]
         T_c = [   1.0,     0.0,   -1.0]
         S_c = [  34.7,    34.2,   33.8]
-        f = ProfileForcing(T_c, S_c, z_c; FT)
+        f = OceanForcing1D(T_c, S_c, z_c; FT)
         @test f.dz == 1.0
         @test f.z0 == -5000.0
         @test f.z == FT.(-5000.0:1.0:-1.0)
@@ -374,26 +380,26 @@ end
         @test f.Sz[k] ≈ 34.45
 
         # Descending input (CSV convention: surface first) gives the same result
-        f_rev = ProfileForcing(reverse(T_c), reverse(S_c), reverse(z_c); FT)
+        f_rev = OceanForcing1D(reverse(T_c), reverse(S_c), reverse(z_c); FT)
         @test f_rev.Tz == f.Tz
         @test f_rev.Sz == f.Sz
 
         # Duplicate depths are tolerated (first occurrence kept)
-        f_dup = ProfileForcing([1.0, 2.0, -1.0], [34.7, 34.6, 33.8],
+        f_dup = OceanForcing1D([1.0, 2.0, -1.0], [34.7, 34.6, 33.8],
                                [-1000.0, -1000.0, -100.0]; FT)
         @test all(isfinite, f_dup.Tz)
 
         # Length mismatch must throw
-        @test_throws ArgumentError ProfileForcing(T_c[1:2], S_c, z_c; FT)
+        @test_throws ArgumentError OceanForcing1D(T_c[1:2], S_c, z_c; FT)
     end
 
-    @testset "ProfileForcing: reproduces ISOMIPForcing from coarse samples" begin
+    @testset "OceanForcing1D: reproduces ISOMIPForcing from coarse samples" begin
         # The warm ISOMIP profile is linear in z, so 3 samples recover it exactly.
         isomip = ISOMIPForcing(FT, :warm)
         T_lin(z) = -1.9 + z * (1.0 - (-1.9)) / (-720.0)
         S_lin(z) = 33.8 + z * (34.7 - 33.8) / (-720.0)
         z_c  = [-5000.0, -720.0, -1.0]
-        prof = ProfileForcing(T_lin.(z_c), S_lin.(z_c), z_c; FT)
+        prof = OceanForcing1D(T_lin.(z_c), S_lin.(z_c), z_c; FT)
         @test prof.Tz ≈ isomip.Tz
         @test prof.Sz ≈ isomip.Sz
 
@@ -1202,13 +1208,166 @@ end
     @testset "Forcing structs are concretely typed" begin
         forcings = (
             ISOMIPForcing(FT, :warm),
-            ProfileForcing([1.0, 0.0], [34.7, 34.2], [-1000.0, -100.0]; FT),
+            OceanForcing1D([1.0, 0.0], [34.7, 34.2], [-1000.0, -100.0]; FT),
         )
         for f in forcings
             @test all(isconcretetype, fieldtypes(typeof(f)))
             @test f.Tz isa Vector{FT}
             @test all(isfinite, f.Tz) && all(isfinite, f.Sz)
         end
+        # ...and so is the assembled cavity forcing a model actually holds, whose
+        # ice field has been materialised onto the grid.
+        m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        cf = getfield(m, :forcing)
+        @test cf isa CavityForcing
+        @test all(isconcretetype, fieldtypes(typeof(cf)))
+        @test all(isconcretetype, fieldtypes(typeof(cf.ice)))
+        @test cf.ice.T_ice_base isa Matrix{FT}
+    end
+
+    @testset "Coriolis: 0D/2D defaults agree, latitude varies f, C-grid staggering" begin
+        # The whole point of the default latitude being derived from the default f
+        # rather than rounded to -70: the two options must agree exactly, so
+        # switching to the geographic statement changes nothing until lat is set.
+        @test Laddie.DEFAULT_LATITUDE ≈ -69.95 atol = 0.01   # ~70°S, not exactly
+        @test 2 * Laddie.EARTH_ROTATION_RATE * sind(Laddie.DEFAULT_LATITUDE) ≈
+              Laddie.DEFAULT_CORIOLIS_F
+        iso(cp) = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                               params = Params(; FT, coriolis = cp))
+        m0 = iso(CoriolisParameter0D())
+        m2 = iso(CoriolisParameter2D())
+        @test m0.f == m2.f
+        run!(m0; days = 1.0, verbose = false)
+        run!(m2; days = 1.0, verbose = false)
+        @test m2.melt == m0.melt && m2.V.present == m0.V.present
+
+        # ...and the default is what Params used to hold as the scalar `f`.
+        @test all(m0.f .== -1.37e-4)
+        @test !hasfield(typeof(getfield(m0, :params)), :f)
+
+        # A scalar latitude is still an f-plane, but a different one.
+        m75 = iso(CoriolisParameter2D(-75.0))
+        @test all(m75.f .≈ 2 * Laddie.EARTH_ROTATION_RATE * sind(-75.0))
+        run!(m75; days = 1.0, verbose = false)
+        @test m75.V.present != m0.V.present          # stronger rotation, different flow
+        @test all(isfinite, m75.melt)
+
+        # Uniform f: the staggered copies equal the T-point field exactly.
+        @test m0.fu == m0.f && m0.fv == m0.f
+
+        # 2D latitude: f must be staggered onto the two velocity faces separately,
+        # because on a C-grid U and V do not share a point.  A latitude varying in
+        # y makes fv differ from f while fu (an x-average) does not.
+        mask0 = copy(m0.mask)
+        ny_t, nx_t = size(mask0)
+        lat_y = [FT(-80 + 10 * (i - 1) / (ny_t - 1)) for i in 1:ny_t, _ in 1:nx_t]
+        m_y = Model(mask0, copy(m0.z_draft), 2000.0, 2000.0, ISOMIPForcing(FT, :warm),
+                    Params(; FT, coriolis = CoriolisParameter2D(lat_y));
+                    FT, domain_cropping = NoDomainCropping())
+        @test m_y.f[1, 1] ≈ 2 * Laddie.EARTH_ROTATION_RATE * sind(-80.0)
+        @test m_y.fu == m_y.f                        # constant along x
+        @test m_y.fv != m_y.f                        # averaged across y
+        @test m_y.fv[1, 1] ≈ (m_y.f[1, 1] + m_y.f[2, 1]) / 2
+        run!(m_y; days = 1.0, verbose = false)
+        @test all(isfinite, m_y.melt) && all(m_y.melt[m_y.imask .> 0] .>= 0)
+        @test m_y.V.present != m0.V.present
+
+        # The equivalent x-varying field swaps which face average is trivial.
+        lat_x = [FT(-80 + 10 * (j - 1) / (nx_t - 1)) for _ in 1:ny_t, j in 1:nx_t]
+        m_x = Model(mask0, copy(m0.z_draft), 2000.0, 2000.0, ISOMIPForcing(FT, :warm),
+                    Params(; FT, coriolis = CoriolisParameter2D(lat_x));
+                    FT, domain_cropping = NoDomainCropping())
+        @test m_x.fv == m_x.f && m_x.fu != m_x.f
+
+        # A 2D latitude is cropped with the mask, not silently mismatched.
+        m_crop = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                              params = Params(; FT, coriolis = CoriolisParameter2D(-70.0)),
+                              domain_cropping = MinRectangleDomainCropping(margin = 2))
+        @test size(m_crop.f) == size(m_crop.tmask)
+
+        # Validation.
+        @test_throws ArgumentError iso(CoriolisParameter2D(-120.0))
+        @test_throws ArgumentError iso(CoriolisParameter2D(zeros(FT, 3, 3)))
+
+        # Float32 promotion follows Params, like every other parameterization.
+        @test Params(; FT = Float32, coriolis = CoriolisParameter0D()).coriolis isa
+              CoriolisParameter0D{Float32}
+    end
+
+    @testset "Ice forcing: scalar and 2D T_ice_base, default is inert" begin
+        # T_ice_base moved out of Params and into the forcing.  The default must
+        # reproduce the old scalar Params.T_i = -25.0 exactly, or every existing
+        # result shifts.
+        m_def = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        @test m_def.T_ice_base isa Matrix{FT}
+        @test size(m_def.T_ice_base) == size(m_def.tmask)
+        @test all(m_def.T_ice_base .== -25)
+        @test !hasfield(typeof(getfield(m_def, :params)), :T_i)
+
+        mask0 = copy(m_def.mask); zd0 = copy(m_def.z_draft)
+        shelf_cols = [j for j in axes(mask0, 2) if any(==(3), @view mask0[:, j])]
+        build(ice; kw...) = Model(mask0, zd0, 2000.0, 2000.0,
+                                  CavityForcing(ISOMIPForcing(FT, :warm), ice),
+                                  Params(; FT, entrainment = LambertEntrainment(FT(2.5)),
+                                         melting = FixedGamTMelting(FT(0.00018)),
+                                         open_bc = ZeroGradientInflow());
+                                  FT, domain_cropping = NoDomainCropping(), kw...)
+
+        # An explicit CavityForcing with the same uniform value is bit-identical to
+        # the implicit default, so the move is provably inert.
+        m_exp = build(PrescribedIceForcing(FT(-25.0)))
+        run!(m_def; days = 1.0, verbose = false)
+        run!(m_exp; days = 1.0, verbose = false)
+        @test m_exp.melt == m_def.melt
+        @test m_exp.T.present == m_def.T.present
+
+        # Warmer ice melts more: L_eff = L - c_i*T_i shrinks from 3.84e5 J/kg at
+        # -25 degC to 3.34e5 at 0 degC.  The response is damped well below that 15%
+        # because the extra melt cools and freshens the layer that drives it.
+        m_warm = build(PrescribedIceForcing(FT(0.0)))
+        run!(m_warm; days = 1.0, verbose = false)
+        @test sum(m_warm.melt) / sum(m_def.melt) ≈ 1.072 rtol = 0.02
+
+        # A 2D field is the point of the move: temperate ice over the upstream half
+        # of the shelf, cold ice over the rest, must land strictly between the two
+        # uniform runs and match each of them on its own half.
+        half = shelf_cols[1:(length(shelf_cols) ÷ 2)]
+        Ti = fill(FT(-25.0), size(mask0)); Ti[:, half] .= 0
+        m_2d = build(PrescribedIceForcing(Ti))
+        run!(m_2d; days = 1.0, verbose = false)
+        @test sum(m_def.melt) < sum(m_2d.melt) < sum(m_warm.melt)
+        @test sum(m_2d.melt[:, half]) > sum(m_def.melt[:, half])
+        @test m_2d.melt[m_2d.imask .> 0] != m_warm.melt[m_warm.imask .> 0]
+
+        # The turbulent-gamT variant is the second melt kernel; it takes the same
+        # per-cell L_eff path and must stay physical on the same 2D field.
+        m_turb = Model(mask0, zd0, 2000.0, 2000.0,
+                       CavityForcing(ISOMIPForcing(FT, :warm), PrescribedIceForcing(Ti)),
+                       Params(; FT, melting = TurbulentGamTMelting());
+                       FT, domain_cropping = NoDomainCropping())
+        run!(m_turb; days = 1.0, verbose = false)
+        @test all(isfinite, m_turb.melt) && all(m_turb.melt .>= 0)
+
+        # Validation: wrong shape, ice above the melting point, NaN.
+        @test_throws ArgumentError build(PrescribedIceForcing(zeros(FT, 3, 3)))
+        @test_throws ArgumentError build(PrescribedIceForcing(FT(5.0)))
+        bad = fill(FT(-25.0), size(mask0)); bad[5, 5] = NaN
+        @test_throws ArgumentError build(PrescribedIceForcing(bad))
+
+        # A 2D field is cropped with the mask rather than silently mismatched.
+        marked = fill(FT(-25.0), size(mask0)); marked[6, shelf_cols[3]] = FT(-2.0)
+        m_crop = Model(mask0, zd0, 2000.0, 2000.0,
+                       CavityForcing(ISOMIPForcing(FT, :warm), PrescribedIceForcing(marked)),
+                       Params(; FT); FT,
+                       domain_cropping = MinRectangleDomainCropping(margin = 2))
+        @test size(m_crop.T_ice_base) == size(m_crop.tmask)
+        @test count(==(FT(-2.0)), m_crop.T_ice_base) == 1
+
+        # A bare ocean forcing still works and picks up the default ice.
+        m_bare = Model(mask0, zd0, 2000.0, 2000.0, ISOMIPForcing(FT, :warm),
+                       Params(; FT); FT, domain_cropping = NoDomainCropping())
+        @test getfield(m_bare, :forcing) isa CavityForcing
+        @test all(m_bare.T_ice_base .== Laddie.DEFAULT_T_ICE_BASE)
     end
 
     @testset "Model property forwarding: collision guard" begin
@@ -1216,8 +1375,17 @@ end
         parts = (getfield(m, :io), getfield(m, :config), getfield(m, :grid),
                  getfield(m, :state), getfield(m, :cache), getfield(m, :params))
         v = zeros(2)
-        @test_throws "ambiguous" Model(parts..., CollidingForcing(v, v, v, 1.0, -5000.0, 0.0))
-        @test_throws "reserved" Model(parts..., ReservedNameForcing(v, v, v, 1.0, -5000.0, 3))
+        # The guard inspects the members of the CavityForcing, not the wrapper, so
+        # a user-defined ocean forcing is what it has to catch.
+        @test_throws "ambiguous" Model(
+            parts..., CavityForcing(CollidingForcing(v, v, v, 1.0, -5000.0, 0.0)))
+        @test_throws "reserved" Model(
+            parts..., CavityForcing(ReservedNameForcing(v, v, v, 1.0, -5000.0, 3)))
+        # An ice forcing colliding with the ocean side is caught too.
+        @test_throws "ambiguous" Model(
+            parts...,
+            CavityForcing(getfield(m, :forcing).ocean, CollidingIceForcing(zeros(2, 2))),
+        )
         # The shipped struct combination is collision-free (also checked at
         # every Model construction).
         @test Model(parts..., getfield(m, :forcing)) isa Model
@@ -1242,7 +1410,9 @@ end
         @test occursin("dt0 = 210.0", sp) && occursin("entrainment", sp)
         @test length(sp) < 1500
 
-        @test occursin("ISOMIP+ :warm", plain(getfield(m, :forcing)))
+        sf = plain(getfield(m, :forcing))
+        @test occursin("OceanForcing1D", sf) && occursin("5000-point profile", sf)
+        @test occursin("PrescribedIceForcing(T_ice_base = -25.0 °C)", sf)
         for x in (getfield(m, :state), getfield(m, :cache), getfield(m, :io), m.D)
             @test length(plain(x)) < 400
         end
@@ -1426,8 +1596,14 @@ end
         @test meta["params"]["melt"]["type"] == "FixedGamTMelting"
         @test meta["params"]["melt"]["gamTfix"] ≈ 0.00018
         @test meta["params"]["grounding_line"]["type"] == "FreeSlipGL"
-        @test meta["forcing"]["type"] == "ISOMIPForcing"
-        @test meta["forcing"]["isomipcond"] == "warm"
+        # The forcing entry is split ocean/ice, and records the profile ranges:
+        # the arrays themselves are skipped by _scalar_fields, so without these a
+        # warm run would be indistinguishable from a cold one in the metadata.
+        @test meta["forcing"]["ocean"]["type"] == "OceanForcing1D"
+        @test meta["forcing"]["ocean"]["T_range"][2] ≈ 18.23888888888889
+        @test meta["forcing"]["ocean"]["nz"] == 5000
+        @test meta["forcing"]["ice"]["type"] == "PrescribedIceForcing"
+        @test meta["forcing"]["ice"]["T_ice_base_range"] == [-25.0, -25.0]
         @test meta["run_config"]["saveday"] == 0.5
 
         # All output is written into a single output.nc with a time dimension;

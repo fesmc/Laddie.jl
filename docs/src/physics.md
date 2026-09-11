@@ -74,7 +74,7 @@ T_b = \lambda_1 S_b + \lambda_2 + \lambda_3\,z_b
 
 Here ``T_b`` and ``S_b`` are the boundary temperature and salinity at the ice
 face, ``L_\text{eff} = L - c_i T_i`` is the effective latent heat adjusted for
-ice temperature ``T_i``, and the turbulent exchange velocities
+basal ice temperature ``T_i``, and the turbulent exchange velocities
 ``\gamma_T, \gamma_S`` scale with the friction velocity
 
 ```math
@@ -111,6 +111,11 @@ The physical (melting) root is
 For `FixedGamTMelting`, ``\gamma_T`` is a prescribed constant and
 ``\gamma_S = \gamma_T / 35``; for `TurbulentGamTMelting` both are computed from
 ``u_\star`` via a log-layer formulation (Holland & Jenkins 1999).
+
+``T_i`` comes from the **ice forcing**, not the parameter set: `PrescribedIceForcing`
+holds it as a scalar or as a 2D field, so a temperate ice front can sit next to a cold
+interior. Colder ice absorbs more heat per unit melt — ``L_\text{eff}`` runs from
+3.34e5 J kg⁻¹ at 0 °C to 3.84e5 at −25 °C — so it acts as a direct brake on melting.
 
 **Entrainment** ``\dot e`` (Gaspar 1988 / Gladish 2012). Turbulence at the base
 of the layer mixes warm ambient water *upward* into it. This supplies the heat

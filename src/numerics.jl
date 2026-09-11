@@ -188,8 +188,8 @@ end
     @Const(lU),
     @Const(tmask_ip),
     @Const(umask),
+    @Const(fu),
     g,
-    f,
     C_d,
     pgf_w,
     dx,
@@ -224,7 +224,7 @@ end
             -g * ip_D_drho * (Dxm1[i, j] - D1[i, j]) / dx * pgf_gate +  # pressure: D gradient
             g * ip_D_dzdx +                                             # pressure: ice-shelf slope
             -half * g * ip_D^2 * (drho[i, e] - drho[i, j]) / dx +     # pressure: density gradient
-            f * ip_D_Vjm +                                              # Coriolis
+            fu[i, j] * ip_D_Vjm +                                              # Coriolis
             -C_d * U1[i, j] * sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
             lU[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * U1[i, j]                                     # momentum loss by detrainment
@@ -249,8 +249,8 @@ end
     @Const(lV),
     @Const(tmask_jp),
     @Const(vmask),
+    @Const(fv),
     g,
-    f,
     C_d,
     pgf_w,
     dy,
@@ -279,7 +279,7 @@ end
             -g * jp_D_drho * (Dym1[i, j] - D1[i, j]) / dy * pgf_gate +  # pressure: D gradient
             g * jp_D_dzdy +                                             # pressure: ice-shelf slope
             -half * g * jp_D^2 * (drho[n, j] - drho[i, j]) / dy +     # pressure: density gradient
-            -f * jp_D_Uim +                                             # Coriolis
+            -fv[i, j] * jp_D_Uim +                                             # Coriolis
             -C_d * V1[i, j] * sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
             lV[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * V1[i, j]                                     # momentum loss by detrainment
@@ -506,8 +506,8 @@ function step_u_momentum(m, dt)
         m.lU,
         m.tmask_ip,
         m.umask,
+        m.fu,
         m.g,
-        m.f,
         m.C_d,
         _front_pgf_weight(m.front_pressure, m.g),
         m.dx,
@@ -540,8 +540,8 @@ function step_v_momentum(m, dt)
         m.lV,
         m.tmask_jp,
         m.vmask,
+        m.fv,
         m.g,
-        m.f,
         m.C_d,
         _front_pgf_weight(m.front_pressure, m.g),
         m.dy,

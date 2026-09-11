@@ -5,8 +5,10 @@ const _RESERVED_PROPS =
 # The flat forwarding layer resolves `m.field` by searching the sub-structs in
 # a fixed order, so a field name appearing in two of them would be silently
 # shadowed by whichever comes first.  Reject such configurations outright —
-# this matters mostly for user-defined AbstractForcing types.  Called from the
-# inner constructor so no construction path can bypass it.
+# this matters mostly for user-defined forcing types.  The `CavityForcing` wrapper
+# itself is transparent: forwarding descends into its `ocean` and `ice` members, so
+# those are what have to be collision-free, not the wrapper.  Called from the inner
+# constructor so no construction path can bypass it.
 function _check_property_collisions(io, config, grid, state, cache, params, forcing)
     seen = Dict{Symbol,String}()
     for (label, x) in (
@@ -15,7 +17,8 @@ function _check_property_collisions(io, config, grid, state, cache, params, forc
         ("Cache", cache),
         ("Params", params),
         ("RunConfig", config),
-        (string(nameof(typeof(forcing))), forcing),
+        (string(nameof(typeof(forcing.ocean))), forcing.ocean),
+        (string(nameof(typeof(forcing.ice))), forcing.ice),
         ("IOState", io),
     )
         for fn in fieldnames(typeof(x))
@@ -47,16 +50,18 @@ Fields are accessed directly on `m` through a flat forwarding layer:
 | `m.D`, `m.U`, `m.V`, `m.T`, `m.S` | `State` | `m.D.present`, `m.U.past` |
 | `m.melt`, `m.entr`, `m.drho`, `m.Ta`, `m.Sa`, … | `Cache` | `m.melt .* m.seconds_per_year` |
 | `m.tmask`, `m.z_draft`, `m.dx`, `m.dy`, … | `Grid` | `m.tmask .> 0` |
-| `m.dt`, `m.f`, `m.C_d`, `m.A_h`, `m.D_min`, … | `Params` | `m.dt` |
+| `m.dt`, `m.C_d`, `m.A_h`, `m.D_min`, … | `Params` | `m.dt` |
+| `m.f`, `m.fu`, `m.fv` | `Grid` | Coriolis at T-, u- and v-points |
 | `m.name`, `m.saveday`, `m.save_D`, … | `RunConfig` | `m.config.saveday` |
-| `m.Tz`, `m.Sz`, `m.z` | Forcing | ambient profile arrays |
+| `m.Tz`, `m.Sz`, `m.z` | Forcing (ocean) | ambient profile arrays |
+| `m.T_ice_base` | Forcing (ice) | basal ice temperature field |
 | `m.t`, `m.count`, `m.rundir`, `m.x`, `m.Dav`, … | `IOState` | runtime I/O state |
 `m.FT` returns the floating-point type (`Float64` or `Float32`).
 
 `Grid` and `Params` are immutable after construction.  `Cache`, `State`, and
 `IOState` fields are mutable and updated in place each time step.
 """
-mutable struct Model{FT,A<:AbstractMatrix{FT},F<:AbstractForcing,P<:Params{FT},C<:Cache}
+mutable struct Model{FT,A<:AbstractMatrix{FT},F<:CavityForcing,P<:Params{FT},C<:Cache}
     io::IOState{FT,A}
     config::RunConfig
     grid::Grid{FT,A}
@@ -73,7 +78,7 @@ mutable struct Model{FT,A<:AbstractMatrix{FT},F<:AbstractForcing,P<:Params{FT},C
         cache,
         params,
         forcing,
-    ) where {FT,A<:AbstractMatrix{FT},F<:AbstractForcing,P<:Params{FT},C<:Cache}
+    ) where {FT,A<:AbstractMatrix{FT},F<:CavityForcing,P<:Params{FT},C<:Cache}
         _check_property_collisions(io, config, grid, state, cache, params, forcing)
         new{FT,A,F,P,C}(io, config, grid, state, cache, params, forcing)
     end
@@ -87,7 +92,7 @@ function Model(
     cache::C,
     params::P,
     forcing::F,
-) where {FT,A,C<:Cache,F<:AbstractForcing,P<:Params{FT}}
+) where {FT,A,C<:Cache,F<:CavityForcing,P<:Params{FT}}
     Model{FT,A,F,P,C}(io, config, grid, state, cache, params, forcing)
 end
 
@@ -119,9 +124,14 @@ function Base.getproperty(m::Model{FT}, k::Symbol) where {FT}
     # RunConfig: static run + I/O configuration
     r = getfield(m, :config)
     hasfield(typeof(r), k) && return getfield(r, k)
-    # Forcing: ambient T/S profiles on the uniform z-grid
+    # Forcing: ambient T/S profiles on the uniform z-grid, then the ice state.
+    # `CavityForcing` is a container, not a namespace — `m.ocean` / `m.ice` are not
+    # forwarded, only the members' own fields.
     f = getfield(m, :forcing)
-    hasfield(typeof(f), k) && return getfield(f, k)
+    fo = getfield(f, :ocean)
+    hasfield(typeof(fo), k) && return getfield(fo, k)
+    fi = getfield(f, :ice)
+    hasfield(typeof(fi), k) && return getfield(fi, k)
     # IOState: runtime I/O state (counters, accumulators, coordinates)
     io = getfield(m, :io)
     hasfield(typeof(io), k) && return getfield(io, k)

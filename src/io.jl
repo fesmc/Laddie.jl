@@ -210,6 +210,25 @@ function _scalar_fields(x)
     return d
 end
 
+# Forcing metadata.  The profiles themselves are arrays, which `_scalar_fields`
+# skips, so record their ranges explicitly — otherwise the entry would say only
+# which type was used and a warm run would be indistinguishable from a cold one.
+function _forcing_metadata(f::CavityForcing)
+    o, i = f.ocean, f.ice
+    ocean = _scalar_fields(o)
+    if hasproperty(o, :Tz)
+        ocean["T_range"] = [Float64(x) for x in extrema(o.Tz)]
+        ocean["S_range"] = [Float64(x) for x in extrema(o.Sz)]
+        ocean["z_range"] = [Float64(x) for x in extrema(o.z)]
+        ocean["nz"] = length(o.z)
+    end
+    ice = _scalar_fields(i)
+    if hasproperty(i, :T_ice_base)
+        ice["T_ice_base_range"] = [Float64(x) for x in extrema(i.T_ice_base)]
+    end
+    return Dict{String,Any}("ocean" => ocean, "ice" => ice)
+end
+
 # Write the effective configuration of this run — parameters, forcing, grid,
 # precision, backend, package/Julia versions — so any output directory can be
 # traced back to what produced it.  Never overwrites: a continuation run into
@@ -227,6 +246,12 @@ function _write_run_metadata(m)
     params_d["time_stepper"] = _scalar_fields(p.tstep)
     params_d["lateral_viscosity"] = _scalar_fields(p.lateral_viscosity)
     params_d["front_pressure"] = _scalar_fields(p.front_pressure)
+    # A 2D latitude is an array, which `_scalar_fields` skips; record its range so
+    # the entry says more than just which option was chosen.
+    params_d["coriolis"] = _scalar_fields(p.coriolis)
+    if p.coriolis isa CoriolisParameter2D && p.coriolis.lat isa AbstractArray
+        params_d["coriolis"]["lat_range"] = [Float64(x) for x in extrema(p.coriolis.lat)]
+    end
     meta = Dict{String,Any}(
         "run" => Dict{String,Any}(
             "created" => Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
@@ -242,7 +267,7 @@ function _write_run_metadata(m)
             "dx" => Float64(m.dx),
             "dy" => Float64(m.dy),
         ),
-        "forcing" => _scalar_fields(getfield(m, :forcing)),
+        "forcing" => _forcing_metadata(getfield(m, :forcing)),
         "params" => params_d,
         "run_config" => _scalar_fields(getfield(m, :config)),
     )

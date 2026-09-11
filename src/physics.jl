@@ -29,10 +29,12 @@ end
     @Const(z_draft),
     @Const(tmask),
     @Const(imask),
+    @Const(T_ice_base),
     gamT,
     gamS,
-    cp_over_Leff,
-    ci_over_cp,
+    c_p,
+    c_i,
+    L,
     l1,
     l2,
     l3,
@@ -40,6 +42,11 @@ end
     i, j = @index(Global, NTuple)
     FT = typeof(gamT)
     @inbounds begin
+        # Effective latent heat, per cell: L_eff = L - c_i*T_i.  Colder ice soaks up
+        # more heat per unit melt, and the ice base need not be equally cold across
+        # the domain, so this is read from the ice forcing rather than a constant.
+        cp_over_Leff = c_p / (L - c_i * T_ice_base[i, j])
+        ci_over_cp = c_i / c_p
         Tf_depth = l2 + l3 * z_draft[i, j]
         quad_b =
             cp_over_Leff * gamT * (Tf_depth - T[i, j]) +
@@ -73,17 +80,22 @@ end
     @Const(z_draft),
     @Const(tmask),
     @Const(imask),
+    @Const(T_ice_base),
     @Const(gamT),
     @Const(gamS),
-    cp_over_Leff,
-    ci_over_cp,
+    c_p,
+    c_i,
+    L,
     l1,
     l2,
     l3,
 )
     i, j = @index(Global, NTuple)
-    FT = typeof(cp_over_Leff)
+    FT = typeof(c_p)
     @inbounds begin
+        # See _three_eq_melt_kernel! for the per-cell effective latent heat.
+        cp_over_Leff = c_p / (L - c_i * T_ice_base[i, j])
+        ci_over_cp = c_i / c_p
         gT = gamT[i, j]
         gS = gamS[i, j]
         Tf_depth = l2 + l3 * z_draft[i, j]
@@ -272,7 +284,6 @@ function update_melt!(m, mp::FixedGamTMelting)
         ny,
         nx,
     )
-    cp_over_Leff, ci_over_cp = _melt_ratios(m)
     m.gamT = mp.gamTfix
     m.gamS = m.gamT / FT(35)    # TODO could be 35
     launch!(
@@ -285,10 +296,12 @@ function update_melt!(m, mp::FixedGamTMelting)
         m.z_draft,
         m.tmask,
         m.imask,
+        m.T_ice_base,
         m.gamT,
         m.gamS,
-        cp_over_Leff,
-        ci_over_cp,
+        m.c_p,
+        m.c_i,
+        m.L,
         m.l1,
         m.l2,
         m.l3,
@@ -321,7 +334,6 @@ function update_melt!(m, mp::TurbulentGamTMelting)
         ny,
         nx,
     )
-    cp_over_Leff, ci_over_cp = _melt_ratios(m)
     _compute_turbulent_transfer_coefficients!(m, mp)
     launch!(
         _three_eq_melt_mat_gamT_kernel!,
@@ -333,17 +345,17 @@ function update_melt!(m, mp::TurbulentGamTMelting)
         m.z_draft,
         m.tmask,
         m.imask,
+        m.T_ice_base,
         m.gamT,
         m.gamS,
-        cp_over_Leff,
-        ci_over_cp,
+        m.c_p,
+        m.c_i,
+        m.L,
         m.l1,
         m.l2,
         m.l3,
     )
 end
-
-_melt_ratios(m) = m.c_p / (m.L - m.c_i * m.T_i), m.c_i / m.c_p
 
 update_melt!(m) = update_melt!(m, m.melting)
 
@@ -682,7 +694,7 @@ end
 #   δρ      plume–ambient density difference, ρ − ρₐ [kg m⁻³]
 #   ρ̄       δρ / ρ₀, reduced density contrast
 #   D̄       layer thickness face-interpolated to the velocity node
-#   f       Coriolis parameter [s⁻¹]
+#   f       Coriolis parameter [s⁻¹]; `fu`/`fv` are its u- and v-face averages
 #   g       gravitational acceleration [m s⁻²]
 #   ρ₀      reference seawater density [kg m⁻³]
 #   z_draft      ice-base depth, negative below sea level [m]
@@ -713,7 +725,7 @@ end
 @inline u_pressure_density(m) =
     (m.g / 2) .* ip_t(m, m.D.present) .^ 2 .* (xm1(m.drho) .- m.drho) ./ m.dx
 # f·D̄·V  (Coriolis)
-@inline u_coriolis(m) = m.f .* ip_t(m, m.D.present .* m.Vjm)
+@inline u_coriolis(m) = m.fu .* ip_t(m, m.D.present .* m.Vjm)
 # Cd·U·|u|  (quadratic bottom drag)
 @inline u_bottom_drag(m) =
     m.C_d .* m.U.present .* sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
@@ -738,7 +750,7 @@ end
 @inline v_pressure_density(m) =
     (m.g / 2) .* jp_t(m, m.D.present) .^ 2 .* (ym1(m.drho) .- m.drho) ./ m.dy
 # f·D̄·U  (Coriolis)
-@inline v_coriolis(m) = m.f .* jp_t(m, m.D.present .* m.Uim)
+@inline v_coriolis(m) = m.fv .* jp_t(m, m.D.present .* m.Uim)
 # Cd·V·|u|  (quadratic bottom drag)
 @inline v_bottom_drag(m) =
     m.C_d .* m.V.present .* sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)

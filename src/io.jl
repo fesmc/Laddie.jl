@@ -11,7 +11,7 @@ using TOML
 """
 $(TYPEDSIGNATURES)
 
-Optional debug configuration passed via `RunConfig(; dbg = DebugConfig(...))`.
+Optional debug configuration passed via `Simulation(model; debug = DebugConfig(...))`.
 
 Set `check_nans = true` to check every prognostic variable for NaNs over the
 shelf mask after each sub-step of `leapfrog_step!`.  When a NaN is found the
@@ -22,29 +22,28 @@ Base.@kwdef struct DebugConfig
 end
 
 # ============================================================================
-# RunConfig — static run + I/O configuration (all fields have defaults).
+# OutputConfig — static output configuration (all fields have defaults).
 # ============================================================================
 
 """
 $(TYPEDSIGNATURES)
 
-Static configuration for a model run: duration, I/O cadence, output flags,
-and restart options.  All fields have sensible defaults; a plain `RunConfig()`
-disables file I/O (`saveday = 0`).
+Output configuration of a [`Simulation`](@ref): run directory, output cadence,
+restart cadence, and which fields are written.  All fields have sensible
+defaults; a plain `OutputConfig()` disables file I/O (`saveday = 0`).
 
-Set `saveday > 0` to enable NetCDF output at that interval (days).
+Set `saveday > 0` to enable NetCDF output at that interval (days).  Event times
+are absolute on the simulation clock, so a simulation advanced by several `run!`
+calls writes on the same cadence as one advanced by a single call.
 """
-Base.@kwdef struct RunConfig
+Base.@kwdef struct OutputConfig
     name::String = "run"
-    days::Float64 = 30.0
     saveday::Float64 = 0.0     # 0 = I/O disabled
     diagday::Float64 = 1.0
     restday::Float64 = 30.0
     resultdir::String = "./output/"
     logfilename::String = "log.txt"
     forcenewdir::Bool = true
-    fromrestart::Bool = false
-    restartfile::String = ""
     save_Ut::Bool = true
     save_Uu::Bool = false
     save_Vt::Bool = true
@@ -61,33 +60,24 @@ Base.@kwdef struct RunConfig
     save_gammaT::Bool = false
     save_mask::Bool = true
     save_zb::Bool = true
-    dbg::DebugConfig = DebugConfig()
-    cfl::AbstractCFL = ExactCFL()
 end
 
 # ============================================================================
 # IOState{FT, A} — mutable runtime I/O state: counters, run directory, log,
-# coordinate vectors, and time-average accumulators.
+# coordinate vectors, and time-average accumulators.  Owned by the Simulation;
+# the simulated time itself lives in its `Clock`.
 # A is the concrete matrix type (matches Grid/State/Cache).  Accumulators are
 # allocated 0×0 at construction; `prepare_output!` replaces the enabled ones
-# with full-size device arrays (the `save_*` flags in RunConfig guard access).
-# x/y coordinate vectors stay on the CPU — they are only written to NetCDF.
+# with full-size device arrays (the `save_*` flags in OutputConfig guard access).
+# The cell-centre coordinates written to NetCDF live on the Grid.
 # ============================================================================
 
 mutable struct IOState{FT,A<:AbstractMatrix{FT}}
-    # Time accounting.  `dt` is the runtime time step; because IOState is last
-    # in the Model forwarding chain and Params holds `dt0` (not `dt`), `m.dt`
-    # resolves here — so the same field tracks a step that may vary under
-    # adaptive time stepping.  `t_sim` accumulates simulated seconds this run.
-    t::Int        # completed steps this run (diagnostic / blow-up msg)
-    dt::FT         # current time step (s) — resolves as `m.dt`
-    t_sim::Float64    # accumulated simulated time this run (s)
-    t_start::Float64    # restart offset (days), added by `_t_days`
     # Time-average accumulation window
     count::Int        # steps accumulated since the last output write
     t_accum::Float64    # simulated time accumulated since the last write (s)
     time_index::Int     # number of time slices written to output.nc so far
-    # Next-event times for periodic I/O (s since the start of this run)
+    # Next-event times for periodic I/O (s on the simulation clock)
     nextsave::Float64
     nextdiag::Float64
     nextrest::Float64
@@ -95,9 +85,8 @@ mutable struct IOState{FT,A<:AbstractMatrix{FT}}
     rundir::String
     logfile::String
     walltime_start::Float64
-    # Interior cell-centre coordinates (m), CPU-resident
-    x::Vector{FT}
-    y::Vector{FT}
+    # Restart file this simulation was started from ("" for a fresh start)
+    restartfile::String
     # Time-average accumulators
     Utav::A
     Uuav::A
@@ -115,55 +104,29 @@ mutable struct IOState{FT,A<:AbstractMatrix{FT}}
     gamTav::A
 end
 
-function IOState(FT::Type, x::AbstractVector, y::AbstractVector)
-    IOState{FT,Matrix{FT}}(
-        0,       # t
-        FT(0),   # dt
-        0.0,     # t_sim
-        0.0,     # t_start
-        0,       # count
-        0.0,     # t_accum
-        0,       # time_index
-        0.0,     # nextsave
-        0.0,     # nextdiag
-        0.0,     # nextrest
-        "",      # rundir
-        "",      # logfile
-        0.0,     # walltime_start
-        Vector{FT}(x),
-        Vector{FT}(y),
-        ntuple(_ -> Matrix{FT}(undef, 0, 0), 14)...,
-    )
-end
-
-# Absolute simulation time in days: accumulated simulated time of this run
-# offset by the restart time, so output/restart files of a continuation run
-# never collide with the files of the run they restarted from.
-_t_days(m) = m.t_start + m.t_sim / m.seconds_per_day
-
 # ============================================================================
 # Run directory + log
 # ============================================================================
 
-function _print2log(m, text)
-    isempty(m.logfile) && return
-    elapsed = time() - m.walltime_start
+function _print2log(sim, text)
+    isempty(sim.io.logfile) && return
+    elapsed = time() - sim.io.walltime_start
     h = floor(Int, elapsed / 3600)
     rem = elapsed - 3600h
     mn = floor(Int, rem / 60)
     sc = rem - 60mn
-    open(m.logfile, "a") do f
+    open(sim.io.logfile, "a") do f
         write(f, @sprintf("[%02d:%02d:%04.1f] %s\n", h, mn, sc, text))
     end
 end
 
 # One-line record of an adaptive-dt change (no-op when I/O is disabled).  Kept
 # here because Printf is imported in this file; called by the dt controller.
-_log_dt_change!(m, dt_old, dt_new, cfl) = _print2log(
-    m,
+_log_dt_change!(sim, dt_old, dt_new, cfl) = _print2log(
+    sim,
     @sprintf(
         "%.3f days: dt %.1f → %.1f s (CFL %.2f)",
-        _t_days(m),
+        _t_days(sim),
         Float64(dt_old),
         Float64(dt_new),
         cfl
@@ -173,20 +136,20 @@ _log_dt_change!(m, dt_old, dt_new, cfl) = _print2log(
 """
 $(TYPEDSIGNATURES)
 
-Create the output directory at `joinpath(m.resultdir, m.name)` and open the
-log file.  Skips creating a new directory when `m.forcenewdir = false` and
+Create the output directory at `joinpath(output.resultdir, output.name)` and open
+the log file.  Skips creating a new directory when `output.forcenewdir = false` and
 the directory already exists (continuation run).
 """
-function create_rundir!(m)
-    rundir = joinpath(m.resultdir, m.name)
-    if m.forcenewdir || !isdir(rundir)
+function create_rundir!(sim)
+    rundir = joinpath(sim.output.resultdir, sim.output.name)
+    if sim.output.forcenewdir || !isdir(rundir)
         mkpath(rundir)
     end
-    m.rundir = rundir
-    m.logfile = joinpath(rundir, m.logfilename)
-    m.walltime_start = time()
-    _print2log(m, "Run directory: $(rundir)")
-    return m
+    sim.io.rundir = rundir
+    sim.io.logfile = joinpath(rundir, sim.output.logfilename)
+    sim.io.walltime_start = time()
+    _print2log(sim, "Run directory: $(rundir)")
+    return sim
 end
 
 # ============================================================================
@@ -230,20 +193,23 @@ function _forcing_metadata(f::CavityForcing)
 end
 
 # Write the effective configuration of this run — parameters, forcing, grid,
-# precision, backend, package/Julia versions — so any output directory can be
-# traced back to what produced it.  Never overwrites: a continuation run into
-# the same directory gets run_metadata_1.toml, _2.toml, ...
-function _write_run_metadata(m)
+# time integration, output, precision, backend, package/Julia versions — so any
+# output directory can be traced back to what produced it.  Never overwrites: a
+# continuation run into the same directory gets run_metadata_1.toml, _2.toml, ...
+function _write_run_metadata(sim)
+    m = sim.model
     p = getfield(m, :params)
     params_d = _scalar_fields(p)
     params_d["entrainment"] = _scalar_fields(p.entrainment)
     params_d["melt"] = _scalar_fields(p.melting)
     params_d["convection"] = _scalar_fields(p.convection_scheme)
-    params_d["open_boundary"] = _scalar_fields(p.open_bc)
-    params_d["grounding_line"] = _scalar_fields(p.grline_bc)
-    params_d["land"] = _scalar_fields(p.land_bc)
-    params_d["shelf_gaps"] = _scalar_fields(p.gaps_bc)
-    params_d["time_stepper"] = _scalar_fields(p.tstep)
+    b = getfield(m, :boundary)
+    boundary_d = Dict{String,Any}(
+        "open_ocean" => _scalar_fields(b.open_ocean),
+        "grounding_line" => _scalar_fields(b.grounding_line),
+        "land" => _scalar_fields(b.land),
+        "gaps" => _scalar_fields(b.gaps),
+    )
     params_d["lateral_viscosity"] = _scalar_fields(p.lateral_viscosity)
     params_d["front_pressure"] = _scalar_fields(p.front_pressure)
     # A 2D latitude is an array, which `_scalar_fields` skips; record its range so
@@ -252,6 +218,15 @@ function _write_run_metadata(m)
     if p.coriolis isa CoriolisParameter2D && p.coriolis.lat isa AbstractArray
         params_d["coriolis"]["lat_range"] = [Float64(x) for x in extrema(p.coriolis.lat)]
     end
+    sim_d = Dict{String,Any}(
+        "dt0" => Float64(sim.clock.dt),
+        "nu" => Float64(sim.nu),
+        "time_stepper" => _scalar_fields(sim.tstep),
+        "cfl" => _scalar_fields(sim.cfl),
+        "stop" => _scalar_fields(sim.stop),
+        "restart" => sim.io.restartfile,
+        "debug" => _scalar_fields(sim.debug),
+    )
     meta = Dict{String,Any}(
         "run" => Dict{String,Any}(
             "created" => Libc.strftime("%Y-%m-%dT%H:%M:%S", time()),
@@ -259,7 +234,7 @@ function _write_run_metadata(m)
             "laddie_version" => string(pkgversion(@__MODULE__)),
             "backend" => string(nameof(typeof(KA.get_backend(m.tmask)))),
             "float_type" => string(m.FT),
-            "t_start_days" => m.t_start,
+            "t_start_days" => _t_days(sim),
         ),
         "grid" => Dict{String,Any}(
             "nx" => m.nx,
@@ -269,16 +244,18 @@ function _write_run_metadata(m)
         ),
         "forcing" => _forcing_metadata(getfield(m, :forcing)),
         "params" => params_d,
-        "run_config" => _scalar_fields(getfield(m, :config)),
+        "boundary" => boundary_d,
+        "simulation" => sim_d,
+        "output" => _scalar_fields(sim.output),
     )
-    path = joinpath(m.rundir, "run_metadata.toml")
+    path = joinpath(sim.io.rundir, "run_metadata.toml")
     k = 1
     while isfile(path)
-        path = joinpath(m.rundir, "run_metadata_$(k).toml")
+        path = joinpath(sim.io.rundir, "run_metadata_$(k).toml")
         k += 1
     end
     open(io -> TOML.print(io, meta), path, "w")
-    _print2log(m, "Wrote run metadata → $(basename(path))")
+    _print2log(sim, "Wrote run metadata → $(basename(path))")
     return
 end
 
@@ -289,41 +266,45 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Initialise time-average accumulators and save/diagnostic interval counters.
-Must be called after prognostics are initialised (needs `m.ny`, `m.nx`) and
-after `create_rundir!`.
+Initialise time-average accumulators and the next output/diagnostic/restart
+event times.  Must be called after the leapfrog is bootstrapped and after
+`create_rundir!`.
 """
-function prepare_output!(m)
-    m.t = 0
-    m.count = 0
-    m.t_accum = 0.0
-    m.time_index = 0
+function prepare_output!(sim)
+    m = sim.model
+    out, spd = sim.output, Float64(m.seconds_per_day)
+    sim.io.nextsave = sim.clock.time + out.saveday * spd
+    sim.io.nextdiag = sim.clock.time + out.diagday * spd
+    sim.io.nextrest = sim.clock.time + out.restday * spd
+    sim.io.count = 0
+    sim.io.t_accum = 0.0
+    sim.io.time_index = 0
 
     # Allocate on same device and with same FT as the model arrays.
     # Full grid size (including halos) so _accum! can do bare .+= without
     # border-stripping; halos are masked out when writing to NetCDF.
     z = zero(m.tmask)
-    m.save_Ut && (m.Utav = copy(z))
-    m.save_Uu && (m.Uuav = copy(z))
-    m.save_Vt && (m.Vtav = copy(z))
-    m.save_Vv && (m.Vvav = copy(z))
-    m.save_D && (m.Dav = copy(z))
-    m.save_T && (m.Tav = copy(z))
-    m.save_S && (m.Sav = copy(z))
-    m.save_melt && (m.meltav = copy(z))
-    m.save_entr && (m.entrav = copy(z))
-    m.save_ent2 && (m.ent2av = copy(z))
-    m.save_detr && (m.detrav = copy(z))
-    m.save_Tbase && (m.Tbav = copy(z))
-    m.save_Tamb && (m.Taav = copy(z))
-    m.save_gammaT && (m.gamTav = copy(z))
-    _write_run_metadata(m)
-    _create_output_file!(m)
+    sim.output.save_Ut && (sim.io.Utav = copy(z))
+    sim.output.save_Uu && (sim.io.Uuav = copy(z))
+    sim.output.save_Vt && (sim.io.Vtav = copy(z))
+    sim.output.save_Vv && (sim.io.Vvav = copy(z))
+    sim.output.save_D && (sim.io.Dav = copy(z))
+    sim.output.save_T && (sim.io.Tav = copy(z))
+    sim.output.save_S && (sim.io.Sav = copy(z))
+    sim.output.save_melt && (sim.io.meltav = copy(z))
+    sim.output.save_entr && (sim.io.entrav = copy(z))
+    sim.output.save_ent2 && (sim.io.ent2av = copy(z))
+    sim.output.save_detr && (sim.io.detrav = copy(z))
+    sim.output.save_Tbase && (sim.io.Tbav = copy(z))
+    sim.output.save_Tamb && (sim.io.Taav = copy(z))
+    sim.output.save_gammaT && (sim.io.gamTav = copy(z))
+    _write_run_metadata(sim)
+    _create_output_file!(sim)
     # Write the initial state as the first time slice before any stepping.
-    _accum!(m)
-    _write_output!(m, _t_days(m))
-    _reset_accum!(m)
-    return m
+    _accum!(sim)
+    _write_output!(sim, _t_days(sim))
+    _reset_accum!(sim)
+    return sim
 end
 
 # ============================================================================
@@ -356,32 +337,33 @@ end
     end
 end
 
-function _accum!(m)
-    dt = m.dt
-    m.count += 1
-    m.t_accum += dt
-    m.save_Ut &&
-        launch!(_accum_ut_kernel!, m.Utav, m.Utav, m.U.present, size(m.Utav, 2), dt)
-    m.save_Uu && (m.Uuav .+= m.U.present .* dt)
-    m.save_Vt &&
-        launch!(_accum_vt_kernel!, m.Vtav, m.Vtav, m.V.present, size(m.Vtav, 1), dt)
-    m.save_Vv && (m.Vvav .+= m.V.present .* dt)
-    m.save_D && (m.Dav .+= m.D.present .* dt)
-    m.save_T && (m.Tav .+= m.T.present .* dt)
-    m.save_S && (m.Sav .+= m.S.present .* dt)
-    m.save_melt && (m.meltav .+= m.melt .* dt)
-    m.save_entr && (m.entrav .+= m.entr .* dt)
-    m.save_ent2 && (m.ent2av .+= m.ent2 .* dt)
-    m.save_detr && (m.detrav .+= m.detr .* dt)
-    m.save_Tbase && (m.Tbav .+= m.Tb .* dt)
-    m.save_Tamb && (m.Taav .+= m.Ta .* dt)
-    m.save_gammaT && (m.gamTav .+= m.gamT .* dt)
+function _accum!(sim)
+    m = sim.model
+    dt = sim.clock.dt
+    sim.io.count += 1
+    sim.io.t_accum += dt
+    sim.output.save_Ut &&
+        launch!(_accum_ut_kernel!, sim.io.Utav, sim.io.Utav, m.U.present, size(sim.io.Utav, 2), dt)
+    sim.output.save_Uu && (sim.io.Uuav .+= m.U.present .* dt)
+    sim.output.save_Vt &&
+        launch!(_accum_vt_kernel!, sim.io.Vtav, sim.io.Vtav, m.V.present, size(sim.io.Vtav, 1), dt)
+    sim.output.save_Vv && (sim.io.Vvav .+= m.V.present .* dt)
+    sim.output.save_D && (sim.io.Dav .+= m.D.present .* dt)
+    sim.output.save_T && (sim.io.Tav .+= m.T.present .* dt)
+    sim.output.save_S && (sim.io.Sav .+= m.S.present .* dt)
+    sim.output.save_melt && (sim.io.meltav .+= m.melt .* dt)
+    sim.output.save_entr && (sim.io.entrav .+= m.entr .* dt)
+    sim.output.save_ent2 && (sim.io.ent2av .+= m.ent2 .* dt)
+    sim.output.save_detr && (sim.io.detrav .+= m.detr .* dt)
+    sim.output.save_Tbase && (sim.io.Tbav .+= m.Tb .* dt)
+    sim.output.save_Tamb && (sim.io.Taav .+= m.Ta .* dt)
+    sim.output.save_gammaT && (sim.io.gamTav .+= m.gamT .* dt)
 end
 
-function _reset_accum!(m)
-    m.count = 0
-    m.t_accum = 0.0
-    io = getfield(m, :io)
+function _reset_accum!(sim)
+    io = sim.io
+    io.count = 0
+    io.t_accum = 0.0
     for k in (
         :Utav,
         :Uuav,
@@ -410,8 +392,9 @@ end
 # coordinate variables, and time-varying/static field variables.  Time-varying
 # fields are 3D (y, x, time) with an unlimited time dimension; static fields
 # (mask, z_draft) are 2D and written here.
-function _create_output_file!(m)
-    path = joinpath(m.rundir, "output.nc")
+function _create_output_file!(sim)
+    m = sim.model
+    path = joinpath(sim.io.rundir, "output.nc")
     NCDataset(path, "c") do ds
         defDim(ds, "y", m.ny)
         defDim(ds, "x", m.nx)
@@ -441,7 +424,7 @@ function _create_output_file!(m)
         )
 
         ds.attrib["model"] = "Laddie.jl"
-        ds.attrib["saveday"] = m.saveday
+        ds.attrib["saveday"] = sim.output.saveday
 
         # Time-varying fields — data appended each save interval
         function dv(name, units, longname)
@@ -454,24 +437,24 @@ function _create_output_file!(m)
                 attrib = ["units" => units, "long_name" => longname],
             )
         end
-        m.save_Ut     && dv("Ut",     "m s-1",  "x-velocity on t-grid")
-        m.save_Uu     && dv("Uu",     "m s-1",  "x-velocity on u-grid")
-        m.save_Vt     && dv("Vt",     "m s-1",  "y-velocity on t-grid")
-        m.save_Vv     && dv("Vv",     "m s-1",  "y-velocity on v-grid")
-        m.save_D      && dv("D",      "m",      "mixed-layer thickness")
-        m.save_T      && dv("T",      "degC",   "layer-averaged temperature")
-        m.save_S      && dv("S",      "psu",    "layer-averaged salinity")
-        m.save_melt   && dv("melt",   "m yr-1", "basal melt rate")
-        m.save_entr   && dv("entr",   "m yr-1", "entrainment rate")
-        m.save_ent2   && dv("ent2",   "m yr-1", "additional entrainment")
-        m.save_detr   && dv("detr",   "m yr-1", "detrainment rate")
-        m.save_Tbase  && dv("Tbase",  "degC",   "temperature at ice base")
-        m.save_Tamb   && dv("Tamb",   "degC",   "ambient temperature at layer base")
-        m.save_gammaT && dv("gammaT", "m s-1",  "turbulent heat exchange velocity")
+        sim.output.save_Ut     && dv("Ut",     "m s-1",  "x-velocity on t-grid")
+        sim.output.save_Uu     && dv("Uu",     "m s-1",  "x-velocity on u-grid")
+        sim.output.save_Vt     && dv("Vt",     "m s-1",  "y-velocity on t-grid")
+        sim.output.save_Vv     && dv("Vv",     "m s-1",  "y-velocity on v-grid")
+        sim.output.save_D      && dv("D",      "m",      "mixed-layer thickness")
+        sim.output.save_T      && dv("T",      "degC",   "layer-averaged temperature")
+        sim.output.save_S      && dv("S",      "psu",    "layer-averaged salinity")
+        sim.output.save_melt   && dv("melt",   "m yr-1", "basal melt rate")
+        sim.output.save_entr   && dv("entr",   "m yr-1", "entrainment rate")
+        sim.output.save_ent2   && dv("ent2",   "m yr-1", "additional entrainment")
+        sim.output.save_detr   && dv("detr",   "m yr-1", "detrainment rate")
+        sim.output.save_Tbase  && dv("Tbase",  "degC",   "temperature at ice base")
+        sim.output.save_Tamb   && dv("Tamb",   "degC",   "ambient temperature at layer base")
+        sim.output.save_gammaT && dv("gammaT", "m s-1",  "turbulent heat exchange velocity")
 
         # Static fields — written once
-        if m.save_mask
-            defVar(ds, "mask", Int32, ("y", "x"))[:, :] = Int32.(_int(m.mask))
+        if sim.output.save_mask
+            defVar(ds, "mask", Int32, ("y", "x"))[:, :] = Int32.(_int(m.resolved_mask))
             # Under ConnectedGapsBC a gap (mask 4) is active but not ocean, so it does
             # not mark an ice front: `at_isf` then traces only the outer edge of the
             # connected region, which is what the calving front actually is.
@@ -491,7 +474,7 @@ function _create_output_file!(m)
             # `at_lnd` is rock (land, mask 1) — an island shore or an ice-free coast.
             # A cell may carry more than one of at_isf/at_grl/at_lnd; that is genuine
             # where a shelf cell has several different neighbours.
-            mask_c = m.mask
+            mask_c = m.resolved_mask
             _touches(v) =
                 (xm1(mask_c) .== v) .| (xp1(mask_c) .== v) .|
                 (ym1(mask_c) .== v) .| (yp1(mask_c) .== v)
@@ -529,27 +512,28 @@ function _create_output_file!(m)
                 ],
             )[:, :] = Int8.(at_gap)
         end
-        if m.save_zb
+        if sim.output.save_zb
             defVar(ds, "z_draft", Float64, ("y", "x"); attrib = ["units" => "m"])[:, :] =
                 _int(m.z_draft)
         end
     end
-    _print2log(m, "Created output file → output.nc")
+    _print2log(sim, "Created output file → output.nc")
 end
 
 # Append one time-average slice to output.nc.  The dt-weighted accumulators are
 # divided by the accumulated window length; the time coordinate stores the end
 # of the averaging window in days.
-function _write_output!(m, t_days)
-    n = m.t_accum
+function _write_output!(sim, t_days)
+    m = sim.model
+    n = sim.io.t_accum
     tmask_int = _int(m.tmask)
-    m.time_index += 1
-    k = m.time_index
-    path = joinpath(m.rundir, "output.nc")
+    sim.io.time_index += 1
+    k = sim.io.time_index
+    path = joinpath(sim.io.rundir, "output.nc")
 
     NCDataset(path, "a") do ds
         ds["time"][k] = t_days
-        ds["walltime"][k] = time() - m.walltime_start
+        ds["walltime"][k] = time() - sim.io.walltime_start
 
         function wv(name, av, scale)
             av_int = _int(av)
@@ -557,58 +541,59 @@ function _write_output!(m, t_days)
             ds[name][:, :, k] = ifelse.(tmask_int .> 0, av_int ./ n .* scale, FT0)
         end
 
-        m.save_Ut     && wv("Ut",     m.Utav,   1.0)
-        m.save_Uu     && wv("Uu",     m.Uuav,   1.0)
-        m.save_Vt     && wv("Vt",     m.Vtav,   1.0)
-        m.save_Vv     && wv("Vv",     m.Vvav,   1.0)
-        m.save_D      && wv("D",      m.Dav,    1.0)
-        m.save_T      && wv("T",      m.Tav,    1.0)
-        m.save_S      && wv("S",      m.Sav,    1.0)
-        m.save_melt   && wv("melt",   m.meltav, m.seconds_per_year)
-        m.save_entr   && wv("entr",   m.entrav, m.seconds_per_year)
-        m.save_ent2   && wv("ent2",   m.ent2av, m.seconds_per_year)
-        m.save_detr   && wv("detr",   m.detrav, m.seconds_per_year)
-        m.save_Tbase  && wv("Tbase",  m.Tbav,   1.0)
-        m.save_Tamb   && wv("Tamb",   m.Taav,   1.0)
-        m.save_gammaT && wv("gammaT", m.gamTav, 1.0)
+        sim.output.save_Ut     && wv("Ut",     sim.io.Utav,   1.0)
+        sim.output.save_Uu     && wv("Uu",     sim.io.Uuav,   1.0)
+        sim.output.save_Vt     && wv("Vt",     sim.io.Vtav,   1.0)
+        sim.output.save_Vv     && wv("Vv",     sim.io.Vvav,   1.0)
+        sim.output.save_D      && wv("D",      sim.io.Dav,    1.0)
+        sim.output.save_T      && wv("T",      sim.io.Tav,    1.0)
+        sim.output.save_S      && wv("S",      sim.io.Sav,    1.0)
+        sim.output.save_melt   && wv("melt",   sim.io.meltav, m.seconds_per_year)
+        sim.output.save_entr   && wv("entr",   sim.io.entrav, m.seconds_per_year)
+        sim.output.save_ent2   && wv("ent2",   sim.io.ent2av, m.seconds_per_year)
+        sim.output.save_detr   && wv("detr",   sim.io.detrav, m.seconds_per_year)
+        sim.output.save_Tbase  && wv("Tbase",  sim.io.Tbav,   1.0)
+        sim.output.save_Tamb   && wv("Tamb",   sim.io.Taav,   1.0)
+        sim.output.save_gammaT && wv("gammaT", sim.io.gamTav, 1.0)
     end
-    _print2log(m, @sprintf("%.3f days: appended output → output.nc (step %d)", t_days, k))
+    _print2log(sim, @sprintf("%.3f days: appended output → output.nc (step %d)", t_days, k))
 end
 
-# A periodic event is due once accumulated time reaches the next event time.
-# The half-step tolerance mirrors the run! stopping rule (round-half-up), so a
-# fixed dt fires at the same steps the old `t % interval == 0` test did.
-_event_due(m, next) = m.t_sim + m.dt / 2 >= next
+# A periodic event is due once the clock reaches the next event time.  The
+# half-step tolerance mirrors the run! stopping rule (round-half-up), so a fixed
+# dt fires at the same steps an integer `t % interval == 0` test would.
+_event_due(sim, next) = sim.clock.time + sim.clock.dt / 2 >= next
 
 """
 $(TYPEDSIGNATURES)
 
 Accumulate model fields into time averages and write a NetCDF output file
-at every `m.saveday`-day interval.  Called once per time step inside `run!`;
+at every `output.saveday`-day interval.  Called once per time step inside `run!`;
 the final partial window is flushed by `run!` after the loop.
 """
-function savefields!(m)
-    _accum!(m)
-    if _event_due(m, m.nextsave)
-        _write_output!(m, _t_days(m))
-        _reset_accum!(m)
-        m.nextsave += m.saveday * m.seconds_per_day
+function savefields!(sim)
+    _accum!(sim)
+    if _event_due(sim, sim.io.nextsave)
+        _write_output!(sim, _t_days(sim))
+        _reset_accum!(sim)
+        sim.io.nextsave += sim.output.saveday * sim.model.seconds_per_day
     end
 end
 
 # Flush any unwritten accumulation as a final output file (end of run).
-function flush_output!(m)
-    m.count > 0 || return
-    _write_output!(m, _t_days(m))
-    _reset_accum!(m)
+function flush_output!(sim)
+    sim.io.count > 0 || return
+    _write_output!(sim, _t_days(sim))
+    _reset_accum!(sim)
 end
 
 # ============================================================================
 # Restart I/O
 # ============================================================================
 
-function _write_restart!(m, t_days)
-    filename = joinpath(m.rundir, @sprintf("restart_%06.0f.jld2", t_days))
+function _write_restart!(sim, t_days)
+    m = sim.model
+    filename = joinpath(sim.io.rundir, @sprintf("restart_%06.0f.jld2", t_days))
 
     _v(var) = (
         past = Array(var.past),
@@ -620,7 +605,7 @@ function _write_restart!(m, t_days)
     jldsave(
         filename;
         t_days,
-        dt = Float64(m.dt),
+        dt = Float64(sim.clock.dt),
         D = _v(m.D),
         U = _v(m.U),
         V = _v(m.V),
@@ -628,40 +613,42 @@ function _write_restart!(m, t_days)
         S = _v(m.S),
     )
 
-    cp(filename, joinpath(m.rundir, "restart_latest.jld2"); force = true)
-    _print2log(m, @sprintf("%.3f days: saved restart → %s", t_days, basename(filename)))
+    cp(filename, joinpath(sim.io.rundir, "restart_latest.jld2"); force = true)
+    _print2log(sim, @sprintf("%.3f days: saved restart → %s", t_days, basename(filename)))
 end
 
 """
 $(TYPEDSIGNATURES)
 
 Write a JLD2 restart file containing all three leapfrog levels of D, U, V,
-T, S at every `m.restday`-day interval.  Called once per time step inside
+T, S at every `output.restday`-day interval.  Called once per time step inside
 `run!`; the final state is written by `run!` after the loop.  Also writes
 `restart_latest.jld2`.  Arrays are moved to CPU before saving so the file is
 backend-agnostic; the native `FT` precision is preserved.
 """
-function saverestart!(m)
-    _event_due(m, m.nextrest) || return
-    _write_restart!(m, _t_days(m))
-    m.nextrest += m.restday * m.seconds_per_day
+function saverestart!(sim)
+    _event_due(sim, sim.io.nextrest) || return
+    _write_restart!(sim, _t_days(sim))
+    sim.io.nextrest += sim.output.restday * sim.model.seconds_per_day
 end
 
 """
 $(TYPEDSIGNATURES)
 
-Load D, U, V, T, S from the JLD2 restart file at `m.restartfile` into all
-three leapfrog levels of the existing `Var` structs, then call
+Load D, U, V, T, S from the JLD2 restart file at `path` into all three leapfrog
+levels of the model's `Var` structs, set the clock to the restart time, then call
 `update_secondary_fields!` and one bootstrap integration step.
 
 Geometry (masks, z_draft) must already be initialised before calling this.
 """
-function init_from_restart!(m)
-    jldopen(m.restartfile, "r") do f
-        m.t_start = f["t_days"]
+function init_from_restart!(sim, path::AbstractString)
+    m = sim.model
+    sim.io.restartfile = path
+    jldopen(path, "r") do f
+        sim.clock.time = f["t_days"] * Float64(m.seconds_per_day)
         # Resume at the saved dt when present (adaptive runs); older files
-        # without it keep the dt set at build (dt0).
-        haskey(f, "dt") && (m.dt = m.FT(f["dt"]))
+        # without it keep the dt the simulation was constructed with.
+        haskey(f, "dt") && (sim.clock.dt = m.FT(f["dt"]))
         for (name, var) in (("D", m.D), ("U", m.U), ("V", m.V), ("T", m.T), ("S", m.S))
             data = f[name]
             var.past .= data.past
@@ -669,10 +656,10 @@ function init_from_restart!(m)
             var.future .= data.future
         end
     end
-    update_secondary_fields!(m)
-    leapfrog_step!(m, 1)
-    _print2log(m, "Restarted from $(m.restartfile) at $(m.t_start) days")
-    return m
+    update_secondary_fields!(m, sim.clock.dt)
+    leapfrog_step!(sim, 1)
+    _print2log(sim, "Restarted from $(path) at $(_t_days(sim)) days")
+    return sim
 end
 
 # ============================================================================
@@ -682,12 +669,13 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Write a one-line diagnostic to the log file at every `m.diagday`-day interval.
+Write a one-line diagnostic to the log file at every `output.diagday`-day interval.
 """
-function printdiags(m)
-    _event_due(m, m.nextdiag) || return
-    m.nextdiag += m.diagday * m.seconds_per_day
-    t_days = _t_days(m)
+function printdiags(sim)
+    _event_due(sim, sim.io.nextdiag) || return
+    m = sim.model
+    sim.io.nextdiag += sim.output.diagday * m.seconds_per_day
+    t_days = _t_days(sim)
 
     tmask = Array(m.tmask)
     D = Array(m.D.present)
@@ -753,5 +741,5 @@ function printdiags(m)
         d_drho,
         d_conv
     )
-    _print2log(m, line)
+    _print2log(sim, line)
 end

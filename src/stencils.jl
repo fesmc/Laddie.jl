@@ -509,7 +509,7 @@ end
 
 function upwind_advection_T(out, m, var)
     ny, nx = size(var)
-    if m.open_bc isa ZeroGradientInflow
+    if m.boundary.open_ocean isa ZeroGradientInflow
         launch!(
             _upwind_advection_T_kernel!,
             out,
@@ -568,8 +568,8 @@ function upwind_advection_T(out, m, var)
 end
 function upwind_advection_U(m)
     ny, nx = size(m.U.present)
-    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
-    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
+    dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
+    dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     launch!(
         _upwind_advection_U_kernel!,
         m.cU,
@@ -613,8 +613,8 @@ function upwind_advection_U(m)
 end
 function upwind_advection_V(m)
     ny, nx = size(m.V.present)
-    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
-    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
+    dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
+    dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     launch!(
         _upwind_advection_V_kernel!,
         m.cV,
@@ -686,8 +686,8 @@ laplace_V(m) = laplace_V(m, m.lateral_viscosity)
 # themselves, so this stays bit-identical to pre-AbstractLateralViscosity Laddie.jl.
 function laplace_U(m, ::PrescribedLateralViscosity)
     ny, nx = size(m.U.past)
-    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
-    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
+    dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
+    dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     launch!(
         _laplace_U_kernel!,
         m.lU,
@@ -720,8 +720,8 @@ function laplace_U(m, ::PrescribedLateralViscosity)
 end
 function laplace_V(m, ::PrescribedLateralViscosity)
     ny, nx = size(m.V.past)
-    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
-    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
+    dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
+    dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     launch!(
         _laplace_V_kernel!,
         m.lV,
@@ -758,8 +758,8 @@ end
 # drag keeps using the plain, unscaled m.A_h (see _nonlinear_laplace_U_kernel!).
 function laplace_U(m, lv::NonlinearLateralViscosity)
     ny, nx = size(m.U.past)
-    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
-    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
+    dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
+    dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     # V collocated onto the U points, so the kernel can form |Δu| across a face.
     # Same 4-point average the drag term uses for the speed magnitude.
     m.VatU .= ip_half(jm_half(m.V.past))
@@ -798,8 +798,8 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
 end
 function laplace_V(m, lv::NonlinearLateralViscosity)
     ny, nx = size(m.V.past)
-    dslip_gl = _gl_slip(m.grline_bc, m.slip) - m.slip
-    dslip_land = _land_slip(m.land_bc, m.slip) - m.slip
+    dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
+    dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     # U collocated onto the V points; mirrors laplace_U above.
     m.UatV .= jp_half(im_half(m.U.past))
     launch!(

@@ -6,7 +6,8 @@
 """
 Abstract supertype for ice-base slope (dzdx/dzdy) computation strategies.
 Pass a concrete instance as the `gradient` keyword to `Model` or
-`build_isomip`.
+`build_isomip`.  The slope is part of the model's `Geometry`, not of the
+[`Grid`](@ref): it depends on which cells are active.
 """
 abstract type AbstractIceSlopeGradient end
 
@@ -72,20 +73,19 @@ function _icebase_slope(::JlGradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
 end
 
 # ============================================================================
-# Grid{FT, A} — static geometry, masks, stagger-count denominators.
+# Geometry{FT, A} — everything derived from the grid once a model has decided
+# which cells are active: the gap-resolved mask, the masks and wall indicators,
+# stagger-count denominators, the ice-base slope and the Coriolis field.  Owned by
+# the Model; the Grid itself carries only what is independent of any modelling
+# choice.
 # A is the concrete matrix type (Matrix{FT} on CPU, CuArray{FT,2} on GPU).
-# mask is always kept as Matrix{Int} on the CPU for host-side branching.
+# resolved_mask is always kept as Matrix{Int} on the CPU for host-side branching.
 # ============================================================================
 
-struct Grid{FT,A<:AbstractMatrix{FT}}
-    Nx::Int
-    Ny::Int
-    dx::FT
-    dy::FT
-
-    mask::Matrix{Int}
-    z_draft::A
-    z_bed::A
+struct Geometry{FT,A<:AbstractMatrix{FT}}
+    # The grid's mask after the gaps boundary condition: under SinkGapsBC gap cells
+    # (4) are open ocean (0), under ConnectedGapsBC they stay 4.
+    resolved_mask::Matrix{Int}
     dzdx::A
     dzdy::A
 
@@ -164,17 +164,13 @@ struct Grid{FT,A<:AbstractMatrix{FT}}
     vmask_jp::A
 end
 
-"""
-$(TYPEDSIGNATURES)
-
-Build all masks and stagger-count denominators from the raw integer `mask` and
-ice-draft array `z_draft`.  Returns an immutable typed struct.
-"""
-function Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, z_bed_raw::AbstractMatrix, f_t::AbstractMatrix, dx, dy; FT = Float64, gradient = JlGradient())
+# Build all masks and stagger-count denominators from the gap-resolved integer `mask`
+# and the (adjusted) ice draft `z_draft`, plus the ice-base slope and the Coriolis
+# field staggered onto the velocity faces.  CPU arrays; the Model moves them.
+function Geometry(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, f_t::AbstractMatrix, dx, dy; FT = Float64, gradient = JlGradient())
     dx_ft = FT(dx)
     dy_ft = FT(dy)
     z_draft_ft = FT.(z_draft)
-    z_bed_ft = FT.(z_bed_raw)
 
     # Plain arithmetic face averages, not the masked `ip_t`/`jp_t` used for
     # prognostics: `f` is a property of position on Earth and is defined in every
@@ -281,15 +277,8 @@ function Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, z_bed_raw::Abs
     vmask_jm = vmask .+ vmaskyp1
     vmask_jp = vmask .+ vmaskym1
 
-    ny, nx = size(mask)
-    Grid{FT,Matrix{FT}}(
-        nx,
-        ny,
-        dx_ft,
-        dy_ft,
+    Geometry{FT,Matrix{FT}}(
         Matrix{Int}(mask),
-        z_draft_ft,
-        z_bed_ft,
         dzdx,
         dzdy,
         f,
@@ -356,4 +345,122 @@ function Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, z_bed_raw::Abs
         vmask_jm,
         vmask_jp,
     )
+end
+
+# ============================================================================
+# Grid{FT, A} — where the cells are and what is under them: the cell layout and
+# spacing, the (preprocessed, cropped) mask with gaps still marked 4, the ice draft
+# and bed, and the cell-centre coordinates.  Nothing here depends on a modelling
+# choice; everything that does lives in the Model's `Geometry`.
+# ============================================================================
+
+"""
+$(TYPEDEF)
+
+The model grid: a cropped rectangle of cells with its mask, ice draft and bed.
+Construct with [`Grid(mask, z_draft, dx, dy; ...)`](@ref Grid(::AbstractMatrix{Int}, ::AbstractMatrix, ::Real, ::Real))
+and pass it to [`Model`](@ref).
+
+The grid knows nothing about boundary conditions or physics: a gap cell (`4`) is
+kept as such whatever the gaps treatment, the masks the solver uses are derived
+by the model, and so are the ice-base slope and the Coriolis field.
+
+# Fields
+$(TYPEDFIELDS)
+"""
+struct Grid{FT,A<:AbstractMatrix{FT}}
+    "total cells in x, including the one-cell border ring"
+    Nx::Int
+    "total cells in y, including the one-cell border ring"
+    Ny::Int
+    "cell spacing in x (m)"
+    dx::FT
+    "cell spacing in y (m)"
+    dy::FT
+    "cell classification after preprocessing and cropping; gaps still marked `4` (CPU)"
+    mask::Matrix{Int}
+    "ice-base depth (m, ≤ 0), zeroed outside grounded ice and shelf"
+    z_draft::A
+    "bed elevation (m); `-Inf` when none was given (no cap on the layer thickness)"
+    z_bed::A
+    "interior cell-centre x coordinates (m, CPU)"
+    x::Vector{FT}
+    "interior cell-centre y coordinates (m, CPU)"
+    y::Vector{FT}
+    "row and column ranges of the input arrays that the grid keeps"
+    crop::Tuple{UnitRange{Int},UnitRange{Int}}
+    "size of the input arrays, before cropping"
+    input_size::Tuple{Int,Int}
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Build a grid from a domain mask and ice draft with cell spacing `dx`, `dy` (m).
+
+# Mask convention
+| Value | Meaning |
+|-------|---------|
+| `0`   | open ocean (outside domain, passive) |
+| `1`   | land — exposed bedrock, and the one-cell border ring |
+| `2`   | grounded ice (sets inflow boundary for the plume) |
+| `3`   | floating ice shelf (active plume cells) |
+| `4`   | ice-shelf gap (ice-free; treated as the model's [`AbstractGapsBC`](@ref) decides) |
+
+`mask` and `z_draft` must include the one-cell border ring, i.e. have size
+`(ny+2, nx+2)` where `ny × nx` are the interior cells.  `z_draft` is the ice-base
+depth in metres (negative downward); values outside grounded ice and shelf are
+ignored and zeroed, and shallow shelf drafts are clamped to −1 m.
+
+# Keywords
+- `z_bed`: bed elevation (same size), or `nothing` (default) for no cap on the
+  layer thickness.
+- `preprocess`: mask preprocessing steps applied in order before cropping, e.g.
+  [`MarkGapsPreprocess`](@ref) or `FillSmallShelfPatchesPreprocess()`.  The
+  caller's `mask` is not modified.
+- `domain_cropping`: `MinRectangleDomainCropping()` (default) or `NoDomainCropping()`.
+  Gap cells count as active, so a gap is never cropped away.
+- `backend`: KernelAbstractions backend of the arrays (default `CPU()`).
+- `FT`: floating-point precision type (default `Float64`).
+
+Full-domain fields a model is given later — a 2D latitude or basal ice
+temperature — must match the size of the arrays passed here; the model crops
+them with `grid.crop`.
+"""
+function Grid(
+    mask::AbstractMatrix{Int},
+    z_draft::AbstractMatrix,
+    dx::Real,
+    dy::Real;
+    z_bed = nothing,
+    preprocess = AbstractPreprocess[],
+    domain_cropping = MinRectangleDomainCropping(),
+    backend = CPU(),
+    FT = Float64,
+)
+    _validate_input_shapes(mask, z_draft, z_bed, dx, dy)
+    input_size = size(mask)
+    mask = Matrix{Int}(mask)   # a copy: preprocessing never touches the caller's array
+    for p in preprocess
+        preprocess!(mask, p)
+    end
+    r, c = _crop_ranges(mask, domain_cropping)
+    mask = mask[r, c]
+    _validate_grid_mask(mask)
+    ny_total, nx_total = size(mask)
+    z_bed_ft = z_bed === nothing ? fill(FT(-Inf), ny_total, nx_total) : FT.(z_bed[r, c])
+    grid = Grid{FT,Matrix{FT}}(
+        nx_total,
+        ny_total,
+        FT(dx),
+        FT(dy),
+        mask,
+        _adjust_z_draft(mask, z_draft[r, c], FT),
+        z_bed_ft,
+        collect(FT(dx) .* (1:(nx_total-2))),
+        collect(FT(dy) .* (1:(ny_total-2))),
+        (r, c),
+        input_size,
+    )
+    return backend === CPU() ? grid : _grid_to_backend(grid, backend)
 end

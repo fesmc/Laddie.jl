@@ -5,14 +5,21 @@
 _to_device(backend, a::AbstractArray) =
     (b = KA.allocate(backend, eltype(a), size(a)); copyto!(b, a); b)
 
-# Reconstruct an immutable Grid{FT, A} with all float arrays moved to backend.
-# The integer mask field is left on CPU (used for host-side branching only).
-# Dispatches mv on the source array type A0 so scalars and Matrix{Int} pass through.
+# Reconstruct an immutable Grid{FT, A} or Geometry{FT, A} with all float matrices
+# moved to backend.  Integer masks, coordinate vectors, ranges and scalars stay on
+# the CPU: mv dispatches on the source matrix type A0, so only A0 fields move.
 function _grid_to_backend(g::Grid{FT,A0}, backend) where {FT,A0}
-    A = typeof(_to_device(backend, g.tmask))
+    A = typeof(_to_device(backend, g.z_draft))
     mv(a::A0) = _to_device(backend, a)
     mv(a) = a
     Grid{FT,A}(map(fn -> mv(getfield(g, fn)), fieldnames(typeof(g)))...)
+end
+
+function _geometry_to_backend(g::Geometry{FT,A0}, backend) where {FT,A0}
+    A = typeof(_to_device(backend, g.tmask))
+    mv(a::A0) = _to_device(backend, a)
+    mv(a) = a
+    Geometry{FT,A}(map(fn -> mv(getfield(g, fn)), fieldnames(typeof(g)))...)
 end
 
 # Reconstruct a forcing struct with all float arrays moved to backend.
@@ -53,8 +60,8 @@ function _state_to_backend(s::State{FT,A0}, backend) where {FT,A0}
     )
 end
 
-# Reconstruct IOState with accumulator matrices moved to backend; counters,
-# strings, and the CPU-resident x/y coordinate vectors pass through unchanged.
+# Reconstruct IOState with accumulator matrices moved to backend; counters
+# and strings pass through unchanged.
 function _iostate_to_backend(io::IOState{FT,A0}, backend) where {FT,A0}
     A = typeof(KA.allocate(backend, FT, 0, 0))
     mv(a::A0) = _to_device(backend, a)
@@ -83,30 +90,30 @@ The original model is not modified; always assign the result:
 
 ```julia
 using CUDA
-m = build_isomip()
-m = to_backend(m, CUDABackend())
-run!(m; days = 5.0)
+model = Model(Grid(mask, z_draft, dx, dy); forcing)
+model = to_backend(model, CUDABackend())
+sim = Simulation(model)
 ```
 
-Prefer passing `backend` directly to `build_isomip` where possible — it
-avoids the redundant CPU allocation:
+Prefer passing `backend` directly to `Grid` or `build_isomip` where possible —
+it avoids the redundant CPU allocation:
 ```julia
-m = build_isomip(CUDABackend(); FT = Float32)
+sim = build_isomip(CUDABackend(); FT = Float32)
 ```
 """
 function to_backend(m::Model, backend)
-    new_io = _iostate_to_backend(getfield(m, :io), backend)
     new_grid = _grid_to_backend(getfield(m, :grid), backend)
+    new_geometry = _geometry_to_backend(getfield(m, :geometry), backend)
     new_state = _state_to_backend(getfield(m, :state), backend)
     new_cache = _cache_to_backend(getfield(m, :cache), backend)
     new_forcing = _forcing_to_backend(getfield(m, :forcing), backend)
     Model(
-        new_io,
-        getfield(m, :config),
         new_grid,
+        new_geometry,
         new_state,
         new_cache,
         getfield(m, :params),
+        getfield(m, :boundary),
         new_forcing,
     )
 end

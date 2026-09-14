@@ -50,10 +50,13 @@ Pkg.add(url = "https://github.com/fesmc/Laddie.jl")
 ```julia
 using Laddie
 
-m = build_isomip(; isomipcond = :warm)   # 240×40 idealised channel, 2 km cells
-run!(m; days = 30)
-max_melt, mean_melt, max_speed = meltstats(m)   # m/yr, m/yr, m/s
+sim = build_isomip(; isomipcond = :warm)   # 240×40 idealised channel, 2 km cells
+run!(sim; days = 30)
+max_melt, mean_melt, max_speed = meltstats(sim)   # m/yr, m/yr, m/s
 ```
+
+`build_isomip` returns a `Simulation`: a `Model` (geometry, physics, state —
+`sim.model`) plus its time integration (`sim.clock`, the time stepper, output).
 
 ## Realistic geometry
 
@@ -72,9 +75,17 @@ mask    = build_laddie_mask(bed, h)         # 0 ocean / 1 land / 2 grounded / 3 
 zb      = ice_base_depth(bed, h)            # ice-base depth (m, negative)
 ocean   = OceanForcing1D(Tz, Sz, z)         # T (°C), S (psu), z (m) vectors
 
-m = Model(mask, zb, 500.0, 500.0, ocean, Params())
-run!(m; days = 90)
+grid  = Grid(mask, zb, 500.0, 500.0)        # geometry: where the cells are
+model = Model(grid; forcing = ocean)        # physics on that grid
+sim   = Simulation(model; dt = 120.0)       # time integration and output
+run!(sim; days = 90)
 ```
+
+This is the grid → model → simulation → `run!` split shared by Oceananigans,
+SpeedyWeather and FastIsostasy. The `Grid` holds only what is independent of any
+modelling choice (mask, draft, bed, spacing); the `Model` derives the active-cell
+masks, ice-base slope and Coriolis field from it, so one grid can drive several
+models — e.g. both gap treatments.
 
 A model is driven by a `CavityForcing` — an ocean forcing plus an ice forcing.
 Passing the ocean forcing alone, as above, pairs it with a uniform basal ice
@@ -85,34 +96,41 @@ forcing = CavityForcing(ocean, PrescribedIceForcing(T_ice_base))  # same size as
 ```
 
 Physical parameters and parameterization choices live in a single typed
-`Params` object:
+`Params` object, boundary conditions in a `BoundaryConditions`, and everything
+about time integration is a `Simulation` option:
 
 ```julia
-params = Params(; dt = 120.0, A_h = 25.0,
-                melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
-                convection_scheme = RelaxToAmbient(10000.0))
+params   = Params(; A_h = 25.0,
+                  melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
+                  convection_scheme = RelaxToAmbient(10000.0))
+boundary = BoundaryConditions(; grounding_line = NoSlipGL(), gaps = ConnectedGapsBC())
+model    = Model(grid; forcing = ocean, params, boundary)
+sim      = Simulation(model; dt = 120.0, tstep = AdaptiveDt(),
+                      stop = FixedSimulationEnd(t_end = 90.0))
+run!(sim)
 ```
 
 ## GPU
 
 ```julia
 using CUDA
-m = build_isomip(CUDABackend(); FT = Float32, isomipcond = :warm)
-run!(m; days = 30)
+sim = build_isomip(CUDABackend(); FT = Float32, isomipcond = :warm)
+run!(sim; days = 30)
 ```
 
 ## Output and restarts
 
 ```julia
-config = RunConfig(name = "warm0", saveday = 1.0, restday = 30.0)
-m  = build_isomip(; isomipcond = :warm, config)
-run!(m)
+output = OutputConfig(name = "warm0", saveday = 1.0, restday = 30.0)
+sim = build_isomip(; isomipcond = :warm, output)
+run!(sim)
 ```
 
 This writes time-averaged NetCDF fields, JLD2 restart files, a log, and a
-`run_metadata.toml` provenance record (parameters, forcing, grid, versions)
-to `./output/warm0/`. Continue a run by passing
-`RunConfig(fromrestart = true, restartfile = ".../restart_latest.jld2", ...)`.
+`run_metadata.toml` provenance record (parameters, time integration, forcing,
+grid, versions) to `./output/warm0/`. Successive `run!` calls continue the same
+clock. Continue from a restart file with
+`Simulation(model; restart = ".../restart_latest.jld2", ...)`.
 
 ## Citing
 

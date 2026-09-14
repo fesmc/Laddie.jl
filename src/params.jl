@@ -1,6 +1,8 @@
 # ============================================================================
-# Params{FT,EP,MP,CS,OB,GL,LB,GB,TS} — all scalar physical constants + parameterization
-# objects bundled in one immutable typed struct.
+# Params{FT,EP,MP,CS,MLT,LV,FP,CP} — all scalar physical constants +
+# parameterization objects bundled in one immutable typed struct.  Nothing about
+# time integration lives here (that belongs to the `Simulation`), nor the boundary
+# conditions (a `BoundaryConditions` held by the `Model`).
 # ============================================================================
 
 struct Params{
@@ -8,20 +10,11 @@ struct Params{
     EP,     #<:AbstractEntrainment,
     MP,     #<:AbstractMelting,
     CS,     #<:AbstractConvectionScheme,
-    OB,     #<:AbstractOpenOceanBC,
-    GL,     #<:AbstractGroundingLineBC,
-    LB,     #<:AbstractLandBC,
-    GB,     #<:AbstractGapsBC,
-    TS,     #<:AbstractTimeStepper,
     MLT,    #<:AbstractMaximumLayerThickness,
     LV,     #<:AbstractLateralViscosity,
     FP,     #<:AbstractFrontPressure,
     CP,     #<:AbstractCoriolisParameter,
 }
-    # Time stepping (dt0 is the initial step; the runtime dt lives in IOState
-    # so it can vary under adaptive time stepping — `m.dt` resolves there)
-    dt0::FT
-    nu::FT
     # Dynamics
     g::FT
     slip::FT
@@ -57,11 +50,6 @@ struct Params{
     entrainment::EP
     melting::MP
     convection_scheme::CS
-    open_bc::OB
-    grline_bc::GL
-    land_bc::LB
-    gaps_bc::GB
-    tstep::TS
     max_layer_thickness::MLT
     lateral_viscosity::LV
     front_pressure::FP
@@ -70,10 +58,10 @@ end
 
 # Promote a parameterization object's floating-point fields to FT so it stays
 # consistent with Params{FT} (e.g. Params(; FT = Float32, melting = FixedGamTMelting(...))
-# where the default object was built at Float64).  Integer fields (such as
-# AdaptiveDt's ncheck) and field-less singletons (open/grounding-line/gaps BCs) pass
-# through unchanged.  Generic over the field list, so new parameterization types
-# (e.g. `AbstractLandBC`) are handled automatically.
+# where the default object was built at Float64).  Integer fields and field-less
+# singletons pass through unchanged.  Generic over the field list, so new
+# parameterization types are handled automatically; also applied to the boundary
+# conditions and the time stepper.
 _to_ft(v::AbstractFloat, ::Type{FT}) where {FT} = FT(v)
 _to_ft(v, ::Type) = v
 function _promote_param(x, ::Type{FT}) where {FT}
@@ -90,13 +78,11 @@ All parameters default to ISOMIP+-canonical values, so `Params()` is a valid
 ready-to-use parameter set.  Override individual fields as needed:
 
 ```julia
-params = Params(; f = 0.0, melting = TurbulentGamTMelting(), FT = Float32)
+params = Params(; coriolis = CoriolisParameter0D(0.0), melting = TurbulentGamTMelting(), FT = Float32)
 ```
 """
 function Params(;
     FT = Float64,
-    dt = 210.0,
-    nu = 0.8,
     g = 9.81,
     coriolis = CoriolisParameter0D(),
     slip = 1.0,
@@ -127,11 +113,6 @@ function Params(;
     entrainment = LambertEntrainment(2.5),
     melting = FixedGamTMelting(0.00018),
     convection_scheme = ResetToAmbient(0.005),
-    open_bc = ZeroGradientInflow(),
-    grline_bc = FreeSlipGL(),
-    land_bc = FreeSlipLand(),
-    gaps_bc = SinkGapsBC(),
-    tstep = FixedDt(),
     max_layer_thickness = TopographicMaxLayerThickness(),
     lateral_viscosity = PrescribedLateralViscosity(),
     front_pressure = FullDepthGradient(),
@@ -140,18 +121,11 @@ function Params(;
     entrainment = _promote_param(entrainment, FT)
     melting = _promote_param(melting, FT)
     convection_scheme = _promote_param(convection_scheme, FT)
-    open_bc = _promote_param(open_bc, FT)
-    grline_bc = _promote_param(grline_bc, FT)
-    land_bc = _promote_param(land_bc, FT)
-    gaps_bc = _promote_param(gaps_bc, FT)
-    tstep = _promote_param(tstep, FT)
     max_layer_thickness = _promote_param(max_layer_thickness, FT)
     lateral_viscosity = _promote_param(lateral_viscosity, FT)
     front_pressure = _promote_param(front_pressure, FT)
     coriolis = _promote_param(coriolis, FT)
     Params(
-        FT(dt),
-        FT(nu),
         FT(g),
         FT(slip),
         FT(C_d),
@@ -181,11 +155,6 @@ function Params(;
         entrainment,
         melting,
         convection_scheme,
-        open_bc,
-        grline_bc,
-        land_bc,
-        gaps_bc,
-        tstep,
         max_layer_thickness,
         lateral_viscosity,
         front_pressure,

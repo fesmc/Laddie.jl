@@ -32,8 +32,9 @@ using Laddie
 using CairoMakie
 CairoMakie.activate!(type = "png")
 
-m = build_isomip(; isomipcond = :warm)
-run!(m; days = 3.0, verbose = false)
+sim = build_isomip(; isomipcond = :warm)
+run!(sim; days = 3.0, verbose = false)
+m = sim.model
 nothing #hide
 
 # A small helper: strip the grounded border, mask everything outside the ice

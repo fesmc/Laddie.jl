@@ -90,7 +90,9 @@ function _adjust_z_draft(mask::AbstractMatrix{Int}, z_draft_raw::AbstractMatrix,
     return z_draft
 end
 
-# Initialise prognostic fields from scratch (no restart file).
+# Initialise prognostic fields from scratch: all three time levels identical.  The
+# secondary fields and the leapfrog bootstrap step depend on dt, so they are left
+# to the `Simulation` constructor.
 function _initialize_prognostics!(m)
     update_ambient_fields!(m)
     for level in (:past, :present, :future)
@@ -98,8 +100,6 @@ function _initialize_prognostics!(m)
         setfield!(m.T, level, (m.Ta .+ m.dT_init) .* m.tmask)
         setfield!(m.S, level, (m.Sa .+ m.dS_init) .* m.tmask)
     end
-    update_secondary_fields!(m)
-    leapfrog_step!(m, 1)
     return
 end
 
@@ -529,6 +529,52 @@ end
 
 @kwdef struct FillSmallGroundedPatchesPreprocess <: AbstractPreprocess
     min_size::Int = 10
+end
+
+"""
+$(TYPEDEF)
+
+Mark ice-shelf gaps from a reference ice footprint: every open-ocean cell (`0`)
+where `refgeo` marks ice becomes a gap (`4`).  This mirrors the `refgeo_Hi > 0`
+test of the reference implementation — a gap is an ice-free cell where the
+reference geometry had ice, not a topological property of the mask.
+
+`refgeo` may be a `Bool` matrix, or any numeric matrix in which positive entries
+mark ice (e.g. a reference ice thickness).  It must match the size of the mask
+passed to `Grid`, since preprocessing runs before domain cropping — which is
+also what keeps a gap at the edge of the footprint from being cropped away before
+it exists.
+
+Identifying gaps is a statement about geometry; what happens *in* a gap is the
+boundary condition, [`SinkGapsBC`](@ref) or [`ConnectedGapsBC`](@ref).  Place this
+step after any hole-filling steps in the `preprocess` list, so the gaps it marks
+are not reclassified afterwards.
+
+```julia
+grid = Grid(mask, z_draft, dx, dy; preprocess = [MarkGapsPreprocess(reference_thickness)])
+Model(grid; forcing, boundary = BoundaryConditions(; gaps = ConnectedGapsBC()))
+```
+
+# Fields
+$(TYPEDFIELDS)
+"""
+struct MarkGapsPreprocess{R<:AbstractMatrix} <: AbstractPreprocess
+    "reference ice footprint (`Bool`, or numeric with positive entries marking ice)"
+    refgeo::R
+end
+
+function preprocess!(mask, p::MarkGapsPreprocess)
+    size(p.refgeo) == size(mask) || throw(
+        ArgumentError(
+            "MarkGapsPreprocess refgeo must have the same size as the mask, got " *
+            "$(size(p.refgeo)) vs $(size(mask)); note the mask is the one passed to " *
+            "`Grid`, before any domain cropping",
+        ),
+    )
+    had_ice = p.refgeo isa AbstractMatrix{Bool} ? p.refgeo : p.refgeo .> 0
+    gaps = (mask .== 0) .& had_ice
+    mask[gaps] .= 4
+    return count(gaps)
 end
 
 preprocess!(mask, ::FillOceanHolesPreprocess)       = fill_ocean_holes!(mask)

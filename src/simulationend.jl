@@ -1,13 +1,15 @@
 
 # ============================================================================
-# Simulation-end criteria — decide when `run!` stops.  Passed as the `until`
-# keyword to `run!` and dispatched in the time loop.  The `days` keyword is the
-# shorthand for `until = FixedSimulationEnd(t_end = days)`.
+# Simulation-end criteria — decide when `run!` stops.  Set as the `stop` keyword
+# of `Simulation`, or per call as the `until` keyword of `run!`, and dispatched in
+# the time loop.  The `days` keyword is the shorthand for
+# `until = FixedSimulationEnd(t_end = days)`.
 # ============================================================================
 
 """
 Abstract supertype for the stopping criterion of `run!`.  Pass a concrete
-instance via `RunConfig`/`run!`: [`FixedSimulationEnd`](@ref) (run a set
+instance as `Simulation(model; stop = ...)` or `run!(sim; until = ...)`:
+[`FixedSimulationEnd`](@ref) (run a set
 duration) or [`SteadyStateEnd`](@ref) (stop once the solution settles).
 """
 abstract type AbstractSimulationEnd end
@@ -16,9 +18,10 @@ abstract type AbstractSimulationEnd end
 $(TYPEDSIGNATURES)
 
 Stop after a fixed simulated duration `t_end` (days, the duration of this `run!`
-call).  This is the default and exactly reproduces `run!(m; days = t_end)`.
+call).  This is the default and exactly reproduces `run!(sim; days = t_end)`.
 
-Select via `run!(m; until = FixedSimulationEnd(t_end = 30.0))`.
+Select via `Simulation(model; stop = FixedSimulationEnd(t_end = 30.0))` or
+`run!(sim; until = FixedSimulationEnd(t_end = 30.0))`.
 """
 Base.@kwdef struct FixedSimulationEnd <: AbstractSimulationEnd
     t_end::Float64 = 30.0
@@ -41,7 +44,7 @@ order 100 m yr⁻¹) and a cold one (order 1 m yr⁻¹).  Samples are taken at t
 diagnostic check cadence (not every step), which is cheap and robust to the
 leapfrog computational mode.  `t_end` is a safety cap on the total duration.
 
-Select via `run!(m; until = SteadyStateEnd(tol = 1e-3, t_end = 365.0))`.
+Select via `run!(sim; until = SteadyStateEnd(tol = 1e-3, t_end = 365.0))`.
 """
 Base.@kwdef struct SteadyStateEnd <: AbstractSimulationEnd
     tol::Float64 = 1e-3

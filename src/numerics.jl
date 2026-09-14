@@ -145,8 +145,8 @@ function _update_conv2!(m, c_p::RelaxToAmbient)
     @. m.conv2 = (m.drho < 0) * m.imask * m.D.present / c_p.convection_time
 end
 
-function precompute_integration_terms!(m)
-    @. m.dDdt = (m.D.future - m.D.past) / (m.dt + m.dt)
+function precompute_integration_terms!(m, dt)
+    @. m.dDdt = (m.D.future - m.D.past) / (dt + dt)
     @. m.Ddrho = m.D.present * m.drho
     _update_conv2!(m, m.convection_scheme)
     return
@@ -625,26 +625,31 @@ function _clamp_thickness!(m)
     return
 end
 
-function _check_nans_shelf!(m, varname, arr)
-    any(isnan.(arr) .& (m.tmask .> 0)) &&
-        error("NaN in $varname at t = $(round(m.t / m.seconds_per_day, digits=4)) days (step $(m.count))")
+function _check_nans_shelf!(sim, varname, arr)
+    any(isnan.(arr) .& (sim.model.tmask .> 0)) && error(
+        "NaN in $varname at t = $(round(_t_days(sim), digits=4)) days " *
+        "(iteration $(sim.clock.iteration))",
+    )
 end
 
-function leapfrog_step!(m, nsteps)
-    dt = nsteps * m.dt
-    dbg = m.config.dbg
+# One leapfrog integration over `nsteps × dt`: `nsteps = 2` is the centred step,
+# `nsteps = 1` the first-order bootstrap.  The tendency terms keep the base `dt`.
+function leapfrog_step!(sim, nsteps)
+    m = sim.model
+    dt = nsteps * sim.clock.dt
+    check_nans = sim.debug.check_nans
     step_thickness(m, dt)
     _clamp_thickness!(m)
-    precompute_integration_terms!(m)
-    dbg.check_nans && _check_nans_shelf!(m, "D", m.D.future)
+    precompute_integration_terms!(m, sim.clock.dt)
+    check_nans && _check_nans_shelf!(sim, "D", m.D.future)
     
     # Both momentum components are stepped before the limiter, because it caps the
     # speed and so needs U and V together (see `clamp_velocities!`).
     step_u_momentum(m, dt)
     step_v_momentum(m, dt)
     clamp_velocities!(m)
-    dbg.check_nans && _check_nans_shelf!(m, "U", m.U.future)
-    dbg.check_nans && _check_nans_shelf!(m, "V", m.V.future)
+    check_nans && _check_nans_shelf!(sim, "U", m.U.future)
+    check_nans && _check_nans_shelf!(sim, "V", m.V.future)
 
     # Tracer bounds.  LADDIE v2 has no counterpart — it assigns T and S only from
     # the flux-form integration and never bounds them — and they carry a real cost:
@@ -659,27 +664,35 @@ function leapfrog_step!(m, nsteps)
     # honest and keeps out-of-domain values from looking like data.
     step_temperature(m, dt)
     @. m.T.future = ifelse(m.tmask > 0, clamp(m.T.future, -5, 5), m.T.future)
-    dbg.check_nans && _check_nans_shelf!(m, "T", m.T.future)
+    check_nans && _check_nans_shelf!(sim, "T", m.T.future)
 
     step_salinity(m, dt)
     @. m.S.future = ifelse(m.tmask > 0, clamp(m.S.future, 32, 36), m.S.future)
-    dbg.check_nans && _check_nans_shelf!(m, "S", m.S.future)
+    check_nans && _check_nans_shelf!(sim, "S", m.S.future)
+    return
+end
+
+# Start the leapfrog: refresh secondary fields at the current dt, then take one
+# first-order step.  Run when a Simulation is constructed on a freshly
+# initialised model (whose three time levels are identical); `init_from_restart!`
+# does the same after loading the saved levels.
+function _bootstrap_leapfrog!(sim)
+    update_secondary_fields!(sim.model, sim.clock.dt)
+    leapfrog_step!(sim, 1)
     return
 end
 
 # Re-initialise the leapfrog after a dt change: collapse the `past` level onto
-# `present` so the two are co-located in time, refresh secondary fields, then
-# take one first-order step at the new dt.  Structurally identical to the
-# bootstrap that ends `_initialize_prognostics!`/`init_from_restart!`, so the
+# `present` so the two are co-located in time, then bootstrap at the new dt.  The
 # next `advance_leapfrog!` rotation leaves a past/present pair separated by the
-# new dt and the following centred `leapfrog_step!(m, 2)` is consistent.  The
+# new dt, so the following centred `leapfrog_step!(sim, 2)` is consistent.  The
 # anchor is the Robert–Asselin-filtered `present`, exactly as at startup.
-function _rebootstrap_leapfrog!(m)
+function _rebootstrap_leapfrog!(sim)
+    m = sim.model
     for var in (m.D, m.U, m.V, m.T, m.S)
         var.past .= var.present
     end
-    update_secondary_fields!(m)
-    leapfrog_step!(m, 1)
+    _bootstrap_leapfrog!(sim)
     return
 end
 
@@ -687,7 +700,8 @@ end
 # Time-stepping orchestration
 # ============================================================================
 
-function apply_robert_asselin_filter!(m)
+function apply_robert_asselin_filter!(sim)
+    m = sim.model
     for (var, mask) in
         ((m.D, m.tmask), (m.U, m.umask), (m.V, m.vmask), (m.T, m.tmask), (m.S, m.tmask))
         launch!(
@@ -697,7 +711,7 @@ function apply_robert_asselin_filter!(m)
             var.past,
             var.future,
             mask,
-            m.nu,
+            sim.nu,
         )
     end
     update_density!(m)
@@ -705,12 +719,12 @@ function apply_robert_asselin_filter!(m)
     return
 end
 
-function advance_leapfrog!(m)
+function advance_leapfrog!(sim)
+    m = sim.model
     for var in (m.D, m.U, m.V, m.T, m.S)
-        
         rotate!(var)
     end
-    update_secondary_fields!(m)
+    update_secondary_fields!(m, sim.clock.dt)
     return
 end
 

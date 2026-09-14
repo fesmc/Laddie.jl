@@ -59,9 +59,9 @@ directly comparable to the reference's config value. It is *not* comparable to
 Grounding-line/land wall friction is **not** affected by this choice: the
 reference keeps its border term linear in the viscosity coefficient even
 under this scheme (`laddie_velocity.f90:249-254`), and Laddie.jl mirrors that
-by always scaling the `grline_bc`/`land_bc` wall-drag terms with the global
+by always scaling the grounding-line/land wall-drag terms with the global
 `Params.A_h`, never with `C_visc`. Wall slip itself (free-slip vs no-slip) is
-controlled independently by `Params.grline_bc` / `Params.land_bc`.
+controlled independently by `BoundaryConditions.grounding_line` / `.land`.
 
 !!! note "C-grid staggering"
     The reference collocates `U` and `V` at triangle centres, so `dUabs` is a

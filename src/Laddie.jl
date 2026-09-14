@@ -21,6 +21,7 @@ include("state.jl")
 include("cache.jl")
 include("params.jl")
 include("model.jl")
+include("simulation.jl")
 
 include("physics.jl")
 include("numerics.jl")
@@ -30,7 +31,8 @@ include("api.jl")
 include("build.jl")
 include("show.jl")
 
-export Model, Grid, State, Cache, Params, RunConfig, DebugConfig
+export Model, Grid, State, Cache, Params, BoundaryConditions
+export Simulation, Clock, OutputConfig, DebugConfig, time_step!
 export build_isomip, build_laddie_mask, ice_base_depth, bed_elevation,
     fill_ocean_holes!, fill_shelf_holes!, fill_small_shelf_patches!,
     fill_small_grounded_patches!,
@@ -43,7 +45,7 @@ export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D
 export AbstractMaxLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThickness
 export AbstractDomainCropping, NoDomainCropping, MinRectangleDomainCropping
 export AbstractPreprocess, FillOceanHolesPreprocess, FillShelfHolesPreprocess,
-    FillSmallShelfPatchesPreprocess, FillSmallGroundedPatchesPreprocess
+    FillSmallShelfPatchesPreprocess, FillSmallGroundedPatchesPreprocess, MarkGapsPreprocess
 
 export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow
 export AbstractGroundingLineBC, FreeSlipGL, NoSlipGL

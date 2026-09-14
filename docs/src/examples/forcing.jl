@@ -8,16 +8,16 @@ and density closures.
 
 The ISOMIP+ protocol (Asay-Davis et al. 2016) defines two end-members — a
 **warm** and a **cold** cavity — both linear in depth down to `z₁ = −720 m`.
-We now build a model for each condition (the profiles are stored as `m.Tz`,
-`m.Sz` on the 1-m depth grid `m.z`).
+We now build a simulation for each condition; the profiles are stored on its
+model as `m.Tz`, `m.Sz` on the 1-m depth grid `m.z`.
 =#
 
 using Laddie
 using CairoMakie
 CairoMakie.activate!(type = "png")
 
-mw = build_isomip(; isomipcond = :warm)
-mc = build_isomip(; isomipcond = :cold);
+mw = build_isomip(; isomipcond = :warm).model
+mc = build_isomip(; isomipcond = :cold).model;
 
 #=
 We now plot the two profiles over the upper 1000 m (the cavity depth range).

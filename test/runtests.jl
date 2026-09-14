@@ -70,39 +70,39 @@ end
 
         forcing = ISOMIPForcing(FT, :warm)
         params  = Params(; FT)
-        m = Model(mask, z_draft_raw, 2000.0, 2000.0, forcing, params; FT,
-                  domain_cropping = NoDomainCropping())
+        grid = Grid(mask, z_draft_raw, 2000.0, 2000.0; FT, domain_cropping = NoDomainCropping())
+        m = Simulation(Model(grid; forcing, params))
 
-        @test size(m.tmask) == (ny_i + 2, nx_i + 2)
-        @test all(isfinite, m.melt)
-        @test all(m.melt[m.tmask .> 0] .>= 0)
+        @test size(m.model.tmask) == (ny_i + 2, nx_i + 2)
+        @test all(isfinite, m.model.melt)
+        @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
         run!(m; days=0.5, verbose=false)
-        @test all(isfinite, m.D.present)
-        @test all(isfinite, m.melt)
+        @test all(isfinite, m.model.D.present)
+        @test all(isfinite, m.model.melt)
 
         # MinRectangleDomainCropping is the default.  Its `margin` (default 4) is the
         # padding kept around the active region; here the shelf spans cols 4-7 of 8,
         # so a 4-cell margin reaches the array edge and nothing is cropped at all.
-        mc = Model(mask, z_draft_raw, 2000.0, 2000.0, forcing, params; FT)
+        mc = Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT); forcing, params)
         @test size(mc.tmask) == (ny_i + 2, nx_i + 2)
-        @test sum(mc.tmask) == sum(m.tmask)     # no active cell is lost
+        @test sum(mc.tmask) == sum(m.model.tmask)     # no active cell is lost
 
         # margin = 1 is the tightest the solver accepts: the shelf bounding box plus
         # the one-cell ring, dropping the outer grounded column and the far border
         # column (8 columns -> 6).
-        m1 = Model(mask, z_draft_raw, 2000.0, 2000.0, forcing, params; FT,
-                   domain_cropping = MinRectangleDomainCropping(margin = 1))
+        m1 = Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
+                        domain_cropping = MinRectangleDomainCropping(margin = 1)); forcing, params)
         @test size(m1.tmask) == (ny_i + 2, 6)
-        @test sum(m1.tmask) == sum(m.tmask)
+        @test sum(m1.tmask) == sum(m.model.tmask)
 
         # margin = 2 keeps one more ring than that.
-        m2 = Model(mask, z_draft_raw, 2000.0, 2000.0, forcing, params; FT,
-                   domain_cropping = MinRectangleDomainCropping(margin = 2))
+        m2 = Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
+                        domain_cropping = MinRectangleDomainCropping(margin = 2)); forcing, params)
         @test size(m2.tmask) == (ny_i + 2, 7)
 
         # margin = 0 would put shelf cells on the wrapping border ring.
-        @test_throws ArgumentError Model(mask, z_draft_raw, 2000.0, 2000.0, forcing,
-            params; FT, domain_cropping = MinRectangleDomainCropping(margin = 0))
+        @test_throws ArgumentError Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
+                                        domain_cropping = MinRectangleDomainCropping(margin = 0))
         @test MinRectangleDomainCropping().margin == 4
     end
 
@@ -118,24 +118,34 @@ end
         params  = Params(; FT)
 
         # z_draft size mismatch
-        @test_throws ArgumentError Model(mask, z_draft[:, 1:end-1], 2000.0, 2000.0, forcing, params; FT)
+        @test_throws ArgumentError Model(Grid(mask, z_draft[:, 1:end-1], 2000.0, 2000.0; FT);
+                                         forcing, params)
         # non-positive cell spacing
-        @test_throws ArgumentError Model(mask, z_draft, -2000.0, 2000.0, forcing, params; FT)
+        @test_throws ArgumentError Model(Grid(mask, z_draft, -2000.0, 2000.0; FT);
+                                         forcing, params)
         # mask value outside 0:3
         bad = copy(mask); bad[3, 4] = 7
-        @test_throws ArgumentError Model(bad, z_draft, 2000.0, 2000.0, forcing, params; FT)
+        @test_throws ArgumentError Model(Grid(bad, z_draft, 2000.0, 2000.0; FT);
+                                         forcing, params)
         # no floating-shelf cells at all
         none = copy(mask); none[none .== 3] .= 2
-        @test_throws ArgumentError Model(none, z_draft, 2000.0, 2000.0, forcing, params; FT)
+        @test_throws ArgumentError Model(Grid(none, z_draft, 2000.0, 2000.0; FT);
+                                         forcing, params)
         # shelf cell on the border ring
         edge = copy(mask); edge[1, 4] = 3
-        @test_throws ArgumentError Model(edge, z_draft, 2000.0, 2000.0, forcing, params; FT)
+        @test_throws ArgumentError Model(Grid(edge, z_draft, 2000.0, 2000.0; FT);
+                                         forcing, params)
         # FT mismatch with params and with forcing
-        @test_throws ArgumentError Model(mask, z_draft, 2000.0, 2000.0, forcing, Params(; FT = Float32); FT)
-        @test_throws ArgumentError Model(mask, z_draft, 2000.0, 2000.0, ISOMIPForcing(Float32, :warm), params; FT)
+        @test_throws ArgumentError Model(Grid(mask, z_draft, 2000.0, 2000.0; FT);
+                                         forcing, params = Params(; FT = Float32))
+        @test_throws ArgumentError Model(Grid(mask, z_draft, 2000.0, 2000.0; FT);
+                                         forcing = ISOMIPForcing(Float32, :warm), params)
+        # forcing is required; params and boundary default
+        @test_throws UndefKeywordError Model(Grid(mask, z_draft, 2000.0, 2000.0; FT); params)
+        @test Model(Grid(mask, z_draft, 2000.0, 2000.0); forcing).boundary == BoundaryConditions()
         # valid inputs still build
-        m = Model(mask, z_draft, 2000.0, 2000.0, forcing, params; FT)
-        @test all(isfinite, m.melt)
+        m = Simulation(Model(Grid(mask, z_draft, 2000.0, 2000.0; FT); forcing, params))
+        @test all(isfinite, m.model.melt)
     end
 
     @testset "Geometry ingestion: build_laddie_mask classification" begin
@@ -192,8 +202,8 @@ end
         mk[2:11, 21]   .= 0      # open ocean → real ice front at column 20
         mk[5:6, 10:11] .= 1      # rock island
         isl = CartesianIndices((5:6, 10:11))
-        m = Model(mk, fill(-400.0, 12, 22), 2000.0, 2000.0, ISOMIPForcing(FT, :warm),
-                  Params(; FT); FT, domain_cropping = NoDomainCropping())
+        grid = Grid(mk, fill(-400.0, 12, 22), 2000.0, 2000.0; FT, domain_cropping = NoDomainCropping())
+        m = Model(grid; forcing = ISOMIPForcing(FT, :warm))
 
         @test all(m.lnd[isl] .== 1)      # island is land
         @test all(m.ocn[isl] .== 0)      # and emphatically not ocean
@@ -216,7 +226,7 @@ end
         # fire around it while the gl?? ones (mask == 2 only) stay off — and the
         # land-only lnd?? ones (AbstractLandBC) fire there instead, mirroring how
         # gl?? does for grounded ice.
-        g = getfield(m, :grid)
+        g = getfield(m, :geometry)
         @test g.grdEv[5, 9] > 0 || g.grdWv[5, 12] > 0 || g.grdNu[7, 10] > 0 || g.grdSu[4, 10] > 0
         @test all(g.glNu[isl] .== 0) && all(g.glSu[isl] .== 0)
         @test all(g.glEv[isl] .== 0) && all(g.glWv[isl] .== 0)
@@ -224,7 +234,9 @@ end
         @test g.lndEv[5, 9] > 0 || g.lndWv[5, 12] > 0 || g.lndNu[7, 10] > 0 || g.lndSu[4, 10] > 0
         @test all(g.lndNu .<= g.grdNu) && all(g.lndEv .<= g.grdEv)
 
-        run!(m; days = 0.5, verbose = false)
+        sim = Simulation(m)
+        @test sim.model === m
+        run!(sim; days = 0.5, verbose = false)
         @test all(isfinite, m.D.present) && all(isfinite, m.melt)
     end
 
@@ -352,12 +364,12 @@ end
 
         forcing = ISOMIPForcing(FT, :warm)
         params  = Params(; FT)
-        m = Model(mask_bm, zb_bm, 2000.0, 2000.0, forcing, params; FT)
-        @test all(isfinite, m.melt)
-        @test all(m.melt[m.tmask .> 0] .>= 0)
+        m = Simulation(Model(Grid(mask_bm, zb_bm, 2000.0, 2000.0; FT); forcing, params))
+        @test all(isfinite, m.model.melt)
+        @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
         run!(m; days = 0.5, verbose = false)
-        @test all(isfinite, m.D.present)
-        @test all(isfinite, m.melt)
+        @test all(isfinite, m.model.D.present)
+        @test all(isfinite, m.model.melt)
     end
 
     @testset "OceanForcing1D: resampling, sorting, flat extrapolation" begin
@@ -412,21 +424,23 @@ end
         mask[2:end-1, 4:end-1] .= 3
         z_draft_raw = fill(-400.0, ny_i + 2, nx_i + 2)
 
-        m1 = Model(mask, z_draft_raw, 2000.0, 2000.0, isomip, Params(; FT); FT)
-        m2 = Model(mask, z_draft_raw, 2000.0, 2000.0, prof,  Params(; FT); FT)
-        @test m2.melt ≈ m1.melt
+        m1 = Simulation(Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT);
+                              forcing = isomip, params = Params(; FT)))
+        m2 = Simulation(Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT);
+                              forcing = prof, params = Params(; FT)))
+        @test m2.model.melt ≈ m1.model.melt
         run!(m2; days = 0.5, verbose = false)
-        @test all(isfinite, m2.D.present)
-        @test all(isfinite, m2.melt)
+        @test all(isfinite, m2.model.D.present)
+        @test all(isfinite, m2.model.melt)
     end
 
     @testset "ISOMIP+ warm cavity: build and basic physics" begin
         # Small grid (nx=20, ny=10) for a fast smoke test
         m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
 
-        @test size(m.tmask) == (12, 22)   # ny+2 × nx+2
-        @test all(isfinite, m.melt)
-        @test all(m.melt[m.tmask .> 0] .>= 0)   # melt rate non-negative under ice
+        @test size(m.model.tmask) == (12, 22)   # ny+2 × nx+2
+        @test all(isfinite, m.model.melt)
+        @test all(m.model.melt[m.model.tmask .> 0] .>= 0)   # melt rate non-negative under ice
 
         mx, mn, sp = meltstats(m)
         @test isfinite(mx) && isfinite(mn) && isfinite(sp)
@@ -435,7 +449,7 @@ end
 
     @testset "ISOMIP+ cold cavity: build" begin
         m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold)
-        @test all(isfinite, m.melt)
+        @test all(isfinite, m.model.melt)
     end
 
     @testset "Physical ordering: warm mean melt exceeds cold" begin
@@ -454,12 +468,12 @@ end
             convection_scheme = ResetToAmbient(FT(0.005)),
         )
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
-        @test all(isfinite, m.melt)
-        @test all(m.melt[m.tmask .> 0] .>= 0)
+        @test all(isfinite, m.model.melt)
+        @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
         run!(m; days=0.5, verbose=false)
-        @test all(isfinite, m.D.present)
-        @test all(isfinite, m.melt)
-        @test all(m.melt[m.tmask .> 0] .>= 0)
+        @test all(isfinite, m.model.D.present)
+        @test all(isfinite, m.model.melt)
+        @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
     end
 
     @testset "HollandEntrainment: build and short run" begin
@@ -470,19 +484,19 @@ end
             convection_scheme = ResetToAmbient(FT(0.005)),
         )
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
-        @test all(isfinite, m.melt)
-        @test all(m.melt[m.tmask .> 0] .>= 0)
+        @test all(isfinite, m.model.melt)
+        @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
         run!(m; days=0.5, verbose=false)
-        @test all(isfinite, m.D.present)
-        @test all(isfinite, m.melt)
-        @test all(m.melt[m.tmask .> 0] .>= 0)
+        @test all(isfinite, m.model.D.present)
+        @test all(isfinite, m.model.melt)
+        @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
     end
 
     @testset "Entrainment: Lambert is default, Gaspar (literal Eq. 14) differs" begin
         # LambertEntrainment reproduces the reference LADDIE production term
         # (2μ u★³/(g D δρ)) and must be the default so the Python verification
         # holds; GasparEntrainment is the literal Eq. 14 (μ u★³/(g D² δρ)).
-        @test build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold).entrainment isa
+        @test build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold).model.entrainment isa
               LambertEntrainment
         mk(ep) = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm,
             gradient = PyGradient(),
@@ -492,10 +506,10 @@ end
         mg = mk(GasparEntrainment(FT(2.5)))
         run!(ml; days=0.5, verbose=false)
         run!(mg; days=0.5, verbose=false)
-        @test all(isfinite, ml.entr) && all(isfinite, mg.entr)
-        @test all(isfinite, ml.melt) && all(isfinite, mg.melt)
+        @test all(isfinite, ml.model.entr) && all(isfinite, mg.model.entr)
+        @test all(isfinite, ml.model.melt) && all(isfinite, mg.model.melt)
         # Same μ but different production term ⇒ the entrainment fields diverge.
-        @test !isapprox(ml.entr, mg.entr)
+        @test !isapprox(ml.model.entr, mg.model.entr)
     end
 
     @testset "Grounding-line BC: FreeSlipGL bit-identical, NoSlipGL differs" begin
@@ -504,31 +518,31 @@ end
         # verification remains valid for the default configuration.
         m_def  = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
         m_free = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                              params = Params(; FT, grline_bc = FreeSlipGL()))
+                              boundary = BoundaryConditions(; grounding_line = FreeSlipGL()))
         run!(m_def;  days = 1.0, verbose = false)
         run!(m_free; days = 1.0, verbose = false)
-        @test m_free.U.present == m_def.U.present
-        @test m_free.V.present == m_def.V.present
-        @test m_free.melt == m_def.melt
+        @test m_free.model.U.present == m_def.model.U.present
+        @test m_free.model.V.present == m_def.model.V.present
+        @test m_free.model.melt == m_def.model.melt
 
         # GL wall indicators are a pointwise subset of the grounded ones; the
         # ISOMIP+ geometry has a meridional grounding line, so GL faces exist
         # at least for the V-walls (glEv/glWv).
-        g = getfield(m_def, :grid)
+        g = getfield(m_def.model, :geometry)
         @test all(g.glNu .<= g.grdNu) && all(g.glSu .<= g.grdSu)
         @test all(g.glEv .<= g.grdEv) && all(g.glWv .<= g.grdWv)
         @test sum(g.glEv) + sum(g.glWv) > 0
 
         # No-slip at the grounding line changes the solution and stays physical.
         m_ns = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                            params = Params(; FT, grline_bc = NoSlipGL()))
+                            boundary = BoundaryConditions(; grounding_line = NoSlipGL()))
         run!(m_ns; days = 1.0, verbose = false)
-        @test all(isfinite, m_ns.D.present) && all(isfinite, m_ns.melt)
-        @test all(m_ns.melt[m_ns.tmask .> 0] .>= 0)
-        @test m_ns.V.present != m_def.V.present
+        @test all(isfinite, m_ns.model.D.present) && all(isfinite, m_ns.model.melt)
+        @test all(m_ns.model.melt[m_ns.model.tmask .> 0] .>= 0)
+        @test m_ns.model.V.present != m_def.model.V.present
     end
 
-    @testset "Land BC: FreeSlipLand bit-identical, NoSlipLand differs, independent of grline_bc" begin
+    @testset "Land BC: FreeSlipLand bit-identical, NoSlipLand differs, independent of grounding_line" begin
         # Same structure as the grounding-line BC testset above: FreeSlipLand is
         # the default and must reproduce it bit-for-bit (dslip_land = 0 leaves the
         # kernel arithmetic unchanged).  ISOMIP+'s channel is narrow enough (10
@@ -538,42 +552,43 @@ end
         # hand-built island.
         m_def  = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
         m_free = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                              params = Params(; FT, land_bc = FreeSlipLand()))
+                              boundary = BoundaryConditions(; land = FreeSlipLand()))
         run!(m_def;  days = 1.0, verbose = false)
         run!(m_free; days = 1.0, verbose = false)
-        @test m_free.U.present == m_def.U.present
-        @test m_free.V.present == m_def.V.present
-        @test m_free.melt == m_def.melt
+        @test m_free.model.U.present == m_def.model.U.present
+        @test m_free.model.V.present == m_def.model.V.present
+        @test m_free.model.melt == m_def.model.melt
 
         # Land wall indicators are a pointwise subset of the generic wall ones,
         # and fire along the channel side walls (disjoint from the meridional
         # grounding line, which lives on gl?? instead).
-        g = getfield(m_def, :grid)
+        g = getfield(m_def.model, :geometry)
         @test all(g.lndNu .<= g.grdNu) && all(g.lndSu .<= g.grdSu)
         @test all(g.lndEv .<= g.grdEv) && all(g.lndWv .<= g.grdWv)
         @test sum(g.lndNu) + sum(g.lndSu) > 0
 
         # No-slip at land changes the solution and stays physical.
         m_ns = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                            params = Params(; FT, land_bc = NoSlipLand()))
+                            boundary = BoundaryConditions(; land = NoSlipLand()))
         run!(m_ns; days = 1.0, verbose = false)
-        @test all(isfinite, m_ns.D.present) && all(isfinite, m_ns.melt)
-        @test all(m_ns.melt[m_ns.tmask .> 0] .>= 0)
-        @test m_ns.V.present != m_def.V.present
+        @test all(isfinite, m_ns.model.D.present) && all(isfinite, m_ns.model.melt)
+        @test all(m_ns.model.melt[m_ns.model.tmask .> 0] .>= 0)
+        @test m_ns.model.V.present != m_def.model.V.present
 
-        # grline_bc and land_bc are independent switches: engaging one alone must
+        # grounding_line and land are independent switches: engaging one alone must
         # not reproduce engaging the other, and engaging both must differ from
         # either alone (no accidental aliasing between gl?? and lnd??).
         m_gl   = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                              params = Params(; FT, grline_bc = NoSlipGL()))
+                              boundary = BoundaryConditions(; grounding_line = NoSlipGL()))
         m_both = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                              params = Params(; FT, grline_bc = NoSlipGL(), land_bc = NoSlipLand()))
+                              boundary = BoundaryConditions(; grounding_line = NoSlipGL(),
+                                                            land = NoSlipLand()))
         run!(m_gl;   days = 1.0, verbose = false)
         run!(m_both; days = 1.0, verbose = false)
-        @test m_ns.V.present != m_gl.V.present      # land-only ≠ grounding-line-only
-        @test m_both.V.present != m_gl.V.present    # both ≠ grounding-line-only
-        @test m_both.V.present != m_ns.V.present    # both ≠ land-only
-        @test all(isfinite, m_both.D.present) && all(isfinite, m_both.melt)
+        @test m_ns.model.V.present != m_gl.model.V.present      # land-only ≠ grounding-line-only
+        @test m_both.model.V.present != m_gl.model.V.present    # both ≠ grounding-line-only
+        @test m_both.model.V.present != m_ns.model.V.present    # both ≠ land-only
+        @test all(isfinite, m_both.model.D.present) && all(isfinite, m_both.model.melt)
     end
 
     @testset "Wall slip: gl/land indicators partition mixed coastline corners" begin
@@ -593,9 +608,9 @@ end
         mk[8, 6:7]     .= 2          # grounded ice abutting it -> mixed corners
         z_draft = zeros(FT, size(mk))
         z_draft[mk .== 3] .= FT(-200.0)
-        m = Model(mk, z_draft, FT(2000.0), FT(2000.0), ISOMIPForcing(FT, :warm),
-                  Params(; FT); domain_cropping = NoDomainCropping())
-        g = getfield(m, :grid)
+        grid = Grid(mk, z_draft, FT(2000.0), FT(2000.0); domain_cropping = NoDomainCropping())
+        m = Model(grid; forcing = ISOMIPForcing(FT, :warm))
+        g = getfield(m, :geometry)
 
         for (gl, ln, gd) in ((g.glNu, g.lndNu, g.grdNu), (g.glSu, g.lndSu, g.grdSu),
                              (g.glEv, g.lndEv, g.grdEv), (g.glWv, g.lndWv, g.grdWv))
@@ -608,9 +623,10 @@ end
         @test count((g.glNu .== 1) .& (raw_lndNu .== 1)) > 0
 
         # And the composed slip factor stays at the no-slip value of 2 everywhere.
-        p = Params(; FT, grline_bc = NoSlipGL(), land_bc = NoSlipLand())
-        dgl = Laddie._gl_slip(p.grline_bc, p.slip) - p.slip
-        dln = Laddie._land_slip(p.land_bc, p.slip) - p.slip
+        p = Params(; FT)
+        b = BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand())
+        dgl = Laddie._gl_slip(b.grounding_line, p.slip) - p.slip
+        dln = Laddie._land_slip(b.land, p.slip) - p.slip
         slipN = p.slip .+ dgl .* g.glNu .+ dln .* g.lndNu
         @test maximum(slipN[g.grdNu .== 1]) ≈ 2
     end
@@ -626,29 +642,29 @@ end
                                params = Params(; FT, lateral_viscosity = PrescribedLateralViscosity()))
         run!(m_def;   days = 1.0, verbose = false)
         run!(m_presc; days = 1.0, verbose = false)
-        @test m_presc.U.present == m_def.U.present
-        @test m_presc.V.present == m_def.V.present
-        @test m_presc.melt == m_def.melt
+        @test m_presc.model.U.present == m_def.model.U.present
+        @test m_presc.model.V.present == m_def.model.V.present
+        @test m_presc.model.melt == m_def.model.melt
 
         # NonlinearLateralViscosity changes the solution and stays physical.
         m_nl = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                             params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(10.0))))
         run!(m_nl; days = 1.0, verbose = false)
-        @test all(isfinite, m_nl.D.present) && all(isfinite, m_nl.melt)
-        @test all(m_nl.melt[m_nl.tmask .> 0] .>= 0)
-        @test m_nl.V.present != m_def.V.present
+        @test all(isfinite, m_nl.model.D.present) && all(isfinite, m_nl.model.melt)
+        @test all(m_nl.model.melt[m_nl.model.tmask .> 0] .>= 0)
+        @test m_nl.model.V.present != m_def.model.V.present
 
         # Decision (a): grounding-line/land wall drag stays linear in the plain
-        # A_h even under the nonlinear interior scheme, so switching grline_bc
+        # A_h even under the nonlinear interior scheme, so switching grounding_line
         # to no-slip must still change the solution under NonlinearLateralViscosity
         # (i.e. the wall-drag term isn't accidentally zeroed or folded into the
         # shear-scaled interior term).
         m_nl_ns = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                               params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(10.0)),
-                                              grline_bc = NoSlipGL()))
+                               params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(10.0))),
+                               boundary = BoundaryConditions(; grounding_line = NoSlipGL()))
         run!(m_nl_ns; days = 1.0, verbose = false)
-        @test all(isfinite, m_nl_ns.D.present) && all(isfinite, m_nl_ns.melt)
-        @test m_nl_ns.V.present != m_nl.V.present
+        @test all(isfinite, m_nl_ns.model.D.present) && all(isfinite, m_nl_ns.model.melt)
+        @test m_nl_ns.model.V.present != m_nl.model.V.present
 
         # The coefficient uses the full velocity-difference norm √(ΔU² + ΔV²),
         # as the reference's dUabs does — not just the component being diffused.
@@ -657,14 +673,14 @@ end
         # sees only *differences*, so a uniform shift would change nothing.  For
         # the same reason the flux is coeff * ΔU, so this is only visible where
         # ΔU is itself nonzero — i.e. in the shelf interior, not at a wall.
-        lU_before = copy(Laddie.laplace_U(m_nl))
-        m_nl.V.past .*= 2
-        @test Laddie.laplace_U(m_nl) != lU_before
+        lU_before = copy(Laddie.laplace_U(m_nl.model))
+        m_nl.model.V.past .*= 2
+        @test Laddie.laplace_U(m_nl.model) != lU_before
         # ...and the same coupling must be absent under the plain Laplacian,
         # whose coefficient is a constant and never reads V at all.
-        lU0_before = copy(Laddie.laplace_U(m_def))
-        m_def.V.past .*= 2
-        @test Laddie.laplace_U(m_def) == lU0_before
+        lU0_before = copy(Laddie.laplace_U(m_def.model))
+        m_def.model.V.past .*= 2
+        @test Laddie.laplace_U(m_def.model) == lU0_before
     end
 
     @testset "Gaps BC: mask plumbing, SinkGapsBC bit-identical, ConnectedGapsBC differs" begin
@@ -685,22 +701,49 @@ end
         gap_ix = CartesianIndices((5:7, 10:12))
         z_draft_raw = fill(-400.0, 12, 22)
         forcing = ISOMIPForcing(FT, :warm)
-        build(mk, p) = Model(mk, z_draft_raw, 2000.0, 2000.0, forcing, p;
-                             FT, domain_cropping = NoDomainCropping())
+        build(mk, gaps = SinkGapsBC(); params = Params(; FT), kw...) =
+            Simulation(Model(Grid(mk, z_draft_raw, 2000.0, 2000.0; FT,
+                                  domain_cropping = NoDomainCropping(), kw...);
+                             forcing, params, boundary = BoundaryConditions(; gaps)))
 
         # -- Bucket 1: derived masks -------------------------------------------
-        mc = build(gappy_mask(), Params(; FT, gaps_bc = ConnectedGapsBC()))
-        @test all(mc.tmask[gap_ix] .== 1)          # gaps are dynamically active
-        @test all(mc.imask[gap_ix] .== 0)          # but carry no ice
-        @test all(mc.ocn[gap_ix]   .== 0)          # and are not open ocean
-        @test all(mc.z_draft[gap_ix] .== 0)        # layer sits at the sea surface
-        @test mc.imask != mc.tmask
-        @test all(mc.imask .<= mc.tmask)           # imask is a subset of tmask
+        mc = build(gappy_mask(), ConnectedGapsBC())
+        @test all(mc.model.tmask[gap_ix] .== 1)          # gaps are dynamically active
+        @test all(mc.model.imask[gap_ix] .== 0)          # but carry no ice
+        @test all(mc.model.ocn[gap_ix]   .== 0)          # and are not open ocean
+        @test all(mc.model.z_draft[gap_ix] .== 0)        # layer sits at the sea surface
+        @test mc.model.imask != mc.model.tmask
+        @test all(mc.model.imask .<= mc.model.tmask)           # imask is a subset of tmask
         # An interior gap is not an ice front: no ocean neighbour anywhere near it.
-        @test all(mc.isf[gap_ix] .== 0)
+        @test all(mc.model.isf[gap_ix] .== 0)
         # Shelf cells are untouched by the gap treatment.
         shelf = (gappy_mask() .== 3)
-        @test all(mc.imask[shelf] .== 1) && all(mc.z_draft[shelf] .== -400.0)
+        @test all(mc.model.imask[shelf] .== 1) && all(mc.model.z_draft[shelf] .== -400.0)
+
+        # The grid knows nothing of the treatment: one grid drives both, and only
+        # the model's geometry differs.
+        gappy_grid = Grid(gappy_mask(), z_draft_raw, 2000.0, 2000.0; FT,
+                          domain_cropping = NoDomainCropping())
+        @test count(==(4), gappy_grid.mask) == length(gap_ix)
+        sink_model = Model(gappy_grid; forcing)
+        conn_model = Model(gappy_grid; forcing,
+                           boundary = BoundaryConditions(; gaps = ConnectedGapsBC()))
+        @test sink_model.grid === conn_model.grid
+        @test count(==(4), sink_model.resolved_mask) == 0
+        @test conn_model.resolved_mask == gappy_mask()
+        @test conn_model.tmask == mc.model.tmask
+        @test !hasfield(Grid, :tmask) && !hasfield(Grid, :dzdx) && !hasfield(Grid, :f)
+        # Building a grid never modifies the caller's mask, even when preprocessing.
+        ocean_in = copy(gappy_mask()); ocean_in[ocean_in .== 4] .= 0
+        before = copy(ocean_in)
+        footprint = zeros(Bool, 12, 22); footprint[2:11, 4:20] .= true
+        g_marked = Grid(ocean_in, z_draft_raw, 2000.0, 2000.0; FT,
+                        preprocess = [MarkGapsPreprocess(footprint)],
+                        domain_cropping = NoDomainCropping())
+        @test ocean_in == before
+        @test count(==(4), g_marked.mask) == length(gap_ix)
+        @test g_marked.crop == (1:12, 1:22) && g_marked.input_size == (12, 22)
+        @test g_marked.x == 2000.0 .* (1:20) && g_marked.y == 2000.0 .* (1:10)
 
         # -- Bucket 1: validation ----------------------------------------------
         params = Params(; FT)
@@ -708,41 +751,65 @@ end
         # an active cell; under SinkGapsBC it is demoted to ocean first, so it is
         # legal there — the mask is normalised before it is validated.
         edge = gappy_mask(); edge[1, 10] = 4
-        @test_throws ArgumentError build(edge, Params(; FT, gaps_bc = ConnectedGapsBC()))
-        @test build(edge, params).mask[1, 10] == 0
+        @test_throws ArgumentError build(edge, ConnectedGapsBC())
+        @test build(edge).model.resolved_mask[1, 10] == 0
         # 4 is now legal; 5 is not
         bad = gappy_mask(); bad[6, 6] = 5
-        @test_throws ArgumentError build(bad, params)
+        @test_throws ArgumentError build(bad)
 
         # -- Bucket 2: SinkGapsBC is exactly the pre-gap behaviour -------------
         # Demoting gaps to open ocean must reproduce a mask that never had them.
         ocean_mask = gappy_mask(); ocean_mask[ocean_mask .== 4] .= 0
-        m_sink  = build(gappy_mask(), Params(; FT, gaps_bc = SinkGapsBC()))
-        m_plain = build(ocean_mask,   Params(; FT))     # SinkGapsBC is the default
-        @test m_sink.mask == m_plain.mask
+        m_sink  = build(gappy_mask(), SinkGapsBC())
+        m_plain = build(ocean_mask)                     # SinkGapsBC is the default
+        @test m_sink.model.resolved_mask == m_plain.model.resolved_mask
         run!(m_sink;  days = 1.0, verbose = false)
         run!(m_plain; days = 1.0, verbose = false)
-        @test m_sink.D.present == m_plain.D.present
-        @test m_sink.T.present == m_plain.T.present
-        @test m_sink.U.present == m_plain.U.present
-        @test m_sink.melt == m_plain.melt
+        @test m_sink.model.D.present == m_plain.model.D.present
+        @test m_sink.model.T.present == m_plain.model.T.present
+        @test m_sink.model.U.present == m_plain.model.U.present
+        @test m_sink.model.melt == m_plain.model.melt
 
-        # -- Bucket 2: ConnectedGapsBC keeps the gaps, and refgeo derives them --
-        @test sum(mc.tmask) == sum(m_sink.tmask) + length(gap_ix)
+        # -- Bucket 2: ConnectedGapsBC keeps the gaps, MarkGapsPreprocess derives them
+        @test sum(mc.model.tmask) == sum(m_sink.model.tmask) + length(gap_ix)
         # Same geometry expressed as a reference ice footprint over an all-ocean gap.
+        # Marking gaps is geometry (a preprocess step); treating them is the BC.
         refgeo = zeros(12, 22); refgeo[2:11, 4:20] .= 500.0   # reference ice thickness
-        m_ref = build(ocean_mask, Params(; FT, gaps_bc = ConnectedGapsBC(refgeo)))
-        @test m_ref.mask == mc.mask
+        connected = ConnectedGapsBC()
+        m_ref = build(ocean_mask, connected; preprocess = [MarkGapsPreprocess(refgeo)])
+        @test m_ref.model.mask == mc.model.mask
+        # A Bool footprint is taken as-is.
+        m_bool = build(ocean_mask, connected; preprocess = [MarkGapsPreprocess(refgeo .> 0)])
+        @test m_bool.model.mask == mc.model.mask
+        # Under SinkGapsBC the marked gaps are demoted again: no gap, no difference.
+        m_refsink = build(ocean_mask; preprocess = [MarkGapsPreprocess(refgeo)])
+        @test m_refsink.model.resolved_mask == m_plain.model.resolved_mask
         # A footprint that does not match the mask is caught, not silently broadcast.
-        @test_throws ArgumentError build(ocean_mask,
-            Params(; FT, gaps_bc = ConnectedGapsBC(zeros(4, 4))))
+        @test_throws ArgumentError build(ocean_mask, connected;
+                                         preprocess = [MarkGapsPreprocess(zeros(4, 4))])
+        @test !hasfield(ConnectedGapsBC, :refgeo)
+
+        # Marking runs before cropping, so a gap at the edge of the reference
+        # footprint — outside the bounding box of today's shelf — is part of the
+        # active region the crop keeps, rather than cropped away before it exists.
+        edge_mask = copy(ocean_mask)
+        edge_mask[5:7, 10:12] .= 3                                   # no interior hole
+        edge_mask[2:11, 16:20] .= 0                                  # shelf ends at col 15
+        edge_ref = zeros(Bool, 12, 22); edge_ref[2:11, 4:18] .= true
+        edge_grid = Grid(edge_mask, z_draft_raw, 2000.0, 2000.0; FT,
+                         preprocess = [MarkGapsPreprocess(edge_ref)],
+                         domain_cropping = MinRectangleDomainCropping(margin = 1))
+        m_edge = Model(edge_grid; forcing, boundary = BoundaryConditions(; gaps = connected))
+        @test count(==(4), m_edge.mask) == 10 * 3                  # cols 16:18 are gaps
+        @test sum(m_edge.tmask) == 10 * (15 - 4 + 1) + 10 * 3      # shelf + gaps all kept
+        @test size(m_edge.mask, 2) == (18 - 4 + 1) + 2             # footprint + 1-cell ring
 
         # -- Bucket 3: no melt in gaps, and no ice-ocean heat exchange either ---
-        @test all(mc.melt[gap_ix] .== 0)
-        @test all(mc.Tb[gap_ix] .== mc.T.present[gap_ix])
+        @test all(mc.model.melt[gap_ix] .== 0)
+        @test all(mc.model.Tb[gap_ix] .== mc.model.T.present[gap_ix])
         # Tb = T makes  melt*Tb - gamT*(T - Tb)  vanish identically in gap cells,
         # which is what keeps heat flowing across the gap instead of draining out.
-        exch = Laddie.T_ice_ocean_exchange(mc)
+        exch = Laddie.T_ice_ocean_exchange(mc.model)
         @test all(exch[gap_ix] .== 0)
         @test any(exch[shelf] .!= 0)               # still active under the ice
 
@@ -752,55 +819,54 @@ end
         # unconditional.  Ungated, ResetToAmbient would overwrite the T/S anomaly
         # the layer carries across the gap every single step, rebuilding the very
         # sink ConnectedGapsBC exists to remove.
-        cv_params(scheme) = Params(; FT, gaps_bc = ConnectedGapsBC(),
-                                   convection_scheme = scheme)
         # Cool every active cell to drive the whole domain convectively unstable.
         function destabilize(scheme)
-            m = build(gappy_mask(), cv_params(scheme))
-            m.T.present[m.tmask .> 0] .-= 5
-            Laddie.update_density!(m)
-            @test all(m.drho[gap_ix] .< 0) && all(m.drho[shelf] .< 0)
-            return m, copy(m.T.present), copy(m.S.present)
+            m = build(gappy_mask(), ConnectedGapsBC();
+                      params = Params(; FT, convection_scheme = scheme))
+            m.model.T.present[m.model.tmask .> 0] .-= 5
+            Laddie.update_density!(m.model)
+            @test all(m.model.drho[gap_ix] .< 0) && all(m.model.drho[shelf] .< 0)
+            return m, copy(m.model.T.present), copy(m.model.S.present)
         end
 
         m_rst, T0, S0 = destabilize(ResetToAmbient(FT(0.005)))
-        Laddie.update_convection!(m_rst)
-        @test m_rst.T.present[gap_ix] == T0[gap_ix]      # gaps keep their heat ...
-        @test m_rst.S.present[gap_ix] == S0[gap_ix]
-        @test all(m_rst.convection[gap_ix] .== 0)        # ... and are never flagged
-        @test all(m_rst.T.present[shelf] .!= T0[shelf])  # ice-covered cells do reset
-        @test all(m_rst.convection[shelf] .== 1)
+        Laddie.update_convection!(m_rst.model)
+        @test m_rst.model.T.present[gap_ix] == T0[gap_ix]      # gaps keep their heat ...
+        @test m_rst.model.S.present[gap_ix] == S0[gap_ix]
+        @test all(m_rst.model.convection[gap_ix] .== 0)        # ... and are never flagged
+        @test all(m_rst.model.T.present[shelf] .!= T0[shelf])  # ice-covered cells do reset
+        @test all(m_rst.model.convection[shelf] .== 1)
 
         # RelaxToAmbient is the same sink applied gradually, so conv2 is gated too.
         m_rlx, _, _ = destabilize(RelaxToAmbient(FT(10000.0)))
-        Laddie.update_convection!(m_rlx)
-        Laddie.precompute_integration_terms!(m_rlx)
-        @test all(m_rlx.conv2[gap_ix] .== 0)
-        @test all(m_rlx.conv2[shelf] .> 0)
+        Laddie.update_convection!(m_rlx.model)
+        Laddie.precompute_integration_terms!(m_rlx.model, m_rlx.clock.dt)
+        @test all(m_rlx.model.conv2[gap_ix] .== 0)
+        @test all(m_rlx.model.conv2[shelf] .> 0)
 
         # ClampDensity is deliberately *not* gated: the buoyancy floor is the one
         # convection treatment LADDIE v2 also has, and it applies over its whole
         # active domain, gaps included.
         m_cld, _, _ = destabilize(ClampDensity(FT(0.005)))
-        Laddie.update_convection!(m_cld)
-        @test all(m_cld.drho[gap_ix] .≈ FT(0.005) / m_cld.rho0_seawater)
+        Laddie.update_convection!(m_cld.model)
+        @test all(m_cld.model.drho[gap_ix] .≈ FT(0.005) / m_cld.model.rho0_seawater)
 
         # End-to-end: gap cells really do sit below the reset threshold during a
         # run — ungated the reset would keep firing there — yet the layer still
         # arrives warmer than the surface ambient it is crossing.
-        m_cv = build(gappy_mask(), Params(; FT, gaps_bc = ConnectedGapsBC()))
-        @test getfield(m_cv, :params).convection_scheme isa ResetToAmbient
+        m_cv = build(gappy_mask(), ConnectedGapsBC())
+        @test getfield(m_cv.model, :params).convection_scheme isa ResetToAmbient
         run!(m_cv; days = 1.0, verbose = false)
-        @test any(m_cv.drho[gap_ix] .< FT(0.005) / m_cv.rho0_seawater)
-        @test all(m_cv.convection[gap_ix] .== 0)
-        @test all(m_cv.T.present[gap_ix] .> m_cv.Ta[gap_ix])
+        @test any(m_cv.model.drho[gap_ix] .< FT(0.005) / m_cv.model.rho0_seawater)
+        @test all(m_cv.model.convection[gap_ix] .== 0)
+        @test all(m_cv.model.T.present[gap_ix] .> m_cv.model.Ta[gap_ix])
 
         # -- Connected differs from sink, and stays physical -------------------
         run!(mc; days = 1.0, verbose = false)
-        @test all(isfinite, mc.D.present) && all(isfinite, mc.melt)
-        @test all(mc.melt[mc.imask .> 0] .>= 0)
-        @test all(mc.melt[gap_ix] .== 0)           # still zero after integrating
-        @test mc.melt != m_sink.melt
+        @test all(isfinite, mc.model.D.present) && all(isfinite, mc.model.melt)
+        @test all(mc.model.melt[mc.model.imask .> 0] .>= 0)
+        @test all(mc.model.melt[gap_ix] .== 0)           # still zero after integrating
+        @test mc.model.melt != m_sink.model.melt
     end
 
     @testset "Gaps BC: meltwater crosses a gap in the ISOMIP+ boundary current" begin
@@ -810,7 +876,7 @@ end
         # where a gap does the most damage — Jesse et al. (2026), Fig. 3.
         dx, dy = 8000.0, 4000.0
         base = build_isomip(CPU(); FT, nx = 60, ny = 20, dx, dy, isomipcond = :warm)
-        mask0, band = copy(base.mask), 19:21
+        mask0, band = copy(base.model.mask), 19:21
         rows, cols = 19:21, 30:32              # the gap: 12 km across, 24 km along
 
         # Melt-through thins the ice it eats through, so taper the draft to zero
@@ -818,7 +884,7 @@ end
         # edge.  A cliff is admissible — the reference accepts exactly that — but
         # its pressure slope, some 40x the shelf's own, would swamp the signal
         # being measured here.
-        z_draft = copy(base.z_draft)
+        z_draft = copy(base.model.z_draft)
         for j in axes(z_draft, 1), i in axes(z_draft, 2)
             r = max(max(first(rows) - j, j - last(rows), 0),
                     max(first(cols) - i, i - last(cols), 0))
@@ -827,9 +893,9 @@ end
         gappy = copy(mask0); gappy[rows, cols] .= 4
 
         function channel(mask, bc)
-            m = Model(mask, z_draft, dx, dy, ISOMIPForcing(FT, :warm),
-                      Params(; FT, gaps_bc = bc);
-                      FT, domain_cropping = NoDomainCropping())
+            grid = Grid(mask, z_draft, dx, dy; FT, domain_cropping = NoDomainCropping())
+            m = Simulation(Model(grid; forcing = ISOMIPForcing(FT, :warm),
+                                 boundary = BoundaryConditions(; gaps = bc)))
             run!(m; days = 20.0, verbose = false)
             return m
         end
@@ -838,13 +904,13 @@ end
         m_none = channel(mask0, SinkGapsBC())    # same draft, no gap: the control
 
         for m in (m_sink, m_conn, m_none)
-            @test all(isfinite, m.melt) && all(isfinite, m.D.present)
-            @test all(m.melt .>= 0)
+            @test all(isfinite, m.model.melt) && all(isfinite, m.model.D.present)
+            @test all(m.model.melt .>= 0)
         end
-        @test all(m_conn.melt[rows, cols] .== 0)   # a gap has no ice to melt
+        @test all(m_conn.model.melt[rows, cols] .== 0)   # a gap has no ice to melt
 
         mn(a) = sum(a) / length(a)
-        meltsum(m, c) = sum(m.melt[band, c]) * m.seconds_per_year
+        meltsum(m, c) = sum(m.model.melt[band, c]) * m.model.seconds_per_year
         up, down = 5:22, 36:58
 
         # Upstream of the gap the two treatments are indistinguishable, and both
@@ -854,8 +920,8 @@ end
 
         # At the gap the two diverge completely: the sink terminates the boundary
         # current (Fig. 3r), the connected layer carries it through (Fig. 3v).
-        @test maximum(abs.(m_sink.U.present[band, cols])) < 0.05
-        @test minimum(maximum(abs.(m_conn.U.present[band, c])) for c in cols) > 0.2
+        @test maximum(abs.(m_sink.model.U.present[band, cols])) < 0.05
+        @test minimum(maximum(abs.(m_conn.model.U.present[band, c])) for c in cols) > 0.2
 
         # Downstream the sink has drained the cavity and melt collapses, while
         # the connected layer arrives faster, thicker and warmer and melts almost
@@ -863,44 +929,47 @@ end
         # gap itself melts nothing.
         @test meltsum(m_conn, down) > 1.4 * meltsum(m_sink, down)
         @test meltsum(m_conn, down) ≈ meltsum(m_none, down) rtol = 0.05
-        @test mn(abs.(m_conn.U.present[band, down])) >
-              1.2 * mn(abs.(m_sink.U.present[band, down]))
-        @test mn(m_conn.T.present[band, down]) >
-              mn(m_sink.T.present[band, down]) + 0.01
+        @test mn(abs.(m_conn.model.U.present[band, down])) >
+              1.2 * mn(abs.(m_sink.model.U.present[band, down]))
+        @test mn(m_conn.model.T.present[band, down]) >
+              mn(m_sink.model.T.present[band, down]) + 0.01
     end
 
     @testset "Time stepper: FixedDt default/equivalence, AdaptiveDt threading" begin
         # FixedDt is the default; an explicit FixedDt() must reproduce it
         # bit-for-bit so the Python verification stays valid for the default.
         m_def = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
-        @test getfield(m_def, :params).tstep isa FixedDt
+        @test m_def.tstep isa FixedDt
         m_fix = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                             params = Params(; FT, tstep = FixedDt()))
+                             tstep = FixedDt())
         run!(m_def; days = 1.0, verbose = false)
         run!(m_fix; days = 1.0, verbose = false)
-        @test m_fix.D.present == m_def.D.present
-        @test m_fix.melt == m_def.melt
+        @test m_fix.model.D.present == m_def.model.D.present
+        @test m_fix.model.melt == m_def.model.melt
 
-        # AdaptiveDt threads through Params → Model; its FT tracks Params' FT
-        # (default-constructed at Float64 here, promoted to Float32).
-        p = Params(; FT, tstep = AdaptiveDt(; cfl_target = 0.4, ncheck = 10))
-        @test p.tstep isa AdaptiveDt{FT}
-        @test p.tstep.cfl_target ≈ FT(0.4) && p.tstep.ncheck == 10
-        @test Params(; FT = Float32, tstep = AdaptiveDt()).tstep isa AdaptiveDt{Float32}
+        # AdaptiveDt is a Simulation option, not a Params one; its FT tracks the
+        # model's FT (default-constructed at Float64 here, promoted to Float32).
+        s = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                         tstep = AdaptiveDt(; cfl_target = 0.4, ncheck = 10))
+        @test s.tstep isa AdaptiveDt{FT}
+        @test s.tstep.cfl_target ≈ FT(0.4) && s.tstep.ncheck == 10
+        @test build_isomip(CPU(); FT = Float32, nx = 20, ny = 10,
+                           tstep = AdaptiveDt()).tstep isa AdaptiveDt{Float32}
+        @test !hasfield(Params, :tstep) && !hasfield(Params, :dt0) && !hasfield(Params, :nu)
 
         # Run metadata records the active stepper for both default and adaptive.
         tmp = mktempdir()
         build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                     config = RunConfig(; name = "tsfix", resultdir = tmp, saveday = 0.5))
+                     output = OutputConfig(; name = "tsfix", resultdir = tmp, saveday = 0.5))
         meta = Laddie.TOML.parsefile(joinpath(tmp, "tsfix", "run_metadata.toml"))
-        @test meta["params"]["time_stepper"]["type"] == "FixedDt"
+        @test meta["simulation"]["time_stepper"]["type"] == "FixedDt"
 
         build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                     params = Params(; FT, tstep = AdaptiveDt(; cfl_target = 0.4)),
-                     config = RunConfig(; name = "tsadp", resultdir = tmp, saveday = 0.5))
+                     tstep = AdaptiveDt(; cfl_target = 0.4),
+                     output = OutputConfig(; name = "tsadp", resultdir = tmp, saveday = 0.5))
         meta2 = Laddie.TOML.parsefile(joinpath(tmp, "tsadp", "run_metadata.toml"))
-        @test meta2["params"]["time_stepper"]["type"] == "AdaptiveDt"
-        @test meta2["params"]["time_stepper"]["cfl_target"] ≈ 0.4
+        @test meta2["simulation"]["time_stepper"]["type"] == "AdaptiveDt"
+        @test meta2["simulation"]["time_stepper"]["cfl_target"] ≈ 0.4
     end
 
     @testset "Params defaults: build_isomip matches Params()" begin
@@ -910,9 +979,9 @@ end
         # physics — which is exactly what happened with max_layer_thickness
         # (build_isomip: Topographic, Params(): Absolute(100)), quietly turning
         # the AdaptiveDt accuracy test into an uncapped-vs-capped comparison.
-        implicit = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm).params
+        implicit = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm).model.params
         explicit = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                                params = Params(; FT)).params
+                                params = Params(; FT)).model.params
         @test typeof(implicit) === typeof(explicit)
         for fn in fieldnames(typeof(implicit))
             @test getfield(implicit, fn) == getfield(explicit, fn)
@@ -926,15 +995,11 @@ end
         p = Params(; FT = Float32,
                    entrainment  = GasparEntrainment(2.5),
                    melting = FixedGamTMelting(0.00018),
-                   convection_scheme = ResetToAmbient(0.005),
-                   tstep   = AdaptiveDt(; cfl_target = 0.4))
+                   convection_scheme = ResetToAmbient(0.005))
         @test p.entrainment  isa GasparEntrainment{Float32}
         @test p.melting isa FixedGamTMelting{Float32}
         @test p.convection_scheme isa ResetToAmbient{Float32}
-        @test p.tstep   isa AdaptiveDt{Float32}
-        @test p.tstep.ncheck isa Int                  # integer field not converted
-        @test p.open_bc isa ZeroGradientInflow && p.grline_bc isa FreeSlipGL   # singletons pass through
-        @test p.land_bc isa FreeSlipLand
+        @test !hasfield(typeof(p), :open_bc) && !hasfield(typeof(p), :gaps_bc)  # BCs live elsewhere
         @test p.lateral_viscosity isa PrescribedLateralViscosity
 
         p_nl = Params(; FT = Float32, lateral_viscosity = NonlinearLateralViscosity(10.0))
@@ -943,39 +1008,44 @@ end
         @test p_nl.lateral_viscosity.C_visc isa Float32
 
         # The payoff: a Float32 build + run from an explicit Params no longer
-        # errors on a Float64-typed parameterization.
+        # errors on a Float64-typed parameterization.  The Simulation promotes its
+        # time stepper the same way (integer fields untouched).
         m = build_isomip(CPU(); FT = Float32, nx = 20, ny = 10, isomipcond = :warm,
-                         params = Params(; FT = Float32, tstep = AdaptiveDt()))
+                         params = Params(; FT = Float32),
+                         tstep = AdaptiveDt(; cfl_target = 0.4))
+        @test m.tstep isa AdaptiveDt{Float32}
+        @test m.tstep.ncheck isa Int                  # integer field not converted
+        @test m.nu isa Float32 && m.clock.dt isa Float32
         run!(m; days = 0.2, verbose = false)
-        @test all(isfinite, m.melt) && eltype(m.melt) == Float32
+        @test all(isfinite, m.model.melt) && eltype(m.model.melt) == Float32
     end
 
     @testset "ClampDensity convection scheme: build and short run" begin
         params = Params(; FT, convection_scheme = ClampDensity(FT(0.005)))
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
-        @test all(isfinite, m.melt)
+        @test all(isfinite, m.model.melt)
         run!(m; days=0.5, verbose=false)
-        @test all(isfinite, m.D.present)
-        @test all(isfinite, m.melt)
+        @test all(isfinite, m.model.D.present)
+        @test all(isfinite, m.model.melt)
     end
 
     @testset "RelaxToAmbient convection scheme: build and short run" begin
         params = Params(; FT, convection_scheme = RelaxToAmbient(FT(10000.0)))
         m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
-        @test all(isfinite, m.melt)
+        @test all(isfinite, m.model.melt)
         run!(m; days=0.5, verbose=false)
-        @test all(isfinite, m.D.present)
-        @test all(isfinite, m.melt)
+        @test all(isfinite, m.model.D.present)
+        @test all(isfinite, m.model.melt)
     end
 
     @testset "run! advances model state" begin
         m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
-        D0 = copy(m.D.present)
+        D0 = copy(m.model.D.present)
         run!(m; days=0.5, verbose=false)
         # D should have changed
-        @test m.D.present != D0
-        @test all(isfinite, m.D.present)
-        @test all(isfinite, m.melt)
+        @test m.model.D.present != D0
+        @test all(isfinite, m.model.D.present)
+        @test all(isfinite, m.model.melt)
     end
 
     @testset "run! verbose path: ProgressMeter bar" begin
@@ -989,14 +1059,13 @@ end
             end
         end
         @test ret === m
-        @test all(isfinite, m.melt)
+        @test all(isfinite, m.model.melt)
     end
 
     @testset "run!: CFL warning and blow-up detection" begin
         # CFL warning fires when dt is too large for the grid; days = 0 → no
         # stepping, so only the pre-loop warning is exercised.
-        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm,
-                         params = Params(; dt = 5000.0))
+        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, dt = 5000.0)
         @test_logs (:warn, r"CFL") run!(m; days = 0.0, verbose = false)
 
         # Default ISOMIP+ setup is CFL-safe: no warning.
@@ -1006,16 +1075,16 @@ end
         # Non-finite prognostics abort with an informative error instead of
         # integrating NaNs to the end of the run.
         m2 = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
-        m2.D.present[5, 5] = NaN
+        m2.model.D.present[5, 5] = NaN
         @test_throws "blew up" run!(m2; days = 0.1, verbose = false)
     end
 
     @testset "CFL number: matches hand-built states" begin
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
-        g, dt, dx, dy = m.g, m.dt, m.dx, m.dy
+        g, dt, dx, dy = m.model.g, m.clock.dt, m.model.dx, m.model.dy
         cfl(u, v, D, dr) = begin
-            m.U.present .= u; m.V.present .= v
-            m.D.present .= D; m.drho .= dr
+            m.model.U.present .= u; m.model.V.present .= v
+            m.model.D.present .= D; m.model.drho .= dr
             Laddie._cfl_number(m)
         end
 
@@ -1054,21 +1123,21 @@ end
         # than left untouched — but it stays the same order of magnitude, unlike
         # a genuinely too-large dt0.
         msafe = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                             params = Params(; FT, tstep = AdaptiveDt()))
+                             tstep = AdaptiveDt())
         Laddie._init_adaptive_dt!(msafe, msafe.tstep)
-        @test msafe.dt <= 210.0
-        @test msafe.dt ≈ 210.0 rtol = 0.1
+        @test msafe.clock.dt <= 210.0
+        @test msafe.clock.dt ≈ 210.0 rtol = 0.1
         mbig = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                            params = Params(; FT, dt = 5000.0, tstep = AdaptiveDt()))
+                            dt = 5000.0, tstep = AdaptiveDt())
         Laddie._init_adaptive_dt!(mbig, mbig.tstep)
-        @test mbig.dt < 5000.0
+        @test mbig.clock.dt < 5000.0
 
         # Warm run completes with dt staying in bounds.
         ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                          params = Params(; FT, tstep = AdaptiveDt()))
+                          tstep = AdaptiveDt())
         run!(ma; days = 1.0, verbose = false)
-        @test all(isfinite, ma.D.present) && all(isfinite, ma.melt)
-        @test 1.0 <= ma.dt <= 1000.0
+        @test all(isfinite, ma.model.D.present) && all(isfinite, ma.model.melt)
+        @test 1.0 <= ma.clock.dt <= 1000.0
 
         # Stability rescue (headline): a dt0 that blows up under FixedDt is made
         # to survive by the controller.
@@ -1079,26 +1148,25 @@ end
         # unstable run stays perfectly finite while producing nonsense — at
         # dt = 5000 s the mean melt rate is ~25x the converged value.  Detect it
         # physically instead, against the small-dt reference solution.
-        mref = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                            params = Params(; FT, dt = 210.0))
+        mref = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, dt = 210.0)
         run!(mref; days = 2.0, verbose = false)
         mean_ref = meltstats(mref)[2]
-        survives(p, days) = try
-            mm = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p)
+        survives(days; kw...) = try
+            mm = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, kw...)
             run!(mm; days, verbose = false)
-            all(isfinite, mm.D.present) && all(isfinite, mm.melt) &&
+            all(isfinite, mm.model.D.present) && all(isfinite, mm.model.melt) &&
                 meltstats(mm)[2] < 3 * mean_ref
         catch
             false
         end
-        @test !survives(Params(; FT, dt = 5000.0),                        2.0)  # FixedDt blows up
-        @test  survives(Params(; FT, dt = 5000.0, tstep = AdaptiveDt()),  2.0)  # AdaptiveDt rescues
+        @test !survives(2.0; dt = 5000.0)                         # FixedDt blows up
+        @test  survives(2.0; dt = 5000.0, tstep = AdaptiveDt())   # AdaptiveDt rescues
 
         # dt changes are logged to log.txt.
         tmp = mktempdir()
         ml = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                          params = Params(; FT, tstep = AdaptiveDt()),
-                          config = RunConfig(; name = "adlog", resultdir = tmp, saveday = 10.0))
+                          tstep = AdaptiveDt(),
+                          output = OutputConfig(; name = "adlog", resultdir = tmp, saveday = 10.0))
         run!(ml; days = 1.0, verbose = false)
         @test occursin(r"dt .* → .* s \(CFL", read(joinpath(tmp, "adlog", "log.txt"), String))
     end
@@ -1118,8 +1186,7 @@ end
         mf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                           gradient = PyGradient())
         ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                          gradient = PyGradient(),
-                          params = Params(; FT, tstep = AdaptiveDt()))
+                          gradient = PyGradient(), tstep = AdaptiveDt())
         run!(mf; days = 1.0, verbose = false)
         run!(ma; days = 1.0, verbose = false)
         mxf, mnf, _ = meltstats(mf)
@@ -1137,29 +1204,28 @@ end
         # 1 day is reached in measurably fewer steps (measured 266 vs 411).
         cf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :cold)
         ca = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :cold,
-                          params = Params(; FT, tstep = AdaptiveDt()))
+                          tstep = AdaptiveDt())
         run!(cf; days = 1.0, verbose = false)
         run!(ca; days = 1.0, verbose = false)
-        @test ca.t < 0.9 * cf.t
-        @test ca.dt > cf.dt          # dt grew above the fixed step
+        @test ca.clock.iteration < 0.9 * cf.clock.iteration
+        @test ca.clock.dt > cf.clock.dt          # dt grew above the fixed step
 
         # Restart round-trip: the current dt is saved and restored, so an
         # adaptive run resumes at exactly the step it left off.
         tmp = mktempdir()
         m1 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                          params = Params(; FT, tstep = AdaptiveDt()),
-                          config = RunConfig(; name = "ar1", resultdir = tmp,
-                                         saveday = 0.5, restday = 0.5))
+                          tstep = AdaptiveDt(),
+                          output = OutputConfig(; name = "ar1", resultdir = tmp,
+                                                saveday = 0.5, restday = 0.5))
         run!(m1; days = 1.0, verbose = false)
         m2 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                          params = Params(; FT, tstep = AdaptiveDt()),
-                          config = RunConfig(; name = "ar2", resultdir = tmp, saveday = 0.5,
-                                         fromrestart = true,
-                                         restartfile = joinpath(tmp, "ar1", "restart_latest.jld2")))
-        @test m2.dt ≈ m1.dt
-        @test m2.D.present ≈ m1.D.present
+                          tstep = AdaptiveDt(),
+                          output = OutputConfig(; name = "ar2", resultdir = tmp, saveday = 0.5),
+                          restart = joinpath(tmp, "ar1", "restart_latest.jld2"))
+        @test m2.clock.dt ≈ m1.clock.dt
+        @test m2.model.D.present ≈ m1.model.D.present
         run!(m2; days = 0.5, verbose = false)
-        @test all(isfinite, m2.D.present) && all(isfinite, m2.melt)
+        @test all(isfinite, m2.model.D.present) && all(isfinite, m2.model.melt)
     end
 
     @testset "Simulation end: FixedSimulationEnd / SteadyStateEnd" begin
@@ -1174,7 +1240,8 @@ end
         b = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
         run!(a; days = 1.0, verbose = false)
         run!(b; until = FixedSimulationEnd(t_end = 1.0), verbose = false)
-        @test a.D.present == b.D.present && a.melt == b.melt && a.t == b.t
+        @test a.model.D.present == b.model.D.present && a.model.melt == b.model.melt &&
+              a.clock.iteration == b.clock.iteration
 
         # Passing both `days` and `until` is ambiguous.
         @test_throws ArgumentError run!(a; days = 1.0, until = FixedSimulationEnd())
@@ -1184,13 +1251,74 @@ end
         cap = 20.0
         ms = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
         run!(ms; until = SteadyStateEnd(tol = 0.3, t_end = cap), verbose = false)
-        @test ms.t_sim < 0.5 * cap * 86400              # stopped well before the cap
-        @test all(isfinite, ms.D.present) && all(isfinite, ms.melt)
+        @test ms.clock.time < 0.5 * cap * 86400              # stopped well before the cap
+        @test all(isfinite, ms.model.D.present) && all(isfinite, ms.model.melt)
 
         mc = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
         run!(mc; until = SteadyStateEnd(tol = 1e-12, t_end = cap), verbose = false)
-        @test mc.t_sim > 0.9 * cap * 86400              # ran essentially to the cap
-        @test ms.t < mc.t                               # early stop took fewer steps
+        @test mc.clock.time > 0.9 * cap * 86400              # ran essentially to the cap
+        @test ms.clock.iteration < mc.clock.iteration        # early stop took fewer steps
+
+        # `stop` sets the default criterion of run!; an explicit `days` overrides it.
+        sd = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                          stop = FixedSimulationEnd(t_end = 0.5))
+        run!(sd; verbose = false)
+        @test sd.clock.time ≈ 0.5 * 86400 atol = sd.clock.dt
+        run!(sd; days = 0.25, verbose = false)
+        @test sd.clock.time ≈ 0.75 * 86400 atol = sd.clock.dt
+    end
+
+    @testset "Simulation: clock persists across run! calls" begin
+        # Two calls are the same integration as one call covering both: the clock,
+        # the iteration count and (under FixedDt) the state all continue.  Each call
+        # rounds its own duration to whole steps, so the durations here are exact
+        # multiples of dt (0.5 d at 210 s would be 206 + 206 steps against 411).
+        one = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        two = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        @test one.clock.time == 0 && one.clock.iteration == 0
+        half = 200 * 210.0 / 86400
+        run!(one; days = 2half, verbose = false)
+        run!(two; days = half, verbose = false)
+        run!(two; days = half, verbose = false)
+        @test one.clock.iteration == 400
+        @test two.clock.time == one.clock.time
+        @test two.clock.iteration == one.clock.iteration
+        @test two.model.D.present == one.model.D.present
+        @test two.model.melt == one.model.melt
+
+        # The defect this fixes: successive calls used to restart the day count,
+        # stamping output and restart files of the second call with the times of
+        # the first.  Output and restarts must now carry continuing times.
+        tmp = mktempdir()
+        s = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                         output = OutputConfig(; name = "cont", resultdir = tmp,
+                                               saveday = 0.5, restday = 10.0))
+        run!(s; days = 1.0, verbose = false)
+        run!(s; days = 1.0, verbose = false)
+        rundir = joinpath(tmp, "cont")
+        times = Laddie.NCDatasets.Dataset(ds -> Array(ds["time"][:]), joinpath(rundir, "output.nc"))
+        @test issorted(times; lt = <=)                  # strictly increasing, no repeats
+        @test times[end] ≈ 2.0 atol = 0.01
+        @test isfile(joinpath(rundir, "restart_000001.jld2"))
+        @test isfile(joinpath(rundir, "restart_000002.jld2"))
+        Laddie.JLD2.jldopen(joinpath(rundir, "restart_latest.jld2"), "r") do f
+            @test f["t_days"] ≈ 2.0 atol = 0.01
+        end
+
+        # The model carries no time-integration state at all.
+        @test_throws ErrorException s.model.dt
+        @test !hasfield(typeof(s.model), :io) && !hasfield(typeof(s.model), :config)
+
+        # time_step! is one step of what run! does, without I/O.
+        t = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        for _ in 1:10
+            time_step!(t)
+        end
+        r = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+        run!(r; days = 10 * 210.0 / 86400, verbose = false)
+        @test t.clock.iteration == r.clock.iteration == 10
+        @test t.model.D.present == r.model.D.present
+        @test_throws ArgumentError build_isomip(CPU(); nx = 20, ny = 10, dt = -1.0)
     end
 
     @testset "Float32 vs Float64: mean melt within 1%" begin
@@ -1218,7 +1346,7 @@ end
         # ...and so is the assembled cavity forcing a model actually holds, whose
         # ice field has been materialised onto the grid.
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
-        cf = getfield(m, :forcing)
+        cf = getfield(m.model, :forcing)
         @test cf isa CavityForcing
         @test all(isconcretetype, fieldtypes(typeof(cf)))
         @test all(isconcretetype, fieldtypes(typeof(cf.ice)))
@@ -1236,54 +1364,54 @@ end
                                params = Params(; FT, coriolis = cp))
         m0 = iso(CoriolisParameter0D())
         m2 = iso(CoriolisParameter2D())
-        @test m0.f == m2.f
+        @test m0.model.f == m2.model.f
         run!(m0; days = 1.0, verbose = false)
         run!(m2; days = 1.0, verbose = false)
-        @test m2.melt == m0.melt && m2.V.present == m0.V.present
+        @test m2.model.melt == m0.model.melt && m2.model.V.present == m0.model.V.present
 
         # ...and the default is what Params used to hold as the scalar `f`.
-        @test all(m0.f .== -1.37e-4)
-        @test !hasfield(typeof(getfield(m0, :params)), :f)
+        @test all(m0.model.f .== -1.37e-4)
+        @test !hasfield(typeof(getfield(m0.model, :params)), :f)
 
         # A scalar latitude is still an f-plane, but a different one.
         m75 = iso(CoriolisParameter2D(-75.0))
-        @test all(m75.f .≈ 2 * Laddie.EARTH_ROTATION_RATE * sind(-75.0))
+        @test all(m75.model.f .≈ 2 * Laddie.EARTH_ROTATION_RATE * sind(-75.0))
         run!(m75; days = 1.0, verbose = false)
-        @test m75.V.present != m0.V.present          # stronger rotation, different flow
-        @test all(isfinite, m75.melt)
+        @test m75.model.V.present != m0.model.V.present          # stronger rotation, different flow
+        @test all(isfinite, m75.model.melt)
 
         # Uniform f: the staggered copies equal the T-point field exactly.
-        @test m0.fu == m0.f && m0.fv == m0.f
+        @test m0.model.fu == m0.model.f && m0.model.fv == m0.model.f
 
         # 2D latitude: f must be staggered onto the two velocity faces separately,
         # because on a C-grid U and V do not share a point.  A latitude varying in
         # y makes fv differ from f while fu (an x-average) does not.
-        mask0 = copy(m0.mask)
+        mask0 = copy(m0.model.mask)
         ny_t, nx_t = size(mask0)
         lat_y = [FT(-80 + 10 * (i - 1) / (ny_t - 1)) for i in 1:ny_t, _ in 1:nx_t]
-        m_y = Model(mask0, copy(m0.z_draft), 2000.0, 2000.0, ISOMIPForcing(FT, :warm),
-                    Params(; FT, coriolis = CoriolisParameter2D(lat_y));
-                    FT, domain_cropping = NoDomainCropping())
-        @test m_y.f[1, 1] ≈ 2 * Laddie.EARTH_ROTATION_RATE * sind(-80.0)
-        @test m_y.fu == m_y.f                        # constant along x
-        @test m_y.fv != m_y.f                        # averaged across y
-        @test m_y.fv[1, 1] ≈ (m_y.f[1, 1] + m_y.f[2, 1]) / 2
+        grid0 = Grid(mask0, copy(m0.model.z_draft), 2000.0, 2000.0; FT,
+                     domain_cropping = NoDomainCropping())
+        m_y = Simulation(Model(grid0; forcing = ISOMIPForcing(FT, :warm),
+                               params = Params(; FT, coriolis = CoriolisParameter2D(lat_y))))
+        @test m_y.model.f[1, 1] ≈ 2 * Laddie.EARTH_ROTATION_RATE * sind(-80.0)
+        @test m_y.model.fu == m_y.model.f                        # constant along x
+        @test m_y.model.fv != m_y.model.f                        # averaged across y
+        @test m_y.model.fv[1, 1] ≈ (m_y.model.f[1, 1] + m_y.model.f[2, 1]) / 2
         run!(m_y; days = 1.0, verbose = false)
-        @test all(isfinite, m_y.melt) && all(m_y.melt[m_y.imask .> 0] .>= 0)
-        @test m_y.V.present != m0.V.present
+        @test all(isfinite, m_y.model.melt) && all(m_y.model.melt[m_y.model.imask .> 0] .>= 0)
+        @test m_y.model.V.present != m0.model.V.present
 
         # The equivalent x-varying field swaps which face average is trivial.
         lat_x = [FT(-80 + 10 * (j - 1) / (nx_t - 1)) for _ in 1:ny_t, j in 1:nx_t]
-        m_x = Model(mask0, copy(m0.z_draft), 2000.0, 2000.0, ISOMIPForcing(FT, :warm),
-                    Params(; FT, coriolis = CoriolisParameter2D(lat_x));
-                    FT, domain_cropping = NoDomainCropping())
-        @test m_x.fv == m_x.f && m_x.fu != m_x.f
+        m_x = Simulation(Model(grid0; forcing = ISOMIPForcing(FT, :warm),
+                               params = Params(; FT, coriolis = CoriolisParameter2D(lat_x))))
+        @test m_x.model.fv == m_x.model.f && m_x.model.fu != m_x.model.f
 
         # A 2D latitude is cropped with the mask, not silently mismatched.
         m_crop = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                               params = Params(; FT, coriolis = CoriolisParameter2D(-70.0)),
                               domain_cropping = MinRectangleDomainCropping(margin = 2))
-        @test size(m_crop.f) == size(m_crop.tmask)
+        @test size(m_crop.model.f) == size(m_crop.model.tmask)
 
         # Validation.
         @test_throws ArgumentError iso(CoriolisParameter2D(-120.0))
@@ -1299,34 +1427,34 @@ end
         # reproduce the old scalar Params.T_i = -25.0 exactly, or every existing
         # result shifts.
         m_def = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
-        @test m_def.T_ice_base isa Matrix{FT}
-        @test size(m_def.T_ice_base) == size(m_def.tmask)
-        @test all(m_def.T_ice_base .== -25)
-        @test !hasfield(typeof(getfield(m_def, :params)), :T_i)
+        @test m_def.model.T_ice_base isa Matrix{FT}
+        @test size(m_def.model.T_ice_base) == size(m_def.model.tmask)
+        @test all(m_def.model.T_ice_base .== -25)
+        @test !hasfield(typeof(getfield(m_def.model, :params)), :T_i)
 
-        mask0 = copy(m_def.mask); zd0 = copy(m_def.z_draft)
+        mask0 = copy(m_def.model.mask); zd0 = copy(m_def.model.z_draft)
         shelf_cols = [j for j in axes(mask0, 2) if any(==(3), @view mask0[:, j])]
-        build(ice; kw...) = Model(mask0, zd0, 2000.0, 2000.0,
-                                  CavityForcing(ISOMIPForcing(FT, :warm), ice),
-                                  Params(; FT, entrainment = LambertEntrainment(FT(2.5)),
-                                         melting = FixedGamTMelting(FT(0.00018)),
-                                         open_bc = ZeroGradientInflow());
-                                  FT, domain_cropping = NoDomainCropping(), kw...)
+        grid0 = Grid(mask0, zd0, 2000.0, 2000.0; FT, domain_cropping = NoDomainCropping())
+        build(ice) = Simulation(Model(grid0;
+            forcing = CavityForcing(ISOMIPForcing(FT, :warm), ice),
+            params = Params(; FT, entrainment = LambertEntrainment(FT(2.5)),
+                            melting = FixedGamTMelting(FT(0.00018))),
+            boundary = BoundaryConditions(; open_ocean = ZeroGradientInflow())))
 
         # An explicit CavityForcing with the same uniform value is bit-identical to
         # the implicit default, so the move is provably inert.
         m_exp = build(PrescribedIceForcing(FT(-25.0)))
         run!(m_def; days = 1.0, verbose = false)
         run!(m_exp; days = 1.0, verbose = false)
-        @test m_exp.melt == m_def.melt
-        @test m_exp.T.present == m_def.T.present
+        @test m_exp.model.melt == m_def.model.melt
+        @test m_exp.model.T.present == m_def.model.T.present
 
         # Warmer ice melts more: L_eff = L - c_i*T_i shrinks from 3.84e5 J/kg at
         # -25 degC to 3.34e5 at 0 degC.  The response is damped well below that 15%
         # because the extra melt cools and freshens the layer that drives it.
         m_warm = build(PrescribedIceForcing(FT(0.0)))
         run!(m_warm; days = 1.0, verbose = false)
-        @test sum(m_warm.melt) / sum(m_def.melt) ≈ 1.072 rtol = 0.02
+        @test sum(m_warm.model.melt) / sum(m_def.model.melt) ≈ 1.072 rtol = 0.02
 
         # A 2D field is the point of the move: temperate ice over the upstream half
         # of the shelf, cold ice over the rest, must land strictly between the two
@@ -1335,18 +1463,17 @@ end
         Ti = fill(FT(-25.0), size(mask0)); Ti[:, half] .= 0
         m_2d = build(PrescribedIceForcing(Ti))
         run!(m_2d; days = 1.0, verbose = false)
-        @test sum(m_def.melt) < sum(m_2d.melt) < sum(m_warm.melt)
-        @test sum(m_2d.melt[:, half]) > sum(m_def.melt[:, half])
-        @test m_2d.melt[m_2d.imask .> 0] != m_warm.melt[m_warm.imask .> 0]
+        @test sum(m_def.model.melt) < sum(m_2d.model.melt) < sum(m_warm.model.melt)
+        @test sum(m_2d.model.melt[:, half]) > sum(m_def.model.melt[:, half])
+        @test m_2d.model.melt[m_2d.model.imask .> 0] != m_warm.model.melt[m_warm.model.imask .> 0]
 
         # The turbulent-gamT variant is the second melt kernel; it takes the same
         # per-cell L_eff path and must stay physical on the same 2D field.
-        m_turb = Model(mask0, zd0, 2000.0, 2000.0,
-                       CavityForcing(ISOMIPForcing(FT, :warm), PrescribedIceForcing(Ti)),
-                       Params(; FT, melting = TurbulentGamTMelting());
-                       FT, domain_cropping = NoDomainCropping())
+        m_turb = Simulation(Model(grid0;
+            forcing = CavityForcing(ISOMIPForcing(FT, :warm), PrescribedIceForcing(Ti)),
+            params = Params(; FT, melting = TurbulentGamTMelting())))
         run!(m_turb; days = 1.0, verbose = false)
-        @test all(isfinite, m_turb.melt) && all(m_turb.melt .>= 0)
+        @test all(isfinite, m_turb.model.melt) && all(m_turb.model.melt .>= 0)
 
         # Validation: wrong shape, ice above the melting point, NaN.
         @test_throws ArgumentError build(PrescribedIceForcing(zeros(FT, 3, 3)))
@@ -1356,24 +1483,23 @@ end
 
         # A 2D field is cropped with the mask rather than silently mismatched.
         marked = fill(FT(-25.0), size(mask0)); marked[6, shelf_cols[3]] = FT(-2.0)
-        m_crop = Model(mask0, zd0, 2000.0, 2000.0,
-                       CavityForcing(ISOMIPForcing(FT, :warm), PrescribedIceForcing(marked)),
-                       Params(; FT); FT,
-                       domain_cropping = MinRectangleDomainCropping(margin = 2))
+        m_crop = Model(Grid(mask0, zd0, 2000.0, 2000.0; FT,
+                            domain_cropping = MinRectangleDomainCropping(margin = 2));
+                       forcing = CavityForcing(ISOMIPForcing(FT, :warm), PrescribedIceForcing(marked)))
         @test size(m_crop.T_ice_base) == size(m_crop.tmask)
         @test count(==(FT(-2.0)), m_crop.T_ice_base) == 1
 
         # A bare ocean forcing still works and picks up the default ice.
-        m_bare = Model(mask0, zd0, 2000.0, 2000.0, ISOMIPForcing(FT, :warm),
-                       Params(; FT); FT, domain_cropping = NoDomainCropping())
+        m_bare = Model(grid0; forcing = ISOMIPForcing(FT, :warm))
         @test getfield(m_bare, :forcing) isa CavityForcing
         @test all(m_bare.T_ice_base .== Laddie.DEFAULT_T_ICE_BASE)
     end
 
     @testset "Model property forwarding: collision guard" begin
         m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
-        parts = (getfield(m, :io), getfield(m, :config), getfield(m, :grid),
-                 getfield(m, :state), getfield(m, :cache), getfield(m, :params))
+        parts = (getfield(m.model, :grid), getfield(m.model, :geometry), getfield(m.model, :state),
+                 getfield(m.model, :cache), getfield(m.model, :params),
+                 getfield(m.model, :boundary))
         v = zeros(2)
         # The guard inspects the members of the CavityForcing, not the wrapper, so
         # a user-defined ocean forcing is what it has to catch.
@@ -1384,36 +1510,48 @@ end
         # An ice forcing colliding with the ocean side is caught too.
         @test_throws "ambiguous" Model(
             parts...,
-            CavityForcing(getfield(m, :forcing).ocean, CollidingIceForcing(zeros(2, 2))),
+            CavityForcing(getfield(m.model, :forcing).ocean, CollidingIceForcing(zeros(2, 2))),
         )
         # The shipped struct combination is collision-free (also checked at
         # every Model construction).
-        @test Model(parts..., getfield(m, :forcing)) isa Model
+        @test Model(parts..., getfield(m.model, :forcing)) isa Model
     end
 
     @testset "Compact show methods" begin
         m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
         plain(x) = sprint(show, MIME("text/plain"), x)
 
-        s = plain(m)
+        s = plain(m.model)
         @test occursin("Model{Float64} on CPU", s)
         @test occursin("20×", replace(s, "10×20" => "20×10")) || occursin("interior", s)
         @test occursin("forcing", s) && occursin("params", s)
+        @test !occursin("dt", s)   # the model knows nothing about time stepping
+        @test occursin("boundary: BoundaryConditions(open ocean = ZeroGradientInflow", s)
         @test length(s) < 800   # not a field dump
 
-        sg = plain(getfield(m, :grid))
-        @test occursin("shelf", sg) && occursin("interior", sg)
-        @test length(sg) < 400
+        ss = plain(m)
+        @test occursin("Simulation{Float64} on CPU", ss)
+        @test occursin("dt = 210.0 s", ss) && occursin("FixedDt()", ss)
+        @test occursin("Robert–Asselin", ss) && occursin("disabled", ss)
+        @test length(ss) < 800
+        @test occursin("Simulation{Float64} on CPU at day 0.0", sprint(show, m))
 
-        sp = plain(getfield(m, :params))
+        sg = plain(getfield(m.model, :grid))
+        @test occursin("shelf", sg) && occursin("interior", sg) && occursin("gap", sg)
+        @test length(sg) < 400
+        @test occursin("active cells", sprint(show, getfield(m.model, :geometry)))
+
+        sp = plain(getfield(m.model, :params))
         @test occursin("Params{Float64}", sp)
-        @test occursin("dt0 = 210.0", sp) && occursin("entrainment", sp)
+        @test occursin("g = 9.81", sp) && occursin("entrainment", sp)
+        @test !occursin("dt0", sp) && !occursin("time stepper", sp)
         @test length(sp) < 1500
 
-        sf = plain(getfield(m, :forcing))
+        sf = plain(getfield(m.model, :forcing))
         @test occursin("OceanForcing1D", sf) && occursin("5000-point profile", sf)
         @test occursin("PrescribedIceForcing(T_ice_base = -25.0 °C)", sf)
-        for x in (getfield(m, :state), getfield(m, :cache), getfield(m, :io), m.D)
+        for x in (getfield(m.model, :state), getfield(m.model, :cache), m.io, m.clock,
+                  m.output, m.model.D)
             @test length(plain(x)) < 400
         end
     end
@@ -1436,50 +1574,50 @@ end
             m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
             run!(m; days = 0.2, verbose = false)   # develop a non-trivial flow
             Laddie.advance_leapfrog!(m)
-            dt = 2 * m.dt
-            Laddie.step_thickness(m, dt)
-            Laddie.precompute_integration_terms!(m)
+            dt = 2 * m.clock.dt
+            Laddie.step_thickness(m.model, dt)
+            Laddie.precompute_integration_terms!(m.model, m.clock.dt)
 
-            rhs_U = .- Laddie.u_thickness_tendency(m) .+ Laddie.u_advection(m) .-
-                       Laddie.u_pressure_depth(m)     .+ Laddie.u_pressure_slope(m) .-
-                       Laddie.u_pressure_density(m)   .+ Laddie.u_coriolis(m) .-
-                       Laddie.u_bottom_drag(m)        .+ Laddie.u_diffusion(m) .-
-                       Laddie.u_detrainment(m)
-            U_ref = m.U.past .+
-                Laddie.div0(rhs_U, Laddie.ip_t(m, m.D.present)) .* m.umask .* dt
+            rhs_U = .- Laddie.u_thickness_tendency(m.model) .+ Laddie.u_advection(m.model) .-
+                       Laddie.u_pressure_depth(m.model)     .+ Laddie.u_pressure_slope(m.model) .-
+                       Laddie.u_pressure_density(m.model)   .+ Laddie.u_coriolis(m.model) .-
+                       Laddie.u_bottom_drag(m.model)        .+ Laddie.u_diffusion(m.model) .-
+                       Laddie.u_detrainment(m.model)
+            U_ref = m.model.U.past .+
+                Laddie.div0(rhs_U, Laddie.ip_t(m.model, m.model.D.present)) .* m.model.umask .* dt
 
-            rhs_V = .- Laddie.v_thickness_tendency(m) .+ Laddie.v_advection(m) .-
-                       Laddie.v_pressure_depth(m)     .+ Laddie.v_pressure_slope(m) .-
-                       Laddie.v_pressure_density(m)   .- Laddie.v_coriolis(m) .-
-                       Laddie.v_bottom_drag(m)        .+ Laddie.v_diffusion(m) .-
-                       Laddie.v_detrainment(m)
-            V_ref = m.V.past .+
-                Laddie.div0(rhs_V, Laddie.jp_t(m, m.D.present)) .* m.vmask .* dt
+            rhs_V = .- Laddie.v_thickness_tendency(m.model) .+ Laddie.v_advection(m.model) .-
+                       Laddie.v_pressure_depth(m.model)     .+ Laddie.v_pressure_slope(m.model) .-
+                       Laddie.v_pressure_density(m.model)   .- Laddie.v_coriolis(m.model) .-
+                       Laddie.v_bottom_drag(m.model)        .+ Laddie.v_diffusion(m.model) .-
+                       Laddie.v_detrainment(m.model)
+            V_ref = m.model.V.past .+
+                Laddie.div0(rhs_V, Laddie.jp_t(m.model, m.model.D.present)) .* m.model.vmask .* dt
 
-            rhs_T = .- Laddie.tracer_thickness_tendency(m, m.T.present) .+
-                       Laddie.tracer_advection(m, m.T.present) .+
-                       Laddie.tracer_entrainment(m, m.Ta) .+
-                       Laddie.T_ice_ocean_exchange(m) .+
-                       Laddie.tracer_diffusion(m, m.T.past) .-
-                       Laddie.tracer_convection(m, m.T.past, m.Ta)
-            T_ref = m.T.past .+ Laddie.div0(rhs_T, m.D.present) .* m.tmask .* dt
+            rhs_T = .- Laddie.tracer_thickness_tendency(m.model, m.model.T.present) .+
+                       Laddie.tracer_advection(m.model, m.model.T.present) .+
+                       Laddie.tracer_entrainment(m.model, m.model.Ta) .+
+                       Laddie.T_ice_ocean_exchange(m.model) .+
+                       Laddie.tracer_diffusion(m.model, m.model.T.past) .-
+                       Laddie.tracer_convection(m.model, m.model.T.past, m.model.Ta)
+            T_ref = m.model.T.past .+ Laddie.div0(rhs_T, m.model.D.present) .* m.model.tmask .* dt
 
-            rhs_S = .- Laddie.tracer_thickness_tendency(m, m.S.present) .+
-                       Laddie.tracer_advection(m, m.S.present) .+
-                       Laddie.tracer_entrainment(m, m.Sa) .+
-                       Laddie.tracer_diffusion(m, m.S.past) .-
-                       Laddie.tracer_convection(m, m.S.past, m.Sa)
-            S_ref = m.S.past .+ Laddie.div0(rhs_S, m.D.present) .* m.tmask .* dt
+            rhs_S = .- Laddie.tracer_thickness_tendency(m.model, m.model.S.present) .+
+                       Laddie.tracer_advection(m.model, m.model.S.present) .+
+                       Laddie.tracer_entrainment(m.model, m.model.Sa) .+
+                       Laddie.tracer_diffusion(m.model, m.model.S.past) .-
+                       Laddie.tracer_convection(m.model, m.model.S.past, m.model.Sa)
+            S_ref = m.model.S.past .+ Laddie.div0(rhs_S, m.model.D.present) .* m.model.tmask .* dt
 
-            Laddie.step_u_momentum(m, dt)
-            Laddie.step_v_momentum(m, dt)
-            Laddie.step_temperature(m, dt)
-            Laddie.step_salinity(m, dt)
+            Laddie.step_u_momentum(m.model, dt)
+            Laddie.step_v_momentum(m.model, dt)
+            Laddie.step_temperature(m.model, dt)
+            Laddie.step_salinity(m.model, dt)
 
-            @test m.U.future ≈ U_ref rtol = 1e-10 atol = 1e-12
-            @test m.V.future ≈ V_ref rtol = 1e-10 atol = 1e-12
-            @test m.T.future ≈ T_ref rtol = 1e-10 atol = 1e-12
-            @test m.S.future ≈ S_ref rtol = 1e-10 atol = 1e-12
+            @test m.model.U.future ≈ U_ref rtol = 1e-10 atol = 1e-12
+            @test m.model.V.future ≈ V_ref rtol = 1e-10 atol = 1e-12
+            @test m.model.T.future ≈ T_ref rtol = 1e-10 atol = 1e-12
+            @test m.model.S.future ≈ S_ref rtol = 1e-10 atol = 1e-12
         end
     end
 
@@ -1494,20 +1632,20 @@ end
 
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
         run!(m; days = 0.5, verbose = false)
-        g = getfield(m, :grid)
+        g = getfield(m.model, :geometry)
         # Under the default the interior term is live and the gate is exactly 1.0,
         # so nothing is altered anywhere.
-        up = Laddie.u_pressure_depth(m)
+        up = Laddie.u_pressure_depth(m.model)
         @test any(!iszero, up[g.tmask_ip.==2])
-        @test all(Laddie._pgf_gate(m, g.tmask_ip) .== 1)
+        @test all(Laddie._pgf_gate(m.model, g.tmask_ip) .== 1)
 
         # Selecting the truncation is bit-identical in the interior and exactly
         # zero on one-sided faces.
         m_t = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p_trunc)
         run!(m_t; days = 0.5, verbose = false)
-        g_t = getfield(m_t, :grid)
-        up_t = Laddie.u_pressure_depth(m_t)
-        vp_t = Laddie.v_pressure_depth(m_t)
+        g_t = getfield(m_t.model, :geometry)
+        up_t = Laddie.u_pressure_depth(m_t.model)
+        vp_t = Laddie.v_pressure_depth(m_t.model)
         @test all(iszero, up_t[g_t.tmask_ip.!=2])
         @test all(iszero, vp_t[g_t.tmask_jp.!=2])
 
@@ -1524,12 +1662,12 @@ end
         z_draft = zeros(FT, size(mk))
         z_draft[mk .== 3] .= FT(-200.0)
         forcing = ISOMIPForcing(FT, :warm)
-        m_gap = Model(mk, z_draft, FT(2000.0), FT(2000.0), forcing, p_trunc;
-                      domain_cropping = NoDomainCropping())
+        gap_grid = Grid(mk, z_draft, FT(2000.0), FT(2000.0); domain_cropping = NoDomainCropping())
+        m_gap = Simulation(Model(gap_grid; forcing, params = p_trunc))
         run!(m_gap; days = 0.5, verbose = false)
-        g_gap = getfield(m_gap, :grid)
-        up_gap = Laddie.u_pressure_depth(m_gap)
-        vp_gap = Laddie.v_pressure_depth(m_gap)
+        g_gap = getfield(m_gap.model, :geometry)
+        up_gap = Laddie.u_pressure_depth(m_gap.model)
+        vp_gap = Laddie.v_pressure_depth(m_gap.model)
         @test all(iszero, up_gap[g_gap.tmask_ip.!=2])
         @test all(iszero, vp_gap[g_gap.tmask_jp.!=2])
 
@@ -1542,41 +1680,40 @@ end
 
         # The choice is not cosmetic: on a domain that has an ice front, the two
         # settings must actually integrate to different states.
-        m_full2 = Model(mk, z_draft, FT(2000.0), FT(2000.0), forcing, p_full;
-                        domain_cropping = NoDomainCropping())
+        m_full2 = Simulation(Model(gap_grid; forcing, params = p_full))
         run!(m_full2; days = 0.5, verbose = false)
-        @test m_full2.U.present != m_gap.U.present
-        @test all(isfinite, m_gap.melt) && all(isfinite, m_full2.melt)
+        @test m_full2.model.U.present != m_gap.model.U.present
+        @test all(isfinite, m_gap.model.melt) && all(isfinite, m_full2.model.melt)
     end
 
     @testset "Conservation: D equation exact over one step" begin
         m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
         Laddie.advance_leapfrog!(m)
-        D_past = copy(m.D.past)
-        src    = copy((m.convD .+ m.melt .+ m.nentr) .* m.tmask)
+        D_past = copy(m.model.D.past)
+        src    = copy((m.model.convD .+ m.model.melt .+ m.model.nentr) .* m.model.tmask)
         Laddie.leapfrog_step!(m, 2)
-        @test m.D.future ≈ D_past .+ src .* (2 * m.dt)
+        @test m.model.D.future ≈ D_past .+ src .* (2 * m.clock.dt)
     end
 
     @testset "Conservation: D ≥ D_min after 1-day run" begin
         m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
         run!(m; days=1.0, verbose=false)
-        active = m.tmask .> 0
-        @test all(m.D.present[active] .>= m.D_min - 1e-10)
+        active = m.model.tmask .> 0
+        @test all(m.model.D.present[active] .>= m.model.D_min - 1e-10)
     end
 
     @testset "Conservation: D ≥ D_min after 1-day run (cold)" begin
         m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold)
         run!(m; days=1.0, verbose=false)
-        active = m.tmask .> 0
-        @test all(m.D.present[active] .>= m.D_min - 1e-10)
+        active = m.model.tmask .> 0
+        @test all(m.model.D.present[active] .>= m.model.D_min - 1e-10)
     end
 
     @testset "I/O: NetCDF output, log, and JLD2 restart round-trip" begin
         tmpdir = mktempdir()
-        config = RunConfig(; name = "iotest", resultdir = tmpdir,
-                       saveday = 0.5, diagday = 0.5, restday = 0.5)
-        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, config)
+        output = OutputConfig(; name = "iotest", resultdir = tmpdir,
+                              saveday = 0.5, diagday = 0.5, restday = 0.5)
+        m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, output)
         run!(m; days = 1.0, verbose = false)
 
         rundir = joinpath(tmpdir, "iotest")
@@ -1592,10 +1729,16 @@ end
         @test meta["run"]["backend"] == "CPU"
         @test meta["run"]["laddie_version"] isa String
         @test meta["grid"]["nx"] == 20 && meta["grid"]["ny"] == 10
-        @test meta["params"]["dt0"] == 210.0
+        @test meta["simulation"]["dt0"] == 210.0
+        @test meta["simulation"]["nu"] ≈ 0.8
+        @test meta["simulation"]["cfl"]["type"] == "ExactCFL"
+        @test meta["simulation"]["restart"] == ""
+        @test !haskey(meta["params"], "dt0") && !haskey(meta["params"], "time_stepper")
         @test meta["params"]["melt"]["type"] == "FixedGamTMelting"
         @test meta["params"]["melt"]["gamTfix"] ≈ 0.00018
-        @test meta["params"]["grounding_line"]["type"] == "FreeSlipGL"
+        @test meta["boundary"]["grounding_line"]["type"] == "FreeSlipGL"
+        @test meta["boundary"]["gaps"]["type"] == "SinkGapsBC"
+        @test !haskey(meta["params"], "grounding_line")
         # The forcing entry is split ocean/ice, and records the profile ranges:
         # the arrays themselves are skipped by _scalar_fields, so without these a
         # warm run would be indistinguishable from a cold one in the metadata.
@@ -1604,7 +1747,7 @@ end
         @test meta["forcing"]["ocean"]["nz"] == 5000
         @test meta["forcing"]["ice"]["type"] == "PrescribedIceForcing"
         @test meta["forcing"]["ice"]["T_ice_base_range"] == [-25.0, -25.0]
-        @test meta["run_config"]["saveday"] == 0.5
+        @test meta["output"]["saveday"] == 0.5
 
         # All output is written into a single output.nc with a time dimension;
         # saveday=0.5 over 1 day produces at least 2 time slices.
@@ -1622,14 +1765,14 @@ end
         # Restart written, then round-trips: a model restarted from it must
         # carry the same prognostic state.
         @test isfile(joinpath(rundir, "restart_latest.jld2"))
-        rc2 = RunConfig(; name = "iotest2", resultdir = tmpdir, saveday = 0.5,
-                        fromrestart = true,
-                        restartfile = joinpath(rundir, "restart_latest.jld2"))
-        m2 = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, config = rc2)
-        @test m2.t_start ≈ 1.0 atol = 0.01
-        @test m2.D.present ≈ m.D.present
-        @test m2.T.present ≈ m.T.present
-        @test m2.S.present ≈ m.S.present
+        restartfile = joinpath(rundir, "restart_latest.jld2")
+        m2 = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm,
+                          output = OutputConfig(; name = "iotest2", resultdir = tmpdir, saveday = 0.5),
+                          restart = restartfile)
+        @test m2.clock.time / 86400 ≈ 1.0 atol = 0.01
+        @test m2.model.D.present ≈ m.model.D.present
+        @test m2.model.T.present ≈ m.model.T.present
+        @test m2.model.S.present ≈ m.model.S.present
 
         # Continuation timestamps: time values in output.nc must carry the
         # t_start offset, not restart from day 0.
@@ -1650,11 +1793,11 @@ end
         # Continuation metadata records the restart offset
         meta2 = Laddie.TOML.parsefile(joinpath(rundir2, "run_metadata.toml"))
         @test meta2["run"]["t_start_days"] ≈ 1.0 atol = 0.01
-        @test meta2["run_config"]["fromrestart"] === true
+        @test meta2["simulation"]["restart"] == restartfile
 
         # Typed Model: unknown properties now error instead of landing in a Dict
-        @test_throws ErrorException m.no_such_field
-        @test_throws ErrorException (m.no_such_field = 1)
+        @test_throws ErrorException m.model.no_such_field
+        @test_throws ErrorException (m.model.no_such_field = 1)
     end
 
     @testset "Verification vs Python LADDIE: 1-day warm ISOMIP+" begin
@@ -1684,8 +1827,8 @@ end
             end
 
             inner(a) = a[2:end-1, 2:end-1]
-            tm = inner(m.tmask) .> 0
-            @test all((inner(m.tmask) .> 0) .== (py_tmask .> 0))
+            tm = inner(m.model.tmask) .> 0
+            @test all((inner(m.model.tmask) .> 0) .== (py_tmask .> 0))
 
             #            field  mean|Δ|   max|Δ|       (measured: mean / max)
             tols = Dict("D" => (0.05,    6.0),     # 0.019  / 3.0   m
@@ -1693,9 +1836,9 @@ end
                         "S" => (0.0015,  0.015),   # 0.0006 / 0.006 psu
                         "U" => (0.0003,  0.04),    # 1.1e-4 / 0.016 m/s
                         "V" => (0.0003,  0.04))    # 0.9e-4 / 0.016 m/s
-            for (v, jl) in (("D", m.D.present), ("T", m.T.present),
-                            ("S", m.S.present), ("U", m.U.present),
-                            ("V", m.V.present))
+            for (v, jl) in (("D", m.model.D.present), ("T", m.model.T.present),
+                            ("S", m.model.S.present), ("U", m.model.U.present),
+                            ("V", m.model.V.present))
                 resid = abs.(inner(jl) .- py[v])[tm]
                 mean_tol, max_tol = tols[v]
                 @test sum(resid) / length(resid) < mean_tol
@@ -1722,42 +1865,42 @@ end
         @testset "ISOMIP+ warm cavity (GPU): matches CPU" begin
             m_c = build_isomip(CPU();       nx=20, ny=10, isomipcond=:warm)
             m_g = build_isomip(gpu_backend; nx=20, ny=10, isomipcond=:warm)
-            @test all(isfinite, Array(m_g.melt))
-            @test all(Array(m_g.melt)[m_c.tmask .> 0] .>= 0)
-            @test Array(m_g.melt) ≈ m_c.melt
+            @test all(isfinite, Array(m_g.model.melt))
+            @test all(Array(m_g.model.melt)[m_c.model.tmask .> 0] .>= 0)
+            @test Array(m_g.model.melt) ≈ m_c.model.melt
         end
 
         @testset "ISOMIP+ cold cavity (GPU): matches CPU" begin
             m_c = build_isomip(CPU();       nx=20, ny=10, isomipcond=:cold)
             m_g = build_isomip(gpu_backend; nx=20, ny=10, isomipcond=:cold)
-            @test all(isfinite, Array(m_g.melt))
-            @test Array(m_g.melt) ≈ m_c.melt
+            @test all(isfinite, Array(m_g.model.melt))
+            @test Array(m_g.model.melt) ≈ m_c.model.melt
         end
 
         @testset "run! GPU: advances state and matches CPU" begin
             m_c = build_isomip(CPU();       nx=20, ny=10, isomipcond=:warm)
             m_g = build_isomip(gpu_backend; nx=20, ny=10, isomipcond=:warm)
-            D0_g = copy(Array(m_g.D.present))
+            D0_g = copy(Array(m_g.model.D.present))
             run!(m_c; days=0.5, verbose=false)
             run!(m_g; days=0.5, verbose=false)
-            @test Array(m_g.D.present) != D0_g
-            @test all(isfinite, Array(m_g.D.present))
-            @test all(isfinite, Array(m_g.melt))
-            @test Array(m_g.D.present) ≈ m_c.D.present
-            @test Array(m_g.melt)      ≈ m_c.melt
+            @test Array(m_g.model.D.present) != D0_g
+            @test all(isfinite, Array(m_g.model.D.present))
+            @test all(isfinite, Array(m_g.model.melt))
+            @test Array(m_g.model.D.present) ≈ m_c.model.D.present
+            @test Array(m_g.model.melt)      ≈ m_c.model.melt
             # CFL monitor reductions run on the device and match the CPU value.
             @test Laddie._cfl_number(m_g) ≈ Laddie._cfl_number(m_c)
         end
 
         @testset "NoSlipGL (GPU): matches CPU" begin
             m_c = build_isomip(CPU();       nx = 20, ny = 10, isomipcond = :warm,
-                               params = Params(; grline_bc = NoSlipGL()))
+                               boundary = BoundaryConditions(; grounding_line = NoSlipGL()))
             m_g = build_isomip(gpu_backend; nx = 20, ny = 10, isomipcond = :warm,
-                               params = Params(; grline_bc = NoSlipGL()))
+                               boundary = BoundaryConditions(; grounding_line = NoSlipGL()))
             run!(m_c; days = 0.5, verbose = false)
             run!(m_g; days = 0.5, verbose = false)
-            @test Array(m_g.melt)      ≈ m_c.melt
-            @test Array(m_g.V.present) ≈ m_c.V.present
+            @test Array(m_g.model.melt)      ≈ m_c.model.melt
+            @test Array(m_g.model.V.present) ≈ m_c.model.V.present
         end
 
         @testset "ISOMIP+ warm (GPU Float32): matches CPU Float32" begin
@@ -1765,8 +1908,8 @@ end
             m_g = build_isomip(gpu_backend; FT=Float32, nx=20, ny=10, isomipcond=:warm)
             run!(m_c; days=0.5, verbose=false)
             run!(m_g; days=0.5, verbose=false)
-            @test all(isfinite, Array(m_g.D.present))
-            @test all(isfinite, Array(m_g.melt))
+            @test all(isfinite, Array(m_g.model.D.present))
+            @test all(isfinite, Array(m_g.model.melt))
             _, mn_c, _ = meltstats(m_c)
             _, mn_g, _ = meltstats(m_g)
             @test abs(Float64(mn_g) - Float64(mn_c)) / Float64(mn_c) < 1e-3
@@ -1776,10 +1919,10 @@ end
             # The CFL reductions, worst-case startup rescue, and re-bootstrap
             # must all be GPU-safe; assert a clean completion in bounds.
             m_g = build_isomip(gpu_backend; nx = 20, ny = 10, isomipcond = :warm,
-                               params = Params(; tstep = AdaptiveDt()))
+                               tstep = AdaptiveDt())
             run!(m_g; days = 1.0, verbose = false)
-            @test all(isfinite, Array(m_g.D.present)) && all(isfinite, Array(m_g.melt))
-            @test 1.0 <= m_g.dt <= 1000.0
+            @test all(isfinite, Array(m_g.model.D.present)) && all(isfinite, Array(m_g.model.melt))
+            @test 1.0 <= m_g.clock.dt <= 1000.0
         end
 
     end # gpu_backend !== nothing

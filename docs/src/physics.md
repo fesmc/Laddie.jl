@@ -138,7 +138,7 @@ Where melting thins a shelf all the way through, an ice-free **gap** opens insid
 domain. There is no ice base there, so no melt — but what happens to the meltwater layer
 arriving from upstream is genuinely uncertain, and the two defensible answers bracket a
 large range of coupled ice-sheet response (Jesse et al., 2026). LADDIE.jl offers both as
-`Params.gaps_bc`, selected on the same input mask:
+`BoundaryConditions(; gaps = ...)`, selected on the same input mask:
 
 | | [`SinkGapsBC`](@ref) (default) | [`ConnectedGapsBC`](@ref) |
 |---|---|---|

@@ -32,19 +32,18 @@ const COND = :cold        # slow flow → controller grows dt → biggest win
 const DAYS = 2.0
 
 function timed_run(tstep)
-    m = build_isomip(backend; FT, nx = NX, ny = NY, isomipcond = COND,
-                     params = Params(; FT, tstep))
+    sim = build_isomip(backend; FT, nx = NX, ny = NY, isomipcond = COND, tstep)
     t = @elapsed begin
-        run!(m; days = DAYS, verbose = false)
+        run!(sim; days = DAYS, verbose = false)
         sync()
     end
-    return (; wall = t, steps = m.t, dt = Float64(m.dt), dx = Float64(m.dx))
+    return (; wall = t, steps = sim.clock.iteration, dt = Float64(sim.clock.dt),
+            dx = Float64(sim.model.dx))
 end
 
 # Warm up (compile all kernels, both stepper paths) on a tiny grid.
 for ts in (FixedDt(), AdaptiveDt())
-    mw = build_isomip(backend; FT, nx = 20, ny = 10, isomipcond = COND,
-                      params = Params(; FT, tstep = ts))
+    mw = build_isomip(backend; FT, nx = 20, ny = 10, isomipcond = COND, tstep = ts)
     run!(mw; days = 0.05, verbose = false); sync()
 end
 

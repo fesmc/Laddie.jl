@@ -1,8 +1,8 @@
 
 # ============================================================================
-# Time steppers — control how `dt` evolves during a run.  Threaded through
-# `Params` as the `TS` type parameter (`Params(; tstep = ...)`); the runtime
-# step lives in `IOState` and is read as `m.dt`.
+# Time steppers — control how `dt` evolves during a run.  Held by the
+# `Simulation` (`Simulation(model; tstep = ...)`); the runtime step lives in its
+# `Clock` as `sim.clock.dt`.
 # ============================================================================
 
 abstract type AbstractTimeStepper end
@@ -10,11 +10,11 @@ abstract type AbstractTimeStepper end
 """
 $(TYPEDSIGNATURES)
 
-Constant time step (the default): `dt` stays at `Params.dt0` for the whole
-run.  Reproduces LADDIE v1.x behaviour exactly, so the default integration is
-bit-for-bit unchanged.
+Constant time step (the default): `dt` stays at the value the `Simulation` was
+constructed with for the whole run.  Reproduces LADDIE v1.x behaviour exactly,
+so the default integration is bit-for-bit unchanged.
 
-Select via `Params(; tstep = FixedDt())` (the default).
+Select via `Simulation(model; tstep = FixedDt())` (the default).
 """
 struct FixedDt <: AbstractTimeStepper end
 
@@ -39,7 +39,7 @@ The adjustment is asymmetric and predictive — it never rejects a step:
 - in between → hold (hysteresis band keeps changes rare, which matters because
   each change re-bootstraps the leapfrog).
 
-Select via `Params(; tstep = AdaptiveDt())`; override fields as needed, e.g.
+Select via `Simulation(model; tstep = AdaptiveDt())`; override fields as needed, e.g.
 `AdaptiveDt(; cfl_target = 0.4, ncheck = 10)`.
 
 # Fields
@@ -61,8 +61,8 @@ Select via `Params(; tstep = AdaptiveDt())`; override fields as needed, e.g.
     dtmax::FT = 1000.0
 end
 
-# (Float-type promotion of the stepper to match Params{FT} is handled generically
-# by `_promote_param` in params.jl, alongside the other parameterization objects.)
+# (Float-type promotion of the stepper to the model's FT is handled generically by
+# `_promote_param` in params.jl, called from the `Simulation` constructor.)
 
 # Proposed dt from the predictive CFL controller.  Returns the clamped dt; the
 # input dt unchanged when inside the hysteresis band or when there is no usable
@@ -86,13 +86,13 @@ end
 
 # Apply a controller decision: when dt actually changes, set it, re-bootstrap
 # the leapfrog at the new dt, and log the change.  Returns whether dt changed.
-function _apply_dt!(m, ts::AdaptiveDt, cfl; allow_grow::Bool)
-    dt_old = m.dt
-    dt_new = m.FT(_controller_dt(ts, dt_old, cfl; allow_grow))
+function _apply_dt!(sim, ts::AdaptiveDt, cfl; allow_grow::Bool)
+    dt_old = sim.clock.dt
+    dt_new = sim.model.FT(_controller_dt(ts, dt_old, cfl; allow_grow))
     dt_new == dt_old && return false
-    m.dt = dt_new
-    _rebootstrap_leapfrog!(m)
-    _log_dt_change!(m, dt_old, dt_new, cfl)
+    sim.clock.dt = dt_new
+    _rebootstrap_leapfrog!(sim)
+    _log_dt_change!(sim, dt_old, dt_new, cfl)
     return true
 end
 
@@ -112,23 +112,23 @@ _check_interval(ts::AdaptiveDt, nt) = clamp(ts.ncheck, 1, max(1, nt ÷ 20))
 # measured at the shared sync point.  FixedDt is a pure no-op (the default
 # integration is unchanged).  AdaptiveDt adjusts dt predictively for the
 # upcoming steps — it never rejects a step, so there is no rollback.
-_maybe_adapt_dt!(m, ::FixedDt, cfl) = nothing
-_maybe_adapt_dt!(m, ts::AdaptiveDt, cfl) =
-    (_apply_dt!(m, ts, cfl; allow_grow = true); nothing)
+_maybe_adapt_dt!(sim, ::FixedDt, cfl) = nothing
+_maybe_adapt_dt!(sim, ts::AdaptiveDt, cfl) =
+    (_apply_dt!(sim, ts, cfl; allow_grow = true); nothing)
 
 # Pre-loop hook: rescue a too-large dt0 before the first step (shrink-only).
 # Uses the worst-case CFL (advection at the velocity cap), because at t = 0 the
 # flow is ~stationary and the actual CFL underestimates what the spinning-up
 # flow will reach.
-_init_adaptive_dt!(m, ::FixedDt) = nothing
-function _init_adaptive_dt!(m, ts::AdaptiveDt)
-    _apply_dt!(m, ts, _cfl_worstcase(m); allow_grow = false)
+_init_adaptive_dt!(sim, ::FixedDt) = nothing
+function _init_adaptive_dt!(sim, ts::AdaptiveDt)
+    _apply_dt!(sim, ts, _cfl_worstcase(sim); allow_grow = false)
     return
 end
 
 # ============================================================================
 # CFL diagnostics — select how the in-loop CFL number is computed.
-# Threaded through RunConfig as the `cfl` field; dispatches `_cfl_number`.
+# Held by the Simulation as its `cfl` field; dispatches `_cfl_number`.
 # ============================================================================
 
 abstract type AbstractCFL end

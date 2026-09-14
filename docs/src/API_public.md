@@ -6,9 +6,12 @@
 ### Entry points
 
 ```@docs
+Grid
 Model
+Simulation
 build_isomip
 run!
+time_step!
 meltstats
 to_backend
 ```
@@ -26,9 +29,16 @@ fill_shelf_holes!
 ### Model container
 
 ```@docs
-Model
 Params
-RunConfig
+BoundaryConditions
+```
+
+### Simulation
+
+```@docs
+Clock
+OutputConfig
+DebugConfig
 ```
 
 
@@ -61,6 +71,7 @@ RelaxToAmbient
 #### Open boundary
 
 ```@docs
+AbstractOpenOceanBC
 ZeroGradientInflow
 NoInflow
 ```
@@ -103,6 +114,7 @@ TruncatedDepthGradient
 AbstractGapsBC
 SinkGapsBC
 ConnectedGapsBC
+MarkGapsPreprocess
 ```
 
 #### Maximum layer thickness

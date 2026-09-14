@@ -126,26 +126,35 @@ fig_map
 # =============================================================================
 # Build and run model — snapshot all fields + masks every 5th step
 # =============================================================================
-params = Params(; dt = 120, A_h = 25, K_h = 25, D_min = 2.8, nu = 0.1, D_init = 2.8,
+params = Params(; A_h = 25, K_h = 25, D_min = 2.8, D_init = 2.8,
     FT = FT,
-    tstep = AdaptiveDt(cfl_target = 0.2, q = 0.5),
     melting = TurbulentGamTMelting(),
-    grline_bc = FreeSlipGL(),
-    # grline_bc = NoSlipGL(),
     entrainment = LambertEntrainment(),
     # entrainment = GasparEntrainment(),
     max_layer_thickness = RelativeMaxLayerThickness(),
 )
 
-m = Model(mask, z_draft, dx, dy, forcing, params;
-    z_bed_raw = z_bed_m,
-    config = RunConfig(; saveday = 0.5, dbg = DebugConfig(check_nans = true)),
+boundary = BoundaryConditions(;
+    grounding_line = FreeSlipGL(),
+    # grounding_line = NoSlipGL(),
+)
+
+grid = Grid(mask, z_draft, dx, dy;
+    z_bed = z_bed_m,
     backend = CUDABackend(),
     FT = FT,
     domain_cropping = MinRectangleDomainCropping(),
     preprocess = [FillSmallShelfPatchesPreprocess()],
 )
-run!(m; days = 30, verbose = true)
+model = Model(grid; forcing, params, boundary)
+sim = Simulation(model;
+    dt = 120, nu = 0.1,
+    tstep = AdaptiveDt(cfl_target = 0.2, q = 0.5),
+    output = OutputConfig(; saveday = 0.5),
+    debug = DebugConfig(check_nans = true),
+)
+run!(sim; days = 30, verbose = true)
+m = sim.model
 
 # fn = "output/run/output.nc"
 # ds_out = Dataset(fn)

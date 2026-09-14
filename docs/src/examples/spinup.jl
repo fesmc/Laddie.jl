@@ -5,8 +5,8 @@ How quickly does the cavity reach a quasi-steady state?  This example runs the
 ISOMIP+ warm cavity for 30 days, recording the mean and maximum melt rate and
 the maximum layer thickness once per simulated day.
 
-The model is advanced in 1-day increments by calling `run!` in a loop — each
-call continues from the current state without re-initialisation.  A smaller
+The simulation is advanced in 1-day increments by calling `run!` in a loop —
+each call continues from the current state and clock without re-initialisation.  A smaller
 grid (`nx = 80, ny = 20`) is used to keep the example fast; the spin-up
 structure is the same as at full ISOMIP+ resolution.
 =#
@@ -15,7 +15,8 @@ using Laddie
 using CairoMakie
 CairoMakie.activate!(type = "png")
 
-m = build_isomip(; isomipcond = :warm, nx = 80, ny = 20)
+sim = build_isomip(; isomipcond = :warm, nx = 80, ny = 20)
+m = sim.model
 
 const NDAYS = 30
 t_days    = zeros(NDAYS)
@@ -24,9 +25,9 @@ max_melt  = zeros(NDAYS)
 dmax      = zeros(NDAYS)
 
 for d in 1:NDAYS
-    run!(m; days = 1.0, verbose = false)
-    mx, mn, _ = meltstats(m)
-    t_days[d]    = d
+    run!(sim; days = 1.0, verbose = false)
+    mx, mn, _ = meltstats(sim)
+    t_days[d]    = sim.clock.time / 86400
     mean_melt[d] = Float64(mn)
     max_melt[d]  = Float64(mx)
     dmax[d]      = Float64(maximum(ifelse.(m.tmask .> 0, m.D.present, zero(m.FT))))
@@ -84,17 +85,18 @@ println("  D_max     = ", round(dmax[end],      digits = 1), " m")
 The run above used a fixed `dt`.  Enabling [`AdaptiveDt`](@ref) instead adjusts
 `dt` to hold a target CFL number: it shrinks `dt` where the flow is fast (so the
 integration stays stable) and grows it where the flow is slow (saving steps).
-The controller state — the current `dt` — persists across `run!` calls, so the
-same 1-day-increment loop works unchanged; only the `Params` differ.
+The controller state — the current `dt` — lives in the simulation's clock and
+persists across `run!` calls, so the same 1-day-increment loop works unchanged;
+only the time stepper differs.  The physics (`Params`) is untouched.
 =#
 
-m_ad = build_isomip(; isomipcond = :warm, nx = 80, ny = 20,
-                     params = Params(; tstep = AdaptiveDt()))
-
-## run! resets its step counter each call, so sum per-day counts for the total
-steps_adaptive = sum(_ -> (run!(m_ad; days = 1.0, verbose = false); m_ad.t), 1:NDAYS)
-steps_fixed    = NDAYS * m.t          # fixed dt → same step count every day
-mx_ad, mn_ad, _ = meltstats(m_ad)
+sim_ad = build_isomip(; isomipcond = :warm, nx = 80, ny = 20, tstep = AdaptiveDt())
+for _ in 1:NDAYS
+    run!(sim_ad; days = 1.0, verbose = false)
+end
+steps_adaptive = sim_ad.clock.iteration   # the clock counts steps across run! calls
+steps_fixed    = sim.clock.iteration
+mx_ad, mn_ad, _ = meltstats(sim_ad)
 nothing #hide
 
 #=
@@ -110,4 +112,5 @@ println("Fixed vs adaptive after $(NDAYS) days:")
 println("  mean melt:   ", round(mean_melt[end], digits = 2), " (fixed) vs ",
         round(Float64(mn_ad), digits = 2), " (adaptive) m yr⁻¹")
 println("  total steps: ", steps_fixed, " (fixed) vs ", steps_adaptive, " (adaptive)")
-println("  settled dt:  210.0 (fixed) vs ", round(Float64(m_ad.dt), digits = 1), " s (adaptive)")
+println("  settled dt:  ", sim.clock.dt, " (fixed) vs ",
+        round(Float64(sim_ad.clock.dt), digits = 1), " s (adaptive)")

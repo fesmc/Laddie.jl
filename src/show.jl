@@ -34,7 +34,7 @@ end
 
 function Base.show(io::IO, s::IOState{FT}) where {FT}
     rd = isempty(s.rundir) ? "I/O disabled" : string("rundir = \"", s.rundir, "\"")
-    print(io, "IOState{", FT, "}: t = ", s.t, ", ", rd)
+    print(io, "IOState{", FT, "}: ", s.time_index, " output slices, ", rd)
 end
 
 # Generic one-liner for any forcing; relies only on the Tz/Sz/z profile fields
@@ -114,12 +114,44 @@ function Base.show(io::IO, ::MIME"text/plain", g::Grid)
         "\n  cells: ",
         count(==(3), msk),
         " shelf, ",
+        count(==(4), msk),
+        " gap, ",
         count(==(2), msk),
         " grounded, ",
         count(==(0), msk),
         " ocean, ",
         count(==(1), msk),
         " land/border",
+    )
+    r, c = g.crop
+    (length(r), length(c)) == g.input_size || print(
+        io,
+        "\n  cropped from ",
+        g.input_size[1],
+        "×",
+        g.input_size[2],
+        " (rows ",
+        first(r),
+        ":",
+        last(r),
+        ", columns ",
+        first(c),
+        ":",
+        last(c),
+        ")",
+    )
+end
+
+function Base.show(io::IO, g::Geometry{FT}) where {FT}
+    print(
+        io,
+        "Geometry{",
+        FT,
+        "}: ",
+        count(>(0), g.tmask),
+        " active cells (",
+        count(>(0), g.imask),
+        " under ice)",
     )
 end
 
@@ -135,22 +167,25 @@ function Base.show(io::IO, p::Params{FT}) where {FT}
         " + ",
         nameof(typeof(p.convection_scheme)),
         " + ",
-        nameof(typeof(p.open_bc)),
-        " + ",
-        nameof(typeof(p.grline_bc)),
-        " + ",
-        nameof(typeof(p.land_bc)),
-        " + ",
-        nameof(typeof(p.gaps_bc)),
-        " + ",
-        nameof(typeof(p.tstep)),
-        " + ",
         nameof(typeof(p.lateral_viscosity)),
         " + ",
         nameof(typeof(p.front_pressure)),
         ")",
     )
 end
+
+Base.show(io::IO, b::BoundaryConditions) = print(
+    io,
+    "BoundaryConditions(open ocean = ",
+    nameof(typeof(b.open_ocean)),
+    ", grounding line = ",
+    nameof(typeof(b.grounding_line)),
+    ", land = ",
+    nameof(typeof(b.land)),
+    ", gaps = ",
+    nameof(typeof(b.gaps)),
+    ")",
+)
 
 Base.show(io::IO, ::ConservativeCFL) = print(io, "ConservativeCFL()")
 Base.show(io::IO, ::ExactCFL) = print(io, "ExactCFL()")
@@ -187,11 +222,6 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  entrainment    = ", p.entrainment)
     println(io, "  melt           = ", p.melting)
     println(io, "  convection     = ", p.convection_scheme)
-    println(io, "  open boundary  = ", p.open_bc)
-    println(io, "  grounding line = ", p.grline_bc)
-    println(io, "  land           = ", p.land_bc)
-    println(io, "  shelf gaps     = ", p.gaps_bc)
-    println(io, "  time stepper   = ", p.tstep)
     println(io, "  lat. viscosity = ", p.lateral_viscosity)
     println(io, "  front pressure = ", p.front_pressure)
     print(io, "  coriolis       = ", p.coriolis)
@@ -219,7 +249,6 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", m::Model{FT}) where {FT}
     g = getfield(m, :grid)
-    config = getfield(m, :config)
     p = getfield(m, :params)
     println(io, "Model{", FT, "} on ", _backend_name(m))
     println(
@@ -237,40 +266,83 @@ function Base.show(io::IO, ::MIME"text/plain", m::Model{FT}) where {FT}
         " shelf cells",
     )
     println(io, "  forcing: ", getfield(m, :forcing))
-    println(
+    print(
         io,
-        "  params:  dt0 = ",
-        p.dt0,
-        " s, ",
+        "  params:  ",
         nameof(typeof(p.entrainment)),
         " + ",
         nameof(typeof(p.melting)),
         " + ",
         nameof(typeof(p.convection_scheme)),
         " + ",
-        nameof(typeof(p.open_bc)),
-        " + ",
-        nameof(typeof(p.grline_bc)),
-        " + ",
-        nameof(typeof(p.land_bc)),
-        " + ",
-        nameof(typeof(p.gaps_bc)),
-        " + ",
-        nameof(typeof(p.tstep)),
-        " + ",
         nameof(typeof(p.lateral_viscosity)),
         " + ",
         nameof(typeof(p.front_pressure)),
     )
-    if config.saveday > 0
+    print(io, "\n  boundary: ", getfield(m, :boundary))
+end
+
+_days(seconds, spd) = round(seconds / Float64(spd); digits = 3)
+
+Base.show(io::IO, c::Clock{FT}) where {FT} = print(
+    io,
+    "Clock{",
+    FT,
+    "}(time = ",
+    round(c.time; digits = 1),
+    " s, iteration = ",
+    c.iteration,
+    ", dt = ",
+    c.dt,
+    " s)",
+)
+
+function Base.show(io::IO, o::OutputConfig)
+    if o.saveday > 0
         print(
             io,
-            "  output:  every ",
-            config.saveday,
+            "OutputConfig: every ",
+            o.saveday,
             " d → ",
-            joinpath(config.resultdir, config.name),
+            joinpath(o.resultdir, o.name),
         )
     else
-        print(io, "  output:  disabled (saveday = 0)")
+        print(io, "OutputConfig: disabled (saveday = 0)")
     end
+end
+
+function Base.show(io::IO, sim::Simulation{M,FT}) where {M,FT}
+    m = sim.model
+    print(
+        io,
+        "Simulation{",
+        FT,
+        "} on ",
+        _backend_name(m),
+        " at day ",
+        _days(sim.clock.time, m.seconds_per_day),
+        ", dt = ",
+        sim.clock.dt,
+        " s",
+    )
+end
+
+function Base.show(io::IO, ::MIME"text/plain", sim::Simulation{M,FT}) where {M,FT}
+    m = sim.model
+    c = sim.clock
+    println(io, "Simulation{", FT, "} on ", _backend_name(m))
+    println(io, "  model:   ", m)
+    println(
+        io,
+        "  clock:   day ",
+        _days(c.time, m.seconds_per_day),
+        ", iteration ",
+        c.iteration,
+        ", dt = ",
+        c.dt,
+        " s",
+    )
+    println(io, "  stepper: ", sim.tstep, ", ", sim.cfl, ", Robert–Asselin ν = ", sim.nu)
+    println(io, "  stop:    ", sim.stop)
+    print(io, "  output:  ", sim.output)
 end

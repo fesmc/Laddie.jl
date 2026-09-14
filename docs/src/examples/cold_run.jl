@@ -15,10 +15,11 @@ using Laddie
 using CairoMakie
 CairoMakie.activate!(type = "png")
 
-mw = build_isomip(; isomipcond = :warm)
-mc = build_isomip(; isomipcond = :cold)
-run!(mw; days = 3.0, verbose = false)
-run!(mc; days = 3.0, verbose = false)
+sim_w = build_isomip(; isomipcond = :warm)
+sim_c = build_isomip(; isomipcond = :cold)
+run!(sim_w; days = 3.0, verbose = false)
+run!(sim_c; days = 3.0, verbose = false)
+mw, mc = sim_w.model, sim_c.model
 nothing #hide
 
 # Helper: strip the 1-cell grounded border, mask non-shelf cells to `NaN`,

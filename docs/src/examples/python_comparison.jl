@@ -29,8 +29,9 @@ using CairoMakie
 CairoMakie.activate!(type = "png")
 
 # Run Julia for one day (warm ISOMIP+, CPU broadcast — same settings as Python)
-m = build_isomip(; isomipcond = :warm, gradient = PyGradient())
-run!(m; days = 1.0, verbose = false)
+sim = build_isomip(; isomipcond = :warm, gradient = PyGradient())
+run!(sim; days = 1.0, verbose = false)
+m = sim.model
 
 # Helper: strip the 1-cell grounded border, mask non-shelf cells to `NaN`,
 # and transpose to (nx, ny) for CairoMakie's `heatmap!`.

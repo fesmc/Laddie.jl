@@ -21,16 +21,16 @@ CPU example:
 using Laddie
 
 # Build and run the idealised ISOMIP+ warm cavity (CPU)
-m = build_isomip(; isomipcond = :warm)
-run!(m; days = 5.0)
-mx, mn, sp = meltstats(m)
+sim = build_isomip(; isomipcond = :warm)
+run!(sim; days = 5.0)
+mx, mn, sp = meltstats(sim)
 ```
 
 GPU (CUDA example):
 ```julia
 using CUDA, Laddie
-m = build_isomip(CUDABackend(); isomipcond = :warm)
-run!(m; days = 30.0)
+sim = build_isomip(CUDABackend(); isomipcond = :warm)
+run!(sim; days = 30.0)
 ```
 
 ## Performance

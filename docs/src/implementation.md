@@ -11,8 +11,15 @@ before so correctness never had to be taken on faith.
 - **"Object bag" state.** During the port, `Model` forwarded `m.field` to a
   `Dict` (via `getproperty`/`setproperty!`), mirroring Python's `object.attr`
   style. This kept the line-by-line translation honest and low-risk; the Dict
-  has since been replaced by typed structs (`Grid`, `State`, `Cache`, `Params`,
-  `IOState`) behind the same flat `m.field` access.
+  has since been replaced by typed structs (`Grid`, `Geometry`, `State`, `Cache`,
+  `Params`) behind the same flat `m.field` access.
+- **Grid → model → simulation.** The `Grid` holds only what is independent of any
+  modelling choice (mask, draft, bed, spacing, coordinates). The `Model` derives its
+  `Geometry` from it — gap-resolved mask, active-cell and velocity masks, wall
+  indicators, ice-base slope, Coriolis field — and holds physics, boundary
+  conditions and state. The `Simulation` wrapping it owns the clock, `dt`, the time
+  stepper, the Robert–Asselin filter, output and restart. This is the split shared
+  by Oceananigans, SpeedyWeather and FastIsostasy.
 - **Location-typed prognostics.** ``D, U, V, T, S`` are `Var{LX,LY}` carrying
   three leapfrog levels; `rotate!` swaps references (≡ `np.roll(...,-1,axis=0)`),
   with the C-grid staggering carried in the type (`Center`/`Face` per axis)

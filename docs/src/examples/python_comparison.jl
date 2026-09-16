@@ -78,7 +78,7 @@ const PY_REST = joinpath(
 ## Read Python end-state; fall back to Julia copy if file is absent.
 if isfile(PY_REST)
     py_T, py_D = NCDatasets.Dataset(PY_REST) do ds
-        get_v(v) = coalesce.(ds[v][:, :, 2], 0.0)'   # (x,y,n)[n=1] → (ny,nx)
+        get_v(v) = coalesce.(ds[v][:, :, 2], 0.0)    # (x,y,n) → (nx,ny)
         get_v("T"), get_v("D")
     end
 else

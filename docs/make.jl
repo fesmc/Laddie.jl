@@ -12,6 +12,14 @@ for ex in EXAMPLES
     Literate.markdown(joinpath(exdir, ex), gendir; documenter = true)
 end
 
+# Too heavy (and too data-hungry) to run at build time: rendered as plain code, with a
+# figure produced by running the script locally.
+const STATIC_EXAMPLES = ["crosson-dotson.jl"]
+for ex in STATIC_EXAMPLES
+    Literate.markdown(joinpath(exdir, ex), gendir; documenter = true,
+                      codefence = "```julia" => "```")
+end
+
 DocMeta.setdocmeta!(Laddie, :DocTestSetup, :(using Laddie); recursive=true)
 
 makedocs(;
@@ -36,6 +44,7 @@ makedocs(;
                 "Spin-up"           => "generated/spinup.md",
                 "Python validation" => "generated/python_comparison.md",
             ],
+            "Crosson–Dotson" => "generated/crosson-dotson.md",
         ],
         "API reference" => "API_public.md",
     ],

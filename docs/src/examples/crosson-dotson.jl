@@ -5,11 +5,11 @@ This script reproduces the published Crosson–Dotson simulation of
 [Lambert et al. (2023)](https://doi.org/10.5194/tc-17-3203-2023) — the run behind Figs. 3–4
 of that paper — and compares the result to the reference output when it is available.
 
-It is **not** part of the built documentation (it needs BedMachine on disk, and a 50-day
-run at 500 m), but it is the configuration to copy for a realistic cavity, and the
-settings below are the reference's, not Laddie.jl's defaults. The reconstruction of that
-configuration — which commit of the Python code produced the reference file, and what
-every knob was set to — is written up in `laddie-roadmap/validation.md`.
+The code on this page is **not executed** when the documentation is built: it needs
+BedMachine v2 on disk and the reference file, and the 50-day run at 500 m takes about
+10 minutes on 16 CPU threads. The figure and numbers below come from running this exact
+script locally. It is the configuration to copy for a realistic cavity, and the settings
+below are the reference's, not Laddie.jl's defaults.
 
 Reference diagnostics (5-day average over days 45–50, over the shelf mask):
 mean melt 9.82 m yr⁻¹, max melt 114.3 m yr⁻¹, `D` between 2.7 and 510 m, max speed 0.68 m s⁻¹.
@@ -33,6 +33,7 @@ using Laddie
 using NCDatasets
 using Printf
 using Statistics
+using CairoMakie
 
 FT = Float64
 
@@ -54,9 +55,8 @@ const REFERENCE = joinpath(
     "CrossDots_0.5_tanh_Tdeep0.4_ztcl-500_050.nc",
 )
 
-# =============================================================================
-# Geometry
-# =============================================================================
+# ## Geometry
+#
 # The reference cuts Crosson–Dotson out of BedMachine v2 with
 # `isel(x=3445:3705, y=7730:8065)` (0-based, end-exclusive) at the native 500 m spacing,
 # with no coarsening and no smoothing of the ice draft.
@@ -89,9 +89,8 @@ z_draft[(mask .== 3) .& (z_draft .> -10.0)] .= -10.0
 ## sides, which is what the periodic stencils need. Hence `NoDomainCropping`.
 grid = Grid(mask, z_draft, dx, dy; domain_cropping = NoDomainCropping(), backend, FT)
 
-# =============================================================================
-# Forcing: the analytic two-layer profile of the paper
-# =============================================================================
+# ## Forcing: the analytic two-layer profile of the paper
+#
 # `tanh(ztcl = 500, Tdeep = 0.4, z1 = 250)`: a thermocline centred at 500 m depth with a
 # 250 m scale, from the surface freezing point to +0.4 °C at depth. Salinity compensates a
 # prescribed quadratic density profile, so the stratification is stable by construction.
@@ -107,9 +106,8 @@ Sz = @. S0 + alpha * (Tz - T0) / beta + drho0 * sqrt(abs(z)) / (beta * rho0)
 
 forcing = CavityForcing(OceanForcing1D(Tz, Sz, z; FT), PrescribedIceForcing(-25.0))
 
-# =============================================================================
-# Parameters and run
-# =============================================================================
+# ## Parameters and run
+#
 # `Ah = Kh = 25` m² s⁻¹ and `D_min = 2.8` m are the paper's resolution-dependent and tuned
 # values for 500 m (Table 2); `C_d_top = 1.1e-3` is the other tuning parameter.
 
@@ -148,9 +146,8 @@ avg["melt"] .*= 86400 * 365.25          # m s⁻¹ → m yr⁻¹
 shelf = Array(m.imask) .> 0
 @printf "mean melt %.3f m/yr, max melt %.1f m/yr, D in [%.1f, %.0f] m\n" mean(avg["melt"][shelf]) maximum(avg["melt"][shelf]) minimum(avg["D"][shelf]) maximum(avg["D"][shelf])
 
-# =============================================================================
-# Comparison with the reference output
-# =============================================================================
+# ## Comparison with the reference output
+#
 # The reference file stores the same 5-day average, on the same grid, so the comparison is
 # cell by cell. Expect agreement to well under 1 % in the mean — the residual is dominated
 # by the reference's own code-level quirks, not by the physics.
@@ -169,3 +166,47 @@ if isfile(REFERENCE)
 else
     @info "Reference output not found at $REFERENCE — skipping the comparison."
 end
+
+# ## Figure
+#
+# Melt rate and layer thickness, Laddie.jl against the reference, averaged over days 45–50.
+# The figure is written to `docs/src/assets/` and committed, since the docs build does
+# not run this script.
+
+if isfile(REFERENCE)
+    x_km = (0:size(mask, 1)-1) .* dx ./ 1e3
+    y_km = (0:size(mask, 2)-1) .* dy ./ 1e3
+    on_shelf(A) = map((s, a) -> s ? a : NaN, ref_shelf, A)
+
+    fig = Figure(size = (1100, 900))
+    rows = (("melt", "melt (m/yr)", (0.0, 60.0), 5.0, :inferno),
+            ("D", "D (m)", (0.0, 200.0), 5.0, :viridis))
+    for (i, (v, label, crange, dmax, cmap)) in enumerate(rows)
+        panels = ((avg[v], "Laddie.jl", crange, cmap),
+                  (ref[v], "reference", crange, cmap),
+                  (avg[v] .- ref[v], "Laddie.jl − reference", (-dmax, dmax), :RdBu))
+        for (j, (A, title, cr, cm)) in enumerate(panels)
+            ax = Axis(fig[i, 2j-1]; title = "$label: $title", aspect = DataAspect(),
+                      xlabel = i == 2 ? "x (km)" : "", ylabel = j == 1 ? "y (km)" : "")
+            hm = heatmap!(ax, x_km, y_km, on_shelf(A); colormap = cm, colorrange = cr)
+            Colorbar(fig[i, 2j], hm)
+        end
+    end
+    save(joinpath(pkgdir(Laddie), "docs", "src", "assets", "crosson-dotson.png"), fig)
+end
+
+# ## Results
+#
+# Output of the script above (CPU, 16 threads, Float64; 10 min wall time), compared with
+# the reference file over its shelf mask:
+#
+# |                      | Laddie.jl | reference |
+# |:---------------------|----------:|----------:|
+# | mean melt (m yr⁻¹)   | 9.839     | 9.818     |
+# | max melt (m yr⁻¹)    | 114.2     | 114.3     |
+# | `D` range (m)        | 2.8–509   | 2.7–510   |
+#
+# The mean melt rate agrees to +0.21 %. Cell-by-cell mean absolute differences are
+# 0.13 m yr⁻¹ in melt, 0.62 m in `D`, 0.006 °C in `T` and 0.0015 in `S`.
+#
+# ![Crosson–Dotson: Laddie.jl vs reference](../assets/crosson-dotson.png)

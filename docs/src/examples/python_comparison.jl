@@ -34,10 +34,10 @@ run!(sim; days = 1.0, verbose = false)
 m = sim.model
 
 # Helper: strip the 1-cell grounded border, mask non-shelf cells to `NaN`,
-# and transpose to (nx, ny) for CairoMakie's `heatmap!`.
+# Fields are stored [x, y], the order `heatmap!` expects.
 inner(a) = a[2:end-1, 2:end-1]
 tmask    = inner(m.tmask)
-mk(A)    = permutedims(ifelse.(tmask .> 0, A, NaN))      # (ny,nx) → (nx,ny)
+mk(A)    = ifelse.(tmask .> 0, A, NaN)
 x_km     = (0:size(tmask,2)-1) .* (m.dx/1000)
 y_km     = (0:size(tmask,1)-1) .* (m.dy/1000)
 

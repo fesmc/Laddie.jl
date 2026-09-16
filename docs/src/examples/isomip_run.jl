@@ -43,7 +43,7 @@ nothing #hide
 function field(m, A; peryr = false)
     a = peryr ? A .* m.seconds_per_year : A
     a = ifelse.(m.tmask .> 0, a, NaN)
-    Z = permutedims(a[2:end-1, 2:end-1])          # [y,x] → [x,y]
+    Z = a[2:end-1, 2:end-1]                       # already [x, y]
     x = (0:size(Z, 1)-1) .* (m.dx / 1000)
     y = (0:size(Z, 2)-1) .* (m.dy / 1000)
     return x, y, Z

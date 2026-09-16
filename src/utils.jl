@@ -1,23 +1,52 @@
 """
 Abstract supertype for the upper bound applied to the layer thickness `D` after
 each step.  Pass a concrete instance as `Params(; max_layer_thickness = ...)`:
-[`TopographicMaxLayerThickness`](@ref) (the default),
+[`NoMaxLayerThickness`](@ref) (the default), [`TopographicMaxLayerThickness`](@ref),
 [`AbsoluteMaxLayerThickness`](@ref), or [`RelativeMaxLayerThickness`](@ref).
+
+!!! warning "Every bound here is corrective, and that costs more than it looks"
+    All of these clamp `D` *after* the thickness step, discarding volume while leaving
+    the momentum and tracer content of the layer untouched. On a real cavity that acts
+    as a mass sink wherever it binds, and the damage is not local: capping a
+    Crosson–Dotson run at the water column collapsed the mean melt rate from 9.9 to
+    1.1 m yr⁻¹ — including in cells where the cap never binds, because the plume that
+    feeds them no longer develops (`laddie-roadmap/validation.md` §5.2).
+
+    Neither reference bounds `D` this way. Python LADDIE v1 has no upper bound at all
+    (its `maxD = 3000 m` never binds), and LADDIE v2 folds a fixed `Hmax` into the
+    entrainment *before* the step, so the integration lands in range by itself. Prefer
+    the default, and reach for a cap only as a stability stopgap on a run that is
+    already misbehaving.
 """
 abstract type AbstractMaxLayerThickness end
 
 """
 $(TYPEDSIGNATURES)
 
-Cap the layer thickness at the local water-column depth, `D <= z_draft - z_bed`
-(the default).
+Leave the layer thickness unbounded from above (the default): `D` is set by the
+volume budget alone, exactly as in Python LADDIE v1, and only the `D_min` floor is
+applied after the step.
+
+The layer is then free to exceed the local water column where the budget takes it
+there — as it does in the published Crosson–Dotson run, in 10 % of the shelf cells.
+That is a known limitation of a one-layer model, and it is *not* worth fixing with a
+corrective clamp; see the warning on [`AbstractMaxLayerThickness`](@ref).
+
+Select via `Params(; max_layer_thickness = NoMaxLayerThickness())` (the default).
+"""
+struct NoMaxLayerThickness <: AbstractMaxLayerThickness end
+
+"""
+$(TYPEDSIGNATURES)
+
+Cap the layer thickness at the local water-column depth, `D <= z_draft - z_bed`.
 
 This bound is only meaningful when a bed elevation was supplied: `Model` fills
 `z_bed` with `-Inf` when `z_bed_raw` is not given, in which case the cap is
-`+Inf` and `D` is effectively unbounded from above.  Pass `z_bed_raw` (see
-[`bed_elevation`](@ref)) to make it bite, or choose
-[`AbsoluteMaxLayerThickness`](@ref) / [`RelativeMaxLayerThickness`](@ref) for a
-bound that does not depend on bathymetry.
+`+Inf` and `D` is effectively unbounded from above — which is why passing `z_bed`
+used to change the solution drastically while this was the default.  Read the
+warning on [`AbstractMaxLayerThickness`](@ref) before selecting it: on a real
+cavity this cap can suppress melt by an order of magnitude.
 
 Select via `Params(; max_layer_thickness = TopographicMaxLayerThickness())`.
 """
@@ -26,13 +55,14 @@ struct TopographicMaxLayerThickness <: AbstractMaxLayerThickness end
 $(TYPEDSIGNATURES)
 
 Cap the layer thickness at a fixed value, `D <= D_max`, independent of
-bathymetry.  Useful when no bed elevation is available.
+bathymetry.  Useful when no bed elevation is available; read the warning on
+[`AbstractMaxLayerThickness`](@ref) first.
 
 - `D_max`: maximum layer thickness in metres (default `100`).
 
 Select via `Params(; max_layer_thickness = AbsoluteMaxLayerThickness(100.0))`.
 
-See also [`TopographicMaxLayerThickness`](@ref) (the default) and
+See also [`NoMaxLayerThickness`](@ref) (the default) and
 [`RelativeMaxLayerThickness`](@ref).
 """
 @kwdef struct AbsoluteMaxLayerThickness{FT} <: AbstractMaxLayerThickness
@@ -55,6 +85,9 @@ Select via `Params(; max_layer_thickness = RelativeMaxLayerThickness(0.8))`.
     f_D_max::FT = 4/5
 end
 
+# No upper bound: `_clamp_thickness!` applies the `D_min` floor and the domain
+# mask on the next line, so there is nothing to do here.
+max_layer_thickness!(::Any, ::NoMaxLayerThickness) = nothing
 function max_layer_thickness!(m, ::TopographicMaxLayerThickness)
     @. m.D.future = min(m.D.future, m.z_draft - m.z_bed) .* m.tmask
 end
@@ -69,12 +102,18 @@ end
 # Shift / interpolation primitives  (≡ np.roll & tools.py, GPU-capable)
 # ============================================================================
 
-# Periodic one-cell shifts along each axis.  The domain is wrapped in a
+# Periodic one-cell shifts along each axis.  Arrays are stored as [ix, iy]: the
+# first index runs along x, the second along y.  The domain is wrapped in a
 # grounded border so periodic wrap is harmless (masked off everywhere).
-@inline xm1(a) = circshift(a, (0, -1))   # east neighbour  : np.roll(a, -1, axis=1)
-@inline xp1(a) = circshift(a, (0, 1))   # west neighbour  : np.roll(a,  1, axis=1)
-@inline ym1(a) = circshift(a, (-1, 0))   # north neighbour : np.roll(a, -1, axis=0)
-@inline yp1(a) = circshift(a, (1, 0))   # south neighbour : np.roll(a,  1, axis=0)
+#
+# The names are historical and refer to the *index shift*, not to a compass
+# direction: `xm1(a)[i, j] == a[i+1, j]` is the neighbour at the next x index.
+# Grid axes need not align with east/north — a polar stereographic projection
+# rotates them by an arbitrary angle — so nothing here means "east" or "north".
+@inline xm1(a) = circshift(a, (-1, 0))   # next x neighbour : a[i+1, j]
+@inline xp1(a) = circshift(a, (1, 0))    # prev x neighbour : a[i-1, j]
+@inline ym1(a) = circshift(a, (0, -1))   # next y neighbour : a[i, j+1]
+@inline yp1(a) = circshift(a, (0, 1))    # prev y neighbour : a[i, j-1]
 
 # Arithmetic-mean interpolation to cell-face midpoints.
 # Naming convention: `im` = value at i−½, `ip` = i+½, `jm` = j−½, `jp` = j+½.
@@ -105,17 +144,17 @@ jp_v(m, a) = div0(a .+ ym1(a), m.vmask_jp)
 # first-order one-sided at the two boundary rows/columns.
 function gradient_x(a, dx)
     g = similar(a)
-    n = size(a, 2)
-    @views g[:, 2:(n-1)] .= (a[:, 3:n] .- a[:, 1:(n-2)]) ./ (2dx)
-    @views g[:, 1] .= (a[:, 2] .- a[:, 1]) ./ dx
-    @views g[:, n] .= (a[:, n] .- a[:, n-1]) ./ dx
+    n = size(a, 1)
+    @views g[2:(n-1), :] .= (a[3:n, :] .- a[1:(n-2), :]) ./ (2dx)
+    @views g[1, :] .= (a[2, :] .- a[1, :]) ./ dx
+    @views g[n, :] .= (a[n, :] .- a[n-1, :]) ./ dx
     return g
 end
 function gradient_y(a, dy)
     g = similar(a)
-    n = size(a, 1)
-    @views g[2:(n-1), :] .= (a[3:n, :] .- a[1:(n-2), :]) ./ (2dy)
-    @views g[1, :] .= (a[2, :] .- a[1, :]) ./ dy
-    @views g[n, :] .= (a[n, :] .- a[n-1, :]) ./ dy
+    n = size(a, 2)
+    @views g[:, 2:(n-1)] .= (a[:, 3:n] .- a[:, 1:(n-2)]) ./ (2dy)
+    @views g[:, 1] .= (a[:, 2] .- a[:, 1]) ./ dy
+    @views g[:, n] .= (a[:, n] .- a[:, n-1]) ./ dy
     return g
 end

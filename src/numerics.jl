@@ -23,26 +23,26 @@ end
     Dxm1yp1,
     @Const(D),
     @Const(tmask),
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
-        Dn = D[n, j] * tmask[n, j]
-        Ds = D[s, j] * tmask[s, j]
-        De = D[i, e] * tmask[i, e]
-        Dw = D[i, w] * tmask[i, w]
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
+        Dn = D[i, jp1] * tmask[i, jp1]
+        Ds = D[i, jm1] * tmask[i, jm1]
+        De = D[ip1, j] * tmask[ip1, j]
+        Dw = D[im1, j] * tmask[im1, j]
         Dym1[i, j] = Dn
         Dyp1[i, j] = Ds
         Dxm1[i, j] = De
         Dxp1[i, j] = Dw
-        Dxm1ym1[i, j] = D[n, e] * tmask[n, e]
-        Dxp1ym1[i, j] = D[n, w] * tmask[n, w]
-        Dxm1yp1[i, j] = D[s, e] * tmask[s, e]
+        Dxm1ym1[i, j] = D[ip1, jp1] * tmask[ip1, jp1]
+        Dxp1ym1[i, j] = D[im1, jp1] * tmask[im1, jp1]
+        Dxm1yp1[i, j] = D[ip1, jm1] * tmask[ip1, jm1]
     end
 end
 
@@ -69,29 +69,29 @@ end
     @Const(umask_im),
     @Const(umask_jp),
     @Const(umask_jm),
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
         Vij = V[i, j]
         Uij = U[i, j]
-        Vip[i, j] = _safe_div(Vij + V[i, e], vmask_ip[i, j])
-        Vim[i, j] = _safe_div(Vij + V[i, w], vmask_im[i, j])
-        Vjp[i, j] = _safe_div(Vij + V[n, j], vmask_jp[i, j])
-        Vjm[i, j] = _safe_div(Vij + V[s, j], vmask_jm[i, j])
-        Uip[i, j] = _safe_div(Uij + U[i, e], umask_ip[i, j])
-        Uim[i, j] = _safe_div(Uij + U[i, w], umask_im[i, j])
-        Ujp[i, j] = _safe_div(Uij + U[n, j], umask_jp[i, j])
-        Ujm[i, j] = _safe_div(Uij + U[s, j], umask_jm[i, j])
+        Vip[i, j] = _safe_div(Vij + V[ip1, j], vmask_ip[i, j])
+        Vim[i, j] = _safe_div(Vij + V[im1, j], vmask_im[i, j])
+        Vjp[i, j] = _safe_div(Vij + V[i, jp1], vmask_jp[i, j])
+        Vjm[i, j] = _safe_div(Vij + V[i, jm1], vmask_jm[i, j])
+        Uip[i, j] = _safe_div(Uij + U[ip1, j], umask_ip[i, j])
+        Uim[i, j] = _safe_div(Uij + U[im1, j], umask_im[i, j])
+        Ujp[i, j] = _safe_div(Uij + U[i, jp1], umask_jp[i, j])
+        Ujm[i, j] = _safe_div(Uij + U[i, jm1], umask_jm[i, j])
         signU[i, j] = sign(Uij)
         signV[i, j] = sign(Vij)
-        Vyp1[i, j] = V[s, j]
-        Uxp1[i, j] = U[i, w]
+        Vyp1[i, j] = V[i, jm1]
+        Uxp1[i, j] = U[im1, j]
     end
 end
 
@@ -105,20 +105,20 @@ end
     @Const(tmask_im),
     @Const(tmask_jp),
     @Const(tmask_jm),
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
         Dij = D[i, j]
-        D0ip[i, j] = _safe_div(Dij + D[i, e], tmask_ip[i, j])
-        D0im[i, j] = _safe_div(Dij + D[i, w], tmask_im[i, j])
-        D0jp[i, j] = _safe_div(Dij + D[n, j], tmask_jp[i, j])
-        D0jm[i, j] = _safe_div(Dij + D[s, j], tmask_jm[i, j])
+        D0ip[i, j] = _safe_div(Dij + D[ip1, j], tmask_ip[i, j])
+        D0im[i, j] = _safe_div(Dij + D[im1, j], tmask_im[i, j])
+        D0jp[i, j] = _safe_div(Dij + D[i, jp1], tmask_jp[i, j])
+        D0jm[i, j] = _safe_div(Dij + D[i, jm1], tmask_jm[i, j])
     end
 end
 
@@ -194,22 +194,22 @@ end
     pgf_w,
     dx,
     dt,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(g)
         half = FT(1/2)
-        e = _east(j, Nx)
-        s = _south(i, Ny)
+        ip1 = _xp1(i, Nx)
+        jm1 = _ym1(j, Ny)
         tmip = tmask_ip[i, j]
-        ip_dDdt = _safe_div(dDdt[i, j] + dDdt[i, e], tmip)
-        ip_D_drho = _safe_div(Ddrho[i, j] + Ddrho[i, e], tmip)
-        ip_D_dzdx = _safe_div(Ddrho[i, j] * dzdx[i, j] + Ddrho[i, e] * dzdx[i, e], tmip)
-        ip_D = _safe_div(D1[i, j] + D1[i, e], tmip)
-        ip_D_Vjm = _safe_div(D1[i, j] * Vjm[i, j] + D1[i, e] * Vjm[i, e], tmip)
-        ipjmV = half * (half * (V1[i, j] + V1[s, j]) + half * (V1[i, e] + V1[s, e]))
+        ip_dDdt = _safe_div(dDdt[i, j] + dDdt[ip1, j], tmip)
+        ip_D_drho = _safe_div(Ddrho[i, j] + Ddrho[ip1, j], tmip)
+        ip_D_dzdx = _safe_div(Ddrho[i, j] * dzdx[i, j] + Ddrho[ip1, j] * dzdx[ip1, j], tmip)
+        ip_D = _safe_div(D1[i, j] + D1[ip1, j], tmip)
+        ip_D_Vjm = _safe_div(D1[i, j] * Vjm[i, j] + D1[ip1, j] * Vjm[ip1, j], tmip)
+        ipjmV = half * (half * (V1[i, j] + V1[i, jm1]) + half * (V1[ip1, j] + V1[ip1, jm1]))
         # tmip is 2 at a fully-interior face (both neighbours active) and 1 at a
         # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where Dxm1
         # is a masked-to-zero stand-in rather than a real neighbour thickness.
@@ -223,7 +223,7 @@ end
             cU[i, j] +                                                  # horizontal advection
             -g * ip_D_drho * (Dxm1[i, j] - D1[i, j]) / dx * pgf_gate +  # pressure: D gradient
             g * ip_D_dzdx +                                             # pressure: ice-shelf slope
-            -half * g * ip_D^2 * (drho[i, e] - drho[i, j]) / dx +     # pressure: density gradient
+            -half * g * ip_D^2 * (drho[ip1, j] - drho[i, j]) / dx +     # pressure: density gradient
             fu[i, j] * ip_D_Vjm +                                              # Coriolis
             -C_d * U1[i, j] * sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
             lU[i, j] +                                                   # horizontal viscosity
@@ -255,22 +255,22 @@ end
     pgf_w,
     dy,
     dt,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(g)
         half = FT(0.5)
-        n = _north(i, Ny)
-        w = _west(j, Nx)
+        jp1 = _yp1(j, Ny)
+        im1 = _xm1(i, Nx)
         tmjp = tmask_jp[i, j]
-        jp_dDdt = _safe_div(dDdt[i, j] + dDdt[n, j], tmjp)
-        jp_D_drho = _safe_div(Ddrho[i, j] + Ddrho[n, j], tmjp)
-        jp_D_dzdy = _safe_div(Ddrho[i, j] * dzdy[i, j] + Ddrho[n, j] * dzdy[n, j], tmjp)
-        jp_D = _safe_div(D1[i, j] + D1[n, j], tmjp)
-        jp_D_Uim = _safe_div(D1[i, j] * Uim[i, j] + D1[n, j] * Uim[n, j], tmjp)
-        jpimU = half * (half * (U1[i, j] + U1[i, w]) + half * (U1[n, j] + U1[n, w]))
+        jp_dDdt = _safe_div(dDdt[i, j] + dDdt[i, jp1], tmjp)
+        jp_D_drho = _safe_div(Ddrho[i, j] + Ddrho[i, jp1], tmjp)
+        jp_D_dzdy = _safe_div(Ddrho[i, j] * dzdy[i, j] + Ddrho[i, jp1] * dzdy[i, jp1], tmjp)
+        jp_D = _safe_div(D1[i, j] + D1[i, jp1], tmjp)
+        jp_D_Uim = _safe_div(D1[i, j] * Uim[i, j] + D1[i, jp1] * Uim[i, jp1], tmjp)
+        jpimU = half * (half * (U1[i, j] + U1[im1, j]) + half * (U1[i, jp1] + U1[im1, jp1]))
         # See _step_u_momentum_kernel! for the ice-front gate.
         pgf_gate = one(FT) + pgf_w * (tmjp - FT(2))
         rhs =
@@ -278,7 +278,7 @@ end
             cV[i, j] +                                                  # horizontal advection
             -g * jp_D_drho * (Dym1[i, j] - D1[i, j]) / dy * pgf_gate +  # pressure: D gradient
             g * jp_D_dzdy +                                             # pressure: ice-shelf slope
-            -half * g * jp_D^2 * (drho[n, j] - drho[i, j]) / dy +     # pressure: density gradient
+            -half * g * jp_D^2 * (drho[i, jp1] - drho[i, j]) / dy +     # pressure: density gradient
             -fv[i, j] * jp_D_Uim +                                             # Coriolis
             -C_d * V1[i, j] * sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
             lV[i, j] +                                                   # horizontal viscosity
@@ -486,7 +486,7 @@ end
 function step_u_momentum(m, dt)
     upwind_advection_U(m)
     laplace_U(m)
-    ny, nx = size(m.U.future)
+    nx, ny = size(m.U.future)
     launch!(
         _step_u_momentum_kernel!,
         m.U.future,
@@ -512,15 +512,15 @@ function step_u_momentum(m, dt)
         _front_pgf_weight(m.front_pressure, m.g),
         m.dx,
         dt,
-        ny,
         nx,
+        ny,
     )
     return
 end
 function step_v_momentum(m, dt)
     upwind_advection_V(m)
     laplace_V(m)
-    ny, nx = size(m.V.future)
+    nx, ny = size(m.V.future)
     launch!(
         _step_v_momentum_kernel!,
         m.V.future,
@@ -546,8 +546,8 @@ function step_v_momentum(m, dt)
         _front_pgf_weight(m.front_pressure, m.g),
         m.dy,
         dt,
-        ny,
         nx,
+        ny,
     )
     return
 end
@@ -735,16 +735,16 @@ end
 # On the C-grid U and V are not co-located, so the partner component is averaged
 # onto the point being limited — the same four-point stencil the bottom-drag
 # terms use (`u_bottom_drag` / `v_bottom_drag` in physics.jl).
-@kernel function _speed_scale_kernel!(sU, sV, @Const(U), @Const(V), v_cut, Ny, Nx)
+@kernel function _speed_scale_kernel!(sU, sV, @Const(U), @Const(V), v_cut, Nx, Ny)
     i, j = @index(Global, NTuple)
     FT = typeof(v_cut)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
-        Vbar = (V[i, j] + V[s, j] + V[i, e] + V[s, e]) / FT(4)   # V at the U-point
-        Ubar = (U[i, j] + U[i, w] + U[n, j] + U[n, w]) / FT(4)   # U at the V-point
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
+        Vbar = (V[i, j] + V[i, jm1] + V[ip1, j] + V[ip1, jm1]) / FT(4)   # V at the U-point
+        Ubar = (U[i, j] + U[im1, j] + U[i, jp1] + U[im1, jp1]) / FT(4)   # U at the V-point
         spdU = sqrt(U[i, j] * U[i, j] + Vbar * Vbar)
         spdV = sqrt(V[i, j] * V[i, j] + Ubar * Ubar)
         sU[i, j] = spdU > v_cut ? v_cut / spdU : one(FT)
@@ -774,7 +774,7 @@ other does not, and admits speeds up to `√2 · v_cut` along the diagonal.
 Idempotent, so applying it twice in a step is harmless.
 """
 function clamp_velocities!(m)
-    ny, nx = size(m.U.future)
+    nx, ny = size(m.U.future)
     launch!(
         _speed_scale_kernel!,
         m.U.future,
@@ -783,8 +783,8 @@ function clamp_velocities!(m)
         m.U.future,
         m.V.future,
         m.v_cut,
-        ny,
         nx,
+        ny,
     )
     launch!(_apply_scale_kernel!, m.U.future, m.U.future, m.V.future, m.scaleU, m.scaleV)
     return

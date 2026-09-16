@@ -199,10 +199,10 @@ function Model(
     # `m.z_draft` and the melt kernel can index it directly.
     forcing = CavityForcing(forcing.ocean, ice)
     geometry = Geometry(mask, grid.z_draft, f_t, grid.dx, grid.dy; FT, gradient)
-    ny_total, nx_total = size(mask)
-    state = State(FT, ny_total, nx_total)
+    nx_total, ny_total = size(mask)
+    state = State(FT, nx_total, ny_total)
     cache =
-        Cache(FT, typeof(params.melting), typeof(params.convection_scheme), ny_total, nx_total)
+        Cache(FT, typeof(params.melting), typeof(params.convection_scheme), nx_total, ny_total)
     m = Model(grid, geometry, state, cache, params, boundary, forcing)
     _initialize_prognostics!(m)
     backend === CPU() || (m = to_backend(m, backend))
@@ -265,21 +265,21 @@ function build_isomip(
     preprocess = AbstractPreprocess[],
     simulation_kwargs...,
 )
-    ny_total, nx_total = ny + 2, nx + 2
-    mask = zeros(Int, ny_total, nx_total)
-    z_draft_raw = zeros(FT, ny_total, nx_total)
+    nx_total, ny_total = nx + 2, ny + 2
+    mask = zeros(Int, nx_total, ny_total)
+    z_draft_raw = zeros(FT, nx_total, ny_total)
     xgl_ft = FT(xgl);
     xfront_ft = FT(xfront)
     zgl_ft = FT(z_draft_gl);
     zfr_ft = FT(z_draft_front)
     for j = 1:ny, i = 1:nx
         x = FT((i - 1) * dx)
-        jp, ip = j + 1, i + 1
+        ip, jp = i + 1, j + 1
         if x < xgl_ft
-            mask[jp, ip] = 2
+            mask[ip, jp] = 2
         elseif x <= xfront_ft
-            mask[jp, ip] = 3
-            z_draft_raw[jp, ip] =
+            mask[ip, jp] = 3
+            z_draft_raw[ip, jp] =
                 zgl_ft + (zfr_ft - zgl_ft) * (x - xgl_ft) / (xfront_ft - xgl_ft)
         end
     end
@@ -296,7 +296,7 @@ function build_isomip(
             entrainment = LambertEntrainment(FT(2.5)),
             melting = FixedGamTMelting(FT(0.00018)),
             convection_scheme = ResetToAmbient(FT(0.005)),
-            max_layer_thickness = TopographicMaxLayerThickness(),
+            max_layer_thickness = NoMaxLayerThickness(),
         ) : params
 
     grid = Grid(mask, z_draft_raw, dx, dy; preprocess, domain_cropping, backend, FT)

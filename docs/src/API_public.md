@@ -121,6 +121,7 @@ MarkGapsPreprocess
 
 ```@docs
 AbstractMaxLayerThickness
+NoMaxLayerThickness
 TopographicMaxLayerThickness
 AbsoluteMaxLayerThickness
 RelativeMaxLayerThickness

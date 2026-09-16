@@ -87,22 +87,22 @@ end
 
 _gamT_init(FT, _, _, ::Type{<:FixedGamTMelting}) = zero(FT)
 _gamT_init(FT, _, _, ::Type{<:PrescribedMelting}) = zero(FT)
-_gamT_init(FT, ny, nx, ::Type{<:TurbulentGamTMelting}) = zeros(FT, ny, nx)
+_gamT_init(FT, nx, ny, ::Type{<:TurbulentGamTMelting}) = zeros(FT, nx, ny)
 _conv2_init(FT, _, _, ::Type{<:Union{ClampDensity,ResetToAmbient}}) = zero(FT)
-_conv2_init(FT, ny, nx, ::Type{<:RelaxToAmbient}) = zeros(FT, ny, nx)
+_conv2_init(FT, nx, ny, ::Type{<:RelaxToAmbient}) = zeros(FT, nx, ny)
 
 """
 $(TYPEDSIGNATURES)
 
-Allocate all scratch matrices for a grid of size `(ny, nx)`.
+Allocate all scratch matrices for a grid of size `(nx, ny)`.
 `MP` (melt param type) determines whether `gamT`/`gamS` are scalars or arrays;
 `CS` (convection scheme type) determines whether `conv2` is a scalar or array.
 """
-function Cache(FT::Type, MP::Type, CS::Type, ny::Int, nx::Int)
-    z = zeros(FT, ny, nx)
-    gamT_init = _gamT_init(FT, ny, nx, MP)
-    gamS_init = _gamT_init(FT, ny, nx, MP)
-    conv2_init = _conv2_init(FT, ny, nx, CS)
+function Cache(FT::Type, MP::Type, CS::Type, nx::Int, ny::Int)
+    z = zeros(FT, nx, ny)
+    gamT_init = _gamT_init(FT, nx, ny, MP)
+    gamS_init = _gamT_init(FT, nx, ny, MP)
+    conv2_init = _conv2_init(FT, nx, ny, CS)
     GamT = typeof(gamT_init)
     Conv2 = typeof(conv2_init)
     Cache{FT,Matrix{FT},GamT,Conv2}(

@@ -113,7 +113,7 @@ function Params(;
     entrainment = LambertEntrainment(2.5),
     melting = FixedGamTMelting(0.00018),
     convection_scheme = ResetToAmbient(0.005),
-    max_layer_thickness = TopographicMaxLayerThickness(),
+    max_layer_thickness = NoMaxLayerThickness(),
     lateral_viscosity = PrescribedLateralViscosity(),
     front_pressure = FullDepthGradient(),
 )

@@ -199,7 +199,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     # adaptive dt); update! sets the absolute position from `elapsed` each step.
     prog = Progress(
         round(Int, total);
-        desc = "[$backend] $(m.ny)×$(m.nx) interior, ~$nt steps: ",
+        desc = "[$backend] $(m.nx)×$(m.ny) interior, ~$nt steps: ",
         enabled = verbose,
         showspeed = true,
     )

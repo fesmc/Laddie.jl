@@ -5,9 +5,11 @@ before so correctness never had to be taken on faith.
 
 ## Key design decisions
 
-- **`np.roll` → `circshift`.** Arrays are kept in numpy `[y, x]` orientation so
-  `np.roll(·, k, axis)` maps exactly onto `circshift`. The grounded border makes
-  periodic wrap harmless. This made the translation near-mechanical.
+- **`np.roll` → `circshift`.** The port kept numpy's `[y, x]` orientation at first, so
+  `np.roll(·, k, axis)` mapped exactly onto `circshift` and the translation stayed
+  near-mechanical. Arrays are now stored `[x, y]` instead — the convention of the
+  surrounding ecosystem and of NetCDF readers — which is a pure relabelling: the
+  transposed fields are bit-identical. The grounded border makes periodic wrap harmless.
 - **"Object bag" state.** During the port, `Model` forwarded `m.field` to a
   `Dict` (via `getproperty`/`setproperty!`), mirroring Python's `object.attr`
   style. This kept the line-by-line translation honest and low-risk; the Dict

@@ -46,34 +46,34 @@ end
         @test Laddie._safe_div(1.0, 0.0) === 0.0   # zero denominator → zero
         @test Laddie._safe_div(0.0, 0.0) === 0.0   # both zero → zero
         # _west and _south wrap at boundary i/j == 1
-        @test Laddie._west(1, 10)  == 10
-        @test Laddie._west(5, 10)  == 4
-        @test Laddie._south(1, 10) == 10
-        @test Laddie._south(5, 10) == 4
+        @test Laddie._xm1(1, 10)  == 10
+        @test Laddie._xm1(5, 10)  == 4
+        @test Laddie._ym1(1, 10) == 10
+        @test Laddie._ym1(5, 10) == 4
         # _east and _north wrap at boundary i/j == N
-        @test Laddie._east(10, 10) == 1
-        @test Laddie._east(5,  10) == 6
-        @test Laddie._north(10, 10) == 1
-        @test Laddie._north(5,  10) == 6
+        @test Laddie._xp1(10, 10) == 1
+        @test Laddie._xp1(5,  10) == 6
+        @test Laddie._yp1(10, 10) == 1
+        @test Laddie._yp1(5,  10) == 6
     end
 
     @testset "Model: arbitrary mask and draft" begin
-        # Minimal 4×6 interior domain (6×8 with border ring):
-        #   col 1 and 8 → boundary (1); cols 2–3 → grounded (2); cols 4–7 → shelf (3)
+        # Minimal 6×4 interior domain (8×6 with border ring), x along dim 1:
+        #   row 1 and 8 → boundary (1); rows 2–3 → grounded (2); rows 4–7 → shelf (3)
         nx_i, ny_i = 6, 4
-        mask = zeros(Int, ny_i + 2, nx_i + 2)
+        mask = zeros(Int, nx_i + 2, ny_i + 2)
         mask[1, :]   .= 1;   mask[end, :] .= 1
         mask[:, 1]   .= 1;   mask[:, end] .= 1
-        mask[2:end-1, 2:3]   .= 2
-        mask[2:end-1, 4:end-1] .= 3
-        z_draft_raw = fill(-400.0, ny_i + 2, nx_i + 2)
+        mask[2:3, 2:end-1]   .= 2
+        mask[4:end-1, 2:end-1] .= 3
+        z_draft_raw = fill(-400.0, nx_i + 2, ny_i + 2)
 
         forcing = ISOMIPForcing(FT, :warm)
         params  = Params(; FT)
         grid = Grid(mask, z_draft_raw, 2000.0, 2000.0; FT, domain_cropping = NoDomainCropping())
         m = Simulation(Model(grid; forcing, params))
 
-        @test size(m.model.tmask) == (ny_i + 2, nx_i + 2)
+        @test size(m.model.tmask) == (nx_i + 2, ny_i + 2)
         @test all(isfinite, m.model.melt)
         @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
         run!(m; days=0.5, verbose=false)
@@ -81,24 +81,24 @@ end
         @test all(isfinite, m.model.melt)
 
         # MinRectangleDomainCropping is the default.  Its `margin` (default 4) is the
-        # padding kept around the active region; here the shelf spans cols 4-7 of 8,
+        # padding kept around the active region; here the shelf spans rows 4-7 of 8,
         # so a 4-cell margin reaches the array edge and nothing is cropped at all.
         mc = Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT); forcing, params)
-        @test size(mc.tmask) == (ny_i + 2, nx_i + 2)
+        @test size(mc.tmask) == (nx_i + 2, ny_i + 2)
         @test sum(mc.tmask) == sum(m.model.tmask)     # no active cell is lost
 
         # margin = 1 is the tightest the solver accepts: the shelf bounding box plus
-        # the one-cell ring, dropping the outer grounded column and the far border
-        # column (8 columns -> 6).
+        # the one-cell ring, dropping the outer grounded row and the far border
+        # row (8 rows -> 6).
         m1 = Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
                         domain_cropping = MinRectangleDomainCropping(margin = 1)); forcing, params)
-        @test size(m1.tmask) == (ny_i + 2, 6)
+        @test size(m1.tmask) == (6, ny_i + 2)
         @test sum(m1.tmask) == sum(m.model.tmask)
 
         # margin = 2 keeps one more ring than that.
         m2 = Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
                         domain_cropping = MinRectangleDomainCropping(margin = 2)); forcing, params)
-        @test size(m2.tmask) == (ny_i + 2, 7)
+        @test size(m2.tmask) == (7, ny_i + 2)
 
         # margin = 0 would put shelf cells on the wrapping border ring.
         @test_throws ArgumentError Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
@@ -108,23 +108,23 @@ end
 
     @testset "Model: input validation errors" begin
         nx_i, ny_i = 6, 4
-        mask = zeros(Int, ny_i + 2, nx_i + 2)
+        mask = zeros(Int, nx_i + 2, ny_i + 2)
         mask[1, :]   .= 1;   mask[end, :] .= 1
         mask[:, 1]   .= 1;   mask[:, end] .= 1
-        mask[2:end-1, 2:3]   .= 2
-        mask[2:end-1, 4:end-1] .= 3
-        z_draft = fill(-400.0, ny_i + 2, nx_i + 2)
+        mask[2:3, 2:end-1]   .= 2
+        mask[4:end-1, 2:end-1] .= 3
+        z_draft = fill(-400.0, nx_i + 2, ny_i + 2)
         forcing = ISOMIPForcing(FT, :warm)
         params  = Params(; FT)
 
         # z_draft size mismatch
-        @test_throws ArgumentError Model(Grid(mask, z_draft[:, 1:end-1], 2000.0, 2000.0; FT);
+        @test_throws ArgumentError Model(Grid(mask, z_draft[1:end-1, :], 2000.0, 2000.0; FT);
                                          forcing, params)
         # non-positive cell spacing
         @test_throws ArgumentError Model(Grid(mask, z_draft, -2000.0, 2000.0; FT);
                                          forcing, params)
         # mask value outside 0:3
-        bad = copy(mask); bad[3, 4] = 7
+        bad = copy(mask); bad[4, 3] = 7
         @test_throws ArgumentError Model(Grid(bad, z_draft, 2000.0, 2000.0; FT);
                                          forcing, params)
         # no floating-shelf cells at all
@@ -417,12 +417,12 @@ end
 
         # Same domain, both forcings: initial melt fields must agree
         nx_i, ny_i = 6, 4
-        mask = zeros(Int, ny_i + 2, nx_i + 2)
+        mask = zeros(Int, nx_i + 2, ny_i + 2)
         mask[1, :]   .= 1;   mask[end, :] .= 1
         mask[:, 1]   .= 1;   mask[:, end] .= 1
-        mask[2:end-1, 2:3]   .= 2
-        mask[2:end-1, 4:end-1] .= 3
-        z_draft_raw = fill(-400.0, ny_i + 2, nx_i + 2)
+        mask[2:3, 2:end-1]   .= 2
+        mask[4:end-1, 2:end-1] .= 3
+        z_draft_raw = fill(-400.0, nx_i + 2, ny_i + 2)
 
         m1 = Simulation(Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT);
                               forcing = isomip, params = Params(; FT)))
@@ -438,13 +438,48 @@ end
         # Small grid (nx=20, ny=10) for a fast smoke test
         m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
 
-        @test size(m.model.tmask) == (12, 22)   # ny+2 × nx+2
+        @test size(m.model.tmask) == (22, 12)   # nx+2 × ny+2
         @test all(isfinite, m.model.melt)
         @test all(m.model.melt[m.model.tmask .> 0] .>= 0)   # melt rate non-negative under ice
 
         mx, mn, sp = meltstats(m)
         @test isfinite(mx) && isfinite(mn) && isfinite(sp)
         @test mx >= mn >= 0
+    end
+
+    @testset "Axis order: fields are [x, y], dx and dy are not interchangeable" begin
+        # Arrays are stored [x, y]: first index along x, second along y.  The ISOMIP+
+        # channel deepens along x and is uniform across y, which pins every axis in
+        # the chain — a transposed stencil, gradient or spacing shows up here.
+        nx_i, ny_i = 30, 12
+        m = build_isomip(CPU(); FT, nx = nx_i, ny = ny_i, dx = 2000.0, dy = 1000.0,
+                         isomipcond = :warm)   # JlGradient: reads shelf neighbours only
+        g = m.model
+        @test size(g.tmask) == (nx_i + 2, ny_i + 2)
+        @test (g.nx, g.ny) == (nx_i, ny_i)
+        @test (length(g.x), length(g.y)) == (nx_i, ny_i)
+        @test (g.dx, g.dy) == (FT(2000.0), FT(1000.0))
+
+        # The draft varies along x only, so the mask-aware slope must land entirely in
+        # dzdx.  Swapped axes would put it in dzdy instead.  (PyGradient would not do
+        # for this check: it differences across the land wall in y and picks up the
+        # draft discontinuity there — the artefact JlGradient exists to avoid.)
+        shelf = g.tmask .> 0
+        @test all(iszero, g.dzdy[shelf])
+        @test all(!iszero, g.dzdx[shelf])
+        # ... and the draft is constant across y at fixed x.
+        @test all(all(g.z_draft[i, :][shelf[i, :]] .== g.z_draft[i, :][shelf[i, :]][1])
+                  for i in axes(g.z_draft, 1) if any(shelf[i, :]))
+
+        # dx and dy are used where they belong: swapping them is a different problem,
+        # not a relabelling of the same one.
+        run!(m; days = 0.5, verbose = false)
+        m_sw = build_isomip(CPU(); FT, nx = nx_i, ny = ny_i, dx = 1000.0, dy = 2000.0,
+                            isomipcond = :warm)
+        run!(m_sw; days = 0.5, verbose = false)
+        @test size(m_sw.model.tmask) == size(g.tmask)
+        @test !isapprox(meltstats(m)[2], meltstats(m_sw)[2]; rtol = 1e-6)
+        @test all(isfinite, m_sw.model.melt)
     end
 
     @testset "ISOMIP+ cold cavity: build" begin
@@ -684,22 +719,22 @@ end
     end
 
     @testset "Gaps BC: mask plumbing, SinkGapsBC bit-identical, ConnectedGapsBC differs" begin
-        # 10x20 interior domain (12x22 with border ring), no cropping so mask
-        # indices map 1:1 onto grid indices:
-        #   cols 2-3 grounded (2), cols 4-20 shelf (3), col 21 open ocean (0)
+        # 20x10 interior domain (22x12 with border ring), x along dim 1, no cropping
+        # so mask indices map 1:1 onto grid indices:
+        #   x 2-3 grounded (2), x 4-20 shelf (3), x 21 open ocean (0)
         # with a 3x3 ice-shelf gap punched into the middle of the shelf.
         function gappy_mask()
-            mk = zeros(Int, 12, 22)
+            mk = zeros(Int, 22, 12)
             mk[1, :] .= 1;  mk[end, :] .= 1
             mk[:, 1] .= 1;  mk[:, end] .= 1
-            mk[2:11, 2:3]  .= 2
-            mk[2:11, 4:20] .= 3
-            mk[2:11, 21]   .= 0
-            mk[5:7, 10:12] .= 4          # the gap
+            mk[2:3,  2:11] .= 2
+            mk[4:20, 2:11] .= 3
+            mk[21,   2:11] .= 0
+            mk[10:12, 5:7] .= 4          # the gap
             return mk
         end
-        gap_ix = CartesianIndices((5:7, 10:12))
-        z_draft_raw = fill(-400.0, 12, 22)
+        gap_ix = CartesianIndices((10:12, 5:7))
+        z_draft_raw = fill(-400.0, 22, 12)
         forcing = ISOMIPForcing(FT, :warm)
         build(mk, gaps = SinkGapsBC(); params = Params(; FT), kw...) =
             Simulation(Model(Grid(mk, z_draft_raw, 2000.0, 2000.0; FT,
@@ -736,13 +771,13 @@ end
         # Building a grid never modifies the caller's mask, even when preprocessing.
         ocean_in = copy(gappy_mask()); ocean_in[ocean_in .== 4] .= 0
         before = copy(ocean_in)
-        footprint = zeros(Bool, 12, 22); footprint[2:11, 4:20] .= true
+        footprint = zeros(Bool, 22, 12); footprint[4:20, 2:11] .= true
         g_marked = Grid(ocean_in, z_draft_raw, 2000.0, 2000.0; FT,
                         preprocess = [MarkGapsPreprocess(footprint)],
                         domain_cropping = NoDomainCropping())
         @test ocean_in == before
         @test count(==(4), g_marked.mask) == length(gap_ix)
-        @test g_marked.crop == (1:12, 1:22) && g_marked.input_size == (12, 22)
+        @test g_marked.crop == (1:22, 1:12) && g_marked.input_size == (22, 12)
         @test g_marked.x == 2000.0 .* (1:20) && g_marked.y == 2000.0 .* (1:10)
 
         # -- Bucket 1: validation ----------------------------------------------
@@ -774,7 +809,7 @@ end
         @test sum(mc.model.tmask) == sum(m_sink.model.tmask) + length(gap_ix)
         # Same geometry expressed as a reference ice footprint over an all-ocean gap.
         # Marking gaps is geometry (a preprocess step); treating them is the BC.
-        refgeo = zeros(12, 22); refgeo[2:11, 4:20] .= 500.0   # reference ice thickness
+        refgeo = zeros(22, 12); refgeo[4:20, 2:11] .= 500.0   # reference ice thickness
         connected = ConnectedGapsBC()
         m_ref = build(ocean_mask, connected; preprocess = [MarkGapsPreprocess(refgeo)])
         @test m_ref.model.mask == mc.model.mask
@@ -793,16 +828,16 @@ end
         # footprint — outside the bounding box of today's shelf — is part of the
         # active region the crop keeps, rather than cropped away before it exists.
         edge_mask = copy(ocean_mask)
-        edge_mask[5:7, 10:12] .= 3                                   # no interior hole
-        edge_mask[2:11, 16:20] .= 0                                  # shelf ends at col 15
-        edge_ref = zeros(Bool, 12, 22); edge_ref[2:11, 4:18] .= true
+        edge_mask[10:12, 5:7] .= 3                                   # no interior hole
+        edge_mask[16:20, 2:11] .= 0                                  # shelf ends at x = 15
+        edge_ref = zeros(Bool, 22, 12); edge_ref[4:18, 2:11] .= true
         edge_grid = Grid(edge_mask, z_draft_raw, 2000.0, 2000.0; FT,
                          preprocess = [MarkGapsPreprocess(edge_ref)],
                          domain_cropping = MinRectangleDomainCropping(margin = 1))
         m_edge = Model(edge_grid; forcing, boundary = BoundaryConditions(; gaps = connected))
-        @test count(==(4), m_edge.mask) == 10 * 3                  # cols 16:18 are gaps
+        @test count(==(4), m_edge.mask) == 10 * 3                  # x 16:18 are gaps
         @test sum(m_edge.tmask) == 10 * (15 - 4 + 1) + 10 * 3      # shelf + gaps all kept
-        @test size(m_edge.mask, 2) == (18 - 4 + 1) + 2             # footprint + 1-cell ring
+        @test size(m_edge.mask, 1) == (18 - 4 + 1) + 2             # footprint + 1-cell ring
 
         # -- Bucket 3: no melt in gaps, and no ice-ocean heat exchange either ---
         @test all(mc.model.melt[gap_ix] .== 0)
@@ -872,12 +907,13 @@ end
     @testset "Gaps BC: meltwater crosses a gap in the ISOMIP+ boundary current" begin
         # The science test for ConnectedGapsBC.  ISOMIP+ channel, coarsened to
         # 60x20 so three runs stay cheap.  Coriolis steers the plume into a
-        # boundary current against the high-y wall (rows 19-21 of 22), which is
+        # boundary current against the high-y wall (y = 19-21 of 22), which is
         # where a gap does the most damage — Jesse et al. (2026), Fig. 3.
+        # Fields are [x, y]: x runs along the channel, y across it.
         dx, dy = 8000.0, 4000.0
         base = build_isomip(CPU(); FT, nx = 60, ny = 20, dx, dy, isomipcond = :warm)
-        mask0, band = copy(base.model.mask), 19:21
-        rows, cols = 19:21, 30:32              # the gap: 12 km across, 24 km along
+        mask0, ywall = copy(base.model.mask), 19:21
+        ygap, xgap = 19:21, 30:32              # the gap: 12 km across, 24 km along
 
         # Melt-through thins the ice it eats through, so taper the draft to zero
         # over six cells around the gap rather than leaving a 400 m cliff at its
@@ -885,12 +921,12 @@ end
         # its pressure slope, some 40x the shelf's own, would swamp the signal
         # being measured here.
         z_draft = copy(base.model.z_draft)
-        for j in axes(z_draft, 1), i in axes(z_draft, 2)
-            r = max(max(first(rows) - j, j - last(rows), 0),
-                    max(first(cols) - i, i - last(cols), 0))
-            z_draft[j, i] *= clamp(r / 6, 0, 1)
+        for i in axes(z_draft, 1), j in axes(z_draft, 2)
+            r = max(max(first(ygap) - j, j - last(ygap), 0),
+                    max(first(xgap) - i, i - last(xgap), 0))
+            z_draft[i, j] *= clamp(r / 6, 0, 1)
         end
-        gappy = copy(mask0); gappy[rows, cols] .= 4
+        gappy = copy(mask0); gappy[xgap, ygap] .= 4
 
         function channel(mask, bc)
             grid = Grid(mask, z_draft, dx, dy; FT, domain_cropping = NoDomainCropping())
@@ -907,10 +943,10 @@ end
             @test all(isfinite, m.model.melt) && all(isfinite, m.model.D.present)
             @test all(m.model.melt .>= 0)
         end
-        @test all(m_conn.model.melt[rows, cols] .== 0)   # a gap has no ice to melt
+        @test all(m_conn.model.melt[xgap, ygap] .== 0)   # a gap has no ice to melt
 
         mn(a) = sum(a) / length(a)
-        meltsum(m, c) = sum(m.model.melt[band, c]) * m.model.seconds_per_year
+        meltsum(m, xs) = sum(m.model.melt[xs, ywall]) * m.model.seconds_per_year
         up, down = 5:22, 36:58
 
         # Upstream of the gap the two treatments are indistinguishable, and both
@@ -920,8 +956,8 @@ end
 
         # At the gap the two diverge completely: the sink terminates the boundary
         # current (Fig. 3r), the connected layer carries it through (Fig. 3v).
-        @test maximum(abs.(m_sink.model.U.present[band, cols])) < 0.05
-        @test minimum(maximum(abs.(m_conn.model.U.present[band, c])) for c in cols) > 0.2
+        @test maximum(abs.(m_sink.model.U.present[xgap, ywall])) < 0.05
+        @test minimum(maximum(abs.(m_conn.model.U.present[x, ywall])) for x in xgap) > 0.2
 
         # Downstream the sink has drained the cavity and melt collapses, while
         # the connected layer arrives faster, thicker and warmer and melts almost
@@ -929,10 +965,10 @@ end
         # gap itself melts nothing.
         @test meltsum(m_conn, down) > 1.4 * meltsum(m_sink, down)
         @test meltsum(m_conn, down) ≈ meltsum(m_none, down) rtol = 0.05
-        @test mn(abs.(m_conn.model.U.present[band, down])) >
-              1.2 * mn(abs.(m_sink.model.U.present[band, down]))
-        @test mn(m_conn.model.T.present[band, down]) >
-              mn(m_sink.model.T.present[band, down]) + 0.01
+        @test mn(abs.(m_conn.model.U.present[down, ywall])) >
+              1.2 * mn(abs.(m_sink.model.U.present[down, ywall]))
+        @test mn(m_conn.model.T.present[down, ywall]) >
+              mn(m_sink.model.T.present[down, ywall]) + 0.01
     end
 
     @testset "Time stepper: FixedDt default/equivalence, AdaptiveDt threading" begin
@@ -1387,8 +1423,8 @@ end
         # because on a C-grid U and V do not share a point.  A latitude varying in
         # y makes fv differ from f while fu (an x-average) does not.
         mask0 = copy(m0.model.mask)
-        ny_t, nx_t = size(mask0)
-        lat_y = [FT(-80 + 10 * (i - 1) / (ny_t - 1)) for i in 1:ny_t, _ in 1:nx_t]
+        nx_t, ny_t = size(mask0)
+        lat_y = [FT(-80 + 10 * (j - 1) / (ny_t - 1)) for _ in 1:nx_t, j in 1:ny_t]
         grid0 = Grid(mask0, copy(m0.model.z_draft), 2000.0, 2000.0; FT,
                      domain_cropping = NoDomainCropping())
         m_y = Simulation(Model(grid0; forcing = ISOMIPForcing(FT, :warm),
@@ -1396,13 +1432,13 @@ end
         @test m_y.model.f[1, 1] ≈ 2 * Laddie.EARTH_ROTATION_RATE * sind(-80.0)
         @test m_y.model.fu == m_y.model.f                        # constant along x
         @test m_y.model.fv != m_y.model.f                        # averaged across y
-        @test m_y.model.fv[1, 1] ≈ (m_y.model.f[1, 1] + m_y.model.f[2, 1]) / 2
+        @test m_y.model.fv[1, 1] ≈ (m_y.model.f[1, 1] + m_y.model.f[1, 2]) / 2
         run!(m_y; days = 1.0, verbose = false)
         @test all(isfinite, m_y.model.melt) && all(m_y.model.melt[m_y.model.imask .> 0] .>= 0)
         @test m_y.model.V.present != m0.model.V.present
 
         # The equivalent x-varying field swaps which face average is trivial.
-        lat_x = [FT(-80 + 10 * (j - 1) / (nx_t - 1)) for _ in 1:ny_t, j in 1:nx_t]
+        lat_x = [FT(-80 + 10 * (i - 1) / (nx_t - 1)) for i in 1:nx_t, _ in 1:ny_t]
         m_x = Simulation(Model(grid0; forcing = ISOMIPForcing(FT, :warm),
                                params = Params(; FT, coriolis = CoriolisParameter2D(lat_x))))
         @test m_x.model.fv == m_x.model.f && m_x.model.fu != m_x.model.f
@@ -1433,7 +1469,7 @@ end
         @test !hasfield(typeof(getfield(m_def.model, :params)), :T_i)
 
         mask0 = copy(m_def.model.mask); zd0 = copy(m_def.model.z_draft)
-        shelf_cols = [j for j in axes(mask0, 2) if any(==(3), @view mask0[:, j])]
+        shelf_cols = [i for i in axes(mask0, 1) if any(==(3), @view mask0[i, :])]
         grid0 = Grid(mask0, zd0, 2000.0, 2000.0; FT, domain_cropping = NoDomainCropping())
         build(ice) = Simulation(Model(grid0;
             forcing = CavityForcing(ISOMIPForcing(FT, :warm), ice),
@@ -1460,11 +1496,11 @@ end
         # of the shelf, cold ice over the rest, must land strictly between the two
         # uniform runs and match each of them on its own half.
         half = shelf_cols[1:(length(shelf_cols) ÷ 2)]
-        Ti = fill(FT(-25.0), size(mask0)); Ti[:, half] .= 0
+        Ti = fill(FT(-25.0), size(mask0)); Ti[half, :] .= 0
         m_2d = build(PrescribedIceForcing(Ti))
         run!(m_2d; days = 1.0, verbose = false)
         @test sum(m_def.model.melt) < sum(m_2d.model.melt) < sum(m_warm.model.melt)
-        @test sum(m_2d.model.melt[:, half]) > sum(m_def.model.melt[:, half])
+        @test sum(m_2d.model.melt[half, :]) > sum(m_def.model.melt[half, :])
         @test m_2d.model.melt[m_2d.model.imask .> 0] != m_warm.model.melt[m_warm.model.imask .> 0]
 
         # The turbulent-gamT variant is the second melt kernel; it takes the same
@@ -1482,7 +1518,7 @@ end
         @test_throws ArgumentError build(PrescribedIceForcing(bad))
 
         # A 2D field is cropped with the mask rather than silently mismatched.
-        marked = fill(FT(-25.0), size(mask0)); marked[6, shelf_cols[3]] = FT(-2.0)
+        marked = fill(FT(-25.0), size(mask0)); marked[shelf_cols[3], 6] = FT(-2.0)
         m_crop = Model(Grid(mask0, zd0, 2000.0, 2000.0; FT,
                             domain_cropping = MinRectangleDomainCropping(margin = 2));
                        forcing = CavityForcing(ISOMIPForcing(FT, :warm), PrescribedIceForcing(marked)))
@@ -1819,11 +1855,11 @@ end
 
             NCD = Laddie.NCDatasets
             py, py_tmask = NCD.Dataset(py_restart) do ds
-                # Python stores (x, y, n) with n=2 the present leapfrog level;
-                # transpose to Julia's (ny, nx) interior layout.
-                get_v(v) = coalesce.(Array(ds[v][:, :, 2]), 0.0)'
+                # NCDatasets hands back (x, y, n) with n=2 the present leapfrog
+                # level — already Laddie.jl's own [x, y] interior layout.
+                get_v(v) = coalesce.(Array(ds[v][:, :, 2]), 0.0)
                 Dict(v => get_v(v) for v in ("D", "T", "S", "U", "V")),
-                coalesce.(Array(ds["tmask"][:, :]), 0.0)'
+                coalesce.(Array(ds["tmask"][:, :]), 0.0)
             end
 
             inner(a) = a[2:end-1, 2:end-1]

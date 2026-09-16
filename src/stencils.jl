@@ -1,8 +1,12 @@
 
-@inline _east(j, N) = ifelse(j == N, 1, j + 1)
-@inline _west(j, N) = ifelse(j == 1, N, j - 1)
-@inline _north(i, N) = ifelse(i == N, 1, i + 1)
-@inline _south(i, N) = ifelse(i == 1, N, i - 1)
+# Periodic neighbour indices along each axis.  Arrays are [ix, iy]: `_xp1`/`_xm1`
+# step the first index, `_yp1`/`_ym1` the second.  These are index directions, not
+# compass directions — the grid axes of a projected domain need not align with
+# east/north (see the note on the shift primitives in utils.jl).
+@inline _xp1(i, N) = ifelse(i == N, 1, i + 1)
+@inline _xm1(i, N) = ifelse(i == 1, N, i - 1)
+@inline _yp1(j, N) = ifelse(j == N, 1, j + 1)
+@inline _ym1(j, N) = ifelse(j == 1, N, j - 1)
 @inline _safe_div(a, b) = iszero(b) ? zero(a) : a / b
 
 @kernel function _lapT_kernel!(
@@ -18,19 +22,19 @@
     @Const(tmaskxp1),
     dy2,
     dx2,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
-        flux_N = D0jp[i, j] * (var[n, j] - var[i, j]) * tmaskym1[i, j] / dy2
-        flux_S = D0jm[i, j] * (var[s, j] - var[i, j]) * tmaskyp1[i, j] / dy2
-        flux_E = D0ip[i, j] * (var[i, e] - var[i, j]) * tmaskxm1[i, j] / dx2
-        flux_W = D0im[i, j] * (var[i, w] - var[i, j]) * tmaskxp1[i, j] / dx2
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
+        flux_N = D0jp[i, j] * (var[i, jp1] - var[i, j]) * tmaskym1[i, j] / dy2
+        flux_S = D0jm[i, j] * (var[i, jm1] - var[i, j]) * tmaskyp1[i, j] / dy2
+        flux_E = D0ip[i, j] * (var[ip1, j] - var[i, j]) * tmaskxm1[i, j] / dx2
+        flux_W = D0im[i, j] * (var[im1, j] - var[i, j]) * tmaskxp1[i, j] / dx2
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -60,34 +64,34 @@ end
     @Const(umaskxp1),
     dx,
     dy,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
         v = var[i, j]
         flux_N =
             -(
                 Vpos[i, j] * v +
-                Vneg[i, j] * (var[n, j] * tmaskym1[i, j] + v * ocnym1[i, j])
+                Vneg[i, j] * (var[i, jp1] * tmaskym1[i, j] + v * ocnym1[i, j])
             ) / dy * vmask[i, j]
         flux_S =
             (
-                Vyp1pos[i, j] * (var[s, j] * tmaskyp1[i, j] + v * ocnyp1[i, j]) +
+                Vyp1pos[i, j] * (var[i, jm1] * tmaskyp1[i, j] + v * ocnyp1[i, j]) +
                 Vyp1neg[i, j] * v
             ) / dy * vmaskyp1[i, j]
         flux_E =
             -(
                 Upos[i, j] * v +
-                Uneg[i, j] * (var[i, e] * tmaskxm1[i, j] + v * ocnxm1[i, j])
+                Uneg[i, j] * (var[ip1, j] * tmaskxm1[i, j] + v * ocnxm1[i, j])
             ) / dx * umask[i, j]
         flux_W =
             (
-                Uxp1pos[i, j] * (var[i, w] * tmaskxp1[i, j] + v * ocnxp1[i, j]) +
+                Uxp1pos[i, j] * (var[im1, j] * tmaskxp1[i, j] + v * ocnxp1[i, j]) +
                 Uxp1neg[i, j] * v
             ) / dx * umaskxp1[i, j]
         out[i, j] = flux_N + flux_S + flux_E + flux_W
@@ -111,20 +115,20 @@ end
     @Const(umaskxp1),
     dx,
     dy,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
         v = var[i, j]
-        flux_N = -(Vpos[i, j] * v + Vneg[i, j] * var[n, j]) / dy * vmask[i, j]
-        flux_S = (Vyp1pos[i, j] * var[s, j] + Vyp1neg[i, j] * v) / dy * vmaskyp1[i, j]
-        flux_E = -(Upos[i, j] * v + Uneg[i, j] * var[i, e]) / dx * umask[i, j]
-        flux_W = (Uxp1pos[i, j] * var[i, w] + Uxp1neg[i, j] * v) / dx * umaskxp1[i, j]
+        flux_N = -(Vpos[i, j] * v + Vneg[i, j] * var[i, jp1]) / dy * vmask[i, j]
+        flux_S = (Vyp1pos[i, j] * var[i, jm1] + Vyp1neg[i, j] * v) / dy * vmaskyp1[i, j]
+        flux_E = -(Upos[i, j] * v + Uneg[i, j] * var[ip1, j]) / dx * umask[i, j]
+        flux_W = (Uxp1pos[i, j] * var[im1, j] + Uxp1neg[i, j] * v) / dx * umaskxp1[i, j]
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -165,12 +169,12 @@ end
     dslip_land,
     dx,
     dy,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        s = _south(i, Ny)
+        jm1 = _ym1(j, Ny)
         D0 = D[i, j] * tmask[i, j]
         D_N = _safe_div(
             D0 + Dxm1[i, j] + Dym1[i, j] + Dxm1ym1[i, j],
@@ -190,7 +194,7 @@ end
         slipN = slip + dslip_gl * glNu[i, j] + dslip_land * lndNu[i, j]
         slipS = slip + dslip_gl * glSu[i, j] + dslip_land * lndSu[i, j]
         flux_N = -D_N * Vip[i, j] * (Ujp[i, j] - slipN * U[i, j] * grdNu[i, j]) / dy
-        flux_S = D_S * Vip[s, j] * (Ujm[i, j] - slipS * U[i, j] * grdSu[i, j]) / dy
+        flux_S = D_S * Vip[i, jm1] * (Ujm[i, j] - slipS * U[i, j] * grdSu[i, j]) / dy
         flux_E =
             -D_E *
             Uip[i, j] *
@@ -234,12 +238,12 @@ end
     dslip_land,
     dx,
     dy,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
-        w = _west(j, Nx)
+        im1 = _xm1(i, Nx)
         D0 = D[i, j] * tmask[i, j]
         D_E = _safe_div(
             D0 + Dym1[i, j] + Dxm1[i, j] + Dxm1ym1[i, j],
@@ -261,7 +265,7 @@ end
         slipE = slip + dslip_gl * glEv[i, j] + dslip_land * lndEv[i, j]
         slipW = slip + dslip_gl * glWv[i, j] + dslip_land * lndWv[i, j]
         flux_E = -D_E * Ujp[i, j] * (Vip[i, j] - slipE * V[i, j] * grdEv[i, j]) / dx
-        flux_W = D_W * Ujp[i, w] * (Vim[i, j] - slipW * V[i, j] * grdWv[i, j]) / dx
+        flux_W = D_W * Ujp[im1, j] * (Vim[i, j] - slipW * V[i, j] * grdWv[i, j]) / dx
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -289,16 +293,16 @@ end
     A_h,
     dx2,
     dy2,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     FT = typeof(slip)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
         o = one(FT)
         v = var[i, j]
         # Per-face wall drag: `slip` at every wall, plus dslip_gl at grounding-line
@@ -306,12 +310,12 @@ end
         # → bitwise v1 behaviour).
         dragN = (slip + dslip_gl * glNu[i, j] + dslip_land * lndNu[i, j]) * D_on_ugrid[i, j] * v / dy2
         dragS = (slip + dslip_gl * glSu[i, j] + dslip_land * lndSu[i, j]) * D_on_ugrid[i, j] * v / dy2
-        jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[n, j], tmask_jp[i, j])
-        jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[s, j], tmask_jm[i, j])
-        flux_N = jpD * (var[n, j] - v) / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
-        flux_S = jmD * (var[s, j] - v) / dy2 * (o - ocnyp1[i, j]) - dragS * grdSu[i, j]
-        flux_E = D0[i, e] * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j])
-        flux_W = D0[i, j] * (var[i, w] - v) / dx2 * (o - ocn[i, j])
+        jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jp1], tmask_jp[i, j])
+        jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jm1], tmask_jm[i, j])
+        flux_N = jpD * (var[i, jp1] - v) / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
+        flux_S = jmD * (var[i, jm1] - v) / dy2 * (o - ocnyp1[i, j]) - dragS * grdSu[i, j]
+        flux_E = D0[ip1, j] * (var[ip1, j] - v) / dx2 * (o - ocnxm1[i, j])
+        flux_W = D0[i, j] * (var[im1, j] - v) / dx2 * (o - ocn[i, j])
         out[i, j] = (flux_N + flux_S + flux_E + flux_W) * A_h
     end
 end
@@ -339,27 +343,27 @@ end
     A_h,
     dx2,
     dy2,
-    Ny,
     Nx,
+    Ny,
 )
     FT = typeof(slip)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
         o = one(FT)
         v = var[i, j]
         # See _laplace_U_kernel! for the slip-factor composition.
         dragE = (slip + dslip_gl * glEv[i, j] + dslip_land * lndEv[i, j]) * D_on_vgrid[i, j] * v / dx2
         dragW = (slip + dslip_gl * glWv[i, j] + dslip_land * lndWv[i, j]) * D_on_vgrid[i, j] * v / dx2
-        ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, e], tmask_ip[i, j])
-        imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, w], tmask_im[i, j])
-        flux_N = D0[n, j] * (var[n, j] - v) / dy2 * (o - ocnym1[i, j])
-        flux_S = D0[i, j] * (var[s, j] - v) / dy2 * (o - ocn[i, j])
-        flux_E = ipD * (var[i, e] - v) / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
-        flux_W = imD * (var[i, w] - v) / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
+        ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[ip1, j], tmask_ip[i, j])
+        imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[im1, j], tmask_im[i, j])
+        flux_N = D0[i, jp1] * (var[i, jp1] - v) / dy2 * (o - ocnym1[i, j])
+        flux_S = D0[i, j] * (var[i, jm1] - v) / dy2 * (o - ocn[i, j])
+        flux_E = ipD * (var[ip1, j] - v) / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
+        flux_W = imD * (var[im1, j] - v) / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
         out[i, j] = (flux_N + flux_S + flux_E + flux_W) * A_h
     end
 end
@@ -400,16 +404,16 @@ end
     visc_y,
     dx2,
     dy2,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     FT = typeof(slip)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
         o = one(FT)
         v = var[i, j]
         dragN =
@@ -420,22 +424,22 @@ end
             A_h_wall *
             (slip + dslip_gl * glSu[i, j] + dslip_land * lndSu[i, j]) *
             D_on_ugrid[i, j] * v / dy2
-        jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[n, j], tmask_jp[i, j])
-        jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[s, j], tmask_jm[i, j])
+        jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jp1], tmask_jp[i, j])
+        jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jm1], tmask_jm[i, j])
         ov = other[i, j]
-        dN = var[n, j] - v
-        dS = var[s, j] - v
-        dE = var[i, e] - v
-        dW = var[i, w] - v
+        dN = var[i, jp1] - v
+        dS = var[i, jm1] - v
+        dE = var[ip1, j] - v
+        dW = var[im1, j] - v
         # |Δu| across each face: this component's difference combined with the
         # cross-component's difference over the same displacement.
-        aN = sqrt(dN * dN + (other[n, j] - ov)^2)
-        aS = sqrt(dS * dS + (other[s, j] - ov)^2)
-        aE = sqrt(dE * dE + (other[i, e] - ov)^2)
-        aW = sqrt(dW * dW + (other[i, w] - ov)^2)
+        aN = sqrt(dN * dN + (other[i, jp1] - ov)^2)
+        aS = sqrt(dS * dS + (other[i, jm1] - ov)^2)
+        aE = sqrt(dE * dE + (other[ip1, j] - ov)^2)
+        aW = sqrt(dW * dW + (other[im1, j] - ov)^2)
         flux_N = visc_y * aN * jpD * dN / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
         flux_S = visc_y * aS * jmD * dS / dy2 * (o - ocnyp1[i, j]) - dragS * grdSu[i, j]
-        flux_E = visc_x * aE * D0[i, e] * dE / dx2 * (o - ocnxm1[i, j])
+        flux_E = visc_x * aE * D0[ip1, j] * dE / dx2 * (o - ocnxm1[i, j])
         flux_W = visc_x * aW * D0[i, j] * dW / dx2 * (o - ocn[i, j])
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
@@ -467,16 +471,16 @@ end
     visc_y,
     dx2,
     dy2,
-    Ny,
     Nx,
+    Ny,
 )
     FT = typeof(slip)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        n = _north(i, Ny)
-        s = _south(i, Ny)
-        e = _east(j, Nx)
-        w = _west(j, Nx)
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
         o = one(FT)
         v = var[i, j]
         dragE =
@@ -487,19 +491,19 @@ end
             A_h_wall *
             (slip + dslip_gl * glWv[i, j] + dslip_land * lndWv[i, j]) *
             D_on_vgrid[i, j] * v / dx2
-        ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, e], tmask_ip[i, j])
-        imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[i, w], tmask_im[i, j])
+        ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[ip1, j], tmask_ip[i, j])
+        imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[im1, j], tmask_im[i, j])
         ov = other[i, j]
-        dN = var[n, j] - v
-        dS = var[s, j] - v
-        dE = var[i, e] - v
-        dW = var[i, w] - v
+        dN = var[i, jp1] - v
+        dS = var[i, jm1] - v
+        dE = var[ip1, j] - v
+        dW = var[im1, j] - v
         # See _nonlinear_laplace_U_kernel! for the |Δu| composition.
-        aN = sqrt(dN * dN + (other[n, j] - ov)^2)
-        aS = sqrt(dS * dS + (other[s, j] - ov)^2)
-        aE = sqrt(dE * dE + (other[i, e] - ov)^2)
-        aW = sqrt(dW * dW + (other[i, w] - ov)^2)
-        flux_N = visc_y * aN * D0[n, j] * dN / dy2 * (o - ocnym1[i, j])
+        aN = sqrt(dN * dN + (other[i, jp1] - ov)^2)
+        aS = sqrt(dS * dS + (other[i, jm1] - ov)^2)
+        aE = sqrt(dE * dE + (other[ip1, j] - ov)^2)
+        aW = sqrt(dW * dW + (other[im1, j] - ov)^2)
+        flux_N = visc_y * aN * D0[i, jp1] * dN / dy2 * (o - ocnym1[i, j])
         flux_S = visc_y * aS * D0[i, j] * dS / dy2 * (o - ocn[i, j])
         flux_E = visc_x * aE * ipD * dE / dx2 * (o - ocnxm1[i, j]) - dragE * grdEv[i, j]
         flux_W = visc_x * aW * imD * dW / dx2 * (o - ocnxp1[i, j]) - dragW * grdWv[i, j]
@@ -508,7 +512,7 @@ end
 end
 
 function upwind_advection_T(out, m, var)
-    ny, nx = size(var)
+    nx, ny = size(var)
     if m.boundary.open_ocean isa ZeroGradientInflow
         launch!(
             _upwind_advection_T_kernel!,
@@ -537,8 +541,8 @@ function upwind_advection_T(out, m, var)
             m.umaskxp1,
             m.dx,
             m.dy,
-            ny,
             nx,
+            ny,
         )
     else  # NoInflow
         launch!(
@@ -560,14 +564,14 @@ function upwind_advection_T(out, m, var)
             m.umaskxp1,
             m.dx,
             m.dy,
-            ny,
             nx,
+            ny,
         )
     end
     return out
 end
 function upwind_advection_U(m)
-    ny, nx = size(m.U.present)
+    nx, ny = size(m.U.present)
     dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
     dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     launch!(
@@ -606,13 +610,13 @@ function upwind_advection_U(m)
         dslip_land,
         m.dx,
         m.dy,
-        ny,
         nx,
+        ny,
     )
     return m.cU
 end
 function upwind_advection_V(m)
-    ny, nx = size(m.V.present)
+    nx, ny = size(m.V.present)
     dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
     dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     launch!(
@@ -651,13 +655,13 @@ function upwind_advection_V(m)
         dslip_land,
         m.dx,
         m.dy,
-        ny,
         nx,
+        ny,
     )
     return m.cV
 end
 function laplace_T(out, m, var)
-    ny, nx = size(var)
+    nx, ny = size(var)
     launch!(
         _lapT_kernel!,
         out,
@@ -673,8 +677,8 @@ function laplace_T(out, m, var)
         m.tmaskxp1,
         m.dy^2,
         m.dx^2,
-        ny,
         nx,
+        ny,
     )
     return out
 end
@@ -685,7 +689,7 @@ laplace_V(m) = laplace_V(m, m.lateral_viscosity)
 # folded into its output — exactly the product the momentum kernels used to form
 # themselves, so this stays bit-identical to pre-AbstractLateralViscosity Laddie.jl.
 function laplace_U(m, ::PrescribedLateralViscosity)
-    ny, nx = size(m.U.past)
+    nx, ny = size(m.U.past)
     dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
     dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     launch!(
@@ -713,13 +717,13 @@ function laplace_U(m, ::PrescribedLateralViscosity)
         m.A_h,
         m.dx^2,
         m.dy^2,
-        ny,
         nx,
+        ny,
     )
     return m.lU
 end
 function laplace_V(m, ::PrescribedLateralViscosity)
-    ny, nx = size(m.V.past)
+    nx, ny = size(m.V.past)
     dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
     dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     launch!(
@@ -747,8 +751,8 @@ function laplace_V(m, ::PrescribedLateralViscosity)
         m.A_h,
         m.dx^2,
         m.dy^2,
-        ny,
         nx,
+        ny,
     )
     return m.lV
 end
@@ -757,7 +761,7 @@ end
 # be applied inside the kernel rather than as a post-hoc scalar multiply; wall
 # drag keeps using the plain, unscaled m.A_h (see _nonlinear_laplace_U_kernel!).
 function laplace_U(m, lv::NonlinearLateralViscosity)
-    ny, nx = size(m.U.past)
+    nx, ny = size(m.U.past)
     dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
     dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     # V collocated onto the U points, so the kernel can form |Δu| across a face.
@@ -791,13 +795,13 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
         lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
-        ny,
         nx,
+        ny,
     )
     return m.lU
 end
 function laplace_V(m, lv::NonlinearLateralViscosity)
-    ny, nx = size(m.V.past)
+    nx, ny = size(m.V.past)
     dslip_gl = _gl_slip(m.boundary.grounding_line, m.slip) - m.slip
     dslip_land = _land_slip(m.boundary.land, m.slip) - m.slip
     # U collocated onto the V points; mirrors laplace_U above.
@@ -830,8 +834,8 @@ function laplace_V(m, lv::NonlinearLateralViscosity)
         lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
-        ny,
         nx,
+        ny,
     )
     return m.lV
 end
@@ -839,7 +843,7 @@ end
 
 
 function precompute_advection_stencils!(m)
-    ny, nx = size(m.D.present)
+    nx, ny = size(m.D.present)
     # All 7 D-shift fields in one kernel pass, Dt = D.*tmask computed on the fly
     launch!(
         _precompute_D_shifts_kernel!,
@@ -853,8 +857,8 @@ function precompute_advection_stencils!(m)
         m.Dxm1yp1,
         m.D.present,
         m.tmask,
-        ny,
         nx,
+        ny,
     )
     # Staggered interpolations, sign, and velocity shifts in one kernel pass
     launch!(
@@ -882,8 +886,8 @@ function precompute_advection_stencils!(m)
         m.umask_im,
         m.umask_jp,
         m.umask_jm,
-        ny,
         nx,
+        ny,
     )
     # Upwind splits — all 8 fields in one kernel pass
     launch!(
@@ -906,7 +910,7 @@ function precompute_advection_stencils!(m)
 end
 
 function precompute_laplacian_stencils!(m)
-    ny, nx = size(m.D.present)
+    nx, ny = size(m.D.present)
     launch!(
         _precompute_laplacian_kernel!,
         m.D0ip,
@@ -919,8 +923,8 @@ function precompute_laplacian_stencils!(m)
         m.tmask_im,
         m.tmask_jp,
         m.tmask_jm,
-        ny,
         nx,
+        ny,
     )
     @. m.D_on_ugrid = m.D0ip * m.tmask
     @. m.D_on_vgrid = m.D0jp * m.tmask

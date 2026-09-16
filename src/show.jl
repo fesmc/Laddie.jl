@@ -22,14 +22,14 @@ Base.show(io::IO, v::Var{LX,LY,FT}) where {LX,LY,FT} = print(
 )
 
 function Base.show(io::IO, s::State{FT}) where {FT}
-    ny, nx = size(s.D.present)
-    print(io, "State{", FT, "}: D, U, V, T, S — 3-level Vars of ", ny, "×", nx)
+    nx, ny = size(s.D.present)
+    print(io, "State{", FT, "}: D, U, V, T, S — 3-level Vars of ", nx, "×", ny)
 end
 
 function Base.show(io::IO, c::Cache{FT}) where {FT}
     nmat = count(fn -> getfield(c, fn) isa AbstractMatrix, fieldnames(typeof(c)))
-    ny, nx = size(c.melt)
-    print(io, "Cache{", FT, "}: ", nmat, " scratch/diagnostic arrays of ", ny, "×", nx)
+    nx, ny = size(c.melt)
+    print(io, "Cache{", FT, "}: ", nmat, " scratch/diagnostic arrays of ", nx, "×", ny)
 end
 
 function Base.show(io::IO, s::IOState{FT}) where {FT}
@@ -91,13 +91,13 @@ function Base.show(io::IO, g::Grid{FT}) where {FT}
         "Grid{",
         FT,
         "}: ",
-        g.Ny,
-        "×",
         g.Nx,
-        " cells (",
-        g.Ny - 2,
         "×",
+        g.Ny,
+        " cells (",
         g.Nx - 2,
+        "×",
+        g.Ny - 2,
         " interior), dx = ",
         g.dx,
         " m, dy = ",
@@ -222,6 +222,7 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  entrainment    = ", p.entrainment)
     println(io, "  melt           = ", p.melting)
     println(io, "  convection     = ", p.convection_scheme)
+    println(io, "  max layer D    = ", p.max_layer_thickness)
     println(io, "  lat. viscosity = ", p.lateral_viscosity)
     println(io, "  front pressure = ", p.front_pressure)
     print(io, "  coriolis       = ", p.coriolis)
@@ -238,9 +239,9 @@ function Base.show(io::IO, m::Model{FT}) where {FT}
         "} on ",
         _backend_name(m),
         ": ",
-        g.Ny - 2,
-        "×",
         g.Nx - 2,
+        "×",
+        g.Ny - 2,
         " interior, ",
         nameof(typeof(getfield(m, :forcing))),
         " forcing",
@@ -254,9 +255,9 @@ function Base.show(io::IO, ::MIME"text/plain", m::Model{FT}) where {FT}
     println(
         io,
         "  grid:    ",
-        g.Ny - 2,
-        "×",
         g.Nx - 2,
+        "×",
+        g.Ny - 2,
         " interior cells, dx = ",
         g.dx,
         " m, dy = ",

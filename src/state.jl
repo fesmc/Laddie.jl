@@ -11,10 +11,10 @@ mutable struct State{FT,A<:AbstractMatrix{FT}}
     S::Var{Center,Center,FT,A}
 end
 
-State(FT::Type, ny::Int, nx::Int) = State{FT,Matrix{FT}}(
-    Var(Center, Center, FT, ny, nx),
-    Var(Face, Center, FT, ny, nx),
-    Var(Center, Face, FT, ny, nx),
-    Var(Center, Center, FT, ny, nx),
-    Var(Center, Center, FT, ny, nx),
+State(FT::Type, nx::Int, ny::Int) = State{FT,Matrix{FT}}(
+    Var(Center, Center, FT, nx, ny),
+    Var(Face, Center, FT, nx, ny),
+    Var(Center, Face, FT, nx, ny),
+    Var(Center, Center, FT, nx, ny),
+    Var(Center, Center, FT, nx, ny),
 )

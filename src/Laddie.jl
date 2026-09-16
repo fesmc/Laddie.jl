@@ -42,7 +42,7 @@ export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrai
 export AbstractMelting, FixedGamTMelting, TurbulentGamTMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
 export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D
-export AbstractMaxLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThickness
+export AbstractMaxLayerThickness, NoMaxLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThickness
 export AbstractDomainCropping, NoDomainCropping, MinRectangleDomainCropping
 export AbstractPreprocess, FillOceanHolesPreprocess, FillShelfHolesPreprocess,
     FillSmallShelfPatchesPreprocess, FillSmallGroundedPatchesPreprocess, MarkGapsPreprocess

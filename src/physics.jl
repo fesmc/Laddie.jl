@@ -271,7 +271,7 @@ Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::FixedGamTMelting)
     FT = m.FT
-    ny, nx = size(m.ustar)
+    nx, ny = size(m.ustar)
     launch!(
         _ustar_kernel!,
         m.ustar,
@@ -281,8 +281,8 @@ function update_melt!(m, mp::FixedGamTMelting)
         m.tmask,
         m.C_d_top,
         m.u_tide,
-        ny,
         nx,
+        ny,
     )
     m.gamT = mp.gamTfix
     m.gamS = m.gamT / FT(35)    # TODO could be 35
@@ -321,7 +321,7 @@ transfer coefficients ``\\gamma_T``, ``\\gamma_S`` via the log-layer formulation
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::TurbulentGamTMelting)
-    ny, nx = size(m.ustar)
+    nx, ny = size(m.ustar)
     launch!(
         _ustar_kernel!,
         m.ustar,
@@ -331,8 +331,8 @@ function update_melt!(m, mp::TurbulentGamTMelting)
         m.tmask,
         m.C_d_top,
         m.u_tide,
-        ny,
         nx,
+        ny,
     )
     _compute_turbulent_transfer_coefficients!(m, mp)
     launch!(
@@ -369,7 +369,7 @@ Lambert et al. (2023, Eq. 14); see `docs/src/equations.md`.
 function _compute_entrainment!(m, ep::HollandEntrainment)
     coeff = ep.cl * m.K_h / m.A_h^2
     drho_coeff = m.g * m.K_h / m.A_h
-    ny, nx = size(m.entr)
+    nx, ny = size(m.entr)
     launch!(
         _holland_entrainment_kernel!,
         m.entr,
@@ -382,8 +382,8 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
         m.tmask,
         coeff,
         drho_coeff,
-        ny,
         nx,
+        ny,
     )
 end
 
@@ -489,17 +489,17 @@ end
     @Const(tmask),
     C_d_top,
     u_tide,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(C_d_top)
         half = FT(0.5)
-        w = _west(j, Nx)
-        s = _south(i, Ny)
-        u_im = (U[i, j] + U[i, w]) * half
-        v_jm = (V[i, j] + V[s, j]) * half
+        im1 = _xm1(i, Nx)
+        jm1 = _ym1(j, Ny)
+        u_im = (U[i, j] + U[im1, j]) * half
+        v_jm = (V[i, j] + V[i, jm1]) * half
         ustar[i, j] =
             sqrt(C_d_top * (u_im * u_im + v_jm * v_jm + u_tide * u_tide)) * tmask[i, j]
     end
@@ -608,17 +608,17 @@ end
     @Const(tmask),
     coeff,
     drho_coeff,
-    Ny,
     Nx,
+    Ny,
 )
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(coeff)
         half = FT(0.5)
-        w = _west(j, Nx)
-        s = _south(i, Ny)
-        u_im = (U[i, j] + U[i, w]) * half
-        v_jm = (V[i, j] + V[s, j]) * half
+        im1 = _xm1(i, Nx)
+        jm1 = _ym1(j, Ny)
+        u_im = (U[i, j] + U[im1, j]) * half
+        v_jm = (V[i, j] + V[i, jm1]) * half
         speed_sq =
             max(zero(FT), u_im * u_im + v_jm * v_jm - drho_coeff * drho[i, j] * D[i, j])
         entr[i, j] = coeff * sqrt(speed_sq) * tmask[i, j]

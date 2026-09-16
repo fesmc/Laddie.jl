@@ -203,6 +203,9 @@ function _write_run_metadata(sim)
     params_d["entrainment"] = _scalar_fields(p.entrainment)
     params_d["melt"] = _scalar_fields(p.melting)
     params_d["convection"] = _scalar_fields(p.convection_scheme)
+    # Recorded because the choice can change the melt field by an order of magnitude
+    # on a real cavity (see AbstractMaxLayerThickness).
+    params_d["max_layer_thickness"] = _scalar_fields(p.max_layer_thickness)
     b = getfield(m, :boundary)
     boundary_d = Dict{String,Any}(
         "open_ocean" => _scalar_fields(b.open_ocean),
@@ -322,8 +325,8 @@ _int(a) = Array(a)[2:(end-1), 2:(end-1)]
     @inbounds begin
         FT = eltype(av)
         half = FT(0.5)
-        w = _west(j, Nx)
-        av[i, j] += (U[i, j] + U[i, w]) * half * dt
+        im1 = _xm1(i, Nx)
+        av[i, j] += (U[i, j] + U[im1, j]) * half * dt
     end
 end
 
@@ -332,8 +335,8 @@ end
     @inbounds begin
         FT = eltype(av)
         half = FT(0.5)
-        s = _south(i, Ny)
-        av[i, j] += (V[i, j] + V[s, j]) * half * dt
+        jm1 = _ym1(j, Ny)
+        av[i, j] += (V[i, j] + V[i, jm1]) * half * dt
     end
 end
 
@@ -343,10 +346,10 @@ function _accum!(sim)
     sim.io.count += 1
     sim.io.t_accum += dt
     sim.output.save_Ut &&
-        launch!(_accum_ut_kernel!, sim.io.Utav, sim.io.Utav, m.U.present, size(sim.io.Utav, 2), dt)
+        launch!(_accum_ut_kernel!, sim.io.Utav, sim.io.Utav, m.U.present, size(sim.io.Utav, 1), dt)
     sim.output.save_Uu && (sim.io.Uuav .+= m.U.present .* dt)
     sim.output.save_Vt &&
-        launch!(_accum_vt_kernel!, sim.io.Vtav, sim.io.Vtav, m.V.present, size(sim.io.Vtav, 1), dt)
+        launch!(_accum_vt_kernel!, sim.io.Vtav, sim.io.Vtav, m.V.present, size(sim.io.Vtav, 2), dt)
     sim.output.save_Vv && (sim.io.Vvav .+= m.V.present .* dt)
     sim.output.save_D && (sim.io.Dav .+= m.D.present .* dt)
     sim.output.save_T && (sim.io.Tav .+= m.T.present .* dt)
@@ -390,14 +393,15 @@ end
 
 # Create output.nc once at the start of a run: defines all dimensions,
 # coordinate variables, and time-varying/static field variables.  Time-varying
-# fields are 3D (y, x, time) with an unlimited time dimension; static fields
+# fields are 3D (x, y, time) in Julia order with an unlimited time dimension — which
+# NCDatasets writes as (time, y, x) on disk, the CF layout ncview expects; static fields
 # (mask, z_draft) are 2D and written here.
 function _create_output_file!(sim)
     m = sim.model
     path = joinpath(sim.io.rundir, "output.nc")
     NCDataset(path, "c") do ds
-        defDim(ds, "y", m.ny)
         defDim(ds, "x", m.nx)
+        defDim(ds, "y", m.ny)
         defDim(ds, "time", Inf)   # unlimited
 
         defVar(ds, "x", Float64, ("x",); attrib = ["units" => "m"])[:] = m.x
@@ -432,7 +436,7 @@ function _create_output_file!(sim)
                 ds,
                 name,
                 Float64,
-                ("y", "x", "time");
+                ("x", "y", "time");
                 fillvalue = NaN,
                 attrib = ["units" => units, "long_name" => longname],
             )
@@ -454,7 +458,7 @@ function _create_output_file!(sim)
 
         # Static fields — written once
         if sim.output.save_mask
-            defVar(ds, "mask", Int32, ("y", "x"))[:, :] = Int32.(_int(m.resolved_mask))
+            defVar(ds, "mask", Int32, ("x", "y"))[:, :] = Int32.(_int(m.resolved_mask))
             # Under ConnectedGapsBC a gap (mask 4) is active but not ocean, so it does
             # not mark an ice front: `at_isf` then traces only the outer edge of the
             # connected region, which is what the calving front actually is.
@@ -466,7 +470,7 @@ function _create_output_file!(sim)
                 ds,
                 "at_isf",
                 Int8,
-                ("y", "x");
+                ("x", "y");
                 attrib = ["long_name" => "active cell at ice-shelf front (ocean neighbour)"],
             )[:, :] = Int8.(at_isf)
             # Wall diagnostics are split by wall type so a margin can be told apart
@@ -483,7 +487,7 @@ function _create_output_file!(sim)
                 ds,
                 "at_grl",
                 Int8,
-                ("y", "x");
+                ("x", "y");
                 attrib = [
                     "long_name" => "shelf cell at grounding line (grounded-ice neighbour)",
                 ],
@@ -493,7 +497,7 @@ function _create_output_file!(sim)
                 ds,
                 "at_lnd",
                 Int8,
-                ("y", "x");
+                ("x", "y");
                 attrib = [
                     "long_name" => "shelf cell at a land margin (bedrock neighbour)",
                 ],
@@ -506,14 +510,14 @@ function _create_output_file!(sim)
                 ds,
                 "at_gap",
                 Int8,
-                ("y", "x");
+                ("x", "y");
                 attrib = [
                     "long_name" => "shelf cell at a melt-through gap (gap neighbour)",
                 ],
             )[:, :] = Int8.(at_gap)
         end
         if sim.output.save_zb
-            defVar(ds, "z_draft", Float64, ("y", "x"); attrib = ["units" => "m"])[:, :] =
+            defVar(ds, "z_draft", Float64, ("x", "y"); attrib = ["units" => "m"])[:, :] =
                 _int(m.z_draft)
         end
     end
@@ -709,14 +713,14 @@ function printdiags(sim)
     d_PSI = -1e-6 * sum(convD .* tmask) * dxdy
 
     # max t-grid speed without the im/jm circshift allocations
-    ny, nx = size(U)
+    nx, ny = size(U)
     d_Vmax = 0.0
-    for j = 1:nx, i = 1:ny
+    for j = 1:ny, i = 1:nx
         tmask[i, j] > 0 || continue
-        w = j == 1 ? nx : j - 1
-        s = i == 1 ? ny : i - 1
-        u_t = (U[i, j] + U[i, w]) / 2
-        v_t = (V[i, j] + V[s, j]) / 2
+        im1 = i == 1 ? nx : i - 1
+        jm1 = j == 1 ? ny : j - 1
+        u_t = (U[i, j] + U[im1, j]) / 2
+        v_t = (V[i, j] + V[i, jm1]) / 2
         spd = sqrt(u_t^2 + v_t^2)
         spd > d_Vmax && (d_Vmax = spd)
     end

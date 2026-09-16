@@ -81,6 +81,13 @@ sim   = Simulation(model; dt = 120.0)       # time integration and output
 run!(sim; days = 90)
 ```
 
+All 2D fields — mask, draft, bed, and every diagnostic — are stored `[x, y]`: the
+first index runs along x, the second along y, matching what NCDatasets hands back
+when reading a NetCDF file and what `heatmap` expects. Output files are written in
+the CF layout (`melt(time, y, x)` in `ncdump`), so ncview renders them the usual way
+round. Note that x and y are grid axes, not compass directions: a projected polar
+domain rotates them relative to true east/north.
+
 This is the grid → model → simulation → `run!` split shared by Oceananigans,
 SpeedyWeather and FastIsostasy. The `Grid` holds only what is independent of any
 modelling choice (mask, draft, bed, spacing); the `Model` derives the active-cell

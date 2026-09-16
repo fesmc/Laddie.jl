@@ -119,7 +119,7 @@ $(TYPEDSIGNATURES)
 
 Derive the 4-class LADDIE domain mask from BedMachine-style bed-elevation and
 ice-thickness arrays.  Both arrays should cover the *interior* domain of size
-`(ny, nx)`; the returned mask has size `(ny+2, nx+2)` with a one-cell border
+`(nx, ny)`; the returned mask has size `(nx+2, ny+2)` with a one-cell border
 ring of `1` (land/boundary).
 
 | Value | Meaning         | Condition                             |
@@ -154,19 +154,19 @@ mask = build_laddie_mask(z_bed, h_ice)
 ```
 """
 function build_laddie_mask(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
-    ny, nx = size(bed)
+    nx, ny = size(bed)
     size(bed) == size(thickness) || throw(
         ArgumentError(
             "bed and thickness must have the same size, got $(size(bed)) vs $(size(thickness))",
         ),
     )
-    mask = zeros(Int, ny + 2, nx + 2)
+    mask = zeros(Int, nx + 2, ny + 2)
     mask[1, :] .= 1
     mask[end, :] .= 1
     mask[:, 1] .= 1
     mask[:, end] .= 1
     r = rho_ice / rho_sw
-    for j = 1:nx, i = 1:ny
+    for j = 1:ny, i = 1:nx
         h = Float64(thickness[i, j])
         b = Float64(bed[i, j])
         mask[i+1, j+1] = if h > 0
@@ -181,18 +181,18 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Pad a bed-elevation array into the `(ny+2, nx+2)` format expected by `Model`.
+Pad a bed-elevation array into the `(nx+2, ny+2)` format expected by `Model`.
 The one-cell border ring is zeroed; interior values are copied from `bed` unchanged.
 Pass the result as the `z_bed_raw` keyword argument to `Model` to enable the
 water-column upper bound on plume thickness (`D <= z_draft - z_bed`).
 
 # Arguments
-- `bed`: bed elevation (m, positive above sea level), size `(ny, nx)`.
+- `bed`: bed elevation (m, positive above sea level), size `(nx, ny)`.
 """
 function bed_elevation(bed; FT = Float64)
-    ny, nx = size(bed)
-    z_bed = zeros(FT, ny + 2, nx + 2)
-    for j = 1:nx, i = 1:ny
+    nx, ny = size(bed)
+    z_bed = zeros(FT, nx + 2, ny + 2)
+    for j = 1:ny, i = 1:nx
         z_bed[i+1, j+1] = FT(bed[i, j])
     end
     return z_bed
@@ -202,7 +202,7 @@ end
 $(TYPEDSIGNATURES)
 
 Compute ice-base depth (m, negative below sea level) from BedMachine-style arrays.
-Returns a `(ny+2, nx+2)` matrix (interior domain with border ring zeroed).
+Returns a `(nx+2, ny+2)` matrix (interior domain with border ring zeroed).
 
 - **Floating cells** (`h_af < 0`): `z_draft = -thickness * rho_ice/rho_sw` (Archimedes).
 - **Grounded cells** (`h_af >= 0`): `z_draft = bed` (ice base rests on the bed).
@@ -218,15 +218,15 @@ very shallow shelf cells and zero the ice-front ocean strip.
 - `rho_sw`:   seawater density (kg m⁻³, default 1028).
 """
 function ice_base_depth(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
-    ny, nx = size(bed)
+    nx, ny = size(bed)
     size(bed) == size(thickness) || throw(
         ArgumentError(
             "bed and thickness must have the same size, got $(size(bed)) vs $(size(thickness))",
         ),
     )
-    z_draft = zeros(Float64, ny + 2, nx + 2)
+    z_draft = zeros(Float64, nx + 2, ny + 2)
     r = rho_ice / rho_sw
-    for j = 1:nx, i = 1:ny
+    for j = 1:ny, i = 1:nx
         h = Float64(thickness[i, j])
         b = Float64(bed[i, j])
         if h > 0
@@ -264,8 +264,8 @@ println("Reclassified \$n isolated ocean cells")
 ```
 """
 function fill_ocean_holes!(mask::AbstractMatrix{Int})
-    ny, nx = size(mask)
-    visited = falses(ny, nx)
+    nx, ny = size(mask)
+    visited = falses(nx, ny)
     queue = Tuple{Int,Int}[]
 
     # Seed: ocean cells on the outermost ring of the array, or directly inside it.
@@ -274,7 +274,7 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
     # test picked out.  It has to be positional now: land also marks interior
     # bedrock (nunataks, rock islands), and seeding off those would declare every
     # pocket beside an island part of the open ocean.
-    for i in 1:ny, j in 1:nx
+    for i in 1:nx, j in 1:ny
         if mask[i, j] == 0 && (i <= 2 || j <= 2 || i >= ny - 1 || j >= nx - 1)
             visited[i, j] = true
             push!(queue, (i, j))
@@ -286,7 +286,7 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
         i, j = popfirst!(queue)
         for (di, dj) in _cardinal_dirs
             ni, nj = i + di, j + dj
-            if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 0
+            if 1 <= ni <= nx && 1 <= nj <= ny && !visited[ni, nj] && mask[ni, nj] == 0
                 visited[ni, nj] = true
                 push!(queue, (ni, nj))
             end
@@ -295,7 +295,7 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
 
     # Reclassify unreachable ocean cells as land
     n_filled = 0
-    for i in 1:ny, j in 1:nx
+    for i in 1:nx, j in 1:ny
         if mask[i, j] == 0 && !visited[i, j]
             mask[i, j] = 1
             n_filled += 1
@@ -331,16 +331,16 @@ println("Reclassified \$n isolated shelf cells")
 ```
 """
 function fill_shelf_holes!(mask::AbstractMatrix{Int})
-    ny, nx = size(mask)
-    visited = falses(ny, nx)
+    nx, ny = size(mask)
+    visited = falses(nx, ny)
     queue = Tuple{Int,Int}[]
 
     # Seed: active cells adjacent to at least one ocean cell
-    for i in 1:ny, j in 1:nx
+    for i in 1:nx, j in 1:ny
         if _is_active(mask[i, j]) && !visited[i, j]
             for (di, dj) in _cardinal_dirs
                 ni, nj = i + di, j + dj
-                if 1 <= ni <= ny && 1 <= nj <= nx && mask[ni, nj] == 0
+                if 1 <= ni <= nx && 1 <= nj <= ny && mask[ni, nj] == 0
                     visited[i, j] = true
                     push!(queue, (i, j))
                     break
@@ -355,7 +355,7 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
         i, j = popfirst!(queue)
         for (di, dj) in _cardinal_dirs
             ni, nj = i + di, j + dj
-            if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && _is_active(mask[ni, nj])
+            if 1 <= ni <= nx && 1 <= nj <= ny && !visited[ni, nj] && _is_active(mask[ni, nj])
                 visited[ni, nj] = true
                 push!(queue, (ni, nj))
             end
@@ -364,7 +364,7 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
 
     # Reclassify isolated shelf cells as grounded ice
     n_filled = 0
-    for i in 1:ny, j in 1:nx
+    for i in 1:nx, j in 1:ny
         if mask[i, j] == 3 && !visited[i, j]
             mask[i, j] = 2
             n_filled += 1
@@ -407,11 +407,11 @@ println("Reclassified \$n cells in undersized isolated grounded patches")
 ```
 """
 function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
-    ny, nx = size(mask)
-    visited = falses(ny, nx)
+    nx, ny = size(mask)
+    visited = falses(nx, ny)
     n_filled = 0
 
-    for i in 1:ny, j in 1:nx
+    for i in 1:nx, j in 1:ny
         mask[i, j] == 2 && !visited[i, j] || continue
 
         component = Tuple{Int,Int}[]
@@ -423,10 +423,10 @@ function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int 
             push!(component, (c_i, cj))
             for (di, dj) in _cardinal_dirs
                 ni, nj = c_i + di, cj + dj
-                1 <= ni <= ny && 1 <= nj <= nx || continue
+                1 <= ni <= nx && 1 <= nj <= ny || continue
                 # Positional border test: `mask == 1` now also marks interior
                 # bedrock, which must not count as "attached to the ice sheet".
-                (ni == 1 || ni == ny || nj == 1 || nj == nx) && (touches_border = true)
+                (ni == 1 || ni == nx || nj == 1 || nj == ny) && (touches_border = true)
                 if !visited[ni, nj] && mask[ni, nj] == 2
                     visited[ni, nj] = true
                     push!(queue, (ni, nj))
@@ -478,11 +478,11 @@ println("Removed \$n cells in undersized shelf patches")
 ```
 """
 function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
-    ny, nx = size(mask)
-    visited = falses(ny, nx)
+    nx, ny = size(mask)
+    visited = falses(nx, ny)
     n_filled = 0
 
-    for i in 1:ny, j in 1:nx
+    for i in 1:nx, j in 1:ny
         _is_active(mask[i, j]) && !visited[i, j] || continue
 
         # BFS to collect the full connected component.  Gaps (4) belong to the
@@ -495,7 +495,7 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
             push!(component, (c_i, cj))
             for (di, dj) in _cardinal_dirs
                 ni, nj = c_i + di, cj + dj
-                if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && _is_active(mask[ni, nj])
+                if 1 <= ni <= nx && 1 <= nj <= ny && !visited[ni, nj] && _is_active(mask[ni, nj])
                     visited[ni, nj] = true
                     push!(queue, (ni, nj))
                 end

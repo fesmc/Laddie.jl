@@ -408,7 +408,8 @@ Build a grid from a domain mask and ice draft with cell spacing `dx`, `dy` (m).
 | `4`   | ice-shelf gap (ice-free; treated as the model's [`AbstractGapsBC`](@ref) decides) |
 
 `mask` and `z_draft` must include the one-cell border ring, i.e. have size
-`(ny+2, nx+2)` where `ny × nx` are the interior cells.  `z_draft` is the ice-base
+`(nx+2, ny+2)` where `nx × ny` are the interior cells: **the first index runs along
+x, the second along y**, the order NetCDF readers such as NCDatasets hand you.  `z_draft` is the ice-base
 depth in metres (negative downward); values outside grounded ice and shelf are
 ignored and zeroed, and shallow shelf drafts are clamped to −1 m.
 
@@ -447,8 +448,8 @@ function Grid(
     r, c = _crop_ranges(mask, domain_cropping)
     mask = mask[r, c]
     _validate_grid_mask(mask)
-    ny_total, nx_total = size(mask)
-    z_bed_ft = z_bed === nothing ? fill(FT(-Inf), ny_total, nx_total) : FT.(z_bed[r, c])
+    nx_total, ny_total = size(mask)
+    z_bed_ft = z_bed === nothing ? fill(FT(-Inf), nx_total, ny_total) : FT.(z_bed[r, c])
     grid = Grid{FT,Matrix{FT}}(
         nx_total,
         ny_total,

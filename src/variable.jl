@@ -23,10 +23,10 @@ mutable struct Var{LX,LY,FT,A<:AbstractMatrix{FT}}
     future::A
 end
 
-Var(::Type{LX}, ::Type{LY}, ::Type{FT}, ny, nx) where {LX,LY,FT} =
-    Var{LX,LY,FT,Matrix{FT}}(zeros(FT, ny, nx), zeros(FT, ny, nx), zeros(FT, ny, nx))
+Var(::Type{LX}, ::Type{LY}, ::Type{FT}, nx, ny) where {LX,LY,FT} =
+    Var{LX,LY,FT,Matrix{FT}}(zeros(FT, nx, ny), zeros(FT, nx, ny), zeros(FT, nx, ny))
 
-Var(::Type{LX}, ::Type{LY}, ny, nx) where {LX,LY} = Var(LX, LY, Float64, ny, nx)
+Var(::Type{LX}, ::Type{LY}, nx, ny) where {LX,LY} = Var(LX, LY, Float64, nx, ny)
 
 function rotate!(v::Var)
     v.past, v.present, v.future = v.present, v.future, v.past

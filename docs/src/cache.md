@@ -2,7 +2,7 @@
 
 ## Size
 
-The `Cache` struct holds **~50 pre-allocated `ny×nx` matrices** plus a handful of
+The `Cache` struct holds **~50 pre-allocated `nx×ny` matrices** plus a handful of
 scalars (`gamT/gamS/conv2` for fixed-coefficient parameterisations).  At
 512×512 Float64 each matrix is ~2 MB, so the full cache is on the order of
 100 MB at that resolution.

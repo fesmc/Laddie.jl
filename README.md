@@ -20,7 +20,7 @@ Laddie.jl is a from-scratch port of the
   (`CUDABackend`, `ROCBackend`, `MetalBackend`),
 - **`Float64` or `Float32`** precision throughout,
 - a **verification test** against the Python LADDIE end state on the warm
-  ISOMIP+ configuration,
+  ISOMIP+ configuration, and a reproduction of the published Crosson–Dotson run,
 - NetCDF output, JLD2 restarts, and a TOML provenance record for every run.
 
 **We'd like to acknowledge** that Laddie.jl would not have been possible
@@ -34,7 +34,10 @@ The authors of LADDIE (not us!) have worked hard on v2.0, including another [gre
 4. modified boundary conditions at the grounding line (better match with observation)
 5. running pan-Antarctic domains with evolving geometry
 
-Laddie.jl is currently a port of the original LADDIE.py v1.0. As of now, the improvements of v2.0 are not a target for the Julia version, which will focus on developping other capacities.
+Laddie.jl is a port of the original LADDIE.py v1. A few v2.0 options are available
+(no-slip walls, a shear-scaled lateral viscosity, the truncated ice-front pressure
+gradient), but a full port of v2.0 is not a target: the Julia version focuses on
+developing other capabilities, such as GPU execution and connected ice-shelf gaps.
 
 ## Installation
 
@@ -52,7 +55,7 @@ using Laddie
 
 sim = build_isomip(; isomipcond = :warm)   # 240×40 idealised channel, 2 km cells
 run!(sim; days = 30)
-max_melt, mean_melt, max_speed = meltstats(sim)   # m/yr, m/yr, m/s
+stats = meltstats(sim)   # max/mean melt (m/yr), max speed (m/s), total melt (Gt/yr)
 ```
 
 `build_isomip` returns a `Simulation`: a `Model` (geometry, physics, state —
@@ -69,13 +72,14 @@ using Laddie, NCDatasets
 ds  = NCDataset("BedMachineAntarctica-v3.nc")
 bed = Float64.(Array(ds["bed"][i1:i2, j1:j2]))
 h   = Float64.(Array(ds["thickness"][i1:i2, j1:j2]))
+x, y = ds["x"][i1-1:i2+1], ds["y"][j1-1:j2+1]   # cell centres, border ring included
 close(ds)
 
 mask    = build_laddie_mask(bed, h)         # 0 ocean / 1 land / 2 grounded / 3 shelf
 zb      = ice_base_depth(bed, h)            # ice-base depth (m, negative)
 ocean   = OceanForcing1D(Tz, Sz, z)         # T (°C), S (psu), z (m) vectors
 
-grid  = Grid(mask, zb, 500.0, 500.0)        # geometry: where the cells are
+grid  = Grid(mask, zb; x, y)                # geometry: where the cells are (dx, dy from x, y)
 model = Model(grid; forcing = ocean)        # physics on that grid
 sim   = Simulation(model; dt = 120.0)       # time integration and output
 run!(sim; days = 90)
@@ -110,12 +114,16 @@ about time integration is a `Simulation` option:
 params   = Params(; A_h = 25.0,
                   melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
                   convection_scheme = RelaxToAmbient(10000.0))
-boundary = BoundaryConditions(; grounding_line = NoSlipGL(), gaps = ConnectedGapsBC())
+boundary = BoundaryConditions(; land = FreeSlipLand(), gaps = ConnectedGapsBC())
 model    = Model(grid; forcing = ocean, params, boundary)
 sim      = Simulation(model; dt = 120.0, tstep = AdaptiveDt(),
                       stop = FixedSimulationEnd(t_end = 90.0))
 run!(sim)
 ```
+
+The defaults follow Python LADDIE v1 except at the walls, which are no-slip; its
+single partial-slip factor is
+`BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))`.
 
 ## GPU
 

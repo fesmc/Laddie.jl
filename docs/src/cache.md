@@ -2,7 +2,7 @@
 
 ## Size
 
-The `Cache` struct holds **~50 pre-allocated `nx×ny` matrices** plus a handful of
+The `Cache` struct holds **~47 pre-allocated `nx×ny` matrices** plus a handful of
 scalars (`gamT/gamS/conv2` for fixed-coefficient parameterisations).  At
 512×512 Float64 each matrix is ~2 MB, so the full cache is on the order of
 100 MB at that resolution.
@@ -27,22 +27,18 @@ phases of the leapfrog step, so they could safely share a single buffer:
 
 Implementation would be a rename at ~5 call sites per pair.
 
-### Tier 2 — kernel refactoring (−7 matrices)
+### Tier 2 — kernel refactoring (done)
 
-The D-shift group `Dym1`, `Dyp1`, `Dxm1`, `Dxp1`, `Dxm1ym1`, `Dxp1ym1`,
-`Dxm1yp1` is pre-computed in `_precompute_D_shifts_kernel!` and then consumed
-inside `_upwind_advection_U_kernel!` / `_upwind_advection_V_kernel!`.  These
-intermediates could be eliminated by fusing the precompute step into the
-advection kernels (compute-and-consume inline).  The stencil file even carries
-a `# TODO can I rm Dxm1, Dym1…?` note at that site.  The saving is real but
-requires substantial kernel restructuring.
+The D-shift group (`Dym1`, `Dxm1`, …), the upwind splits (`Upos`, `Vyp1neg`, …),
+the shifted velocities (`Vyp1`, `Uxp1`) and `signU`/`signV` used to be
+pre-computed each step and then consumed by the advection kernels.  They are now
+formed inline inside `_upwind_advection_{T,U,V}_kernel!` and the momentum kernels,
+which removed 19 matrices and two kernel passes per step, bit-identically.
 
 ### Fields that cannot be merged
 
 - **`Vip/Vim/Uip/Uim/Vjp/Vjm/Ujp/Ujm`** — all 8 live simultaneously; each
   represents a distinct stagger location and interpolation direction.
-- **`Upos/Uneg/Vpos/Vneg/Vyp1pos/Vyp1neg/Uxp1pos/Uxp1neg`** — all consumed
-  together in the same tracer-advection kernel pass.
 - **`dDdt`, `Ddrho`** — cross-step state: written once per leapfrog step and
   read by all four prognostic kernels (U, V, T, S).
 - **`convD`** — written by `update_entrainment!`, read by `step_thickness!`

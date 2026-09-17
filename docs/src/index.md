@@ -35,11 +35,11 @@ run!(sim; days = 30.0)
 
 ## Performance
 
-Laddie.jl has the same physics as the pure-CPU python implementation, but arrays are
-allocated on a chosen KernelAbstractions backend (CPU / CUDA / ROCm / Metal)
-so the entire time step executes on-device.
-
-In particular, kernels were fused to eliminate the ~15-20 intermediate arrays the broadcast path allocates. This provides results that are bit-identical to the broadcast path,but offer a significant speedup.
+Laddie.jl has the physics of the Python implementation, but its arrays are
+allocated on a chosen KernelAbstractions backend (CPU / CUDA / ROCm / Metal), so
+the entire time step executes on-device. Every term is a fused kernel — one pass
+per term, with no intermediate arrays — so a time step allocates almost nothing,
+and the same code runs multi-threaded on the CPU (`julia -t N`).
 
 ## Documentation map
 
@@ -47,6 +47,5 @@ In particular, kernels were fused to eliminate the ~15-20 intermediate arrays th
 |------|----------|
 | [Physics](physics.md) | what the model represents and the governing balances |
 | [Numerics](numerics.md) | grid, time stepping, boundaries, stability |
-| [Implementation](implementation.md) | how the Julia/GPU port was built and verified |
 | [ISOMIP+](generated/isomip.md) | forcing, a warm run, Python validation, spin-up, warm vs cold |
 | [Crosson–Dotson](generated/crosson-dotson.md) | reproduction of Lambert et al. (2023) |

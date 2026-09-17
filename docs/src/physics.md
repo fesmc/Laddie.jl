@@ -121,7 +121,8 @@ interior. Colder ice absorbs more heat per unit melt — ``L_\text{eff}`` runs f
 of the layer mixes warm ambient water *upward* into it. This supplies the heat
 for melting and is a **positive feedback**: more shear/melt → more entrainment →
 more heat → more melt. A small extra entrainment enforces a minimum layer
-thickness, and detrainment removes water where the layer is over-thick.
+thickness. Where the buoyancy supplied by melting outweighs the turbulent
+production, the net rate turns negative and the layer detrains instead.
 
 **Ambient profiles** ``T_a, S_a``. Sampled from a prescribed background ocean
 profile at the depth of the layer base ``z_b - D``. See the

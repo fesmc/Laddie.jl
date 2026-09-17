@@ -32,7 +32,10 @@ _forcing_to_backend(f::CavityForcing, backend) = CavityForcing(
     _forcing_to_backend(f.ice, backend),
 )
 
-function _forcing_to_backend(f::F, backend) where {F<:Union{AbstractOceanForcing,AbstractIceForcing}}
+function _forcing_to_backend(
+    f::F,
+    backend,
+) where {F<:Union{AbstractOceanForcing,AbstractIceForcing}}
     fields = map(fieldnames(F)) do fn
         v = getfield(f, fn)
         v isa AbstractArray && eltype(v) <: AbstractFloat ? _to_device(backend, v) : v

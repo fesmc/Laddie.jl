@@ -85,7 +85,14 @@ mutable struct Model{
         params,
         boundary,
         forcing,
-    ) where {FT,A<:AbstractMatrix{FT},F<:CavityForcing,P<:Params{FT},B<:BoundaryConditions,C<:Cache}
+    ) where {
+        FT,
+        A<:AbstractMatrix{FT},
+        F<:CavityForcing,
+        P<:Params{FT},
+        B<:BoundaryConditions,
+        C<:Cache,
+    }
         _check_property_collisions(grid, geometry, state, cache, params, forcing)
         new{FT,A,F,P,B,C}(grid, geometry, state, cache, params, boundary, forcing)
     end

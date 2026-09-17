@@ -75,3 +75,39 @@ Select via `Params(; lateral_viscosity = NonlinearLateralViscosity(10.0))`.
 @kwdef struct NonlinearLateralViscosity{FT} <: AbstractLateralViscosity
     C_visc::FT = 10.0
 end
+
+#############################
+# Laplacian thickness weights
+#############################
+
+"""
+Abstract supertype for the time level of the layer thickness `D` that weights all
+lateral Laplacians (tracer diffusion and momentum viscosity). Pass a concrete instance
+as `Params(; laplacian_weights = ...)`: [`PresentLaplacianWeights`](@ref) (the default)
+or [`PastLaplacianWeights`](@ref).
+
+The diffused field itself is always taken at the lagged level `past`, as leapfrog
+stability requires; this choice only concerns the thickness that multiplies it. On the
+Crosson–Dotson validation case the two options give the same mean melt to 0.01 % and
+differ locally by at most 1.4 m in `D`.
+"""
+abstract type AbstractLaplacianWeights end
+
+"""
+$(TYPEDSIGNATURES)
+
+Weight the Laplacians with `D.present` (the default, and what Laddie.jl has always done).
+"""
+struct PresentLaplacianWeights <: AbstractLaplacianWeights end
+
+"""
+$(TYPEDSIGNATURES)
+
+Weight the Laplacians with the lagged, filtered `D.past`, so the thickness weight sits on
+the same time level as the diffused field. This is what the Python LADDIE v1.x code does.
+"""
+struct PastLaplacianWeights <: AbstractLaplacianWeights end
+
+laplacian_thickness(m) = laplacian_thickness(m, m.laplacian_weights)
+laplacian_thickness(m, ::PresentLaplacianWeights) = m.D.present
+laplacian_thickness(m, ::PastLaplacianWeights) = m.D.past

@@ -53,9 +53,8 @@ Used automatically by `build_isomip`; pass it as the `forcing` argument of
 `Model` to use it with another geometry.
 """
 function ISOMIPForcing(FT::Type, isomipcond::Symbol)
-    isomipcond in (:warm, :cold) || throw(
-        ArgumentError("isomipcond must be :warm or :cold, got :$isomipcond"),
-    )
+    isomipcond in (:warm, :cold) ||
+        throw(ArgumentError("isomipcond must be :warm or :cold, got :$isomipcond"))
     z = FT.(-5000.0:1.0:-1.0)
     dz = FT(1.0)
     z0 = z[1]
@@ -143,8 +142,7 @@ struct CavityForcing{O<:AbstractOceanForcing,I<:AbstractIceForcing}
     ice::I
 end
 
-CavityForcing(ocean::AbstractOceanForcing) =
-    CavityForcing(ocean, PrescribedIceForcing())
+CavityForcing(ocean::AbstractOceanForcing) = CavityForcing(ocean, PrescribedIceForcing())
 
 # `Model` accepts either form; a bare ocean forcing picks up the default ice.
 _as_cavity_forcing(f::CavityForcing) = f

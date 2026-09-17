@@ -61,12 +61,11 @@ function _cfl_number(sim, ::ExactCFL)
     U_T = im_half(m.U.present)
     V_T = jm_half(m.V.present)
     c = sqrt.(m.g .* max.(zero(FT), m.drho .* m.D.present))
-    cfl_cell = Float64(sim.clock.dt) .* (
-        abs.(U_T) ./ Float64(m.dx) .+
-        abs.(V_T) ./ Float64(m.dy) .+
-        c ./ Float64(m.dx) .+
-        c ./ Float64(m.dy)
-    ) .* m.tmask
+    cfl_cell =
+        Float64(sim.clock.dt) .* (
+            abs.(U_T) ./ Float64(m.dx) .+ abs.(V_T) ./ Float64(m.dy) .+ c ./ Float64(m.dx) .+
+            c ./ Float64(m.dy)
+        ) .* m.tmask
     return Float64(maximum(cfl_cell))
 end
 
@@ -81,7 +80,8 @@ function _cfl_worstcase(sim)
     v_cut = Float64(m.v_cut)
     gDdrho = maximum(m.drho .* m.D.present .* m.tmask)
     c = Float64(sqrt(m.g * max(zero(FT), gDdrho)))
-    return Float64(sim.clock.dt) * ((v_cut + c) / Float64(m.dx) + (v_cut + c) / Float64(m.dy))
+    return Float64(sim.clock.dt) *
+           ((v_cut + c) / Float64(m.dx) + (v_cut + c) / Float64(m.dy))
 end
 
 # Abort with a clear message as soon as the integration produces non-finite

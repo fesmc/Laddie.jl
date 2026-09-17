@@ -103,7 +103,7 @@ After a 1-day warm ISOMIP+ run from identical initial conditions:
 
 End-state melt: **Julia 24.43 m yr⁻¹ / Python log 24.42 m yr⁻¹** (4 sig. figs.).
 The residuals are consistent with floating-point rounding between NumPy and
-Julia — not physics discrepancies. See the [Python validation](generated/python_comparison.md)
+Julia — not physics discrepancies. See the [Python validation](generated/isomip.md#Validation-against-the-Python-code)
 page for spatial maps.
 
 ## The ISOMIP+ test case

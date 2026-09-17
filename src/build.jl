@@ -21,7 +21,9 @@ function _expand_ice_forcing(ice::PrescribedIceForcing, sz, FT)
             ),
         )
     elseif !(T isa Real)
-        throw(ArgumentError("T_ice_base must be a real scalar or a matrix, got $(typeof(T))"))
+        throw(
+            ArgumentError("T_ice_base must be a real scalar or a matrix, got $(typeof(T))"),
+        )
     end
     Tb = T isa AbstractMatrix ? FT.(T) : fill(FT(T), sz)
     any(isnan, Tb) && throw(ArgumentError("T_ice_base contains NaN"))
@@ -57,11 +59,13 @@ function _validate_input_shapes(mask, z_draft_raw, z_bed_raw, dx, dy)
             "z_draft_raw and mask must have the same size, got $(size(z_draft_raw)) vs $(size(mask))",
         ),
     )
-    z_bed_raw === nothing || size(z_bed_raw) == size(mask) || throw(
-        ArgumentError(
-            "z_bed_raw and mask must have the same size, got $(size(z_bed_raw)) vs $(size(mask))",
-        ),
-    )
+    z_bed_raw === nothing ||
+        size(z_bed_raw) == size(mask) ||
+        throw(
+            ArgumentError(
+                "z_bed_raw and mask must have the same size, got $(size(z_bed_raw)) vs $(size(mask))",
+            ),
+        )
     (dx > 0 && dy > 0) ||
         throw(ArgumentError("dx and dy must be positive, got dx = $dx, dy = $dy"))
     return
@@ -201,8 +205,13 @@ function Model(
     geometry = Geometry(mask, grid.z_draft, f_t, grid.dx, grid.dy; FT, gradient)
     nx_total, ny_total = size(mask)
     state = State(FT, nx_total, ny_total)
-    cache =
-        Cache(FT, typeof(params.melting), typeof(params.convection_scheme), nx_total, ny_total)
+    cache = Cache(
+        FT,
+        typeof(params.melting),
+        typeof(params.convection_scheme),
+        nx_total,
+        ny_total,
+    )
     m = Model(grid, geometry, state, cache, params, boundary, forcing)
     _initialize_prognostics!(m)
     backend === CPU() || (m = to_backend(m, backend))

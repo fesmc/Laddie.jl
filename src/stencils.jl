@@ -308,8 +308,14 @@ end
         # Per-face wall drag: `slip` at every wall, plus dslip_gl at grounding-line
         # faces and dslip_land at land faces (both 0 under the free-slip defaults
         # → bitwise v1 behaviour).
-        dragN = (slip + dslip_gl * glNu[i, j] + dslip_land * lndNu[i, j]) * D_on_ugrid[i, j] * v / dy2
-        dragS = (slip + dslip_gl * glSu[i, j] + dslip_land * lndSu[i, j]) * D_on_ugrid[i, j] * v / dy2
+        dragN =
+            (slip + dslip_gl * glNu[i, j] + dslip_land * lndNu[i, j]) *
+            D_on_ugrid[i, j] *
+            v / dy2
+        dragS =
+            (slip + dslip_gl * glSu[i, j] + dslip_land * lndSu[i, j]) *
+            D_on_ugrid[i, j] *
+            v / dy2
         jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jp1], tmask_jp[i, j])
         jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jm1], tmask_jm[i, j])
         flux_N = jpD * (var[i, jp1] - v) / dy2 * (o - ocnym1[i, j]) - dragN * grdNu[i, j]
@@ -356,8 +362,14 @@ end
         o = one(FT)
         v = var[i, j]
         # See _laplace_U_kernel! for the slip-factor composition.
-        dragE = (slip + dslip_gl * glEv[i, j] + dslip_land * lndEv[i, j]) * D_on_vgrid[i, j] * v / dx2
-        dragW = (slip + dslip_gl * glWv[i, j] + dslip_land * lndWv[i, j]) * D_on_vgrid[i, j] * v / dx2
+        dragE =
+            (slip + dslip_gl * glEv[i, j] + dslip_land * lndEv[i, j]) *
+            D_on_vgrid[i, j] *
+            v / dx2
+        dragW =
+            (slip + dslip_gl * glWv[i, j] + dslip_land * lndWv[i, j]) *
+            D_on_vgrid[i, j] *
+            v / dx2
         ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[ip1, j], tmask_ip[i, j])
         imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[im1, j], tmask_im[i, j])
         flux_N = D0[i, jp1] * (var[i, jp1] - v) / dy2 * (o - ocnym1[i, j])
@@ -419,11 +431,13 @@ end
         dragN =
             A_h_wall *
             (slip + dslip_gl * glNu[i, j] + dslip_land * lndNu[i, j]) *
-            D_on_ugrid[i, j] * v / dy2
+            D_on_ugrid[i, j] *
+            v / dy2
         dragS =
             A_h_wall *
             (slip + dslip_gl * glSu[i, j] + dslip_land * lndSu[i, j]) *
-            D_on_ugrid[i, j] * v / dy2
+            D_on_ugrid[i, j] *
+            v / dy2
         jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jp1], tmask_jp[i, j])
         jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jm1], tmask_jm[i, j])
         ov = other[i, j]
@@ -486,11 +500,13 @@ end
         dragE =
             A_h_wall *
             (slip + dslip_gl * glEv[i, j] + dslip_land * lndEv[i, j]) *
-            D_on_vgrid[i, j] * v / dx2
+            D_on_vgrid[i, j] *
+            v / dx2
         dragW =
             A_h_wall *
             (slip + dslip_gl * glWv[i, j] + dslip_land * lndWv[i, j]) *
-            D_on_vgrid[i, j] * v / dx2
+            D_on_vgrid[i, j] *
+            v / dx2
         ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[ip1, j], tmask_ip[i, j])
         imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[im1, j], tmask_im[i, j])
         ov = other[i, j]
@@ -697,7 +713,7 @@ function laplace_U(m, ::PrescribedLateralViscosity)
         m.lU,
         m.lU,
         m.U.past,
-        m.D.present,
+        laplacian_thickness(m),
         m.D_on_ugrid,
         m.tmask_jp,
         m.tmask_jm,
@@ -731,7 +747,7 @@ function laplace_V(m, ::PrescribedLateralViscosity)
         m.lV,
         m.lV,
         m.V.past,
-        m.D.present,
+        laplacian_thickness(m),
         m.D_on_vgrid,
         m.tmask_ip,
         m.tmask_im,
@@ -773,7 +789,7 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
         m.lU,
         m.U.past,
         m.VatU,
-        m.D.present,
+        laplacian_thickness(m),
         m.D_on_ugrid,
         m.tmask_jp,
         m.tmask_jm,
@@ -812,7 +828,7 @@ function laplace_V(m, lv::NonlinearLateralViscosity)
         m.lV,
         m.V.past,
         m.UatV,
-        m.D.present,
+        laplacian_thickness(m),
         m.D_on_vgrid,
         m.tmask_ip,
         m.tmask_im,
@@ -918,7 +934,7 @@ function precompute_laplacian_stencils!(m)
         m.D0im,
         m.D0jp,
         m.D0jm,
-        m.D.present,
+        laplacian_thickness(m),
         m.tmask_ip,
         m.tmask_im,
         m.tmask_jp,

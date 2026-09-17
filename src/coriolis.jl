@@ -91,13 +91,14 @@ function _coriolis_field(cp::CoriolisParameter2D, sz, FT)
                 "must cover the full domain including the border ring",
             ),
         )
-        all(l -> -90 <= l <= 90, lat) || throw(
-            ArgumentError("coriolis latitude must lie in [-90, 90] degrees north"),
-        )
+        all(l -> -90 <= l <= 90, lat) ||
+            throw(ArgumentError("coriolis latitude must lie in [-90, 90] degrees north"))
         return FT[_f_from_lat(l, FT) for l in lat]
     end
     lat isa Real || throw(
-        ArgumentError("coriolis latitude must be a real scalar or a matrix, got $(typeof(lat))"),
+        ArgumentError(
+            "coriolis latitude must be a real scalar or a matrix, got $(typeof(lat))",
+        ),
     )
     -90 <= lat <= 90 || throw(
         ArgumentError("coriolis latitude must lie in [-90, 90] degrees north, got $lat"),
@@ -105,7 +106,8 @@ function _coriolis_field(cp::CoriolisParameter2D, sz, FT)
     return fill(_f_from_lat(lat, FT), sz)
 end
 
-Base.show(io::IO, cp::CoriolisParameter0D) = print(io, "CoriolisParameter0D(f = ", cp.f, ")")
+Base.show(io::IO, cp::CoriolisParameter0D) =
+    print(io, "CoriolisParameter0D(f = ", cp.f, ")")
 
 function Base.show(io::IO, cp::CoriolisParameter2D)
     print(io, "CoriolisParameter2D(lat = ")

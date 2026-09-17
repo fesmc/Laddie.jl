@@ -33,25 +33,41 @@ include("show.jl")
 
 export Model, Grid, State, Cache, Params, BoundaryConditions
 export Simulation, Clock, OutputConfig, DebugConfig, time_step!
-export build_isomip, build_laddie_mask, ice_base_depth, bed_elevation,
-    fill_ocean_holes!, fill_shelf_holes!, fill_small_shelf_patches!,
+export build_isomip,
+    build_laddie_mask,
+    ice_base_depth,
+    bed_elevation,
+    fill_ocean_holes!,
+    fill_shelf_holes!,
+    fill_small_shelf_patches!,
     fill_small_grounded_patches!,
-    run!, meltstats, to_backend
+    run!,
+    meltstats,
+    to_backend
 
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
 export AbstractMelting, FixedGamTMelting, TurbulentGamTMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
 export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D
-export AbstractMaxLayerThickness, NoMaxLayerThickness, AbsoluteMaxLayerThickness, RelativeMaxLayerThickness, TopographicMaxLayerThickness
+export AbstractMaxLayerThickness,
+    NoMaxLayerThickness,
+    AbsoluteMaxLayerThickness,
+    RelativeMaxLayerThickness,
+    TopographicMaxLayerThickness
 export AbstractDomainCropping, NoDomainCropping, MinRectangleDomainCropping
-export AbstractPreprocess, FillOceanHolesPreprocess, FillShelfHolesPreprocess,
-    FillSmallShelfPatchesPreprocess, FillSmallGroundedPatchesPreprocess, MarkGapsPreprocess
+export AbstractPreprocess,
+    FillOceanHolesPreprocess,
+    FillShelfHolesPreprocess,
+    FillSmallShelfPatchesPreprocess,
+    FillSmallGroundedPatchesPreprocess,
+    MarkGapsPreprocess
 
 export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow
 export AbstractGroundingLineBC, FreeSlipGL, NoSlipGL
 export AbstractLandBC, FreeSlipLand, NoSlipLand
 export AbstractGapsBC, SinkGapsBC, ConnectedGapsBC
 export AbstractLateralViscosity, PrescribedLateralViscosity, NonlinearLateralViscosity
+export AbstractLaplacianWeights, PresentLaplacianWeights, PastLaplacianWeights
 export AbstractFrontPressure, FullDepthGradient, TruncatedDepthGradient
 export AbstractIceSlopeGradient, PyGradient, JlGradient
 export AbstractTimeStepper, FixedDt, AdaptiveDt

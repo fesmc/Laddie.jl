@@ -100,6 +100,14 @@ PrescribedLateralViscosity
 NonlinearLateralViscosity
 ```
 
+#### Laplacian thickness weights
+
+```@docs
+AbstractLaplacianWeights
+PresentLaplacianWeights
+PastLaplacianWeights
+```
+
 #### Ice-front pressure gradient
 
 ```@docs

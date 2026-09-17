@@ -125,12 +125,12 @@ thickness, and detrainment removes water where the layer is over-thick.
 
 **Ambient profiles** ``T_a, S_a``. Sampled from a prescribed background ocean
 profile at the depth of the layer base ``z_b - D``. See the
-[ISOMIP+ forcing](generated/forcing.md) example for the warm/cold profiles used
+[ISOMIP+ example](generated/isomip.md#Forcing) for the warm/cold profiles used
 here.
 
 **Coriolis** ``fD``. At ice-shelf scale, rotation steers the meltwater into
 boundary currents rather than letting it flow straight up-slope — visible in the
-flow-speed plot of the [ISOMIP+ run](generated/isomip_run.md).
+flow-speed plot of the [ISOMIP+ warm run](generated/isomip.md#Warm-run).
 
 ## Gaps in the shelf: melt-through
 

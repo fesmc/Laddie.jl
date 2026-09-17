@@ -274,7 +274,7 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
     # test picked out.  It has to be positional now: land also marks interior
     # bedrock (nunataks, rock islands), and seeding off those would declare every
     # pocket beside an island part of the open ocean.
-    for i in 1:nx, j in 1:ny
+    for i = 1:nx, j = 1:ny
         if mask[i, j] == 0 && (i <= 2 || j <= 2 || i >= ny - 1 || j >= nx - 1)
             visited[i, j] = true
             push!(queue, (i, j))
@@ -295,7 +295,7 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
 
     # Reclassify unreachable ocean cells as land
     n_filled = 0
-    for i in 1:nx, j in 1:ny
+    for i = 1:nx, j = 1:ny
         if mask[i, j] == 0 && !visited[i, j]
             mask[i, j] = 1
             n_filled += 1
@@ -336,7 +336,7 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
     queue = Tuple{Int,Int}[]
 
     # Seed: active cells adjacent to at least one ocean cell
-    for i in 1:nx, j in 1:ny
+    for i = 1:nx, j = 1:ny
         if _is_active(mask[i, j]) && !visited[i, j]
             for (di, dj) in _cardinal_dirs
                 ni, nj = i + di, j + dj
@@ -355,7 +355,10 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
         i, j = popfirst!(queue)
         for (di, dj) in _cardinal_dirs
             ni, nj = i + di, j + dj
-            if 1 <= ni <= nx && 1 <= nj <= ny && !visited[ni, nj] && _is_active(mask[ni, nj])
+            if 1 <= ni <= nx &&
+               1 <= nj <= ny &&
+               !visited[ni, nj] &&
+               _is_active(mask[ni, nj])
                 visited[ni, nj] = true
                 push!(queue, (ni, nj))
             end
@@ -364,7 +367,7 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
 
     # Reclassify isolated shelf cells as grounded ice
     n_filled = 0
-    for i in 1:nx, j in 1:ny
+    for i = 1:nx, j = 1:ny
         if mask[i, j] == 3 && !visited[i, j]
             mask[i, j] = 2
             n_filled += 1
@@ -411,7 +414,7 @@ function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int 
     visited = falses(nx, ny)
     n_filled = 0
 
-    for i in 1:nx, j in 1:ny
+    for i = 1:nx, j = 1:ny
         mask[i, j] == 2 && !visited[i, j] || continue
 
         component = Tuple{Int,Int}[]
@@ -482,7 +485,7 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
     visited = falses(nx, ny)
     n_filled = 0
 
-    for i in 1:nx, j in 1:ny
+    for i = 1:nx, j = 1:ny
         _is_active(mask[i, j]) && !visited[i, j] || continue
 
         # BFS to collect the full connected component.  Gaps (4) belong to the
@@ -495,7 +498,10 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
             push!(component, (c_i, cj))
             for (di, dj) in _cardinal_dirs
                 ni, nj = c_i + di, cj + dj
-                if 1 <= ni <= nx && 1 <= nj <= ny && !visited[ni, nj] && _is_active(mask[ni, nj])
+                if 1 <= ni <= nx &&
+                   1 <= nj <= ny &&
+                   !visited[ni, nj] &&
+                   _is_active(mask[ni, nj])
                     visited[ni, nj] = true
                     push!(queue, (ni, nj))
                 end
@@ -577,10 +583,12 @@ function preprocess!(mask, p::MarkGapsPreprocess)
     return count(gaps)
 end
 
-preprocess!(mask, ::FillOceanHolesPreprocess)       = fill_ocean_holes!(mask)
-preprocess!(mask, ::FillShelfHolesPreprocess)        = fill_shelf_holes!(mask)
-preprocess!(mask, p::FillSmallShelfPatchesPreprocess)    = fill_small_shelf_patches!(mask, p.min_size)
-preprocess!(mask, p::FillSmallGroundedPatchesPreprocess) = fill_small_grounded_patches!(mask, p.min_size)
+preprocess!(mask, ::FillOceanHolesPreprocess) = fill_ocean_holes!(mask)
+preprocess!(mask, ::FillShelfHolesPreprocess) = fill_shelf_holes!(mask)
+preprocess!(mask, p::FillSmallShelfPatchesPreprocess) =
+    fill_small_shelf_patches!(mask, p.min_size)
+preprocess!(mask, p::FillSmallGroundedPatchesPreprocess) =
+    fill_small_grounded_patches!(mask, p.min_size)
 
 # ============================================================================
 # Domain cropping
@@ -636,18 +644,20 @@ function _crop_ranges(mask, cropping::MinRectangleDomainCropping)
     cols = getindex.(shelf_inds, 2)
     rmin, rmax = extrema(rows)
     cmin, cmax = extrema(cols)
-    r = max(1, rmin - margin) : min(size(mask, 1), rmax + margin)
-    c = max(1, cmin - margin) : min(size(mask, 2), cmax + margin)
+    r = max(1, rmin-margin):min(size(mask, 1), rmax+margin)
+    c = max(1, cmin-margin):min(size(mask, 2), cmax+margin)
     if length(r) < size(mask, 1) || length(c) < size(mask, 2)
         # Report the margin actually achieved on each side, not just the requested
         # one: the active region is rarely centred, so `margin` is clipped by the
         # array edge on whichever side runs out of room first and the padding ends
         # up asymmetric.
         pad = (rmin - first(r), last(r) - rmax, cmin - first(c), last(c) - cmax)
-        note = all(==(margin), pad) ? "" :
-               "  (clipped by the array edge; kept top/bottom/left/right = $pad)"
+        note =
+            all(==(margin), pad) ? "" :
+            "  (clipped by the array edge; kept top/bottom/left/right = $pad)"
         @info "Domain cropped from $(size(mask)) to ($(length(r)), $(length(c))) " *
-              "with margin = $margin" * note
+              "with margin = $margin" *
+              note
     end
     return r, c
 end

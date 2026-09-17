@@ -9,10 +9,10 @@ LADDIE computes the **basal melt rate beneath an ice shelf** by modelling the
 thin, buoyant meltwater layer in the cavity with a depth-integrated
 ("one-layer") representation of the circulation.
 
-See the worked [ISOMIP+ run](generated/isomip_run.md) for plots of the melt
-rate, layer thickness, temperature, and flow speed, and the
-[Python validation](generated/python_comparison.md) page for a cell-by-cell
-comparison against the original Python code.
+See the [ISOMIP+ example](generated/isomip.md) for plots of the melt rate, layer
+thickness, temperature and flow speed, and a cell-by-cell comparison against the
+original Python code; the [Crosson–Dotson example](generated/crosson-dotson.md)
+reproduces a published realistic-cavity run.
 
 ## Quick start
 
@@ -48,6 +48,5 @@ In particular, kernels were fused to eliminate the ~15-20 intermediate arrays th
 | [Physics](physics.md) | what the model represents and the governing balances |
 | [Numerics](numerics.md) | grid, time stepping, boundaries, stability |
 | [Implementation](implementation.md) | how the Julia/GPU port was built and verified |
-| [ISOMIP+ forcing](generated/forcing.md) | the warm/cold ambient profiles |
-| [ISOMIP+ run](generated/isomip_run.md) | a full simulation with result plots |
-| [Python validation](generated/python_comparison.md) | end-state comparison against the Python reference |
+| [ISOMIP+](generated/isomip.md) | forcing, a warm run, Python validation, spin-up, warm vs cold |
+| [Crosson–Dotson](generated/crosson-dotson.md) | reproduction of Lambert et al. (2023) |

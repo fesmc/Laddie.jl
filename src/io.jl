@@ -214,6 +214,7 @@ function _write_run_metadata(sim)
         "gaps" => _scalar_fields(b.gaps),
     )
     params_d["lateral_viscosity"] = _scalar_fields(p.lateral_viscosity)
+    params_d["laplacian_weights"] = _scalar_fields(p.laplacian_weights)
     params_d["front_pressure"] = _scalar_fields(p.front_pressure)
     # A 2D latitude is an array, which `_scalar_fields` skips; record its range so
     # the entry says more than just which option was chosen.
@@ -345,11 +346,23 @@ function _accum!(sim)
     dt = sim.clock.dt
     sim.io.count += 1
     sim.io.t_accum += dt
-    sim.output.save_Ut &&
-        launch!(_accum_ut_kernel!, sim.io.Utav, sim.io.Utav, m.U.present, size(sim.io.Utav, 1), dt)
+    sim.output.save_Ut && launch!(
+        _accum_ut_kernel!,
+        sim.io.Utav,
+        sim.io.Utav,
+        m.U.present,
+        size(sim.io.Utav, 1),
+        dt,
+    )
     sim.output.save_Uu && (sim.io.Uuav .+= m.U.present .* dt)
-    sim.output.save_Vt &&
-        launch!(_accum_vt_kernel!, sim.io.Vtav, sim.io.Vtav, m.V.present, size(sim.io.Vtav, 2), dt)
+    sim.output.save_Vt && launch!(
+        _accum_vt_kernel!,
+        sim.io.Vtav,
+        sim.io.Vtav,
+        m.V.present,
+        size(sim.io.Vtav, 2),
+        dt,
+    )
     sim.output.save_Vv && (sim.io.Vvav .+= m.V.present .* dt)
     sim.output.save_D && (sim.io.Dav .+= m.D.present .* dt)
     sim.output.save_T && (sim.io.Tav .+= m.T.present .* dt)
@@ -441,20 +454,20 @@ function _create_output_file!(sim)
                 attrib = ["units" => units, "long_name" => longname],
             )
         end
-        sim.output.save_Ut     && dv("Ut",     "m s-1",  "x-velocity on t-grid")
-        sim.output.save_Uu     && dv("Uu",     "m s-1",  "x-velocity on u-grid")
-        sim.output.save_Vt     && dv("Vt",     "m s-1",  "y-velocity on t-grid")
-        sim.output.save_Vv     && dv("Vv",     "m s-1",  "y-velocity on v-grid")
-        sim.output.save_D      && dv("D",      "m",      "mixed-layer thickness")
-        sim.output.save_T      && dv("T",      "degC",   "layer-averaged temperature")
-        sim.output.save_S      && dv("S",      "psu",    "layer-averaged salinity")
-        sim.output.save_melt   && dv("melt",   "m yr-1", "basal melt rate")
-        sim.output.save_entr   && dv("entr",   "m yr-1", "entrainment rate")
-        sim.output.save_ent2   && dv("ent2",   "m yr-1", "additional entrainment")
-        sim.output.save_detr   && dv("detr",   "m yr-1", "detrainment rate")
-        sim.output.save_Tbase  && dv("Tbase",  "degC",   "temperature at ice base")
-        sim.output.save_Tamb   && dv("Tamb",   "degC",   "ambient temperature at layer base")
-        sim.output.save_gammaT && dv("gammaT", "m s-1",  "turbulent heat exchange velocity")
+        sim.output.save_Ut && dv("Ut", "m s-1", "x-velocity on t-grid")
+        sim.output.save_Uu && dv("Uu", "m s-1", "x-velocity on u-grid")
+        sim.output.save_Vt && dv("Vt", "m s-1", "y-velocity on t-grid")
+        sim.output.save_Vv && dv("Vv", "m s-1", "y-velocity on v-grid")
+        sim.output.save_D && dv("D", "m", "mixed-layer thickness")
+        sim.output.save_T && dv("T", "degC", "layer-averaged temperature")
+        sim.output.save_S && dv("S", "psu", "layer-averaged salinity")
+        sim.output.save_melt && dv("melt", "m yr-1", "basal melt rate")
+        sim.output.save_entr && dv("entr", "m yr-1", "entrainment rate")
+        sim.output.save_ent2 && dv("ent2", "m yr-1", "additional entrainment")
+        sim.output.save_detr && dv("detr", "m yr-1", "detrainment rate")
+        sim.output.save_Tbase && dv("Tbase", "degC", "temperature at ice base")
+        sim.output.save_Tamb && dv("Tamb", "degC", "ambient temperature at layer base")
+        sim.output.save_gammaT && dv("gammaT", "m s-1", "turbulent heat exchange velocity")
 
         # Static fields — written once
         if sim.output.save_mask
@@ -462,17 +475,20 @@ function _create_output_file!(sim)
             # Under ConnectedGapsBC a gap (mask 4) is active but not ocean, so it does
             # not mark an ice front: `at_isf` then traces only the outer edge of the
             # connected region, which is what the calving front actually is.
-            at_isf = _int(
-                (m.tmask .> 0) .&
-                (m.ocnxm1 .+ m.ocnxp1 .+ m.ocnym1 .+ m.ocnyp1 .> 0),
-            )
+            at_isf =
+                _int((m.tmask .> 0) .& (m.ocnxm1 .+ m.ocnxp1 .+ m.ocnym1 .+ m.ocnyp1 .> 0))
             defVar(
                 ds,
                 "at_isf",
                 Int8,
                 ("x", "y");
-                attrib = ["long_name" => "active cell at ice-shelf front (ocean neighbour)"],
-            )[:, :] = Int8.(at_isf)
+                attrib = [
+                    "long_name" => "active cell at ice-shelf front (ocean neighbour)",
+                ],
+            )[
+                :,
+                :,
+            ] = Int8.(at_isf)
             # Wall diagnostics are split by wall type so a margin can be told apart
             # at a glance: `at_grl` is the grounding line (grounded ice, mask 2) and
             # `at_lnd` is rock (land, mask 1) — an island shore or an ice-free coast.
@@ -480,8 +496,8 @@ function _create_output_file!(sim)
             # where a shelf cell has several different neighbours.
             mask_c = m.resolved_mask
             _touches(v) =
-                (xm1(mask_c) .== v) .| (xp1(mask_c) .== v) .|
-                (ym1(mask_c) .== v) .| (yp1(mask_c) .== v)
+                (xm1(mask_c) .== v) .| (xp1(mask_c) .== v) .| (ym1(mask_c) .== v) .|
+                (yp1(mask_c) .== v)
             at_grl = _int((mask_c .== 3) .& _touches(2))
             defVar(
                 ds,
@@ -491,17 +507,21 @@ function _create_output_file!(sim)
                 attrib = [
                     "long_name" => "shelf cell at grounding line (grounded-ice neighbour)",
                 ],
-            )[:, :] = Int8.(at_grl)
+            )[
+                :,
+                :,
+            ] = Int8.(at_grl)
             at_lnd = _int((mask_c .== 3) .& _touches(1))
             defVar(
                 ds,
                 "at_lnd",
                 Int8,
                 ("x", "y");
-                attrib = [
-                    "long_name" => "shelf cell at a land margin (bedrock neighbour)",
-                ],
-            )[:, :] = Int8.(at_lnd)
+                attrib = ["long_name" => "shelf cell at a land margin (bedrock neighbour)"],
+            )[
+                :,
+                :,
+            ] = Int8.(at_lnd)
             # The internal margin opened by melt-through.  All zeros under
             # SinkGapsBC, which demotes gaps to ocean before the grid is built —
             # so this field also records which gap treatment ran.
@@ -514,7 +534,10 @@ function _create_output_file!(sim)
                 attrib = [
                     "long_name" => "shelf cell at a melt-through gap (gap neighbour)",
                 ],
-            )[:, :] = Int8.(at_gap)
+            )[
+                :,
+                :,
+            ] = Int8.(at_gap)
         end
         if sim.output.save_zb
             defVar(ds, "z_draft", Float64, ("x", "y"); attrib = ["units" => "m"])[:, :] =
@@ -545,19 +568,19 @@ function _write_output!(sim, t_days)
             ds[name][:, :, k] = ifelse.(tmask_int .> 0, av_int ./ n .* scale, FT0)
         end
 
-        sim.output.save_Ut     && wv("Ut",     sim.io.Utav,   1.0)
-        sim.output.save_Uu     && wv("Uu",     sim.io.Uuav,   1.0)
-        sim.output.save_Vt     && wv("Vt",     sim.io.Vtav,   1.0)
-        sim.output.save_Vv     && wv("Vv",     sim.io.Vvav,   1.0)
-        sim.output.save_D      && wv("D",      sim.io.Dav,    1.0)
-        sim.output.save_T      && wv("T",      sim.io.Tav,    1.0)
-        sim.output.save_S      && wv("S",      sim.io.Sav,    1.0)
-        sim.output.save_melt   && wv("melt",   sim.io.meltav, m.seconds_per_year)
-        sim.output.save_entr   && wv("entr",   sim.io.entrav, m.seconds_per_year)
-        sim.output.save_ent2   && wv("ent2",   sim.io.ent2av, m.seconds_per_year)
-        sim.output.save_detr   && wv("detr",   sim.io.detrav, m.seconds_per_year)
-        sim.output.save_Tbase  && wv("Tbase",  sim.io.Tbav,   1.0)
-        sim.output.save_Tamb   && wv("Tamb",   sim.io.Taav,   1.0)
+        sim.output.save_Ut && wv("Ut", sim.io.Utav, 1.0)
+        sim.output.save_Uu && wv("Uu", sim.io.Uuav, 1.0)
+        sim.output.save_Vt && wv("Vt", sim.io.Vtav, 1.0)
+        sim.output.save_Vv && wv("Vv", sim.io.Vvav, 1.0)
+        sim.output.save_D && wv("D", sim.io.Dav, 1.0)
+        sim.output.save_T && wv("T", sim.io.Tav, 1.0)
+        sim.output.save_S && wv("S", sim.io.Sav, 1.0)
+        sim.output.save_melt && wv("melt", sim.io.meltav, m.seconds_per_year)
+        sim.output.save_entr && wv("entr", sim.io.entrav, m.seconds_per_year)
+        sim.output.save_ent2 && wv("ent2", sim.io.ent2av, m.seconds_per_year)
+        sim.output.save_detr && wv("detr", sim.io.detrav, m.seconds_per_year)
+        sim.output.save_Tbase && wv("Tbase", sim.io.Tbav, 1.0)
+        sim.output.save_Tamb && wv("Tamb", sim.io.Taav, 1.0)
         sim.output.save_gammaT && wv("gammaT", sim.io.gamTav, 1.0)
     end
     _print2log(sim, @sprintf("%.3f days: appended output → output.nc (step %d)", t_days, k))
@@ -599,11 +622,8 @@ function _write_restart!(sim, t_days)
     m = sim.model
     filename = joinpath(sim.io.rundir, @sprintf("restart_%06.0f.jld2", t_days))
 
-    _v(var) = (
-        past = Array(var.past),
-        present = Array(var.present),
-        future = Array(var.future),
-    )
+    _v(var) =
+        (past = Array(var.past), present = Array(var.present), future = Array(var.future))
     # Save the current dt so an adaptive run resumes at the step it left off
     # (the saved leapfrog levels are separated by this dt); FixedDt saves dt0.
     jldsave(

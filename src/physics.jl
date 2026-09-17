@@ -475,7 +475,9 @@ function update_entrainment!(m, dt)
     upwind_advection_T(m.convD, m, m.D.present)
     FT = m.FT
     dt2 = FT(2) * dt
-    @. m.ent2 = max(zero(FT), (m.D_min - m.D.past) / dt2 - (m.convD + m.melt + m.entr - m.detr)) * m.tmask
+    @. m.ent2 =
+        max(zero(FT), (m.D_min - m.D.past) / dt2 - (m.convD + m.melt + m.entr - m.detr)) *
+        m.tmask
     @. m.nentr = m.entr + m.ent2 - m.detr
     return
 end
@@ -766,7 +768,8 @@ end
 # q·∂D/∂t  (thickness-tendency coupling)
 @inline tracer_thickness_tendency(m, q) = q .* m.dDdt
 # ∇·(D·u·q)  (horizontal tracer advection)
-@inline tracer_advection(m, q) = upwind_advection_T(similar(m.D.present), m, m.D.present .* q)
+@inline tracer_advection(m, q) =
+    upwind_advection_T(similar(m.D.present), m, m.D.present .* q)
 # e_net·qa  (entrainment of ambient water)
 @inline tracer_entrainment(m, qa) = m.nentr .* qa
 # Kh·∇²q  (horizontal diffusion)

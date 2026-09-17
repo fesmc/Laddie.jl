@@ -47,28 +47,40 @@ function _icebase_slope(::JlGradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
     #   east only             → forward  (zb_E − zb_C) / dx
     #   west only             → backward (zb_C − zb_W) / dx
     #   neither               → 0
-    _tm_e = xm1(tmask); _tm_w = xp1(tmask)
-    _tm_n = ym1(tmask); _tm_s = yp1(tmask)
-    _zb_e = xm1(z_draft_ft); _zb_w = xp1(z_draft_ft)
-    _zb_n = ym1(z_draft_ft); _zb_s = yp1(z_draft_ft)
-    dzdx = ifelse.(tmask .> 0,
-        ifelse.(_tm_e .* _tm_w .> 0,
+    _tm_e = xm1(tmask);
+    _tm_w = xp1(tmask)
+    _tm_n = ym1(tmask);
+    _tm_s = yp1(tmask)
+    _zb_e = xm1(z_draft_ft);
+    _zb_w = xp1(z_draft_ft)
+    _zb_n = ym1(z_draft_ft);
+    _zb_s = yp1(z_draft_ft)
+    dzdx = ifelse.(
+        tmask .> 0,
+        ifelse.(
+            _tm_e .* _tm_w .> 0,
             (_zb_e .- _zb_w) ./ (FT(2) .* dx_ft),
-            ifelse.(_tm_e .> 0,
+            ifelse.(
+                _tm_e .> 0,
                 (_zb_e .- z_draft_ft) ./ dx_ft,
-                ifelse.(_tm_w .> 0,
-                    (z_draft_ft .- _zb_w) ./ dx_ft,
-                    zero(FT)))),
-        gradient_x(z_draft_ft, dx_ft))
-    dzdy = ifelse.(tmask .> 0,
-        ifelse.(_tm_n .* _tm_s .> 0,
+                ifelse.(_tm_w .> 0, (z_draft_ft .- _zb_w) ./ dx_ft, zero(FT)),
+            ),
+        ),
+        gradient_x(z_draft_ft, dx_ft),
+    )
+    dzdy = ifelse.(
+        tmask .> 0,
+        ifelse.(
+            _tm_n .* _tm_s .> 0,
             (_zb_n .- _zb_s) ./ (FT(2) .* dy_ft),
-            ifelse.(_tm_n .> 0,
+            ifelse.(
+                _tm_n .> 0,
                 (_zb_n .- z_draft_ft) ./ dy_ft,
-                ifelse.(_tm_s .> 0,
-                    (z_draft_ft .- _zb_s) ./ dy_ft,
-                    zero(FT)))),
-        gradient_y(z_draft_ft, dy_ft))
+                ifelse.(_tm_s .> 0, (z_draft_ft .- _zb_s) ./ dy_ft, zero(FT)),
+            ),
+        ),
+        gradient_y(z_draft_ft, dy_ft),
+    )
     return dzdx, dzdy
 end
 
@@ -167,7 +179,15 @@ end
 # Build all masks and stagger-count denominators from the gap-resolved integer `mask`
 # and the (adjusted) ice draft `z_draft`, plus the ice-base slope and the Coriolis
 # field staggered onto the velocity faces.  CPU arrays; the Model moves them.
-function Geometry(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, f_t::AbstractMatrix, dx, dy; FT = Float64, gradient = JlGradient())
+function Geometry(
+    mask::AbstractMatrix{Int},
+    z_draft::AbstractMatrix,
+    f_t::AbstractMatrix,
+    dx,
+    dy;
+    FT = Float64,
+    gradient = JlGradient(),
+)
     dx_ft = FT(dx)
     dy_ft = FT(dy)
     z_draft_ft = FT.(z_draft)

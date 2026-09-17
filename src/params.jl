@@ -1,5 +1,5 @@
 # ============================================================================
-# Params{FT,EP,MP,CS,MLT,LV,FP,CP} — all scalar physical constants +
+# Params{FT,EP,MP,CS,MLT,LV,LW,FP,CP} — all scalar physical constants +
 # parameterization objects bundled in one immutable typed struct.  Nothing about
 # time integration lives here (that belongs to the `Simulation`), nor the boundary
 # conditions (a `BoundaryConditions` held by the `Model`).
@@ -12,6 +12,7 @@ struct Params{
     CS,     #<:AbstractConvectionScheme,
     MLT,    #<:AbstractMaximumLayerThickness,
     LV,     #<:AbstractLateralViscosity,
+    LW,     #<:AbstractLaplacianWeights,
     FP,     #<:AbstractFrontPressure,
     CP,     #<:AbstractCoriolisParameter,
 }
@@ -52,6 +53,7 @@ struct Params{
     convection_scheme::CS
     max_layer_thickness::MLT
     lateral_viscosity::LV
+    laplacian_weights::LW
     front_pressure::FP
     coriolis::CP
 end
@@ -115,6 +117,7 @@ function Params(;
     convection_scheme = ResetToAmbient(0.005),
     max_layer_thickness = NoMaxLayerThickness(),
     lateral_viscosity = PrescribedLateralViscosity(),
+    laplacian_weights = PresentLaplacianWeights(),
     front_pressure = FullDepthGradient(),
 )
     # Keep every parameterization object's precision aligned with Params{FT}.
@@ -157,6 +160,7 @@ function Params(;
         convection_scheme,
         max_layer_thickness,
         lateral_viscosity,
+        laplacian_weights,
         front_pressure,
         coriolis,
     )

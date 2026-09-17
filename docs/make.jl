@@ -3,7 +3,7 @@ using Documenter
 using Literate
 
 # Run Literate on the example scripts → Documenter-flavoured markdown.
-const EXAMPLES = ["forcing.jl", "isomip_run.jl", "cold_run.jl", "spinup.jl", "python_comparison.jl"]
+const EXAMPLES = ["isomip.jl"]
 exdir  = joinpath(@__DIR__, "src", "examples")
 gendir = joinpath(@__DIR__, "src", "generated")
 isdir(gendir) && rm(gendir; recursive = true)
@@ -12,13 +12,14 @@ for ex in EXAMPLES
     Literate.markdown(joinpath(exdir, ex), gendir; documenter = true)
 end
 
-# Too heavy (and too data-hungry) to run at build time: rendered as plain code, with a
-# figure produced by running the script locally.
-const STATIC_EXAMPLES = ["crosson-dotson.jl"]
-for ex in STATIC_EXAMPLES
-    Literate.markdown(joinpath(exdir, ex), gendir; documenter = true,
-                      codefence = "```julia" => "```")
+# Crosson–Dotson needs local data and ~10 min, so its page shows the code without running
+# it. Set LADDIE_DOCS_CROSSON_DOTSON=true to run it as a regression check (it asserts its
+# tolerances and rewrites the committed figure).
+cd_script = joinpath(exdir, "crosson-dotson.jl")
+if get(ENV, "LADDIE_DOCS_CROSSON_DOTSON", "false") == "true"
+    Base.include(Module(:CrossonDotson), cd_script)
 end
+Literate.markdown(cd_script, gendir; documenter = true, codefence = "```julia" => "```")
 
 DocMeta.setdocmeta!(Laddie, :DocTestSetup, :(using Laddie); recursive=true)
 
@@ -37,13 +38,7 @@ makedocs(;
         "Numerics"       => "numerics.md",
         # "Implementation" => "implementation.md",
         "Examples" => [
-            "ISOMIP+"   => [
-                "Forcing"           => "generated/forcing.md",
-                "Run"               => "generated/isomip_run.md",
-                "Warm vs. cold"     => "generated/cold_run.md",
-                "Spin-up"           => "generated/spinup.md",
-                "Python validation" => "generated/python_comparison.md",
-            ],
+            "ISOMIP+" => "generated/isomip.md",
             "Crosson–Dotson" => "generated/crosson-dotson.md",
         ],
         "API reference" => "API_public.md",

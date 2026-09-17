@@ -8,9 +8,7 @@
 )
     i, j = @index(Global, NTuple)
     @inbounds present[i, j] +=
-        nu / 2 *
-        (past[i, j] + future[i, j] - 2 * present[i, j]) *
-        mask[i, j]
+        nu / 2 * (past[i, j] + future[i, j] - 2 * present[i, j]) * mask[i, j]
 end
 
 @kernel function _precompute_D_shifts_kernel!(
@@ -642,7 +640,7 @@ function leapfrog_step!(sim, nsteps)
     _clamp_thickness!(m)
     precompute_integration_terms!(m, sim.clock.dt)
     check_nans && _check_nans_shelf!(sim, "D", m.D.future)
-    
+
     # Both momentum components are stepped before the limiter, because it caps the
     # speed and so needs U and V together (see `clamp_velocities!`).
     step_u_momentum(m, dt)

@@ -209,21 +209,17 @@ Base.show(io::IO, ts::AdaptiveDt) = print(
 function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "Params{", FT, "}:")
     scal = [
-        (fn, getfield(p, fn)) for
-        fn in fieldnames(typeof(p)) if getfield(p, fn) isa Number
+        (fn, getfield(p, fn)) for fn in fieldnames(typeof(p)) if getfield(p, fn) isa Number
     ]
     for chunk in Iterators.partition(scal, 4)
-        println(
-            io,
-            "  ",
-            join((rpad(string(k, " = ", v), 22) for (k, v) in chunk), " "),
-        )
+        println(io, "  ", join((rpad(string(k, " = ", v), 22) for (k, v) in chunk), " "))
     end
     println(io, "  entrainment    = ", p.entrainment)
     println(io, "  melt           = ", p.melting)
     println(io, "  convection     = ", p.convection_scheme)
     println(io, "  max layer D    = ", p.max_layer_thickness)
     println(io, "  lat. viscosity = ", p.lateral_viscosity)
+    println(io, "  lap. weights   = ", p.laplacian_weights)
     println(io, "  front pressure = ", p.front_pressure)
     print(io, "  coriolis       = ", p.coriolis)
 end
@@ -300,13 +296,7 @@ Base.show(io::IO, c::Clock{FT}) where {FT} = print(
 
 function Base.show(io::IO, o::OutputConfig)
     if o.saveday > 0
-        print(
-            io,
-            "OutputConfig: every ",
-            o.saveday,
-            " d → ",
-            joinpath(o.resultdir, o.name),
-        )
+        print(io, "OutputConfig: every ", o.saveday, " d → ", joinpath(o.resultdir, o.name))
     else
         print(io, "OutputConfig: disabled (saveday = 0)")
     end

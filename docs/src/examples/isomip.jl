@@ -15,6 +15,7 @@ line (west). [`build_isomip`](@ref) sets it up with these defaults:
 | ``\gamma_T`` | ``1.8\times10^{-4}`` | turbulent heat exchange (fixed) |
 | ``\mu`` | 2.5 | entrainment parameter |
 | ``D_\min`` | 1 m | minimum layer thickness |
+| wall slip | 2 (no slip) | grounding line and land |
 
 This page walks through the forcing, a warm run, the validation against the Python
 LADDIE code, the spin-up, and the contrast between the warm and cold cavities.
@@ -84,9 +85,11 @@ println("mean melt $(round(mean_melt; digits = 2)) m/yr, max melt $(round(max_me
 # The same warm configuration, run for one day by the original Python LADDIE
 # (`runladdie.py config_isomip_compare.toml`, geometry from `gen_isomip_geom.py`), is stored
 # in `docs/assets/restart_000001.nc`. Laddie.jl repeats the day with the Python ice-base
-# slope (`PyGradient`) and the two end states are compared cell by cell.
+# slope (`PyGradient`) and the Python wall condition (one partial-slip factor of 1 on
+# every wall), and the two end states are compared cell by cell.
 
-sim_py = build_isomip(; isomipcond = :warm, gradient = PyGradient())
+v1_walls = BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
+sim_py = build_isomip(; isomipcond = :warm, gradient = PyGradient(), boundary = v1_walls)
 run!(sim_py; days = 1.0, verbose = false)
 mj = sim_py.model
 

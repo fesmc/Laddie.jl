@@ -73,7 +73,7 @@ forcing = CavityForcing(OceanForcing1D(Tz, Sz, z; FT), PrescribedIceForcing(-25.
 params = Params(; FT,
     A_h = 25.0, K_h = 25.0,
     C_d = 2.5e-3, C_d_top = 1.1e-3,
-    D_min = 2.8, u_tide = 0.01, slip = 1.0,
+    D_min = 2.8, u_tide = 0.01,
     max_detrainment = 0.5, v_cut = 1.414,
     D_init = 10.0, dT_init = -0.1, dS_init = -0.1,
     coriolis = CoriolisParameter0D(-1.37e-4),
@@ -81,7 +81,9 @@ params = Params(; FT,
     melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
     convection_scheme = ClampDensity(0.005),
 )
-model = Model(grid; forcing, params, gradient = PyGradient())
+## The reference applies one partial-slip factor of 1 to every wall.
+boundary = BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
+model = Model(grid; forcing, params, boundary, gradient = PyGradient())
 sim = Simulation(model; dt = 120.0, nu = 0.8)
 
 ## Like the reference: 50 days, averaged over the last 5.

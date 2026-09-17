@@ -41,8 +41,12 @@ makedocs(;
             "ISOMIP+" => "generated/isomip.md",
             "Crosson–Dotson" => "generated/crosson-dotson.md",
         ],
-        "API reference" => "API_public.md",
+        "API reference" => [
+            "Setup and running" => "API_public.md",
+            "Parameterizations and boundaries" => "API_physics.md",
+        ],
     ],
+    checkdocs = :exports,
     warnonly = true,
 )
 

@@ -1,9 +1,10 @@
-# Public API
+# Model setup and running
 
 ```@index
+Pages = ["API_public.md"]
 ```
 
-### Entry points
+## Entry points
 
 ```@docs
 Grid
@@ -16,7 +17,7 @@ meltstats
 to_backend
 ```
 
-### Geometry ingestion
+## Geometry ingestion
 
 ```@docs
 build_laddie_mask
@@ -24,16 +25,49 @@ ice_base_depth
 bed_elevation
 fill_ocean_holes!
 fill_shelf_holes!
+fill_small_shelf_patches!
+fill_small_grounded_patches!
 ```
 
-### Model container
+### Mask preprocessing
+
+```@docs
+AbstractPreprocess
+FillOceanHolesPreprocess
+FillShelfHolesPreprocess
+FillSmallShelfPatchesPreprocess
+FillSmallGroundedPatchesPreprocess
+MarkGapsPreprocess
+```
+
+### Domain cropping
+
+```@docs
+AbstractDomainCropping
+MinRectangleDomainCropping
+NoDomainCropping
+```
+
+### Ice-base slope
+
+```@docs
+AbstractIceSlopeGradient
+JlGradient
+PyGradient
+```
+
+## Model container
 
 ```@docs
 Params
+Params()
 BoundaryConditions
+State
+Cache
+Laddie.Var
 ```
 
-### Simulation
+## Simulation
 
 ```@docs
 Clock
@@ -42,125 +76,7 @@ DebugConfig
 ```
 
 
-### Parameterizations
-
-#### Entrainment
-
-```@docs
-LambertEntrainment
-GasparEntrainment
-HollandEntrainment
-```
-
-#### Melt
-
-```@docs
-FixedGamTMelting
-TurbulentGamTMelting
-PrescribedMelting
-```
-
-#### Convection
-
-```@docs
-ClampDensity
-ResetToAmbient
-RelaxToAmbient
-```
-
-#### Open boundary
-
-```@docs
-AbstractOpenOceanBC
-ZeroGradientInflow
-NoInflow
-```
-
-#### Grounding line
-
-```@docs
-AbstractGroundingLineBC
-FreeSlipGL
-NoSlipGL
-```
-
-#### Land
-
-```@docs
-AbstractLandBC
-FreeSlipLand
-NoSlipLand
-```
-
-#### Lateral viscosity
-
-```@docs
-AbstractLateralViscosity
-PrescribedLateralViscosity
-NonlinearLateralViscosity
-```
-
-#### Laplacian thickness weights
-
-```@docs
-AbstractLaplacianWeights
-PresentLaplacianWeights
-PastLaplacianWeights
-```
-
-#### Ice-front pressure gradient
-
-```@docs
-AbstractFrontPressure
-FullDepthGradient
-TruncatedDepthGradient
-```
-
-#### Shelf gaps
-
-```@docs
-AbstractGapsBC
-SinkGapsBC
-ConnectedGapsBC
-MarkGapsPreprocess
-```
-
-#### Maximum layer thickness
-
-```@docs
-AbstractMaxLayerThickness
-NoMaxLayerThickness
-TopographicMaxLayerThickness
-AbsoluteMaxLayerThickness
-RelativeMaxLayerThickness
-```
-
-#### Time stepping
-
-```@docs
-FixedDt
-AdaptiveDt
-ConservativeCFL
-ExactCFL
-```
-
-#### Simulation end
-
-```@docs
-AbstractSimulationEnd
-FixedSimulationEnd
-SteadyStateEnd
-```
-
-#### Coriolis parameter
-
-```@docs
-AbstractCoriolisParameter
-CoriolisParameter0D
-CoriolisParameter2D
-```
-
-### Forcing
+## Forcing
 
 A model is driven by a [`CavityForcing`](@ref): an ocean forcing supplying the
 ambient T/S, and an ice forcing supplying the basal ice temperature. Passing an
@@ -171,16 +87,15 @@ ocean forcing on its own to `Model` is shorthand for pairing it with a uniform
 CavityForcing
 ```
 
-#### Ocean
+### Ocean
 
 ```@docs
 AbstractOceanForcing
 OceanForcing1D
 ISOMIPForcing
-Laddie.OceanForcing2D
 ```
 
-#### Ice
+### Ice
 
 ```@docs
 AbstractIceForcing

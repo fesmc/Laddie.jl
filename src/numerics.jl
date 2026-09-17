@@ -11,39 +11,6 @@
         nu / 2 * (past[i, j] + future[i, j] - 2 * present[i, j]) * mask[i, j]
 end
 
-@kernel function _precompute_D_shifts_kernel!(
-    Dym1,
-    Dyp1,
-    Dxm1,
-    Dxp1,
-    Dxm1ym1,
-    Dxp1ym1,
-    Dxm1yp1,
-    @Const(D),
-    @Const(tmask),
-    Nx,
-    Ny,
-)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
-        Dn = D[i, jp1] * tmask[i, jp1]
-        Ds = D[i, jm1] * tmask[i, jm1]
-        De = D[ip1, j] * tmask[ip1, j]
-        Dw = D[im1, j] * tmask[im1, j]
-        Dym1[i, j] = Dn
-        Dyp1[i, j] = Ds
-        Dxm1[i, j] = De
-        Dxp1[i, j] = Dw
-        Dxm1ym1[i, j] = D[ip1, jp1] * tmask[ip1, jp1]
-        Dxp1ym1[i, j] = D[im1, jp1] * tmask[im1, jp1]
-        Dxm1yp1[i, j] = D[ip1, jm1] * tmask[ip1, jm1]
-    end
-end
-
 @kernel function _precompute_staggered_kernel!(
     Vip,
     Vim,
@@ -53,10 +20,6 @@ end
     Uim,
     Ujp,
     Ujm,
-    signU,
-    signV,
-    Vyp1,
-    Uxp1,
     @Const(V),
     @Const(U),
     @Const(vmask_ip),
@@ -86,10 +49,6 @@ end
         Uim[i, j] = _safe_div(Uij + U[im1, j], umask_im[i, j])
         Ujp[i, j] = _safe_div(Uij + U[i, jp1], umask_jp[i, j])
         Ujm[i, j] = _safe_div(Uij + U[i, jm1], umask_jm[i, j])
-        signU[i, j] = sign(Uij)
-        signV[i, j] = sign(Vij)
-        Vyp1[i, j] = V[i, jm1]
-        Uxp1[i, j] = U[im1, j]
     end
 end
 
@@ -121,7 +80,11 @@ end
 end
 
 # Infer backend from array `A`, launch `kernel!` over the full array extent.
-_workgroup(::CPU) = (8, 8)
+# CPU: long blocks along the first (column-major inner) index keep the inner loops
+# vectorisable, and a grid smaller than one block runs on a single task instead of
+# paying the spawn overhead — measured 1.1–1.8× faster than (8, 8) from 80×20 to
+# 1000×1000 cells on 1–16 threads.
+_workgroup(::CPU) = (128, 32)
 _workgroup(::Any) = (32, 8)   # GPU: 256 threads, warp-aligned x-dimension
 
 function launch!(kernel!, A, args...)
@@ -137,10 +100,10 @@ end
 
 _update_conv2!(::Any, ::ClampDensity) = nothing
 _update_conv2!(::Any, ::ResetToAmbient) = nothing
-function _update_conv2!(m, c_p::RelaxToAmbient)
+function _update_conv2!(m, cs::RelaxToAmbient)
     # `imask`, not `tmask`: gap cells are never relaxed towards ambient.  See
     # `update_convection!(m, ::RelaxToAmbient)`.
-    @. m.conv2 = (m.drho < 0) * m.imask * m.D.present / c_p.convection_time
+    @. m.conv2 = (m.drho < 0) * m.imask * m.D.present / cs.convection_time
 end
 
 function precompute_integration_terms!(m, dt)
@@ -164,8 +127,6 @@ end
         iszero(tmask[i, j]),
         D0[i, j],
         D0[i, j] + (convD[i, j] + melt[i, j] + nentr[i, j]) * dt,
-        # D0[i, j] + (-convD[i, j] + melt[i, j] + nentr[i, j]) * dt,
-        # D0[i, j],
     )
 end
 
@@ -175,7 +136,6 @@ end
     @Const(U1),
     @Const(dDdt),
     @Const(Ddrho),
-    @Const(Dxm1),
     @Const(D1),
     @Const(drho),
     @Const(dzdx),
@@ -184,6 +144,7 @@ end
     @Const(detr),
     @Const(cU),
     @Const(lU),
+    @Const(tmask),
     @Const(tmask_ip),
     @Const(umask),
     @Const(fu),
@@ -209,17 +170,18 @@ end
         ip_D_Vjm = _safe_div(D1[i, j] * Vjm[i, j] + D1[ip1, j] * Vjm[ip1, j], tmip)
         ipjmV = half * (half * (V1[i, j] + V1[i, jm1]) + half * (V1[ip1, j] + V1[ip1, jm1]))
         # tmip is 2 at a fully-interior face (both neighbours active) and 1 at a
-        # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where Dxm1
-        # is a masked-to-zero stand-in rather than a real neighbour thickness.
+        # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where the
+        # masked neighbour thickness is a zero stand-in rather than a real one.
         # pgf_w selects what happens there: 0 (FullDepthGradient, the Python
         # v1.x behaviour) keeps the term and leaves this an exact multiply by
         # 1.0; 1 (TruncatedDepthGradient) drops it, as LADDIE v2 does at
-        # mask_cf_b faces.  See AbstractFrontPressure and f90-diffs.md §4.
+        # mask_cf_b faces.  See AbstractFrontPressure.
         pgf_gate = one(FT) + pgf_w * (tmip - FT(2))
+        D_next = D1[ip1, j] * tmask[ip1, j]
         rhs =
             -U1[i, j] * ip_dDdt +                                      # thickness-tendency correction
             cU[i, j] +                                                  # horizontal advection
-            -g * ip_D_drho * (Dxm1[i, j] - D1[i, j]) / dx * pgf_gate +  # pressure: D gradient
+            -g * ip_D_drho * (D_next - D1[i, j]) / dx * pgf_gate +     # pressure: D gradient
             g * ip_D_dzdx +                                             # pressure: ice-shelf slope
             -half * g * ip_D^2 * (drho[ip1, j] - drho[i, j]) / dx +     # pressure: density gradient
             fu[i, j] * ip_D_Vjm +                                              # Coriolis
@@ -236,7 +198,6 @@ end
     @Const(V1),
     @Const(dDdt),
     @Const(Ddrho),
-    @Const(Dym1),
     @Const(D1),
     @Const(drho),
     @Const(dzdy),
@@ -245,6 +206,7 @@ end
     @Const(detr),
     @Const(cV),
     @Const(lV),
+    @Const(tmask),
     @Const(tmask_jp),
     @Const(vmask),
     @Const(fv),
@@ -271,10 +233,11 @@ end
         jpimU = half * (half * (U1[i, j] + U1[im1, j]) + half * (U1[i, jp1] + U1[im1, jp1]))
         # See _step_u_momentum_kernel! for the ice-front gate.
         pgf_gate = one(FT) + pgf_w * (tmjp - FT(2))
+        D_next = D1[i, jp1] * tmask[i, jp1]
         rhs =
             -V1[i, j] * jp_dDdt +                                      # thickness-tendency correction
             cV[i, j] +                                                  # horizontal advection
-            -g * jp_D_drho * (Dym1[i, j] - D1[i, j]) / dy * pgf_gate +  # pressure: D gradient
+            -g * jp_D_drho * (D_next - D1[i, j]) / dy * pgf_gate +     # pressure: D gradient
             g * jp_D_dzdy +                                             # pressure: ice-shelf slope
             -half * g * jp_D^2 * (drho[i, jp1] - drho[i, j]) / dy +     # pressure: density gradient
             -fv[i, j] * jp_D_Uim +                                             # Coriolis
@@ -284,6 +247,12 @@ end
         out[i, j] = Vp[i, j] + _safe_div(rhs, jp_D) * vmask[i, j] * dt
     end
 end
+
+# A kernel argument that is either a per-cell field or one value for the whole
+# domain (gamT and conv2 are scalars or matrices depending on the melt and
+# convection schemes); dispatch picks the right read at compile time.
+@inline _at(x::Number, i, j) = x
+@inline _at(x::AbstractArray, i, j) = @inbounds x[i, j]
 
 @kernel function _step_temperature_kernel!(
     out,
@@ -306,109 +275,13 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         rhs =
-            -T_present[i, j] * dDdt[i, j] +          # thickness-tendency correction
-            cT[i, j] +                                # horizontal advection
-            nentr[i, j] * Ta[i, j] +                 # entrainment of ambient water at Ta
-            melt[i, j] * Tb[i, j] +                  # meltwater input at freezing point
-            -gamT * (T_present[i, j] - Tb[i, j]) +           # turbulent ice-ocean heat exchange
-            K_h * lT[i, j] +                                   # horizontal diffusion
-            -(T_past[i, j] - Ta[i, j]) * conv2                # convective restoring to ambient
-        out[i, j] = T_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
-    end
-end
-
-@kernel function _step_temperature_mat_gamT_kernel!(
-    out,
-    @Const(T_past),
-    @Const(T_present),
-    @Const(dDdt),
-    @Const(cT),
-    @Const(nentr),
-    @Const(Ta),
-    @Const(melt),
-    @Const(Tb),
-    @Const(lT),
-    @Const(D1),
-    @Const(tmask),
-    @Const(gamT),
-    K_h,
-    conv2,
-    dt,
-)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        rhs =
-            -T_present[i, j] * dDdt[i, j] +          # thickness-tendency correction
-            cT[i, j] +                                # horizontal advection
-            nentr[i, j] * Ta[i, j] +                 # entrainment of ambient water at Ta
-            melt[i, j] * Tb[i, j] +                  # meltwater input at freezing point
-            -gamT[i, j] * (T_present[i, j] - Tb[i, j]) +     # turbulent ice-ocean heat exchange
-            K_h * lT[i, j] +                                   # horizontal diffusion
-            -(T_past[i, j] - Ta[i, j]) * conv2                # convective restoring to ambient
-        out[i, j] = T_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
-    end
-end
-
-@kernel function _step_temperature_mat_conv2_kernel!(
-    out,
-    @Const(T_past),
-    @Const(T_present),
-    @Const(dDdt),
-    @Const(cT),
-    @Const(nentr),
-    @Const(Ta),
-    @Const(melt),
-    @Const(Tb),
-    @Const(lT),
-    @Const(D1),
-    @Const(tmask),
-    gamT,
-    K_h,
-    @Const(conv2),
-    dt,
-)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        rhs =
-            -T_present[i, j] * dDdt[i, j] +          # thickness-tendency correction
-            cT[i, j] +                                # horizontal advection
-            nentr[i, j] * Ta[i, j] +                 # entrainment of ambient water at Ta
-            melt[i, j] * Tb[i, j] +                  # meltwater input at freezing point
-            -gamT * (T_present[i, j] - Tb[i, j]) +           # turbulent ice-ocean heat exchange
-            K_h * lT[i, j] +                                   # horizontal diffusion
-            -(T_past[i, j] - Ta[i, j]) * conv2[i, j]          # convective restoring to ambient
-        out[i, j] = T_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
-    end
-end
-
-@kernel function _step_temperature_mat_both_kernel!(
-    out,
-    @Const(T_past),
-    @Const(T_present),
-    @Const(dDdt),
-    @Const(cT),
-    @Const(nentr),
-    @Const(Ta),
-    @Const(melt),
-    @Const(Tb),
-    @Const(lT),
-    @Const(D1),
-    @Const(tmask),
-    @Const(gamT),
-    K_h,
-    @Const(conv2),
-    dt,
-)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        rhs =
-            -T_present[i, j] * dDdt[i, j] +          # thickness-tendency correction
-            cT[i, j] +                                # horizontal advection
-            nentr[i, j] * Ta[i, j] +                 # entrainment of ambient water at Ta
-            melt[i, j] * Tb[i, j] +                  # meltwater input at freezing point
-            -gamT[i, j] * (T_present[i, j] - Tb[i, j]) +     # turbulent ice-ocean heat exchange
-            K_h * lT[i, j] +                                   # horizontal diffusion
-            -(T_past[i, j] - Ta[i, j]) * conv2[i, j]          # convective restoring to ambient
+            -T_present[i, j] * dDdt[i, j] +                 # thickness-tendency correction
+            cT[i, j] +                                      # horizontal advection
+            nentr[i, j] * Ta[i, j] +                        # entrainment of ambient water at Ta
+            melt[i, j] * Tb[i, j] +                         # meltwater input at freezing point
+            -_at(gamT, i, j) * (T_present[i, j] - Tb[i, j]) + # turbulent ice-ocean heat exchange
+            K_h * lT[i, j] +                                # horizontal diffusion
+            -(T_past[i, j] - Ta[i, j]) * _at(conv2, i, j)   # convective restoring to ambient
         out[i, j] = T_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
     end
 end
@@ -431,43 +304,16 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         rhs =
-            -S_present[i, j] * dDdt[i, j] +              # thickness-tendency correction
-            cS[i, j] +                                    # horizontal advection
-            nentr[i, j] * Sa[i, j] +                     # entrainment of ambient water at Sa
-            K_h * lS[i, j] +                              # horizontal diffusion
-            -(S_past[i, j] - Sa[i, j]) * conv2           # convective restoring to ambient
+            -S_present[i, j] * dDdt[i, j] +                 # thickness-tendency correction
+            cS[i, j] +                                      # horizontal advection
+            nentr[i, j] * Sa[i, j] +                        # entrainment of ambient water at Sa
+            K_h * lS[i, j] +                                # horizontal diffusion
+            -(S_past[i, j] - Sa[i, j]) * _at(conv2, i, j)   # convective restoring to ambient
         out[i, j] = S_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
     end
 end
 
-@kernel function _step_salinity_mat_conv2_kernel!(
-    out,
-    @Const(S_past),
-    @Const(S_present),
-    @Const(dDdt),
-    @Const(cS),
-    @Const(nentr),
-    @Const(Sa),
-    @Const(lS),
-    @Const(D1),
-    @Const(tmask),
-    K_h,
-    @Const(conv2),
-    dt,
-)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        rhs =
-            -S_present[i, j] * dDdt[i, j] +              # thickness-tendency correction
-            cS[i, j] +                                    # horizontal advection
-            nentr[i, j] * Sa[i, j] +                     # entrainment of ambient water at Sa
-            K_h * lS[i, j] +                              # horizontal diffusion
-            -(S_past[i, j] - Sa[i, j]) * conv2[i, j]    # convective restoring to ambient
-        out[i, j] = S_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
-    end
-end
-
-function step_thickness(m, dt)
+function step_thickness!(m, dt)
     launch!(
         _step_thickness_kernel!,
         m.D.future,
@@ -481,7 +327,7 @@ function step_thickness(m, dt)
     )
     return
 end
-function step_u_momentum(m, dt)
+function step_u_momentum!(m, dt)
     upwind_advection_U(m)
     laplace_U(m)
     nx, ny = size(m.U.future)
@@ -493,7 +339,6 @@ function step_u_momentum(m, dt)
         m.U.present,
         m.dDdt,
         m.Ddrho,
-        m.Dxm1,
         m.D.present,
         m.drho,
         m.dzdx,
@@ -502,6 +347,7 @@ function step_u_momentum(m, dt)
         m.detr,
         m.cU,
         m.lU,
+        m.tmask,
         m.tmask_ip,
         m.umask,
         m.fu,
@@ -515,7 +361,7 @@ function step_u_momentum(m, dt)
     )
     return
 end
-function step_v_momentum(m, dt)
+function step_v_momentum!(m, dt)
     upwind_advection_V(m)
     laplace_V(m)
     nx, ny = size(m.V.future)
@@ -527,7 +373,6 @@ function step_v_momentum(m, dt)
         m.V.present,
         m.dDdt,
         m.Ddrho,
-        m.Dym1,
         m.D.present,
         m.drho,
         m.dzdy,
@@ -536,6 +381,7 @@ function step_v_momentum(m, dt)
         m.detr,
         m.cV,
         m.lV,
+        m.tmask,
         m.tmask_jp,
         m.vmask,
         m.fv,
@@ -549,23 +395,7 @@ function step_v_momentum(m, dt)
     )
     return
 end
-# Kernel selection dispatches on the concrete types of gamT and conv2, which are
-# fixed at model-construction time by the MP and CS type parameters.
-_launch_T!(args, gamT::Number, K_h, conv2::Number, dt) =
-    launch!(_step_temperature_kernel!, args..., gamT, K_h, conv2, dt)
-_launch_T!(args, gamT::Number, K_h, conv2::AbstractArray, dt) =
-    launch!(_step_temperature_mat_conv2_kernel!, args..., gamT, K_h, conv2, dt)
-_launch_T!(args, gamT::AbstractArray, K_h, conv2::Number, dt) =
-    launch!(_step_temperature_mat_gamT_kernel!, args..., gamT, K_h, conv2, dt)
-_launch_T!(args, gamT::AbstractArray, K_h, conv2::AbstractArray, dt) =
-    launch!(_step_temperature_mat_both_kernel!, args..., gamT, K_h, conv2, dt)
-
-_launch_S!(args, K_h, conv2::Number, dt) =
-    launch!(_step_salinity_kernel!, args..., K_h, conv2, dt)
-_launch_S!(args, K_h, conv2::AbstractArray, dt) =
-    launch!(_step_salinity_mat_conv2_kernel!, args..., K_h, conv2, dt)
-
-function step_temperature(m, dt)
+function step_temperature!(m, dt)
     @. m.DT = m.D.present * m.T.present
     upwind_advection_T(m.cT, m, m.DT)
     laplace_T(m.lT, m, m.T.past)
@@ -584,10 +414,10 @@ function step_temperature(m, dt)
         m.D.present,
         m.tmask,
     )
-    _launch_T!(args, m.gamT, m.K_h, m.conv2, dt)
+    launch!(_step_temperature_kernel!, args..., m.gamT, m.K_h, m.conv2, dt)
     return
 end
-function step_salinity(m, dt)
+function step_salinity!(m, dt)
     @. m.DS = m.D.present * m.S.present
     upwind_advection_T(m.cS, m, m.DS)
     laplace_T(m.lS, m, m.S.past)
@@ -604,27 +434,26 @@ function step_salinity(m, dt)
         m.D.present,
         m.tmask,
     )
-    _launch_S!(args, m.K_h, m.conv2, dt)
+    launch!(_step_salinity_kernel!, args..., m.K_h, m.conv2, dt)
     return
 end
 
 
 function _clamp_thickness!(m)
     max_layer_thickness!(m, m.params.max_layer_thickness)
-    # The D_min floor must respect the domain mask.  `max_layer_thickness!` zeroes D
-    # outside tmask; an unmasked `max(D, D_min)` raises those cells straight back to
-    # D_min, so inactive cells end up holding D = D_min instead of 0 (they start at 0
-    # from `_initialize_prognostics!`, so the invariant breaks on the first step).
-    # That leaks into the interior: the face-average stencils in
-    # `_precompute_laplacian_kernel!` divide the *sum* over a cell pair by the number
-    # of active cells in it, so a non-zero D outside the domain biases the diffusion
-    # of every boundary cell.
+    # The D_min floor must respect the domain mask: inactive cells hold D = 0.  A
+    # non-zero D outside the domain would leak into the interior, because the
+    # face-average stencils in `_precompute_laplacian_kernel!` divide the *sum* over a
+    # cell pair by the number of active cells in it, biasing the diffusion of every
+    # boundary cell.
     @. m.D.future = max(m.D.future, m.D_min) * m.tmask
     return
 end
 
 function _check_nans_shelf!(sim, varname, arr)
-    any(isnan.(arr) .& (sim.model.tmask .> 0)) && error(
+    m = sim.model
+    @. m.diag = isnan(arr) & (m.tmask > 0)
+    any(>(0), m.diag) && error(
         "NaN in $varname at t = $(round(_t_days(sim), digits=4)) days " *
         "(iteration $(sim.clock.iteration))",
     )
@@ -636,36 +465,37 @@ function leapfrog_step!(sim, nsteps)
     m = sim.model
     dt = nsteps * sim.clock.dt
     check_nans = sim.debug.check_nans
-    step_thickness(m, dt)
+    step_thickness!(m, dt)
     _clamp_thickness!(m)
     precompute_integration_terms!(m, sim.clock.dt)
     check_nans && _check_nans_shelf!(sim, "D", m.D.future)
 
     # Both momentum components are stepped before the limiter, because it caps the
     # speed and so needs U and V together (see `clamp_velocities!`).
-    step_u_momentum(m, dt)
-    step_v_momentum(m, dt)
+    step_u_momentum!(m, dt)
+    step_v_momentum!(m, dt)
     clamp_velocities!(m)
     check_nans && _check_nans_shelf!(sim, "U", m.U.future)
     check_nans && _check_nans_shelf!(sim, "V", m.V.future)
 
-    # Tracer bounds.  LADDIE v2 has no counterpart — it assigns T and S only from
-    # the flux-form integration and never bounds them — and they carry a real cost:
+    # Tracer bounds (`Params.T_min` … `S_max`).  LADDIE v2 has no counterpart — it
+    # assigns T and S only from the flux-form integration and never bounds them —
+    # and they carry a real cost:
     # with the tracers pinned the melt rate is bounded too, so an unstable run stays
-    # finite and `_check_blowup` cannot see it (see laddie-roadmap/connected-gaps.md).
-    # They are kept because they hold real-world domains together.
+    # finite and `_check_blowup` cannot see it.  They are kept because they hold
+    # real-world domains together.
     #
-    # Applied inside the domain only.  Unmasked, the salinity floor raises every
-    # inactive cell from S = 0 to S = 32, breaking the invariant that prognostics are
-    # zero outside `tmask` — the same oversight `_clamp_thickness!` used to have.
-    # It is inert for the interior solution either way, but it makes the saved fields
-    # honest and keeps out-of-domain values from looking like data.
-    step_temperature(m, dt)
-    @. m.T.future = ifelse(m.tmask > 0, clamp(m.T.future, -5, 5), m.T.future)
+    # Applied inside the domain only: unmasked, the salinity floor would raise every
+    # inactive cell from S = 0 to S_min, breaking the invariant that prognostics are
+    # zero outside `tmask` (see `_clamp_thickness!`).
+    step_temperature!(m, dt)
+    @. m.T.future =
+        ifelse(m.tmask > 0, clamp(m.T.future, m.T_min, m.T_max), m.T.future)
     check_nans && _check_nans_shelf!(sim, "T", m.T.future)
 
-    step_salinity(m, dt)
-    @. m.S.future = ifelse(m.tmask > 0, clamp(m.S.future, 32, 36), m.S.future)
+    step_salinity!(m, dt)
+    @. m.S.future =
+        ifelse(m.tmask > 0, clamp(m.S.future, m.S_min, m.S_max), m.S.future)
     check_nans && _check_nans_shelf!(sim, "S", m.S.future)
     return
 end
@@ -765,11 +595,13 @@ Cap the flow **speed** at `Params.v_cut` by scaling both velocity components wit
 one factor, `(U, V) *= min(1, v_cut / |u|)`, so the flow direction is preserved.
 
 This mirrors LADDIE v2 (`laddie_velocity.f90`, "Cutoff velocities to ensure
-Uabs <= Uabs_max").  Clamping each component independently — as LADDIE.jl did
-before — rotates the velocity vector whenever one component saturates and the
-other does not, and admits speeds up to `√2 · v_cut` along the diagonal.
+Uabs <= Uabs_max").  Clamping each component independently would rotate the
+velocity vector whenever one component saturates and the other does not, and
+admit speeds up to `√2 · v_cut` along the diagonal.
 
-Idempotent, so applying it twice in a step is harmless.
+On the C-grid each component is scaled with the speed at its own point, formed
+with a 4-point average of the other component; all factors are computed from the
+unlimited field before either component is scaled.
 """
 function clamp_velocities!(m)
     nx, ny = size(m.U.future)

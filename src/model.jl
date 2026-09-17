@@ -34,7 +34,7 @@ function _check_property_collisions(grid, geometry, state, cache, params, forcin
 end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 The model: geometry, physics and prognostic state.  It knows nothing about time
 integration — wrap it in a [`Simulation`](@ref) to advance it with `run!`.
@@ -49,14 +49,16 @@ Fields are accessed directly on `m` through a flat forwarding layer:
 |----------------|--------------|---------|
 | `m.D`, `m.U`, `m.V`, `m.T`, `m.S` | `State` | `m.D.present`, `m.U.past` |
 | `m.melt`, `m.entr`, `m.drho`, `m.Ta`, `m.Sa`, … | `Cache` | `m.melt .* m.seconds_per_year` |
-| `m.mask`, `m.z_draft`, `m.dx`, `m.x`, … | `Grid` | raw mask, draft, spacing, coordinates |
+| `m.mask`, `m.z_draft`, `m.dx`, `m.x`, … | `Grid` | input mask, draft, spacing, coordinates |
 | `m.tmask`, `m.umask`, `m.resolved_mask`, `m.dzdx`, … | `Geometry` | `m.tmask .> 0` |
 | `m.C_d`, `m.A_h`, `m.D_min`, … | `Params` | `m.C_d` |
 | `m.f`, `m.fu`, `m.fv` | `Geometry` | Coriolis at T-, u- and v-points |
 | `m.boundary` | `BoundaryConditions` | `m.boundary.land` (not flattened) |
 | `m.Tz`, `m.Sz`, `m.z` | Forcing (ocean) | ambient profile arrays |
 | `m.T_ice_base` | Forcing (ice) | basal ice temperature field |
-`m.FT` returns the floating-point type (`Float64` or `Float32`).
+
+`m.FT` returns the floating-point type (`Float64` or `Float32`), and `m.nx`, `m.ny`
+the interior cell counts.
 
 `Grid`, `Geometry` and `Params` are immutable after construction.  `Cache` and
 `State` fields are mutable and updated in place each time step.

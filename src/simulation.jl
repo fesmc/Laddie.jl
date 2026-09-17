@@ -38,7 +38,7 @@ function IOState(m::Model{FT}) where {FT}
         "",      # logfile
         0.0,     # walltime_start
         "",      # restartfile
-        ntuple(_ -> similar(empty), 14)...,
+        ntuple(_ -> similar(empty), fieldcount(IOState) - 10)...,   # accumulators
     )
 end
 

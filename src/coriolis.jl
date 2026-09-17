@@ -77,9 +77,9 @@ end
 "Coriolis parameter from latitude in degrees north."
 _f_from_lat(lat, FT) = FT(2 * EARTH_ROTATION_RATE * sind(Float64(lat)))
 
-# Expand a Coriolis choice into a full-domain field on T-points.  Runs before
-# cropping, on the same footing as `z_draft_raw`, so a 2D latitude is validated
-# against the mask the caller passed and then sliced with it.
+# Expand a Coriolis choice into a full-domain field on T-points.  Runs on the
+# grid's input size, so a 2D latitude is validated against the mask the caller
+# passed to `Grid` and then cropped with it.
 _coriolis_field(cp::CoriolisParameter0D, sz, FT) = fill(FT(cp.f), sz)
 
 function _coriolis_field(cp::CoriolisParameter2D, sz, FT)
@@ -109,13 +109,5 @@ end
 Base.show(io::IO, cp::CoriolisParameter0D) =
     print(io, "CoriolisParameter0D(f = ", cp.f, ")")
 
-function Base.show(io::IO, cp::CoriolisParameter2D)
-    print(io, "CoriolisParameter2D(lat = ")
-    if cp.lat isa AbstractMatrix
-        lo, hi = extrema(cp.lat)
-        print(io, round(Float64(lo); digits = 2), " … ", round(Float64(hi); digits = 2))
-    else
-        print(io, round(Float64(cp.lat); digits = 2))
-    end
-    print(io, "°N)")
-end
+Base.show(io::IO, cp::CoriolisParameter2D) =
+    print(io, "CoriolisParameter2D(lat = $(_range_str(cp.lat, 2))°N)")

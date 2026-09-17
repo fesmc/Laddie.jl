@@ -15,7 +15,7 @@ duration) or [`SteadyStateEnd`](@ref) (stop once the solution settles).
 abstract type AbstractSimulationEnd end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Stop after a fixed simulated duration `t_end` (days, the duration of this `run!`
 call).  This is the default and exactly reproduces `run!(sim; days = t_end)`.
@@ -28,7 +28,7 @@ Base.@kwdef struct FixedSimulationEnd <: AbstractSimulationEnd
 end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Stop early once the cavity reaches a quasi-steady state, or after `t_end` days,
 whichever comes first.  Steadiness is detected when the **relative** change in
@@ -40,9 +40,10 @@ diagnostic samples falls below `tol`:
 ```
 
 `tol` is dimensionless, so it means the same thing in a warm cavity (melt of
-order 100 m yr⁻¹) and a cold one (order 1 m yr⁻¹).  Samples are taken at the
-diagnostic check cadence (not every step), which is cheap and robust to the
-leapfrog computational mode.  `t_end` is a safety cap on the total duration.
+order 100 m yr⁻¹) and a cold one (order 1 m yr⁻¹).  Samples are taken once per
+simulated day (not every step), which is cheap, robust to the leapfrog
+computational mode, and independent of the run length.  `t_end` is a safety cap on
+the duration of the `run!` call.
 
 Select via `run!(sim; until = SteadyStateEnd(tol = 1e-3, t_end = 365.0))`.
 """

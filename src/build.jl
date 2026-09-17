@@ -7,9 +7,8 @@ _float_type(f::OceanForcing1D) = eltype(f.Tz)
 _float_type(f::CavityForcing) = _float_type(f.ocean)
 
 # Bring a user-supplied basal ice temperature onto the full domain: a scalar is
-# broadcast, a matrix is checked against the mask and converted to FT.  Runs
-# before cropping, on the same footing as `z_draft_raw`, so `_crop_ice_forcing`
-# can then slice it with the mask's own ranges.  Materialising once at build keeps
+# broadcast, a matrix is checked against the grid's input size and converted to FT,
+# so `_crop_ice_forcing` can then slice it with the grid's crop ranges.  Materialising once at build keeps
 # the melt kernel to a single indexed path instead of a scalar and a field variant.
 function _expand_ice_forcing(ice::PrescribedIceForcing, sz, FT)
     T = ice.T_ice_base
@@ -44,30 +43,56 @@ _crop_ice_forcing(ice::PrescribedIceForcing, r, c) =
 _expand_ice_forcing(ice::AbstractIceForcing, sz, FT) = ice
 _crop_ice_forcing(ice::AbstractIceForcing, r, c) = ice
 
-# Shape and spacing checks.  These run *before* preprocessing and cropping, because
-# `_crop_domain` slices z_draft_raw/z_bed_raw with index ranges derived from the mask:
-# a size mismatch there surfaces as an opaque BoundsError from an internal helper
-# instead of the ArgumentError the caller should see.
-function _validate_input_shapes(mask, z_draft_raw, z_bed_raw, dx, dy)
-    (size(mask, 1) >= 3 && size(mask, 2) >= 3) || throw(
-        ArgumentError(
-            "mask must be at least 3×3 — interior cells plus the one-cell border ring — got $(size(mask))",
-        ),
-    )
-    size(z_draft_raw) == size(mask) || throw(
-        ArgumentError(
-            "z_draft_raw and mask must have the same size, got $(size(z_draft_raw)) vs $(size(mask))",
-        ),
-    )
-    z_bed_raw === nothing ||
-        size(z_bed_raw) == size(mask) ||
-        throw(
+# Fill the Cache's prescribed melt field (m s⁻¹, grid-shaped) from a
+# `PrescribedMelting` given in m yr⁻¹ as a scalar or a full-domain matrix.  Other
+# melt schemes carry no such field.
+_init_prescribed_melt!(cache, ::AbstractMelting, grid, params) = nothing
+function _init_prescribed_melt!(cache, mp::PrescribedMelting, grid, params)
+    M = mp.melt
+    sz = grid.input_size
+    if M isa AbstractMatrix
+        size(M) == sz || throw(
             ArgumentError(
-                "z_bed_raw and mask must have the same size, got $(size(z_bed_raw)) vs $(size(mask))",
+                "PrescribedMelting melt is $(size(M)) but the mask is $sz; a 2D melt " *
+                "rate must cover the full domain including the border ring",
             ),
         )
-    (dx > 0 && dy > 0) ||
-        throw(ArgumentError("dx and dy must be positive, got dx = $dx, dy = $dy"))
+    elseif !(M isa Real)
+        throw(
+            ArgumentError(
+                "PrescribedMelting melt must be a real scalar or a matrix, got $(typeof(M))",
+            ),
+        )
+    end
+    all(isfinite, M) || throw(ArgumentError("PrescribedMelting melt must be finite"))
+    r, c = grid.crop
+    rate = M isa AbstractMatrix ? M[r, c] : M
+    cache.melt_prescribed .= rate ./ params.seconds_per_year
+    return
+end
+
+# Shape checks.  These run *before* preprocessing and cropping, because the
+# cropping slices every input with index ranges derived from the mask: a size
+# mismatch there would surface as an opaque BoundsError instead of an ArgumentError.
+function _validate_input_shapes(mask, z_draft, z_bed)
+    (size(mask, 1) >= 3 && size(mask, 2) >= 3) || throw(
+        ArgumentError(
+            "mask must be at least 3×3 — interior cells plus the one-cell border " *
+            "ring — got $(size(mask))",
+        ),
+    )
+    size(z_draft) == size(mask) || throw(
+        ArgumentError(
+            "z_draft and mask must have the same size, got $(size(z_draft)) vs $(size(mask))",
+        ),
+    )
+    z_bed === nothing ||
+        size(z_bed) == size(mask) ||
+        throw(
+            ArgumentError(
+                "z_bed and mask must have the same size, got $(size(z_bed)) vs $(size(mask))",
+            ),
+        )
     return
 end
 
@@ -147,8 +172,7 @@ ice-base slope (`gradient`) and the Coriolis field (`params.coriolis`).
 Land (`1`) and grounded ice (`2`) are both walls to the plume and are unioned into
 `grd`, but they stay distinct throughout: only `2` is a grounding line (`gl`, and
 the `boundary.grounding_line` slip condition), while `1` is rock (`lnd`, and
-`boundary.land`).  Both slip conditions default to the global `Params.slip` (free
-slip) and can be set independently.
+`boundary.land`).  Both default to no slip and can be set independently.
 
 # Keywords
 - `forcing` (required): a `CavityForcing`, or an ocean forcing alone (e.g.
@@ -158,7 +182,8 @@ slip) and can be set independently.
 - `params`: a `Params` object with all physical constants and parameterizations
   (default `Params(; FT)` at the grid's precision).  A 2D latitude in
   `params.coriolis` is cropped with the grid, like the ice temperature.
-- `boundary`: a [`BoundaryConditions`](@ref) (default: all LADDIE v1.x conditions).
+- `boundary`: a [`BoundaryConditions`](@ref) (default `BoundaryConditions()`: no-slip
+  walls, otherwise the LADDIE v1.x conditions).
 - `gradient`: ice-base slope stencil, [`JlGradient`](@ref) (default) or
   [`PyGradient`](@ref).
 
@@ -172,8 +197,8 @@ initial fields only; secondary fields (melt, entrainment, …) are computed when
 mask    = build_laddie_mask(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
 z_draft = ice_base_depth(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
 grid    = Grid(mask, z_draft, 2000.0, 2000.0)
-model   = Model(grid; forcing = ISOMIPForcing(Float64, :warm),
-                boundary = BoundaryConditions(; grounding_line = NoSlipGL()))
+model   = Model(grid; forcing = ISOMIPForcing(:warm),
+                boundary = BoundaryConditions(; land = FreeSlipLand()))
 sim     = Simulation(model; dt = 210.0)
 run!(sim; days = 30)
 ```
@@ -190,7 +215,7 @@ function Model(
     backend = KA.get_backend(grid.z_draft)
     # The model is assembled on the CPU and moved in one go, so its derived fields
     # are computed exactly as on a CPU run whatever the grid's backend.
-    grid = backend === CPU() ? grid : _grid_to_backend(grid, CPU())
+    grid = backend isa CPU ? grid : _grid_to_backend(grid, CPU())
     r, c = grid.crop
     # Full-domain fields are validated against the grid's input size, then cropped
     # with the grid's own ranges.  Materialising the ice temperature once keeps the
@@ -212,9 +237,10 @@ function Model(
         nx_total,
         ny_total,
     )
+    _init_prescribed_melt!(cache, params.melting, grid, params)
     m = Model(grid, geometry, state, cache, params, boundary, forcing)
     _initialize_prognostics!(m)
-    backend === CPU() || (m = to_backend(m, backend))
+    backend isa CPU || (m = to_backend(m, backend))
     return m
 end
 
@@ -242,7 +268,7 @@ Convenience constructor for the idealised ISOMIP+ channel geometry
 - `ice_forcing`: an `AbstractIceForcing` supplying the basal ice temperature
   (default: uniform `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`).
 - `FT`: floating-point precision type (default `Float64`; use `Float32` for GPU).
-- `params`: `Params` object (default: ISOMIP+-canonical values).
+- `params`: `Params` object (default `Params(; FT)`, the ISOMIP+-canonical values).
 - `domain_cropping`, `preprocess`: forwarded to `Grid`.
 - `boundary`, `gradient`: forwarded to `Model`.
 - any other keyword (`dt`, `tstep`, `cfl`, `nu`, `stop`, `output`, `restart`,
@@ -267,7 +293,7 @@ function build_isomip(
     z_draft_front = -200.0,
     isomipcond = :warm,
     ice_forcing = PrescribedIceForcing(),
-    params = nothing,
+    params = Params(; FT),
     boundary = BoundaryConditions(),
     gradient = JlGradient(),
     domain_cropping = NoDomainCropping(),
@@ -277,10 +303,8 @@ function build_isomip(
     nx_total, ny_total = nx + 2, ny + 2
     mask = zeros(Int, nx_total, ny_total)
     z_draft_raw = zeros(FT, nx_total, ny_total)
-    xgl_ft = FT(xgl);
-    xfront_ft = FT(xfront)
-    zgl_ft = FT(z_draft_gl);
-    zfr_ft = FT(z_draft_front)
+    xgl_ft, xfront_ft = FT(xgl), FT(xfront)
+    zgl_ft, zfr_ft = FT(z_draft_gl), FT(z_draft_front)
     for j = 1:ny, i = 1:nx
         x = FT((i - 1) * dx)
         ip, jp = i + 1, j + 1
@@ -292,23 +316,12 @@ function build_isomip(
                 zgl_ft + (zfr_ft - zgl_ft) * (x - xgl_ft) / (xfront_ft - xgl_ft)
         end
     end
-    mask[1, :] .= 1;
-    mask[end, :] .= 1
-    mask[:, 1] .= 1;
-    mask[:, end] .= 1
+    mask[[1, end], :] .= 1
+    mask[:, [1, end]] .= 1
 
-    forcing = CavityForcing(ISOMIPForcing(FT, isomipcond), ice_forcing)
-    _params =
-        isnothing(params) ?
-        Params(;
-            FT,
-            entrainment = LambertEntrainment(FT(2.5)),
-            melting = FixedGamTMelting(FT(0.00018)),
-            convection_scheme = ResetToAmbient(FT(0.005)),
-            max_layer_thickness = NoMaxLayerThickness(),
-        ) : params
+    forcing = CavityForcing(ISOMIPForcing(isomipcond; FT), ice_forcing)
 
     grid = Grid(mask, z_draft_raw, dx, dy; preprocess, domain_cropping, backend, FT)
-    model = Model(grid; forcing, params = _params, boundary, gradient)
+    model = Model(grid; forcing, params, boundary, gradient)
     return Simulation(model; simulation_kwargs...)
 end

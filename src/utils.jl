@@ -8,9 +8,9 @@ each step.  Pass a concrete instance as `Params(; max_layer_thickness = ...)`:
     All of these clamp `D` *after* the thickness step, discarding volume while leaving
     the momentum and tracer content of the layer untouched. On a real cavity that acts
     as a mass sink wherever it binds, and the damage is not local: capping a
-    Crosson–Dotson run at the water column collapsed the mean melt rate from 9.9 to
-    1.1 m yr⁻¹ — including in cells where the cap never binds, because the plume that
-    feeds them no longer develops (`laddie-roadmap/validation.md` §5.2).
+    Crosson–Dotson run (see the example page) at the water column collapsed the mean
+    melt rate from 9.9 to 1.1 m yr⁻¹ — including in cells where the cap never binds,
+    because the plume that feeds them no longer develops.
 
     Neither reference bounds `D` this way. Python LADDIE v1 has no upper bound at all
     (its `maxD = 3000 m` never binds), and LADDIE v2 folds a fixed `Hmax` into the
@@ -21,7 +21,7 @@ each step.  Pass a concrete instance as `Params(; max_layer_thickness = ...)`:
 abstract type AbstractMaxLayerThickness end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Leave the layer thickness unbounded from above (the default): `D` is set by the
 volume budget alone, exactly as in Python LADDIE v1, and only the `D_min` floor is
@@ -37,28 +37,27 @@ Select via `Params(; max_layer_thickness = NoMaxLayerThickness())` (the default)
 struct NoMaxLayerThickness <: AbstractMaxLayerThickness end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Cap the layer thickness at the local water-column depth, `D <= z_draft - z_bed`.
 
-This bound is only meaningful when a bed elevation was supplied: `Model` fills
-`z_bed` with `-Inf` when `z_bed_raw` is not given, in which case the cap is
-`+Inf` and `D` is effectively unbounded from above — which is why passing `z_bed`
-used to change the solution drastically while this was the default.  Read the
-warning on [`AbstractMaxLayerThickness`](@ref) before selecting it: on a real
-cavity this cap can suppress melt by an order of magnitude.
+This bound is only meaningful when a bed elevation was given to [`Grid`](@ref)
+(`z_bed`); without one the bed is `-Inf`, the cap is `+Inf` and `D` is unbounded
+from above.  Read the warning on [`AbstractMaxLayerThickness`](@ref) before
+selecting it: on a real cavity this cap can suppress melt by an order of magnitude.
 
 Select via `Params(; max_layer_thickness = TopographicMaxLayerThickness())`.
 """
 struct TopographicMaxLayerThickness <: AbstractMaxLayerThickness end
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Cap the layer thickness at a fixed value, `D <= D_max`, independent of
-bathymetry.  Useful when no bed elevation is available; read the warning on
-[`AbstractMaxLayerThickness`](@ref) first.
+bathymetry: the cap is the same everywhere, whether or not a bed elevation was
+given.  Read the warning on [`AbstractMaxLayerThickness`](@ref) first.
 
-- `D_max`: maximum layer thickness in metres (default `100`).
+- `D_max`: maximum layer thickness in metres (default `100`; converted to the
+  model's precision by `Params`).
 
 Select via `Params(; max_layer_thickness = AbsoluteMaxLayerThickness(100.0))`.
 
@@ -66,16 +65,16 @@ See also [`NoMaxLayerThickness`](@ref) (the default) and
 [`RelativeMaxLayerThickness`](@ref).
 """
 @kwdef struct AbsoluteMaxLayerThickness{FT} <: AbstractMaxLayerThickness
-    D_max::FT = 100
+    D_max::FT = 100.0f0
 end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Cap the layer thickness at a fraction of the local water-column depth,
 `D <= f_D_max * (z_draft - z_bed)`, leaving some ambient column beneath the
-plume.  Like [`TopographicMaxLayerThickness`](@ref) this only bites when
-`z_bed_raw` was supplied to `Model`.
+plume.  Like [`TopographicMaxLayerThickness`](@ref) this only bites when a bed
+elevation `z_bed` was given to [`Grid`](@ref).
 
 - `f_D_max`: fraction of the water column (default `4/5`).
 
@@ -92,7 +91,7 @@ function max_layer_thickness!(m, ::TopographicMaxLayerThickness)
     @. m.D.future = min(m.D.future, m.z_draft - m.z_bed) .* m.tmask
 end
 function max_layer_thickness!(m, c::AbsoluteMaxLayerThickness)
-    @. m.D.future = min(m.D.future, c.D_max, m.z_draft - m.z_bed) .* m.tmask
+    @. m.D.future = min(m.D.future, c.D_max) .* m.tmask
 end
 function max_layer_thickness!(m, c::RelativeMaxLayerThickness)
     @. m.D.future = min(m.D.future, c.f_D_max * (m.z_draft - m.z_bed)) .* m.tmask

@@ -1,32 +1,46 @@
-# ============================================================================
-# Backend transfer
-# ============================================================================
-
 _to_device(backend, a::AbstractArray) =
     (b = KA.allocate(backend, eltype(a), size(a)); copyto!(b, a); b)
 
-# Reconstruct an immutable Grid{FT, A} or Geometry{FT, A} with all float matrices
-# moved to backend.  Integer masks, coordinate vectors, ranges and scalars stay on
-# the CPU: mv dispatches on the source matrix type A0, so only A0 fields move.
-function _grid_to_backend(g::Grid{FT,A0}, backend) where {FT,A0}
-    A = typeof(_to_device(backend, g.z_draft))
+# Concrete matrix type of `backend` at precision FT.
+_matrix_type(backend, FT) = typeof(KA.allocate(backend, FT, 0, 0))
+
+# The fields of `x`, with every matrix of the source type `A0` moved to `backend`.
+# Integer masks, coordinate vectors, ranges, strings and scalars stay where they
+# are, since the dispatch is on the source matrix type.
+function _moved_fields(x, ::Type{A0}, backend) where {A0}
     mv(a::A0) = _to_device(backend, a)
     mv(a) = a
-    Grid{FT,A}(map(fn -> mv(getfield(g, fn)), fieldnames(typeof(g)))...)
+    return map(fn -> mv(getfield(x, fn)), fieldnames(typeof(x)))
 end
 
-function _geometry_to_backend(g::Geometry{FT,A0}, backend) where {FT,A0}
-    A = typeof(_to_device(backend, g.tmask))
-    mv(a::A0) = _to_device(backend, a)
-    mv(a) = a
-    Geometry{FT,A}(map(fn -> mv(getfield(g, fn)), fieldnames(typeof(g)))...)
+_grid_to_backend(g::Grid{FT,A0}, backend) where {FT,A0} =
+    Grid{FT,_matrix_type(backend, FT)}(_moved_fields(g, A0, backend)...)
+
+_geometry_to_backend(g::Geometry{FT,A0}, backend) where {FT,A0} =
+    Geometry{FT,_matrix_type(backend, FT)}(_moved_fields(g, A0, backend)...)
+
+_iostate_to_backend(io::IOState{FT,A0}, backend) where {FT,A0} =
+    IOState{FT,_matrix_type(backend, FT)}(_moved_fields(io, A0, backend)...)
+
+_var_to_backend(v::Var{LX,LY,FT,A0}, backend) where {LX,LY,FT,A0} =
+    Var{LX,LY,FT,_matrix_type(backend, FT)}(_moved_fields(v, A0, backend)...)
+
+_state_to_backend(s::State{FT}, backend) where {FT} = State{FT,_matrix_type(backend, FT)}(
+    map(fn -> _var_to_backend(getfield(s, fn), backend), fieldnames(State))...,
+)
+
+# The scheme-dependent slots (GamT, Conv2, PM) are scalars or matrices; the
+# matrix ones follow the backend.
+function _cache_to_backend(c::Cache{FT,A0,G,C,P}, backend) where {FT,A0,G,C,P}
+    A = _matrix_type(backend, FT)
+    slot(T) = T <: AbstractArray ? A : T
+    return Cache{FT,A,slot(G),slot(C),slot(P)}(_moved_fields(c, A0, backend)...)
 end
 
-# Reconstruct a forcing struct with all float arrays moved to backend.
-# Required so update_ambient_fields! can index Tz/Sz with GPU index arrays, and so
-# the melt kernel can read T_ice_base on the device.  The unparameterized
-# constructor (typename wrapper) re-infers the type parameters from the moved
-# arrays.
+# Reconstruct a forcing struct with all float arrays moved to backend, so the
+# kernels can read the ambient profiles and T_ice_base on the device.  The
+# unparameterized constructor (typename wrapper) re-infers the type parameters
+# from the moved arrays.
 _forcing_to_backend(f::CavityForcing, backend) = CavityForcing(
     _forcing_to_backend(f.ocean, backend),
     _forcing_to_backend(f.ice, backend),
@@ -41,48 +55,6 @@ function _forcing_to_backend(
         v isa AbstractArray && eltype(v) <: AbstractFloat ? _to_device(backend, v) : v
     end
     Base.typename(F).wrapper(fields...)
-end
-
-function _var_to_backend(v::Var{LX,LY,FT,A0}, backend) where {LX,LY,FT,A0}
-    A = typeof(_to_device(backend, v.past))
-    Var{LX,LY,FT,A}(
-        _to_device(backend, v.past),
-        _to_device(backend, v.present),
-        _to_device(backend, v.future),
-    )
-end
-
-function _state_to_backend(s::State{FT,A0}, backend) where {FT,A0}
-    D = _var_to_backend(s.D, backend)
-    State{FT,typeof(D.past)}(
-        D,
-        _var_to_backend(s.U, backend),
-        _var_to_backend(s.V, backend),
-        _var_to_backend(s.T, backend),
-        _var_to_backend(s.S, backend),
-    )
-end
-
-# Reconstruct IOState with accumulator matrices moved to backend; counters
-# and strings pass through unchanged.
-function _iostate_to_backend(io::IOState{FT,A0}, backend) where {FT,A0}
-    A = typeof(KA.allocate(backend, FT, 0, 0))
-    mv(a::A0) = _to_device(backend, a)
-    mv(a) = a
-    IOState{FT,A}(map(fn -> mv(getfield(io, fn)), fieldnames(typeof(io)))...)
-end
-
-# Dispatches mv on the source matrix type A0; scalars (FT or Int) fall through.
-function _cache_to_backend(
-    c::Cache{FT,A0,GamT0,Conv2_0},
-    backend,
-) where {FT,A0,GamT0,Conv2_0}
-    A = typeof(_to_device(backend, c.melt))
-    GamT = GamT0 <: AbstractArray ? A : GamT0
-    Conv2 = Conv2_0 <: AbstractArray ? A : Conv2_0
-    mv(a::A0) = _to_device(backend, a)
-    mv(a) = a
-    Cache{FT,A,GamT,Conv2}(map(fn -> mv(getfield(c, fn)), fieldnames(typeof(c)))...)
 end
 
 """

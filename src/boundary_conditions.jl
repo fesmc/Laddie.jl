@@ -1,109 +1,144 @@
 #############################
-# Grounding Line BC
+# Wall slip (grounding line and land)
 #############################
+
+# A wall's tangential-momentum condition is one slip factor `s` on the faces it
+# bounds, with the Python LADDIE convention: 0 = free slip, 2 = no slip, anything
+# in between partial slip.  The kernels follow the Python stencils exactly:
+#   - lateral viscosity: the wall-face flux is −(1 + s)·D·u/Δ² — the zero velocity
+#     stored beyond the wall, plus an extra wall drag s·D·u/Δ²;
+#   - momentum advection: the face velocity at the wall is (1 − s)·u.
+# So s = 0 removes the extra wall drag rather than making the wall exactly
+# stress-free; the naming follows the reference.
+
+"Check a partial-slip factor lies in the admissible range [0, 2]."
+function _check_slip(factor::Real)
+    0 <= factor <= 2 || throw(
+        ArgumentError(
+            "slip factor must lie in [0, 2] (0 = free slip, 2 = no slip), got $factor",
+        ),
+    )
+    return float(factor)
+end
 
 """
 Abstract supertype for the momentum boundary condition at grounding-line walls
 (mask value `2`).  Pass a concrete instance as
-`BoundaryConditions(; grounding_line = ...)`:
-[`FreeSlipGL`](@ref) (the default) or [`NoSlipGL`](@ref).
+`BoundaryConditions(; grounding_line = ...)`: [`NoSlipGL`](@ref) (the default),
+[`FreeSlipGL`](@ref) or [`PartialSlipGL`](@ref).
 
 Walls bordering exposed rock are governed separately by [`AbstractLandBC`](@ref).
 """
 abstract type AbstractGroundingLineBC end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
-Grounding-line momentum boundary condition of LADDIE v1.x (the default):
-grounding-line walls (mask value `2`) use the global `Params.slip` factor
-(`1.0` = free slip) — the same factor land walls get from the default
-[`FreeSlipLand`](@ref), so the two wall types are indistinguishable unless
-`grounding_line` and/or `land` are changed independently.
+No-slip momentum boundary condition at the grounding line (the default): the
+tangential velocity vanishes at walls bordering grounded ice (mask value `2`).
+Implemented as a slip factor of `2` on grounding-line faces.  Land walls (mask
+value `1`) are governed independently by `BoundaryConditions.land`.
 
-Select via `BoundaryConditions(; grounding_line = FreeSlipGL())` (the default).
+Motivated by LADDIE v2.0 (Lambert et al., in review, 2026), where a no-slip
+grounding-line condition improves melt patterns near the grounding line
+compared to observations.
+
+Select via `BoundaryConditions(; grounding_line = NoSlipGL())` (the default).
+"""
+struct NoSlipGL <: AbstractGroundingLineBC end
+
+"""
+$(TYPEDEF)
+
+Free-slip momentum boundary condition at the grounding line: slip factor `0` at
+walls bordering grounded ice, the free-slip end of the Python LADDIE convention (no
+wall drag beyond the zero velocity stored in the wall cell).
+
+Select via `BoundaryConditions(; grounding_line = FreeSlipGL())`.
 """
 struct FreeSlipGL <: AbstractGroundingLineBC end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
-No-slip momentum boundary condition at the grounding line: the tangential
-velocity is forced to zero at walls bordering grounded ice (mask value `2`).
-Implemented as a slip factor of `2` on grounding-line faces (ghost velocity =
--interior velocity).  Land walls (mask value `1`) are governed independently
-by `BoundaryConditions.land` and are unaffected by this choice — see [`NoSlipLand`](@ref)
-to apply the same no-slip treatment there too.
+Partial-slip momentum boundary condition at the grounding line, with a slip
+`factor` between `0` (free slip) and `2` (no slip).
 
-Motivated by LADDIE v2.0 (Lambert et al., in review, 2026), where a no-slip
-grounding-line condition improves melt patterns near the grounding line
-compared to observations.  Not yet validated against LADDIE v2.0 output.
+Python LADDIE v1.x applies one factor, `slip = 1`, to every wall; reproduce it with
+`BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))`.
 
-Select via `BoundaryConditions(; grounding_line = NoSlipGL())`.
+Select via `BoundaryConditions(; grounding_line = PartialSlipGL(1.0))`.
 """
-struct NoSlipGL <: AbstractGroundingLineBC end
+struct PartialSlipGL{FT} <: AbstractGroundingLineBC
+    factor::FT
+    PartialSlipGL(factor::Real) = (f = _check_slip(factor); new{typeof(f)}(f))
+end
 
-# Slip factor applied at grounding-line faces.  Ghost tangential velocity is
-# (1 − factor)·u: 1 → free slip, 2 → no slip.
-_gl_slip(::FreeSlipGL, slip) = slip
-_gl_slip(::NoSlipGL, slip) = oftype(slip, 2)
-
-#############################
-# Land BC
-#############################
+# Slip factor applied at grounding-line faces (0 = free slip, 2 = no slip).
+_gl_slip(::FreeSlipGL, FT) = zero(FT)
+_gl_slip(::NoSlipGL, FT) = FT(2)
+_gl_slip(bc::PartialSlipGL, FT) = FT(bc.factor)
 
 """
 Abstract supertype for the momentum boundary condition at land walls (mask value
 `1`: exposed bedrock, islands, and the outer border ring).  Pass a concrete
-instance as `BoundaryConditions(; land = ...)`: [`FreeSlipLand`](@ref) (the default) or
-[`NoSlipLand`](@ref).
+instance as `BoundaryConditions(; land = ...)`: [`NoSlipLand`](@ref) (the default),
+[`FreeSlipLand`](@ref) or [`PartialSlipLand`](@ref).
 
-The grounding line is governed separately by [`AbstractGroundingLineBC`](@ref);
-at a corner touching both, the grounding line takes precedence.
+The grounding line is governed separately by [`AbstractGroundingLineBC`](@ref); at a
+coastline corner whose stencil touches both grounded ice and exposed rock, the
+grounding-line condition takes precedence (the land wall indicators exclude faces
+already flagged as grounding line), so each wall face gets exactly one slip factor.
 """
 abstract type AbstractLandBC end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
-Land momentum boundary condition (the default): land walls — exposed bedrock
-(mask value `1`), which includes islands and ice-free coastline inside the
-domain as well as the outer border ring — use the global `Params.slip` factor
-(`1.0` = free slip).  Reproduces LADDIE v1.x behaviour, where land was not
-distinguished from any other wall.
+No-slip momentum boundary condition at land walls (the default): the tangential
+velocity vanishes at walls bordering exposed bedrock (mask value `1`), which
+includes islands and ice-free coastline inside the domain as well as the outer
+border ring.  Implemented as a slip factor of `2` on land faces.
 
-Select via `BoundaryConditions(; land = FreeSlipLand())` (the default).
+Select via `BoundaryConditions(; land = NoSlipLand())` (the default).
+"""
+struct NoSlipLand <: AbstractLandBC end
 
-See also [`AbstractGroundingLineBC`](@ref), the analogous choice for walls
-bordering grounded ice.
+"""
+$(TYPEDEF)
+
+Free-slip momentum boundary condition at land walls: slip factor `0` at walls
+bordering exposed bedrock (see [`FreeSlipGL`](@ref)).
+
+Select via `BoundaryConditions(; land = FreeSlipLand())`.
 """
 struct FreeSlipLand <: AbstractLandBC end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
-No-slip momentum boundary condition at land walls: the tangential velocity is
-forced to zero at walls bordering exposed bedrock (mask value `1`).
-Implemented the same way as [`NoSlipGL`](@ref) — a slip factor of `2` on land
-faces (ghost velocity = -interior velocity) — so the two can be composed
-independently: e.g. no-slip at the grounding line but free-slip at islands,
-or vice versa.
+Partial-slip momentum boundary condition at land walls, with a slip `factor`
+between `0` (free slip) and `2` (no slip).  See [`PartialSlipGL`](@ref) for
+reproducing Python LADDIE v1.x.
 
-At a coastline corner whose stencil touches both grounded ice and exposed rock,
-the grounding-line condition takes precedence (`Grid.lnd??` excludes faces
-already flagged by `Grid.gl??`), so the two slip factors partition the wall
-faces instead of both applying to the same face.
-
-Select via `BoundaryConditions(; land = NoSlipLand())`.
+Select via `BoundaryConditions(; land = PartialSlipLand(1.0))`.
 """
-struct NoSlipLand <: AbstractLandBC end
+struct PartialSlipLand{FT} <: AbstractLandBC
+    factor::FT
+    PartialSlipLand(factor::Real) = (f = _check_slip(factor); new{typeof(f)}(f))
+end
 
-# Slip factor applied at land faces.  Mirrors `_gl_slip` exactly; kept as a
-# separate dispatch point (rather than sharing one function across both
-# abstract types) so land and grounding-line treatments can diverge later
-# without disturbing each other.
-_land_slip(::FreeSlipLand, slip) = slip
-_land_slip(::NoSlipLand, slip) = oftype(slip, 2)
+# Slip factor applied at land faces.  Mirrors `_gl_slip`; kept as a separate
+# dispatch point so the two wall treatments can diverge later.
+_land_slip(::FreeSlipLand, FT) = zero(FT)
+_land_slip(::NoSlipLand, FT) = FT(2)
+_land_slip(bc::PartialSlipLand, FT) = FT(bc.factor)
+
+# Per-face slip factors of a model, as passed to the momentum kernels.
+_wall_slips(m) = (
+    _gl_slip(m.boundary.grounding_line, m.FT),
+    _land_slip(m.boundary.land, m.FT),
+)
 
 #############################
 # Open BC
@@ -117,7 +152,7 @@ concrete instance as `BoundaryConditions(; open_ocean = ...)`:
 abstract type AbstractOpenOceanBC end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Open-boundary condition at the ice front: zero-gradient extrapolation of all
 fields, with inflow from the ambient ocean permitted.
@@ -127,10 +162,14 @@ Select via `BoundaryConditions(; open_ocean = ZeroGradientInflow())` (the defaul
 struct ZeroGradientInflow <: AbstractOpenOceanBC end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
-Open-boundary condition at the ice front: outflow only — inflow velocities are
-clipped to zero so ambient water cannot advect into the domain.
+Open-boundary condition at the ice front: no inflow of layer properties.  Where
+the flow enters the domain through an ice-front face, the thickness and tracer
+fluxes carry the (zero) value stored in the open-ocean cell instead of the
+zero-gradient extrapolation of [`ZeroGradientInflow`](@ref), so no volume, heat or
+salt is advected in.  The velocities themselves are not clipped, and momentum
+advection is unaffected.
 
 Select via `BoundaryConditions(; open_ocean = NoInflow())`.
 """
@@ -152,7 +191,7 @@ The grounding line is unaffected either way — no momentum equation is solved t
 abstract type AbstractFrontPressure end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Keep the layer-thickness-gradient part of the pressure-gradient force at
 one-sided faces — the ice front, and the edges of a gap demoted to ocean by
@@ -171,7 +210,7 @@ See also [`TruncatedDepthGradient`](@ref).
 struct FullDepthGradient <: AbstractFrontPressure end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Drop the layer-thickness-gradient part of the pressure-gradient force at
 one-sided faces — the ice front, and the edges of a gap demoted to ocean by
@@ -184,7 +223,7 @@ dH/dx = 0`). It avoids treating a masked neighbour's stored `D = 0` as a real
 thickness: under [`FullDepthGradient`](@ref) that term is roughly 150× larger
 at the ice front than in the interior on a warm ISOMIP+ run.
 
-Neither choice affects the grounding line, where `Grid.umask`/`vmask` are zero
+Neither choice affects the grounding line, where the velocity masks are zero
 and no momentum equation is solved at all.
 
 Select via `Params(; front_pressure = TruncatedDepthGradient())`.
@@ -194,8 +233,8 @@ struct TruncatedDepthGradient <: AbstractFrontPressure end
 # Weight `w` in the per-face gate `1 + w*(tmask_stag - 2)`, which is 1 on a
 # fully-interior face (tmask_stag == 2) either way, and at a one-sided face
 # (tmask_stag == 1) is 1 for FullDepthGradient / 0 for TruncatedDepthGradient.
-# w = 0 multiplies the term by exactly 1.0, so the default stays bit-identical
-# to the pre-AbstractFrontPressure (and Python v1.x) behaviour.
+# w = 0 multiplies the term by exactly 1.0, so the default is bit-identical to
+# Python v1.x.
 _front_pgf_weight(::FullDepthGradient, x) = zero(x)
 _front_pgf_weight(::TruncatedDepthGradient, x) = one(x)
 
@@ -212,7 +251,7 @@ or [`ConnectedGapsBC`](@ref) (gaps stay dynamically connected).
 abstract type AbstractGapsBC end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Treat ice-shelf gaps — ice-free cells inside the ice-shelf domain, marked `4` in
 the domain mask — as sinks of the meltwater layer (the default, and the behaviour
@@ -228,7 +267,7 @@ See also [`ConnectedGapsBC`](@ref).
 struct SinkGapsBC <: AbstractGapsBC end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Treat ice-shelf gaps as dynamically connected: the meltwater layer keeps being
 integrated across ice-free cells inside the ice-shelf domain, so heat and momentum
@@ -238,7 +277,7 @@ meltwater volume or buoyancy is added there.
 
 Gap cells are those marked `4` in the domain mask.  Mark them either directly (a
 coupled ice-sheet driver knows its own reference geometry) or from a reference ice
-footprint with [`MarkGapsPreprocess`](@ref) in `Model`'s `preprocess` list.  This
+footprint with [`MarkGapsPreprocess`](@ref) in the `preprocess` list of [`Grid`](@ref).  This
 boundary condition only decides what happens in the cells so marked.
 
 Motivated by Jesse et al. (2026, https://doi.org/10.5194/egusphere-2026-4237),
@@ -258,9 +297,10 @@ Model(grid; forcing, boundary)                          # gaps from a footprint
 struct ConnectedGapsBC <: AbstractGapsBC end
 
 # Resolve mask value 4 (gap) into the classification the selected treatment implies.
-# Runs at model construction, before Grid: SinkGapsBC demotes gaps to open ocean, so
-# every downstream mask derivation sees exactly the v1.x geometry; ConnectedGapsBC
-# keeps them.  Marking gaps in the first place is `MarkGapsPreprocess`'s job.
+# Runs at model construction, before the Geometry is derived: SinkGapsBC demotes gaps
+# to open ocean, so every mask derivation sees exactly the v1.x geometry;
+# ConnectedGapsBC keeps them.  Marking gaps in the first place is
+# `MarkGapsPreprocess`'s job.
 _apply_gaps_bc(mask, ::SinkGapsBC) = ifelse.(mask .== 4, 0, mask)
 _apply_gaps_bc(mask, ::ConnectedGapsBC) = mask
 #############################
@@ -272,11 +312,15 @@ $(TYPEDEF)
 
 The boundary conditions of a [`Model`](@ref): what happens at the ice front, at
 grounding-line and land walls, and in ice-shelf gaps.  Pass it as
-`Model(...; boundary = BoundaryConditions(...))`; every condition has a default
-that reproduces LADDIE v1.x.
+`Model(...; boundary = BoundaryConditions(...))`.  Every condition has a default;
+all but the wall slip reproduce LADDIE v1.x, whose single partial-slip factor is
+available as [`PartialSlipGL`](@ref) and [`PartialSlipLand`](@ref).
 
 ```julia
-BoundaryConditions(; grounding_line = NoSlipGL(), gaps = ConnectedGapsBC())
+BoundaryConditions(; land = FreeSlipLand(), gaps = ConnectedGapsBC())
+
+# Python LADDIE v1.x walls
+BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
 ```
 
 # Fields
@@ -290,9 +334,9 @@ struct BoundaryConditions{
 }
     "ice front: [`ZeroGradientInflow`](@ref) (default) or [`NoInflow`](@ref)"
     open_ocean::OB
-    "grounding-line walls: [`FreeSlipGL`](@ref) (default) or [`NoSlipGL`](@ref)"
+    "grounding-line walls: [`NoSlipGL`](@ref) (default), [`FreeSlipGL`](@ref) or [`PartialSlipGL`](@ref)"
     grounding_line::GL
-    "land walls: [`FreeSlipLand`](@ref) (default) or [`NoSlipLand`](@ref)"
+    "land walls: [`NoSlipLand`](@ref) (default), [`FreeSlipLand`](@ref) or [`PartialSlipLand`](@ref)"
     land::LB
     "ice-shelf gaps: [`SinkGapsBC`](@ref) (default) or [`ConnectedGapsBC`](@ref)"
     gaps::GB
@@ -300,8 +344,8 @@ end
 
 BoundaryConditions(;
     open_ocean = ZeroGradientInflow(),
-    grounding_line = FreeSlipGL(),
-    land = FreeSlipLand(),
+    grounding_line = NoSlipGL(),
+    land = NoSlipLand(),
     gaps = SinkGapsBC(),
 ) = BoundaryConditions(open_ocean, grounding_line, land, gaps)
 

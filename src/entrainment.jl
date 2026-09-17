@@ -1,8 +1,13 @@
-
+"""
+Abstract supertype for the entrainment parameterisation — the rate at which
+ambient water is mixed into the layer.  Pass a concrete instance as
+`Params(; entrainment = ...)`: [`LambertEntrainment`](@ref) (the default),
+[`GasparEntrainment`](@ref) or [`HollandEntrainment`](@ref).
+"""
 abstract type AbstractEntrainment end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Buoyancy-flux-driven entrainment as implemented in the reference LADDIE model
 (Lambert et al. 2023; Gaspar 1988; Gladish et al. 2012). This is the form
@@ -27,7 +32,7 @@ Select via `Params(; entrainment = LambertEntrainment(2.5))`.
 end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Buoyancy-flux-driven entrainment as the **literal reading of Eq. 14** of
 Lambert et al. (2023), ``D^2 g_b' \\dot{m} + D^2 g_a' \\dot{e} = \\mu u_\\star^3``, solved for ``\\dot{e}``:
@@ -50,11 +55,19 @@ Select via `Params(; entrainment = GasparEntrainment(2.5))`.
 end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
-Shear-driven entrainment following Holland & Jenkins (1999).
+Shear-driven entrainment following Holland & Jenkins (1999):
 
-- `cl`: drag coefficient for entrainment velocity (default: `0.01775`).
+```math
+\\dot{e} = c_l \\, \\frac{K_h}{A_h^2} \\sqrt{\\max\\left(0,\\; |\\mathbf{u}|^2 - g\\,\\delta\\rho\\,\\frac{K_h}{A_h}\\,D\\right)},
+```
+
+with ``|\\mathbf{u}|`` the speed at the T-point, ``\\delta\\rho`` the reduced density
+contrast and ``K_h``, ``A_h`` the lateral diffusivity and viscosity of `Params`.
+There is no detrainment.
+
+- `cl`: entrainment coefficient (default: `0.01775`).
 
 Select via `Params(; entrainment = HollandEntrainment(0.01775))`.
 """

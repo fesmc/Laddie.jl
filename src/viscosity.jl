@@ -13,12 +13,11 @@ Tracer diffusivity `Params.K_h` is always a constant and is unaffected.
 abstract type AbstractLateralViscosity end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Constant-coefficient Laplacian lateral viscosity (the default): the diffusive
 flux at every interior face is `Params.A_h * ΔU / dy` (or `ΔV / dx`), i.e. a
-plain Laplacian with a single global coefficient. This is the scheme
-Laddie.jl has always used, matching Python LADDIE v1.x.
+plain Laplacian with a single global coefficient, matching Python LADDIE v1.x.
 
 Grounding-line/land wall friction also scales with `Params.A_h`, unaffected
 by the choice of `lateral_viscosity` — see [`NonlinearLateralViscosity`](@ref).
@@ -28,7 +27,7 @@ Select via `Params(; lateral_viscosity = PrescribedLateralViscosity())` (the def
 struct PrescribedLateralViscosity <: AbstractLateralViscosity end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Shear-scaled lateral viscosity, as used by the reference LADDIE v2 Fortran
 implementation (`laddie_velocity.f90:260`). Instead of a constant coefficient,
@@ -94,14 +93,14 @@ differ locally by at most 1.4 m in `D`.
 abstract type AbstractLaplacianWeights end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
-Weight the Laplacians with `D.present` (the default, and what Laddie.jl has always done).
+Weight the Laplacians with `D.present` (the default).
 """
 struct PresentLaplacianWeights <: AbstractLaplacianWeights end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Weight the Laplacians with the lagged, filtered `D.past`, so the thickness weight sits on
 the same time level as the diffused field. This is what the Python LADDIE v1.x code does.

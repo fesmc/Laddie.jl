@@ -40,8 +40,6 @@ struct OceanForcing1D{FT,V<:AbstractVector{FT}} <: AbstractOceanForcing
 end
 
 """
-$(TYPEDSIGNATURES)
-
 Ambient T/S profiles for the ISOMIP+ protocol (Asay-Davis et al. 2016), returned
 as an [`OceanForcing1D`](@ref).  Profiles are linear from the surface
 (T = −1.9 °C, S = 33.8 psu) to 720 m depth.
@@ -51,8 +49,12 @@ as an [`OceanForcing1D`](@ref).  Profiles are linear from the surface
 
 Used automatically by `build_isomip`; pass it as the `forcing` argument of
 `Model` to use it with another geometry.
+
+```julia
+ISOMIPForcing(:cold; FT = Float32)
+```
 """
-function ISOMIPForcing(FT::Type, isomipcond::Symbol)
+function ISOMIPForcing(isomipcond::Symbol = :warm; FT = Float64)
     isomipcond in (:warm, :cold) ||
         throw(ArgumentError("isomipcond must be :warm or :cold, got :$isomipcond"))
     z = FT.(-5000.0:1.0:-1.0)
@@ -67,14 +69,12 @@ function ISOMIPForcing(FT::Type, isomipcond::Symbol)
     OceanForcing1D(Tz, Sz, z, dz, z0)
 end
 
-"""
-$(TYPEDEF)
-
-Placeholder for a laterally varying ambient field (one profile per cell).
-Not implemented: `Model` accepts only [`AbstractOceanForcing`](@ref), so
-passing this raises a `MethodError` rather than silently ignoring the variation.
-"""
+# Placeholder for a laterally varying ambient field (one profile per cell); not
+# exported.  Not implemented: `Model` accepts only `OceanForcing1D`, so passing this
+# raises an `ArgumentError` rather than silently ignoring the variation.
 struct OceanForcing2D <: AbstractOceanForcing end
+
+Base.show(io::IO, ::OceanForcing2D) = print(io, "OceanForcing2D() (not implemented)")
 
 #########################
 # Ice
@@ -113,8 +113,7 @@ struct PrescribedIceForcing{M} <: AbstractIceForcing
 end
 
 # Default basal ice temperature, applied when a bare ocean forcing is passed to
-# `Model`.  Matches the historical `Params.T_i` default, so runs that never
-# mention an ice forcing are unchanged.
+# `Model` (the ISOMIP+ value).
 const DEFAULT_T_ICE_BASE = -25.0
 
 PrescribedIceForcing() = PrescribedIceForcing(DEFAULT_T_ICE_BASE)
@@ -133,7 +132,7 @@ The complete external forcing of a cavity: an ocean forcing and an ice forcing.
 `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`.
 
 ```julia
-CavityForcing(ISOMIPForcing(Float64, :warm))                      # default ice
+CavityForcing(ISOMIPForcing(:warm))                                 # default ice
 CavityForcing(ocean, PrescribedIceForcing(T_ice_matrix))          # 2D ice
 ```
 """

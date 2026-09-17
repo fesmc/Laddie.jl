@@ -32,6 +32,7 @@ include("build.jl")
 include("show.jl")
 
 export Model, Grid, State, Cache, Params, BoundaryConditions
+export CPU   # KernelAbstractions' CPU backend, the default everywhere
 export Simulation, Clock, OutputConfig, DebugConfig, time_step!
 export build_isomip,
     build_laddie_mask,
@@ -63,8 +64,8 @@ export AbstractPreprocess,
     MarkGapsPreprocess
 
 export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow
-export AbstractGroundingLineBC, FreeSlipGL, NoSlipGL
-export AbstractLandBC, FreeSlipLand, NoSlipLand
+export AbstractGroundingLineBC, NoSlipGL, FreeSlipGL, PartialSlipGL
+export AbstractLandBC, NoSlipLand, FreeSlipLand, PartialSlipLand
 export AbstractGapsBC, SinkGapsBC, ConnectedGapsBC
 export AbstractLateralViscosity, PrescribedLateralViscosity, NonlinearLateralViscosity
 export AbstractLaplacianWeights, PresentLaplacianWeights, PastLaplacianWeights

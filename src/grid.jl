@@ -14,7 +14,7 @@ abstract type AbstractIceSlopeGradient end
 """
     PyGradient()
 
-Python-ported centred-difference gradient: `(zb_E − zb_W) / (2 dx)` applied
+Python-ported centred-difference gradient: `(zb[i+1] − zb[i−1]) / (2 dx)` applied
 uniformly over all cells with no mask awareness.  Matches the Python LADDIE
 v1.1 stencil exactly and should be used when comparing against the Python
 reference output.
@@ -41,20 +41,16 @@ function _icebase_slope(::JlGradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
     # physically-incompatible z_draft values at ocean (z_draft=0) and grounded
     # (z_draft=bed) cells, which would produce O(0.2) spurious slopes.
     #
-    # Shift convention: xm1=east, xp1=west, ym1=north, yp1=south.
-    # Stencil at each shelf cell:
-    #   both neighbours shelf → centred  (zb_E − zb_W) / (2 dx)
-    #   east only             → forward  (zb_E − zb_C) / dx
-    #   west only             → backward (zb_C − zb_W) / dx
+    # Stencil at each shelf cell, along each axis ("next" = index + 1, "prev" =
+    # index − 1; see the shift primitives in utils.jl):
+    #   both neighbours shelf → centred  (zb_next − zb_prev) / (2 dx)
+    #   next only             → forward  (zb_next − zb) / dx
+    #   prev only             → backward (zb − zb_prev) / dx
     #   neither               → 0
-    _tm_e = xm1(tmask);
-    _tm_w = xp1(tmask)
-    _tm_n = ym1(tmask);
-    _tm_s = yp1(tmask)
-    _zb_e = xm1(z_draft_ft);
-    _zb_w = xp1(z_draft_ft)
-    _zb_n = ym1(z_draft_ft);
-    _zb_s = yp1(z_draft_ft)
+    _tm_e, _tm_w = xm1(tmask), xp1(tmask)
+    _tm_n, _tm_s = ym1(tmask), yp1(tmask)
+    _zb_e, _zb_w = xm1(z_draft_ft), xp1(z_draft_ft)
+    _zb_n, _zb_s = ym1(z_draft_ft), yp1(z_draft_ft)
     dzdx = ifelse.(
         tmask .> 0,
         ifelse.(
@@ -124,14 +120,7 @@ struct Geometry{FT,A<:AbstractMatrix{FT}}
     tmaskyp1::A
     tmaskxm1::A
     tmaskxp1::A
-    tmaskxm1ym1::A
-    tmaskxm1yp1::A
-    tmaskxp1ym1::A
 
-    grdNu::A
-    grdSu::A
-    grdEv::A
-    grdWv::A
     glNu::A
     glSu::A
     glEv::A
@@ -140,27 +129,10 @@ struct Geometry{FT,A<:AbstractMatrix{FT}}
     lndSu::A
     lndEv::A
     lndWv::A
-    isfE::A
-    isfW::A
-    isfN::A
-    isfS::A
     isf::A
-    grlE::A
-    grlW::A
-    grlN::A
-    grlS::A
-    grl::A
 
     umask::A
     vmask::A
-    umaskym1::A
-    umaskyp1::A
-    umaskxm1::A
-    umaskxp1::A
-    vmaskym1::A
-    vmaskyp1::A
-    vmaskxm1::A
-    vmaskxp1::A
 
     tmask_im::A
     tmask_ip::A
@@ -224,20 +196,14 @@ function Geometry(
     tmaskyp1 = yp1(tmask)
     tmaskxm1 = xm1(tmask)
     tmaskxp1 = xp1(tmask)
-    tmaskxm1ym1 = ym1(xm1(tmask))
-    tmaskxm1yp1 = yp1(xm1(tmask))
-    tmaskxp1ym1 = ym1(xp1(tmask))
 
     # Boundary geometry
     o = one(FT)
-    grdNu = o .- ym1((o .- grd) .* (o .- xm1(grd)))
-    grdSu = o .- yp1((o .- grd) .* (o .- xm1(grd)))
-    grdEv = o .- xm1((o .- grd) .* (o .- ym1(grd)))
-    grdWv = o .- xp1((o .- grd) .* (o .- ym1(grd)))
-    # Grounding-line-only wall indicators: same stencil as grdNu..grdWv but
-    # restricted to grounded ice (mask == 2, excluding land/border walls),
-    # so the momentum kernels can apply a different slip factor at the
-    # grounding line (AbstractGroundingLineBC).  Subset of grd?? pointwise.
+    # Wall-face indicators, one per face orientation: a u-face (N/S walls) or a
+    # v-face (E/W walls) is a wall face when its two-cell stencil touches a wall.
+    # Grounding-line indicators come from grounded ice (mask == 2) only, so the
+    # momentum kernels can apply the grounding-line slip factor there
+    # (AbstractGroundingLineBC).
     gl = FT.(mask .== 2)
     glNu = o .- ym1((o .- gl) .* (o .- xm1(gl)))
     glSu = o .- yp1((o .- gl) .* (o .- xm1(gl)))
@@ -248,123 +214,46 @@ function Geometry(
     # its own slip factor at walls bordering exposed bedrock/border, independent
     # of AbstractGroundingLineBC.
     #
-    # The momentum kernels compose the two additively
-    # (`slip + dslip_gl*gl?? + dslip_land*lnd??`) while gating the result on
-    # `grd?? = max(gl??, lnd??)`, so the indicators must *partition* the wall
+    # The momentum kernels compose the two additively, as
+    # `slip_gl*gl?? + slip_land*lnd??`, so the indicators must *partition* the wall
     # faces rather than overlap: a face whose two-cell stencil touches both
     # grounded ice and exposed rock (a coastline corner, ubiquitous in real
-    # geometry) would otherwise receive both increments and end up at slip 3
-    # instead of 2 under NoSlipGL + NoSlipLand.  Grounding line takes precedence
-    # there, which leaves gl?? + lnd?? == grd?? exactly.
+    # geometry) would otherwise receive both factors and end up at slip 4 under
+    # NoSlipGL + NoSlipLand.  Grounding line takes precedence there, so that
+    # gl?? + lnd?? is exactly the wall-face indicator of the whole wall `grd`.
     lndNu = (o .- ym1((o .- lnd) .* (o .- xm1(lnd)))) .* (o .- glNu)
     lndSu = (o .- yp1((o .- lnd) .* (o .- xm1(lnd)))) .* (o .- glSu)
     lndEv = (o .- xm1((o .- lnd) .* (o .- ym1(lnd)))) .* (o .- glEv)
     lndWv = (o .- xp1((o .- lnd) .* (o .- ym1(lnd)))) .* (o .- glWv)
-    isfE = ocn .* tmaskxp1
+    # Ice-front cells: ocean cells with an active neighbour, and the count of
+    # such neighbours.
     isfW = ocn .* tmaskxm1
-    isfN = ocn .* tmaskyp1
     isfS = ocn .* tmaskym1
-    isf = isfE .+ isfN .+ isfW .+ isfS
-    grlE = grd .* tmaskxp1
-    grlW = grd .* tmaskxm1
-    grlN = grd .* tmaskyp1
-    grlS = grd .* tmaskym1
-    grl = grlE .+ grlN .+ grlW .+ grlS
+    isf = ocn .* tmaskxp1 .+ ocn .* tmaskyp1 .+ isfW .+ isfS
 
-    # Velocity masks
-    umask = (tmask .+ isfW) .* (o .- xm1(grlE))
-    vmask = (tmask .+ isfS) .* (o .- ym1(grlN))
-    umaskym1 = ym1(umask)
-    umaskyp1 = yp1(umask)
-    umaskxm1 = xm1(umask)
-    umaskxp1 = xp1(umask)
-    vmaskym1 = ym1(vmask)
-    vmaskyp1 = yp1(vmask)
-    vmaskxm1 = xm1(vmask)
-    vmaskxp1 = xp1(vmask)
+    # Velocity masks: a u-point is active between two active cells, or between an
+    # active cell and the ocean beyond it, but not facing a wall.
+    umask = (tmask .+ isfW) .* (o .- xm1(grd .* tmaskxp1))
+    vmask = (tmask .+ isfS) .* (o .- ym1(grd .* tmaskyp1))
 
-    # Stagger-count denominators
+    # Stagger-count denominators: active cells in each two-point average.
     tmask_im = tmask .+ tmaskxp1
     tmask_ip = tmask .+ tmaskxm1
     tmask_jm = tmask .+ tmaskyp1
     tmask_jp = tmask .+ tmaskym1
-    umask_im = umask .+ umaskxp1
-    umask_ip = umask .+ umaskxm1
-    umask_jm = umask .+ umaskyp1
-    umask_jp = umask .+ umaskym1
-    vmask_im = vmask .+ vmaskxp1
-    vmask_ip = vmask .+ vmaskxm1
-    vmask_jm = vmask .+ vmaskyp1
-    vmask_jp = vmask .+ vmaskym1
+    umask_im = umask .+ xp1(umask)
+    umask_ip = umask .+ xm1(umask)
+    umask_jm = umask .+ yp1(umask)
+    umask_jp = umask .+ ym1(umask)
+    vmask_im = vmask .+ xp1(vmask)
+    vmask_ip = vmask .+ xm1(vmask)
+    vmask_jm = vmask .+ yp1(vmask)
+    vmask_jp = vmask .+ ym1(vmask)
 
-    Geometry{FT,Matrix{FT}}(
-        Matrix{Int}(mask),
-        dzdx,
-        dzdy,
-        f,
-        fu,
-        fv,
-        tmask,
-        imask,
-        grd,
-        lnd,
-        ocn,
-        ocnym1,
-        ocnyp1,
-        ocnxm1,
-        ocnxp1,
-        tmaskym1,
-        tmaskyp1,
-        tmaskxm1,
-        tmaskxp1,
-        tmaskxm1ym1,
-        tmaskxm1yp1,
-        tmaskxp1ym1,
-        grdNu,
-        grdSu,
-        grdEv,
-        grdWv,
-        glNu,
-        glSu,
-        glEv,
-        glWv,
-        lndNu,
-        lndSu,
-        lndEv,
-        lndWv,
-        isfE,
-        isfW,
-        isfN,
-        isfS,
-        isf,
-        grlE,
-        grlW,
-        grlN,
-        grlS,
-        grl,
-        umask,
-        vmask,
-        umaskym1,
-        umaskyp1,
-        umaskxm1,
-        umaskxp1,
-        vmaskym1,
-        vmaskyp1,
-        vmaskxm1,
-        vmaskxp1,
-        tmask_im,
-        tmask_ip,
-        tmask_jm,
-        tmask_jp,
-        umask_im,
-        umask_ip,
-        umask_jm,
-        umask_jp,
-        vmask_im,
-        vmask_ip,
-        vmask_jm,
-        vmask_jp,
-    )
+    resolved_mask = Matrix{Int}(mask)
+    # Every field is a local of the same name.
+    vars = Base.@locals
+    return Geometry{FT,Matrix{FT}}((vars[fn] for fn in fieldnames(Geometry))...)
 end
 
 # ============================================================================
@@ -414,9 +303,12 @@ struct Grid{FT,A<:AbstractMatrix{FT}}
 end
 
 """
-$(TYPEDSIGNATURES)
+    Grid(mask, z_draft, dx, dy; x, y, kwargs...)
+    Grid(mask, z_draft; x, y, kwargs...)
 
 Build a grid from a domain mask and ice draft with cell spacing `dx`, `dy` (m).
+The spacing may be left out when coordinate vectors `x` and `y` are given, in which
+case it is taken from them.
 
 # Mask convention
 | Value | Meaning |
@@ -429,13 +321,20 @@ Build a grid from a domain mask and ice draft with cell spacing `dx`, `dy` (m).
 
 `mask` and `z_draft` must include the one-cell border ring, i.e. have size
 `(nx+2, ny+2)` where `nx × ny` are the interior cells: **the first index runs along
-x, the second along y**, the order NetCDF readers such as NCDatasets hand you.  `z_draft` is the ice-base
-depth in metres (negative downward); values outside grounded ice and shelf are
-ignored and zeroed, and shallow shelf drafts are clamped to −1 m.
+x, the second along y**, the order NetCDF readers such as NCDatasets hand you.
+`z_draft` is the ice-base depth in metres (negative downward); values outside
+grounded ice and shelf are ignored and zeroed, and shallow shelf drafts are clamped
+to −1 m.
 
 # Keywords
-- `z_bed`: bed elevation (same size), or `nothing` (default) for no cap on the
-  layer thickness.
+- `x`, `y`: cell-centre coordinates (m) of the input arrays, of length `size(mask, 1)`
+  and `size(mask, 2)` — border ring included, like every other input — e.g. the
+  projection coordinates of a BedMachine subset.  They must be uniformly spaced
+  (ascending or descending); their spacing sets `dx`/`dy`, or must match them when
+  both are given.  They are cropped with the mask and written to the NetCDF output.
+  By default `x = dx · (0:size(mask, 1) - 1)`, and likewise for `y`.
+- `z_bed`: bed elevation (same size), or `nothing` (default) for none; only the
+  topographic caps of [`AbstractMaxLayerThickness`](@ref) use it.
 - `preprocess`: mask preprocessing steps applied in order before cropping, e.g.
   [`MarkGapsPreprocess`](@ref) or `FillSmallShelfPatchesPreprocess()`.  The
   caller's `mask` is not modified.
@@ -447,19 +346,33 @@ ignored and zeroed, and shallow shelf drafts are clamped to −1 m.
 Full-domain fields a model is given later — a 2D latitude or basal ice
 temperature — must match the size of the arrays passed here; the model crops
 them with `grid.crop`.
+
+```julia
+grid = Grid(mask, z_draft, 500.0, 500.0)
+grid = Grid(mask, z_draft; x = ds["x"][i1:i2], y = ds["y"][j1:j2])
+```
 """
-function Grid(
-    mask::AbstractMatrix{Int},
-    z_draft::AbstractMatrix,
-    dx::Real,
-    dy::Real;
+Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix, dx::Real, dy::Real; kwargs...) =
+    _grid(mask, z_draft, dx, dy; kwargs...)
+Grid(mask::AbstractMatrix{Int}, z_draft::AbstractMatrix; kwargs...) =
+    _grid(mask, z_draft, nothing, nothing; kwargs...)
+
+function _grid(
+    mask,
+    z_draft,
+    dx,
+    dy;
+    x = nothing,
+    y = nothing,
     z_bed = nothing,
     preprocess = AbstractPreprocess[],
     domain_cropping = MinRectangleDomainCropping(),
     backend = CPU(),
     FT = Float64,
 )
-    _validate_input_shapes(mask, z_draft, z_bed, dx, dy)
+    _validate_input_shapes(mask, z_draft, z_bed)
+    dx, x = _resolve_axis(x, dx, size(mask, 1), "x", FT)
+    dy, y = _resolve_axis(y, dy, size(mask, 2), "y", FT)
     input_size = size(mask)
     mask = Matrix{Int}(mask)   # a copy: preprocessing never touches the caller's array
     for p in preprocess
@@ -478,10 +391,41 @@ function Grid(
         mask,
         _adjust_z_draft(mask, z_draft[r, c], FT),
         z_bed_ft,
-        collect(FT(dx) .* (1:(nx_total-2))),
-        collect(FT(dy) .* (1:(ny_total-2))),
+        x[r][2:(end-1)],
+        y[c][2:(end-1)],
         (r, c),
         input_size,
     )
-    return backend === CPU() ? grid : _grid_to_backend(grid, backend)
+    return backend isa CPU ? grid : _grid_to_backend(grid, backend)
+end
+
+# Spacing and full-domain coordinates along one axis, from the spacing, the
+# coordinates, or both (which must then agree).
+function _resolve_axis(coord, d, n, name, FT)
+    dname = "d" * name
+    if coord === nothing
+        d === nothing &&
+            throw(ArgumentError("give the spacing `$dname` or the coordinates `$name`"))
+        d > 0 || throw(ArgumentError("$dname must be positive, got $d"))
+        return d, FT(d) .* (0:(n-1))
+    end
+    length(coord) == n || throw(
+        ArgumentError(
+            "`$name` has length $(length(coord)) but the mask has $n cells along " *
+            "$name (the border ring included)",
+        ),
+    )
+    steps = diff(Float64.(coord))
+    s = steps[1]
+    (s != 0 && all(st -> isapprox(st, s; rtol = 1e-6), steps)) ||
+        throw(ArgumentError("`$name` must be uniformly spaced"))
+    spacing = abs(s)
+    d === nothing ||
+        isapprox(d, spacing; rtol = 1e-6) ||
+        throw(
+            ArgumentError(
+                "$dname = $d does not match the spacing $spacing of the `$name` coordinates",
+            ),
+        )
+    return spacing, FT.(coord)
 end

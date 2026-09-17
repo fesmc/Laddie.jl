@@ -7,13 +7,20 @@ using ProgressMeter
 $(TYPEDSIGNATURES)
 
 Return melt-rate and velocity statistics for the current state of a model or
-simulation.
-All reductions execute on the device (GPU-safe); results are returned as
-CPU scalars.
+simulation, as a named tuple.  All reductions execute on the device (GPU-safe);
+results are returned as CPU scalars.
 
 - `max_meltrate`  — maximum basal melt rate, m yr⁻¹
-- `mean_meltrate` — area-mean basal melt rate over floating ice, m yr⁻¹
+- `mean_meltrate` — area-mean basal melt rate over ice-covered cells, m yr⁻¹
 - `max_speed`     — maximum depth-averaged current speed |u|, m s⁻¹
+- `total_melt`    — area-integrated basal melt (mass flux), Gt yr⁻¹
+
+Melt rates are freshwater equivalent, the unit the model integrates; multiply by
+`rho_freshwater / rho_ice` for ice equivalent.  `total_melt` is the corresponding
+mass flux, `Σ melt · dx · dy · rho_freshwater`, and is the same in either unit.
+
+The fields keep their order, so `max_melt, mean_melt, max_speed = meltstats(sim)`
+still destructures the first three.
 
 The melt statistics average over `imask` (ice-covered cells), not `tmask`.  Under
 [`ConnectedGapsBC`](@ref) the two differ: gap cells are dynamically active but ice-free
@@ -24,49 +31,122 @@ on `tmask` — the layer really does flow through gaps, and that flow is the poi
 """
 meltstats(sim::Simulation) = meltstats(sim.model)
 
+const _KG_PER_GT = 1e12
+
 function meltstats(m::Model)
     imask = m.imask
+    d = m.diag
     n = sum(imask)
-    meltyr = m.melt .* m.seconds_per_year
-    max_meltrate = maximum(meltyr .* imask)
-    mean_meltrate = sum(meltyr .* imask) / n
-    max_speed =
-        maximum(sqrt.(im_half(m.U.present) .^ 2 .+ jm_half(m.V.present) .^ 2) .* m.tmask)
-    return max_meltrate, mean_meltrate, max_speed
+    @. d = m.melt * m.seconds_per_year * imask
+    max_meltrate = maximum(d)
+    melt_sum = sum(d)                             # m yr⁻¹ summed over ice cells
+    mean_meltrate = melt_sum / n
+    total_melt = melt_sum * m.dx * m.dy * m.rho_freshwater / _KG_PER_GT
+    _launch_tpoint_diag!(_speed_kernel!, m)
+    max_speed = maximum(d)
+    return (; max_meltrate, mean_meltrate, max_speed, total_melt)
+end
+
+# Per-cell diagnostics on T-points, written into `m.diag`.  Velocities are
+# averaged onto the T-point as `im_half(U)`, `jm_half(V)`.  Both kernels share
+# one argument list (see `_launch_tpoint_diag!`), so the speed ignores some of it.
+@kernel function _speed_kernel!(
+    out,
+    @Const(U),
+    @Const(V),
+    @Const(drho),
+    @Const(D),
+    @Const(tmask),
+    g,
+    dx,
+    dy,
+    Nx,
+    Ny,
+)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        u = (U[i, j] + U[_xm1(i, Nx), j]) / 2
+        v = (V[i, j] + V[i, _ym1(j, Ny)]) / 2
+        out[i, j] = sqrt(u^2 + v^2) * tmask[i, j]
+    end
+end
+
+# The CFL number of a cell per unit time step: advection plus the internal
+# gravity-wave speed c = √(g·max(0, δρ·D)) in both directions.
+@kernel function _cfl_rate_kernel!(
+    out,
+    @Const(U),
+    @Const(V),
+    @Const(drho),
+    @Const(D),
+    @Const(tmask),
+    g,
+    dx,
+    dy,
+    Nx,
+    Ny,
+)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = typeof(g)
+        u = (U[i, j] + U[_xm1(i, Nx), j]) / 2
+        v = (V[i, j] + V[i, _ym1(j, Ny)]) / 2
+        c = sqrt(g * max(zero(FT), drho[i, j] * D[i, j]))
+        out[i, j] = (abs(u) / dx + abs(v) / dy + c / dx + c / dy) * tmask[i, j]
+    end
+end
+
+function _launch_tpoint_diag!(kernel!, m)
+    nx, ny = size(m.diag)
+    launch!(
+        kernel!,
+        m.diag,
+        m.diag,
+        m.U.present,
+        m.V.present,
+        m.drho,
+        m.D.present,
+        m.tmask,
+        m.g,
+        m.dx,
+        m.dy,
+        nx,
+        ny,
+    )
 end
 
 # Dispatch on Simulation.cfl — selects ConservativeCFL or ExactCFL.
 _cfl_number(sim) = _cfl_number(sim, sim.cfl)
+
+# Largest δρ·D over the active domain, for the gravity-wave speed.
+function _max_Ddrho(m)
+    @. m.diag = m.drho * m.D.present * m.tmask
+    return maximum(m.diag)
+end
 
 # Conservative: global max of |U|, |V|, and c taken independently, then combined.
 # Overestimates the true CFL but cheap (three scalar reductions).
 function _cfl_number(sim, ::ConservativeCFL)
     m = sim.model
     FT = m.FT
-    umax = maximum(abs.(m.U.present) .* m.umask)
-    vmax = maximum(abs.(m.V.present) .* m.vmask)
-    gDdrho = maximum(m.drho .* m.D.present .* m.tmask)
-    c = sqrt(m.g * max(zero(FT), gDdrho))
+    d = m.diag
+    @. d = abs(m.U.present) * m.umask
+    umax = maximum(d)
+    @. d = abs(m.V.present) * m.vmask
+    vmax = maximum(d)
+    c = sqrt(m.g * max(zero(FT), _max_Ddrho(m)))
     return Float64(sim.clock.dt) * (
         (Float64(umax) + Float64(c)) / Float64(m.dx) +
         (Float64(vmax) + Float64(c)) / Float64(m.dy)
     )
 end
 
-# Exact: per-cell CFL using T-point-interpolated velocities; maximum over active cells.
-# Tighter than ConservativeCFL but allocates temporaries proportional to grid size.
+# Exact: per-cell CFL using T-point-interpolated velocities; maximum over active
+# cells.  Tighter than ConservativeCFL at the cost of one kernel pass.
 function _cfl_number(sim, ::ExactCFL)
     m = sim.model
-    FT = m.FT
-    U_T = im_half(m.U.present)
-    V_T = jm_half(m.V.present)
-    c = sqrt.(m.g .* max.(zero(FT), m.drho .* m.D.present))
-    cfl_cell =
-        Float64(sim.clock.dt) .* (
-            abs.(U_T) ./ Float64(m.dx) .+ abs.(V_T) ./ Float64(m.dy) .+ c ./ Float64(m.dx) .+
-            c ./ Float64(m.dy)
-        ) .* m.tmask
-    return Float64(maximum(cfl_cell))
+    _launch_tpoint_diag!(_cfl_rate_kernel!, m)
+    return Float64(sim.clock.dt) * Float64(maximum(m.diag))
 end
 
 # Worst-case CFL: the advective term uses the velocity cap `v_cut` instead of the
@@ -78,8 +158,7 @@ function _cfl_worstcase(sim)
     m = sim.model
     FT = m.FT
     v_cut = Float64(m.v_cut)
-    gDdrho = maximum(m.drho .* m.D.present .* m.tmask)
-    c = Float64(sqrt(m.g * max(zero(FT), gDdrho)))
+    c = Float64(sqrt(m.g * max(zero(FT), _max_Ddrho(m))))
     return Float64(sim.clock.dt) *
            ((v_cut + c) / Float64(m.dx) + (v_cut + c) / Float64(m.dy))
 end
@@ -95,21 +174,10 @@ function _check_blowup(sim, t, nt)
         all(isfinite, m.V.present)
     ) && return
     error(
-        string(
-            "Simulation blew up: non-finite values in D/U/V at step ",
-            t,
-            "/",
-            nt,
-            " (≈ day ",
-            round(_t_days(sim), digits = 2),
-            "). Common causes: time step too",
-            " large for this grid (dt = ",
-            sim.clock.dt,
-            " s, dx = ",
-            m.dx,
-            " m) or unstable",
-            " forcing. Reduce dt in Simulation, or check the inputs.",
-        ),
+        "Simulation blew up: non-finite values in D/U/V at step $t/$nt " *
+        "(≈ day $(round(_t_days(sim), digits = 2))). Common causes: time step too " *
+        "large for this grid (dt = $(sim.clock.dt) s, dx = $(m.dx) m) or unstable " *
+        "forcing. Reduce dt in Simulation, or check the inputs.",
     )
 end
 
@@ -118,8 +186,8 @@ end
 $(TYPEDSIGNATURES)
 
 Advance `sim` by one leapfrog time step: `advance_leapfrog!` → `leapfrog_step!`
-(2×dt) → `clamp_velocities!` → `apply_robert_asselin_filter!`, then move the
-clock forward by `dt`.  No I/O, no CFL control, no blow-up check — those belong
+(2×dt, which ends each momentum step with `clamp_velocities!`) →
+`apply_robert_asselin_filter!`, then move the clock forward by `dt`.  No I/O, no CFL control, no blow-up check — those belong
 to [`run!`](@ref).
 
 Returns `sim`.
@@ -127,7 +195,6 @@ Returns `sim`.
 function time_step!(sim::Simulation)
     advance_leapfrog!(sim)
     leapfrog_step!(sim, 2)
-    clamp_velocities!(sim.model)
     apply_robert_asselin_filter!(sim)
     sim.clock.time += sim.clock.dt
     sim.clock.iteration += 1
@@ -183,17 +250,9 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     nt = round(Int, total / clock.dt)
     checkint = _check_interval(sim.tstep, nt)
     cfl = _cfl_worstcase(sim)
-    cfl > 1.0 && @warn string(
-        "Worst-case CFL (advection at v_cut + gravity wave) is ",
-        round(cfl, digits = 2),
-        " > 1 (dt = ",
-        clock.dt,
-        " s, dx = ",
-        m.dx,
-        " m, dy = ",
-        m.dy,
-        " m); the run is likely unstable — reduce dt or coarsen the grid.",
-    )
+    cfl > 1.0 && @warn "Worst-case CFL (advection at v_cut + gravity wave) is " *
+          "$(round(cfl, digits = 2)) > 1 (dt = $(clock.dt) s, dx = $(m.dx) m, " *
+          "dy = $(m.dy) m); the run is likely unstable — reduce dt or coarsen the grid."
     backend = nameof(typeof(KA.get_backend(m.tmask)))
     # Progress is tracked in simulated seconds (nt is only an estimate under
     # adaptive dt); update! sets the absolute position from `elapsed` each step.
@@ -234,12 +293,8 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
             if _steady_reached(until, mean_melt, prev_mean)
                 _print2log(
                     sim,
-                    string(
-                        round(_t_days(sim), digits = 3),
-                        " days: steady state reached (relative Δ mean melt < ",
-                        until.tol,
-                        ")",
-                    ),
+                    "$(round(_t_days(sim), digits = 3)) days: steady state reached " *
+                    "(relative Δ mean melt < $(until.tol))",
                 )
                 break
             end
@@ -257,8 +312,9 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
             cfl = (verbose || _adapts(sim.tstep)) ? _cfl_number(sim) : 0.0
             _maybe_adapt_dt!(sim, sim.tstep, cfl)
             if verbose
-                mx, mn, sp = meltstats(m)
-                Dmax = maximum(ifelse.(m.tmask .> 0, m.D.present, FT(-Inf)))
+                mx, mn, sp, gt = meltstats(m)
+                @. m.diag = ifelse(m.tmask > 0, m.D.present, FT(-Inf))
+                Dmax = maximum(m.diag)
                 showvals = [
                     ("simulated days", round(_t_days(sim), digits = 2)),
                     (
@@ -266,6 +322,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
                         string(round(mn, digits = 2), " / ", round(mx, digits = 2)),
                     ),
                     ("Dmax [m]", round(Dmax, digits = 1)),
+                    ("total melt [Gt/yr]", round(gt, digits = 2)),
                     ("|u|max [m/s]", round(sp, digits = 3)),
                     (
                         "dt [s] / CFL",

@@ -1,5 +1,5 @@
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Ambient T/S profiles from pre-loaded vectors — use this when the profile data
 comes from a CSV file, an in-memory dataset, or any other source.
@@ -129,14 +129,16 @@ ring of `1` (land/boundary).
 | `2`   | grounded ice    | `thickness > 0` and `h_af ≥ 0`        |
 | `3`   | floating shelf  | `thickness > 0` and `h_af < 0`        |
 
-Height above flotation: `h_af = thickness × (rho_ice/rho_sw) + bed`.
+Height above flotation: `h_af = thickness × (rho_ice/rho_sw) + bed`.  Gaps (`4`)
+are not derived here; mark them with [`MarkGapsPreprocess`](@ref).
 
 Ice-free cells are split by bed elevation, which is the `thickness → 0` limit of the
 flotation test: exposed bedrock — nunataks, rock islands inside a shelf, ice-free
-coastline — is **land**, not ocean.  Classifying it as ocean (as this function did
-before) makes every such island an open-boundary sink in the middle of the cavity:
-`Grid.ocn` drives the ice-front indicators, so the surrounding shelf cells grow a
-velocity point into the island and lose heat and momentum through it.
+coastline — is **land**, not ocean.  Were it ocean, every such island would act as
+an open-boundary sink in the middle of the cavity.
+
+The default densities are BedMachine's (917 and 1028 kg m⁻³), so the mask agrees
+with the dataset's own; they need not match the model's `Params.rho_ice`.
 
 # Arguments
 - `bed`:      bed elevation (m, positive above sea level).
@@ -181,10 +183,10 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Pad a bed-elevation array into the `(nx+2, ny+2)` format expected by `Model`.
+Pad a bed-elevation array into the `(nx+2, ny+2)` format expected by [`Grid`](@ref).
 The one-cell border ring is zeroed; interior values are copied from `bed` unchanged.
-Pass the result as the `z_bed_raw` keyword argument to `Model` to enable the
-water-column upper bound on plume thickness (`D <= z_draft - z_bed`).
+Pass the result as `Grid(...; z_bed)`; only the topographic caps of
+[`AbstractMaxLayerThickness`](@ref) use it.
 
 # Arguments
 - `bed`: bed elevation (m, positive above sea level), size `(nx, ny)`.
@@ -208,8 +210,8 @@ Returns a `(nx+2, ny+2)` matrix (interior domain with border ring zeroed).
 - **Grounded cells** (`h_af >= 0`): `z_draft = bed` (ice base rests on the bed).
 - **Ocean / border cells**: `z_draft = 0`.
 
-Pass the result directly as `z_draft_raw` to `Model`; `_adjust_z_draft` will clamp
-very shallow shelf cells and zero the ice-front ocean strip.
+Pass the result directly as the `z_draft` argument of [`Grid`](@ref), which clamps
+very shallow shelf cells and zeroes the draft outside grounded ice and shelf.
 
 # Arguments
 - `bed`:      bed elevation (m, positive above sea level).
@@ -270,12 +272,11 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
 
     # Seed: ocean cells on the outermost ring of the array, or directly inside it.
     # The ring is the domain boundary and is normally land, so the seeds are the
-    # ocean cells of the second ring — the same set the old `mask == 1` adjacency
-    # test picked out.  It has to be positional now: land also marks interior
-    # bedrock (nunataks, rock islands), and seeding off those would declare every
-    # pocket beside an island part of the open ocean.
-    for i = 1:nx, j = 1:ny
-        if mask[i, j] == 0 && (i <= 2 || j <= 2 || i >= ny - 1 || j >= nx - 1)
+    # ocean cells of the second ring.  The test is positional because land also
+    # marks interior bedrock (nunataks, rock islands), and seeding off those would
+    # declare every pocket beside an island part of the open ocean.
+    for j = 1:ny, i = 1:nx
+        if mask[i, j] == 0 && (i <= 2 || j <= 2 || i >= nx - 1 || j >= ny - 1)
             visited[i, j] = true
             push!(queue, (i, j))
         end
@@ -295,7 +296,7 @@ function fill_ocean_holes!(mask::AbstractMatrix{Int})
 
     # Reclassify unreachable ocean cells as land
     n_filled = 0
-    for i = 1:nx, j = 1:ny
+    for j = 1:ny, i = 1:nx
         if mask[i, j] == 0 && !visited[i, j]
             mask[i, j] = 1
             n_filled += 1
@@ -336,7 +337,7 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
     queue = Tuple{Int,Int}[]
 
     # Seed: active cells adjacent to at least one ocean cell
-    for i = 1:nx, j = 1:ny
+    for j = 1:ny, i = 1:nx
         if _is_active(mask[i, j]) && !visited[i, j]
             for (di, dj) in _cardinal_dirs
                 ni, nj = i + di, j + dj
@@ -367,7 +368,7 @@ function fill_shelf_holes!(mask::AbstractMatrix{Int})
 
     # Reclassify isolated shelf cells as grounded ice
     n_filled = 0
-    for i = 1:nx, j = 1:ny
+    for j = 1:ny, i = 1:nx
         if mask[i, j] == 3 && !visited[i, j]
             mask[i, j] = 2
             n_filled += 1
@@ -414,7 +415,7 @@ function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int 
     visited = falses(nx, ny)
     n_filled = 0
 
-    for i = 1:nx, j = 1:ny
+    for j = 1:ny, i = 1:nx
         mask[i, j] == 2 && !visited[i, j] || continue
 
         component = Tuple{Int,Int}[]
@@ -427,8 +428,8 @@ function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int 
             for (di, dj) in _cardinal_dirs
                 ni, nj = c_i + di, cj + dj
                 1 <= ni <= nx && 1 <= nj <= ny || continue
-                # Positional border test: `mask == 1` now also marks interior
-                # bedrock, which must not count as "attached to the ice sheet".
+                # Positional border test: `mask == 1` also marks interior bedrock,
+                # which must not count as "attached to the ice sheet".
                 (ni == 1 || ni == nx || nj == 1 || nj == ny) && (touches_border = true)
                 if !visited[ni, nj] && mask[ni, nj] == 2
                     visited[ni, nj] = true
@@ -485,7 +486,7 @@ function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 1
     visited = falses(nx, ny)
     n_filled = 0
 
-    for i = 1:nx, j = 1:ny
+    for j = 1:ny, i = 1:nx
         _is_active(mask[i, j]) && !visited[i, j] || continue
 
         # BFS to collect the full connected component.  Gaps (4) belong to the
@@ -524,15 +525,45 @@ end
 # Mask preprocessing pipeline
 # ============================================================================
 
+"""
+Abstract supertype for a mask-preprocessing step.  Pass a list of concrete
+instances as `Grid(...; preprocess = [...])`; they run in order on a copy of the
+mask, before domain cropping.
+"""
 abstract type AbstractPreprocess end
 
+"""
+$(TYPEDEF)
+
+Preprocessing step that applies [`fill_ocean_holes!`](@ref): enclosed ocean
+pockets become land.
+"""
 struct FillOceanHolesPreprocess <: AbstractPreprocess end
+
+"""
+$(TYPEDEF)
+
+Preprocessing step that applies [`fill_shelf_holes!`](@ref): shelf patches with no
+connection to the open ocean become grounded ice.
+"""
 struct FillShelfHolesPreprocess <: AbstractPreprocess end
 
+"""
+$(TYPEDEF)
+
+Preprocessing step that applies [`fill_small_shelf_patches!`](@ref) with
+`min_cells = min_size` (default 10).
+"""
 @kwdef struct FillSmallShelfPatchesPreprocess <: AbstractPreprocess
     min_size::Int = 10
 end
 
+"""
+$(TYPEDEF)
+
+Preprocessing step that applies [`fill_small_grounded_patches!`](@ref) with
+`min_cells = min_size` (default 10).
+"""
 @kwdef struct FillSmallGroundedPatchesPreprocess <: AbstractPreprocess
     min_size::Int = 10
 end
@@ -594,16 +625,27 @@ preprocess!(mask, p::FillSmallGroundedPatchesPreprocess) =
 # Domain cropping
 # ============================================================================
 
+"""
+Abstract supertype for how [`Grid`](@ref) crops its inputs: pass
+`Grid(...; domain_cropping = ...)` with [`MinRectangleDomainCropping`](@ref) (the
+default) or [`NoDomainCropping`](@ref).
+"""
 abstract type AbstractDomainCropping end
 
+"""
+$(TYPEDEF)
+
+Keep the full input arrays; the grid is exactly the mask that was passed in.
+"""
 struct NoDomainCropping <: AbstractDomainCropping end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
-Crop `mask`, `z_draft_raw`, and (optionally) `z_bed_raw` to the smallest rectangle
-that contains all dynamically active cells (floating shelf `mask == 3` and gaps
-`mask == 4`), expanded by `margin` cells in every direction.
+Crop the grid inputs (mask, draft, bed, coordinates, and any full-domain field a
+model is given later) to the smallest rectangle that contains all dynamically
+active cells (floating shelf `mask == 3` and gaps `mask == 4`), expanded by `margin`
+cells in every direction.  Pass as `Grid(...; domain_cropping)`; this is the default.
 
 `margin` must be at least 1, since the outermost ring has to stay free of active
 cells (the stencils wrap periodically).  The default of 4 leaves a little context
@@ -616,9 +658,10 @@ padding simply keeps what is there.  If the domain is already minimal, the array
 are returned unchanged.
 
 # Fields
- - `margin`: cells of padding kept around the active region (default 4, minimum 1).
+$(TYPEDFIELDS)
 """
 @kwdef struct MinRectangleDomainCropping <: AbstractDomainCropping
+    "cells of padding kept around the active region (minimum 1)"
     margin::Int = 4
 end
 

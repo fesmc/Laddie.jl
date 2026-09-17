@@ -65,8 +65,7 @@ end
 
     # The island generates no ice front: at_isf fires on ocean neighbours only,
     # and the island has none.  The genuine front at column 20 still does.
-    isf_here = (m.tmask .> 0) .&
-               (m.ocnxm1 .+ m.ocnxp1 .+ m.ocnym1 .+ m.ocnyp1 .> 0)
+    isf_here = (m.tmask .> 0) .& Laddie.next_to_ocean(m.ocn)
     for I in isl, (di, dj) in ((-1,0),(1,0),(0,-1),(0,1))
         i, j = Tuple(I) .+ (di, dj)
         (5 <= i <= 6 && 10 <= j <= 11) && continue

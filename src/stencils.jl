@@ -16,10 +16,7 @@
     @Const(D0jm),
     @Const(D0ip),
     @Const(D0im),
-    @Const(tmaskym1),
-    @Const(tmaskyp1),
-    @Const(tmaskxm1),
-    @Const(tmaskxp1),
+    @Const(tmask),
     dy2,
     dx2,
     Nx,
@@ -31,10 +28,10 @@
         jm1 = _ym1(j, Ny)
         ip1 = _xp1(i, Nx)
         im1 = _xm1(i, Nx)
-        flux_N = D0jp[i, j] * (var[i, jp1] - var[i, j]) * tmaskym1[i, j] / dy2
-        flux_S = D0jm[i, j] * (var[i, jm1] - var[i, j]) * tmaskyp1[i, j] / dy2
-        flux_E = D0ip[i, j] * (var[ip1, j] - var[i, j]) * tmaskxm1[i, j] / dx2
-        flux_W = D0im[i, j] * (var[im1, j] - var[i, j]) * tmaskxp1[i, j] / dx2
+        flux_N = D0jp[i, j] * (var[i, jp1] - var[i, j]) * tmask[i, jp1] / dy2
+        flux_S = D0jm[i, j] * (var[i, jm1] - var[i, j]) * tmask[i, jm1] / dy2
+        flux_E = D0ip[i, j] * (var[ip1, j] - var[i, j]) * tmask[ip1, j] / dx2
+        flux_W = D0im[i, j] * (var[im1, j] - var[i, j]) * tmask[im1, j] / dx2
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -215,11 +212,7 @@ end
     @Const(var),
     @Const(D0),
     @Const(D_on_ugrid),
-    @Const(tmask_jp),
-    @Const(tmask_jm),
-    @Const(ocnym1),
-    @Const(ocnyp1),
-    @Const(ocnxm1),
+    @Const(tmask),
     @Const(ocn),
     @Const(glNu),
     @Const(glSu),
@@ -252,11 +245,11 @@ end
             (slip_gl * glSu[i, j] + slip_land * lndSu[i, j]) *
             D_on_ugrid[i, j] *
             v / dy2
-        jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jp1], tmask_jp[i, j])
-        jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jm1], tmask_jm[i, j])
-        flux_N = jpD * (var[i, jp1] - v) / dy2 * (o - ocnym1[i, j]) - dragN
-        flux_S = jmD * (var[i, jm1] - v) / dy2 * (o - ocnyp1[i, j]) - dragS
-        flux_E = D0[ip1, j] * (var[ip1, j] - v) / dx2 * (o - ocnxm1[i, j])
+        jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jp1], tmask[i, j] + tmask[i, jp1])
+        jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jm1], tmask[i, j] + tmask[i, jm1])
+        flux_N = jpD * (var[i, jp1] - v) / dy2 * (o - ocn[i, jp1]) - dragN
+        flux_S = jmD * (var[i, jm1] - v) / dy2 * (o - ocn[i, jm1]) - dragS
+        flux_E = D0[ip1, j] * (var[ip1, j] - v) / dx2 * (o - ocn[ip1, j])
         flux_W = D0[i, j] * (var[im1, j] - v) / dx2 * (o - ocn[i, j])
         out[i, j] = (flux_N + flux_S + flux_E + flux_W) * A_h
     end
@@ -267,12 +260,8 @@ end
     @Const(var),
     @Const(D0),
     @Const(D_on_vgrid),
-    @Const(tmask_ip),
-    @Const(tmask_im),
-    @Const(ocnym1),
+    @Const(tmask),
     @Const(ocn),
-    @Const(ocnxm1),
-    @Const(ocnxp1),
     @Const(glEv),
     @Const(glWv),
     @Const(lndEv),
@@ -303,12 +292,12 @@ end
             (slip_gl * glWv[i, j] + slip_land * lndWv[i, j]) *
             D_on_vgrid[i, j] *
             v / dx2
-        ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[ip1, j], tmask_ip[i, j])
-        imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[im1, j], tmask_im[i, j])
-        flux_N = D0[i, jp1] * (var[i, jp1] - v) / dy2 * (o - ocnym1[i, j])
+        ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[ip1, j], tmask[i, j] + tmask[ip1, j])
+        imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[im1, j], tmask[i, j] + tmask[im1, j])
+        flux_N = D0[i, jp1] * (var[i, jp1] - v) / dy2 * (o - ocn[i, jp1])
         flux_S = D0[i, j] * (var[i, jm1] - v) / dy2 * (o - ocn[i, j])
-        flux_E = ipD * (var[ip1, j] - v) / dx2 * (o - ocnxm1[i, j]) - dragE
-        flux_W = imD * (var[im1, j] - v) / dx2 * (o - ocnxp1[i, j]) - dragW
+        flux_E = ipD * (var[ip1, j] - v) / dx2 * (o - ocn[ip1, j]) - dragE
+        flux_W = imD * (var[im1, j] - v) / dx2 * (o - ocn[im1, j]) - dragW
         out[i, j] = (flux_N + flux_S + flux_E + flux_W) * A_h
     end
 end
@@ -329,11 +318,7 @@ end
     @Const(other),
     @Const(D0),
     @Const(D_on_ugrid),
-    @Const(tmask_jp),
-    @Const(tmask_jm),
-    @Const(ocnym1),
-    @Const(ocnyp1),
-    @Const(ocnxm1),
+    @Const(tmask),
     @Const(ocn),
     @Const(glNu),
     @Const(glSu),
@@ -368,8 +353,8 @@ end
             (slip_gl * glSu[i, j] + slip_land * lndSu[i, j]) *
             D_on_ugrid[i, j] *
             v / dy2
-        jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jp1], tmask_jp[i, j])
-        jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jm1], tmask_jm[i, j])
+        jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jp1], tmask[i, j] + tmask[i, jp1])
+        jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jm1], tmask[i, j] + tmask[i, jm1])
         ov = other[i, j]
         dN = var[i, jp1] - v
         dS = var[i, jm1] - v
@@ -381,9 +366,9 @@ end
         aS = sqrt(dS * dS + (other[i, jm1] - ov)^2)
         aE = sqrt(dE * dE + (other[ip1, j] - ov)^2)
         aW = sqrt(dW * dW + (other[im1, j] - ov)^2)
-        flux_N = visc_y * aN * jpD * dN / dy2 * (o - ocnym1[i, j]) - dragN
-        flux_S = visc_y * aS * jmD * dS / dy2 * (o - ocnyp1[i, j]) - dragS
-        flux_E = visc_x * aE * D0[ip1, j] * dE / dx2 * (o - ocnxm1[i, j])
+        flux_N = visc_y * aN * jpD * dN / dy2 * (o - ocn[i, jp1]) - dragN
+        flux_S = visc_y * aS * jmD * dS / dy2 * (o - ocn[i, jm1]) - dragS
+        flux_E = visc_x * aE * D0[ip1, j] * dE / dx2 * (o - ocn[ip1, j])
         flux_W = visc_x * aW * D0[i, j] * dW / dx2 * (o - ocn[i, j])
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
@@ -395,12 +380,8 @@ end
     @Const(other),
     @Const(D0),
     @Const(D_on_vgrid),
-    @Const(tmask_ip),
-    @Const(tmask_im),
-    @Const(ocnym1),
+    @Const(tmask),
     @Const(ocn),
-    @Const(ocnxm1),
-    @Const(ocnxp1),
     @Const(glEv),
     @Const(glWv),
     @Const(lndEv),
@@ -434,8 +415,8 @@ end
             (slip_gl * glWv[i, j] + slip_land * lndWv[i, j]) *
             D_on_vgrid[i, j] *
             v / dx2
-        ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[ip1, j], tmask_ip[i, j])
-        imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[im1, j], tmask_im[i, j])
+        ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[ip1, j], tmask[i, j] + tmask[ip1, j])
+        imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[im1, j], tmask[i, j] + tmask[im1, j])
         ov = other[i, j]
         dN = var[i, jp1] - v
         dS = var[i, jm1] - v
@@ -446,10 +427,10 @@ end
         aS = sqrt(dS * dS + (other[i, jm1] - ov)^2)
         aE = sqrt(dE * dE + (other[ip1, j] - ov)^2)
         aW = sqrt(dW * dW + (other[im1, j] - ov)^2)
-        flux_N = visc_y * aN * D0[i, jp1] * dN / dy2 * (o - ocnym1[i, j])
+        flux_N = visc_y * aN * D0[i, jp1] * dN / dy2 * (o - ocn[i, jp1])
         flux_S = visc_y * aS * D0[i, j] * dS / dy2 * (o - ocn[i, j])
-        flux_E = visc_x * aE * ipD * dE / dx2 * (o - ocnxm1[i, j]) - dragE
-        flux_W = visc_x * aW * imD * dW / dx2 * (o - ocnxp1[i, j]) - dragW
+        flux_E = visc_x * aE * ipD * dE / dx2 * (o - ocn[ip1, j]) - dragE
+        flux_W = visc_x * aW * imD * dW / dx2 * (o - ocn[im1, j]) - dragW
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -480,8 +461,8 @@ function upwind_advection_U(m)
     slip_gl, slip_land = _wall_slips(m)
     launch!(
         _upwind_advection_U_kernel!,
-        m.cU,
-        m.cU,
+        m.adv,
+        m.adv,
         m.D.present,
         m.tmask,
         m.ocn,
@@ -502,15 +483,15 @@ function upwind_advection_U(m)
         nx,
         ny,
     )
-    return m.cU
+    return m.adv
 end
 function upwind_advection_V(m)
     nx, ny = size(m.V.present)
     slip_gl, slip_land = _wall_slips(m)
     launch!(
         _upwind_advection_V_kernel!,
-        m.cV,
-        m.cV,
+        m.adv,
+        m.adv,
         m.D.present,
         m.tmask,
         m.ocn,
@@ -531,7 +512,7 @@ function upwind_advection_V(m)
         nx,
         ny,
     )
-    return m.cV
+    return m.adv
 end
 function laplace_T(out, m, var)
     nx, ny = size(var)
@@ -544,10 +525,7 @@ function laplace_T(out, m, var)
         m.D0jm,
         m.D0ip,
         m.D0im,
-        m.tmaskym1,
-        m.tmaskyp1,
-        m.tmaskxm1,
-        m.tmaskxp1,
+        m.tmask,
         m.dy^2,
         m.dx^2,
         nx,
@@ -565,16 +543,12 @@ function laplace_U(m, ::PrescribedLateralViscosity)
     slip_gl, slip_land = _wall_slips(m)
     launch!(
         _laplace_U_kernel!,
-        m.lU,
-        m.lU,
+        m.lap,
+        m.lap,
         m.U.past,
         laplacian_thickness(m),
         m.D_on_ugrid,
-        m.tmask_jp,
-        m.tmask_jm,
-        m.ocnym1,
-        m.ocnyp1,
-        m.ocnxm1,
+        m.tmask,
         m.ocn,
         m.glNu,
         m.glSu,
@@ -588,24 +562,20 @@ function laplace_U(m, ::PrescribedLateralViscosity)
         nx,
         ny,
     )
-    return m.lU
+    return m.lap
 end
 function laplace_V(m, ::PrescribedLateralViscosity)
     nx, ny = size(m.V.past)
     slip_gl, slip_land = _wall_slips(m)
     launch!(
         _laplace_V_kernel!,
-        m.lV,
-        m.lV,
+        m.lap,
+        m.lap,
         m.V.past,
         laplacian_thickness(m),
         m.D_on_vgrid,
-        m.tmask_ip,
-        m.tmask_im,
-        m.ocnym1,
+        m.tmask,
         m.ocn,
-        m.ocnxm1,
-        m.ocnxp1,
         m.glEv,
         m.glWv,
         m.lndEv,
@@ -618,7 +588,7 @@ function laplace_V(m, ::PrescribedLateralViscosity)
         nx,
         ny,
     )
-    return m.lV
+    return m.lap
 end
 
 # NonlinearLateralViscosity: the shear-scaled coefficient is per-face, so it must
@@ -632,17 +602,13 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
     launch!(_v_at_u_kernel!, m.VatU, m.VatU, m.V.past, nx, ny)
     launch!(
         _nonlinear_laplace_U_kernel!,
-        m.lU,
-        m.lU,
+        m.lap,
+        m.lap,
         m.U.past,
         m.VatU,
         laplacian_thickness(m),
         m.D_on_ugrid,
-        m.tmask_jp,
-        m.tmask_jm,
-        m.ocnym1,
-        m.ocnyp1,
-        m.ocnxm1,
+        m.tmask,
         m.ocn,
         m.glNu,
         m.glSu,
@@ -658,7 +624,7 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
         nx,
         ny,
     )
-    return m.lU
+    return m.lap
 end
 function laplace_V(m, lv::NonlinearLateralViscosity)
     nx, ny = size(m.V.past)
@@ -667,18 +633,14 @@ function laplace_V(m, lv::NonlinearLateralViscosity)
     launch!(_u_at_v_kernel!, m.UatV, m.UatV, m.U.past, nx, ny)
     launch!(
         _nonlinear_laplace_V_kernel!,
-        m.lV,
-        m.lV,
+        m.lap,
+        m.lap,
         m.V.past,
         m.UatV,
         laplacian_thickness(m),
         m.D_on_vgrid,
-        m.tmask_ip,
-        m.tmask_im,
-        m.ocnym1,
+        m.tmask,
         m.ocn,
-        m.ocnxm1,
-        m.ocnxp1,
         m.glEv,
         m.glWv,
         m.lndEv,
@@ -693,7 +655,7 @@ function laplace_V(m, lv::NonlinearLateralViscosity)
         nx,
         ny,
     )
-    return m.lV
+    return m.lap
 end
 
 # 4-point collocation of the cross-velocity component, as `ip_half(jm_half(V))`
@@ -731,14 +693,8 @@ function precompute_advection_stencils!(m)
         m.Ujm,
         m.V.present,
         m.U.present,
-        m.vmask_ip,
-        m.vmask_im,
-        m.vmask_jp,
-        m.vmask_jm,
-        m.umask_ip,
-        m.umask_im,
-        m.umask_jp,
-        m.umask_jm,
+        m.vmask,
+        m.umask,
         nx,
         ny,
     )
@@ -755,10 +711,7 @@ function precompute_laplacian_stencils!(m)
         m.D0jp,
         m.D0jm,
         laplacian_thickness(m),
-        m.tmask_ip,
-        m.tmask_im,
-        m.tmask_jp,
-        m.tmask_jm,
+        m.tmask,
         nx,
         ny,
     )

@@ -42,6 +42,25 @@ end
     @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
 end
 
+@testset "TurbulentGamTMelting: transfer coefficients stay positive" begin
+    # A Prandtl or Schmidt number that leaves no positive offset is rejected.
+    @test_throws ArgumentError TurbulentGamTMelting(0.5, 2432.0, 1.95e-6)
+    @test_throws ArgumentError TurbulentGamTMelting(13.8, 0.5, 1.95e-6)
+    @test_throws ArgumentError TurbulentGamTMelting(13.8, 2432.0, 0.0)
+    @test_throws ArgumentError Params(; melting = TurbulentGamTMelting(; Pr = 0.5))
+
+    # A thin, slow layer (u★D/ν₀ ≪ 1).  With Pr = 1 the unfloored log term would
+    # make the γT denominator negative; the floor leaves γ = u★/offset.
+    mp = TurbulentGamTMelting(FT(1.0), FT(2432.0), FT(1.95e-6))
+    m = build_isomip(CPU(); FT, nx = 20, ny = 10, params = Params(; FT, melting = mp)).model
+    act = m.tmask .> 0
+    m.ustar .= FT(1e-9) .* m.tmask
+    Laddie._compute_turbulent_transfer_coefficients!(m, mp)
+    @test all(m.gamT[act] .≈ FT(1e-9) / Laddie._log_layer_offset(mp.Pr))
+    @test all(m.gamS[act] .≈ FT(1e-9) / Laddie._log_layer_offset(mp.Sc))
+    @test all(iszero, m.gamT[.!act])
+end
+
 @testset "HollandEntrainment: build and short run" begin
     params = Params(;
         FT,

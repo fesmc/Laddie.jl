@@ -50,18 +50,13 @@ mutable struct Cache{FT,A<:AbstractMatrix{FT},GamT,Conv2,PM}
     D0jm::A
     D_on_ugrid::A
     D_on_vgrid::A
-    # Advection (c?) and Laplacian (l?) outputs of the four stepped equations
-    cU::A
-    cV::A
-    cT::A
-    cS::A
-    lU::A
-    lV::A
-    lT::A
-    lS::A
-    # Tracer fluxes D·T and D·S
-    DT::A
-    DS::A
+    # Work buffers of the stepped equations: the advection and Laplacian terms, and
+    # the tracer content D·q that is advected.  U, V, T and S are stepped one after
+    # another, and each consumes its terms before the next one writes them, so a
+    # single set serves all four.
+    adv::A
+    lap::A
+    Dq::A
     # Per-point scale factors for the speed-preserving velocity limiter
     scaleU::A
     scaleV::A

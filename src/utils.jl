@@ -126,18 +126,26 @@ div0(a, b) = ifelse.(b .== 0, zero(eltype(a)), a ./ b)
 
 # Masked staggered interpolation — normalises by the count of live neighbours
 # to avoid gradient artefacts across boundaries (tools.py in the reference).
-im_t(m, a) = div0(a .+ xp1(a), m.tmask_im)
-ip_t(m, a) = div0(a .+ xm1(a), m.tmask_ip)
-jm_t(m, a) = div0(a .+ yp1(a), m.tmask_jm)
-jp_t(m, a) = div0(a .+ ym1(a), m.tmask_jp)
-im_u(m, a) = div0(a .+ xp1(a), m.umask_im)
-ip_u(m, a) = div0(a .+ xm1(a), m.umask_ip)
-jm_u(m, a) = div0(a .+ yp1(a), m.umask_jm)
-jp_u(m, a) = div0(a .+ ym1(a), m.umask_jp)
-im_v(m, a) = div0(a .+ xp1(a), m.vmask_im)
-ip_v(m, a) = div0(a .+ xm1(a), m.vmask_ip)
-jm_v(m, a) = div0(a .+ yp1(a), m.vmask_jm)
-jp_v(m, a) = div0(a .+ ym1(a), m.vmask_jp)
+# The counts (0, 1 or 2 active cells) are formed like the kernels form them inline.
+im_count(mask) = mask .+ xp1(mask)
+ip_count(mask) = mask .+ xm1(mask)
+jm_count(mask) = mask .+ yp1(mask)
+jp_count(mask) = mask .+ ym1(mask)
+im_t(m, a) = div0(a .+ xp1(a), im_count(m.tmask))
+ip_t(m, a) = div0(a .+ xm1(a), ip_count(m.tmask))
+jm_t(m, a) = div0(a .+ yp1(a), jm_count(m.tmask))
+jp_t(m, a) = div0(a .+ ym1(a), jp_count(m.tmask))
+im_u(m, a) = div0(a .+ xp1(a), im_count(m.umask))
+ip_u(m, a) = div0(a .+ xm1(a), ip_count(m.umask))
+jm_u(m, a) = div0(a .+ yp1(a), jm_count(m.umask))
+jp_u(m, a) = div0(a .+ ym1(a), jp_count(m.umask))
+im_v(m, a) = div0(a .+ xp1(a), im_count(m.vmask))
+ip_v(m, a) = div0(a .+ xm1(a), ip_count(m.vmask))
+jm_v(m, a) = div0(a .+ yp1(a), jm_count(m.vmask))
+jp_v(m, a) = div0(a .+ ym1(a), jp_count(m.vmask))
+
+# Cells with at least one open-ocean neighbour.
+next_to_ocean(ocn) = xm1(ocn) .+ xp1(ocn) .+ ym1(ocn) .+ yp1(ocn) .> 0
 
 # Numpy-style gradient: second-order central differences on the interior,
 # first-order one-sided at the two boundary rows/columns.

@@ -83,7 +83,10 @@ end
 # ============================================================================
 # Geometry{FT, A} — everything derived from the grid once a model has decided
 # which cells are active: the gap-resolved mask, the masks and wall indicators,
-# stagger-count denominators, the ice-base slope and the Coriolis field.  Owned by
+# the ice-base slope and the Coriolis field.  Neighbour values of the masks and the
+# stagger counts (active cells in a two-point average) are not stored: the kernels
+# read them from the neighbouring cell, and the reference equation terms use
+# `ip_count` & co. (utils.jl).  Owned by
 # the Model; the Grid itself carries only what is independent of any modelling
 # choice.
 # A is the concrete matrix type (Matrix{FT} on CPU, CuArray{FT,2} on GPU).
@@ -111,16 +114,6 @@ struct Geometry{FT,A<:AbstractMatrix{FT}}
     lnd::A
     ocn::A
 
-    ocnym1::A
-    ocnyp1::A
-    ocnxm1::A
-    ocnxp1::A
-
-    tmaskym1::A
-    tmaskyp1::A
-    tmaskxm1::A
-    tmaskxp1::A
-
     glNu::A
     glSu::A
     glEv::A
@@ -133,22 +126,9 @@ struct Geometry{FT,A<:AbstractMatrix{FT}}
 
     umask::A
     vmask::A
-
-    tmask_im::A
-    tmask_ip::A
-    tmask_jm::A
-    tmask_jp::A
-    umask_im::A
-    umask_ip::A
-    umask_jm::A
-    umask_jp::A
-    vmask_im::A
-    vmask_ip::A
-    vmask_jm::A
-    vmask_jp::A
 end
 
-# Build all masks and stagger-count denominators from the gap-resolved integer `mask`
+# Build all masks and wall indicators from the gap-resolved integer `mask`
 # and the (adjusted) ice draft `z_draft`, plus the ice-base slope and the Coriolis
 # field staggered onto the velocity faces.  CPU arrays; the Model moves them.
 function Geometry(
@@ -184,11 +164,6 @@ function Geometry(
     grd = FT.((mask .== 2) .| (mask .== 1))
     lnd = FT.(mask .== 1)
     ocn = FT.(mask .== 0)
-
-    ocnym1 = ym1(ocn)
-    ocnyp1 = yp1(ocn)
-    ocnxm1 = xm1(ocn)
-    ocnxp1 = xp1(ocn)
 
     dzdx, dzdy = _icebase_slope(gradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
 
@@ -236,22 +211,8 @@ function Geometry(
     umask = (tmask .+ isfW) .* (o .- xm1(grd .* tmaskxp1))
     vmask = (tmask .+ isfS) .* (o .- ym1(grd .* tmaskyp1))
 
-    # Stagger-count denominators: active cells in each two-point average.
-    tmask_im = tmask .+ tmaskxp1
-    tmask_ip = tmask .+ tmaskxm1
-    tmask_jm = tmask .+ tmaskyp1
-    tmask_jp = tmask .+ tmaskym1
-    umask_im = umask .+ xp1(umask)
-    umask_ip = umask .+ xm1(umask)
-    umask_jm = umask .+ yp1(umask)
-    umask_jp = umask .+ ym1(umask)
-    vmask_im = vmask .+ xp1(vmask)
-    vmask_ip = vmask .+ xm1(vmask)
-    vmask_jm = vmask .+ yp1(vmask)
-    vmask_jp = vmask .+ ym1(vmask)
-
     resolved_mask = Matrix{Int}(mask)
-    # Every field is a local of the same name.
+    # Every field is a local of the same name (not every local is a field).
     vars = Base.@locals
     return Geometry{FT,Matrix{FT}}((vars[fn] for fn in fieldnames(Geometry))...)
 end

@@ -128,7 +128,7 @@ function Base.getproperty(m::Model{FT}, k::Symbol) where {FT}
     # Grid: cell layout, raw mask, draft, bed, coordinates
     g = getfield(m, :grid)
     hasfield(typeof(g), k) && return getfield(g, k)
-    # Geometry: resolved mask, derived masks, stagger denominators, slope, Coriolis
+    # Geometry: resolved mask, derived masks, wall indicators, slope, Coriolis
     gm = getfield(m, :geometry)
     hasfield(typeof(gm), k) && return getfield(gm, k)
     # State: prognostic Var objects

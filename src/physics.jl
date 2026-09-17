@@ -158,8 +158,20 @@ domain, gaps included.
 """
 function update_convection!(m, cs::ClampDensity)
     thr = cs.d_rho_min / m.rho0_seawater
-    @. m.convection = m.drho < 0
-    @. m.drho = max(m.drho, thr)
+    launch!(_clamp_density_kernel!, m.drho, m.convection, m.drho, thr)
+end
+
+# The convection schemes are pointwise, and run as kernels rather than broadcasts so
+# that they are threaded on the CPU: they run twice per step (see
+# `apply_robert_asselin_filter!`).  Each reads the `drho` of the current T/S.
+@kernel function _clamp_density_kernel!(convection, drho, thr)
+    i, j = @index(Global, NTuple)
+    FT = typeof(thr)
+    @inbounds begin
+        d = drho[i, j]
+        convection[i, j] = ifelse(d < 0, one(FT), zero(FT))
+        drho[i, j] = max(d, thr)
+    end
 end
 
 """
@@ -177,10 +189,53 @@ v2 has no reset scheme to copy here, so this is a Laddie.jl-only decision.
 function update_convection!(m, cs::ResetToAmbient)
     thr = cs.d_rho_min / m.rho0_seawater
     S_adj = cs.d_rho_min / (m.rho0_seawater * m.beta)
-    @. m.convection = (m.drho < 0) * m.imask
-    @. m.T.present = ifelse((m.drho < thr) & (m.imask > 0), m.Ta, m.T.present)
-    @. m.S.present = ifelse((m.drho < thr) & (m.imask > 0), m.Sa - S_adj, m.S.present)
-    update_density!(m)
+    launch!(
+        _reset_to_ambient_kernel!,
+        m.drho,
+        m.convection,
+        m.T.present,
+        m.S.present,
+        m.drho,
+        m.Ta,
+        m.Sa,
+        m.tmask,
+        m.imask,
+        thr,
+        S_adj,
+        m.beta,
+        m.alpha,
+    )
+end
+
+# Reset T/S of unstable ice-covered cells to ambient, and refresh `drho` there with
+# the expression of `_density_kernel!` (elsewhere T/S are unchanged, so is `drho`).
+@kernel function _reset_to_ambient_kernel!(
+    convection,
+    T,
+    S,
+    drho,
+    @Const(Ta),
+    @Const(Sa),
+    @Const(tmask),
+    @Const(imask),
+    thr,
+    S_adj,
+    beta,
+    alpha,
+)
+    i, j = @index(Global, NTuple)
+    FT = typeof(thr)
+    @inbounds begin
+        d = drho[i, j]
+        ice = imask[i, j] > 0
+        convection[i, j] = ifelse((d < 0) & ice, one(FT), zero(FT))
+        if (d < thr) & ice
+            T[i, j] = Ta[i, j]
+            S[i, j] = Sa[i, j] - S_adj
+            drho[i, j] =
+                (beta * (Sa[i, j] - S[i, j]) - alpha * (Ta[i, j] - T[i, j])) * tmask[i, j]
+        end
+    end
 end
 
 """
@@ -194,25 +249,54 @@ Restricted to ice-covered cells (`imask`) for the same reason as
 version of the same sink.
 """
 function update_convection!(m, ::RelaxToAmbient)
-    @. m.convection = (m.drho < 0) * m.imask
+    launch!(_flag_unstable_ice_kernel!, m.drho, m.convection, m.drho, m.imask)
+end
+
+@kernel function _flag_unstable_ice_kernel!(convection, @Const(drho), @Const(imask))
+    i, j = @index(Global, NTuple)
+    FT = eltype(convection)
+    @inbounds convection[i, j] = ifelse((drho[i, j] < 0) & (imask[i, j] > 0), one(FT), zero(FT))
 end
 
 update_convection!(m) = update_convection!(m, m.convection_scheme)
 
+# Log-layer transfer coefficients (Lambert et al. 2023, Eqs. 11–12).  The log term
+# is floored at 0 (u★D/ν₀ ≥ 1): without the floor the denominator crosses zero on a
+# thin, slow layer.  The floor is a no-op wherever u★D/ν₀ ≥ 1, so the result is
+# unchanged there; the constructor guarantees the offsets are positive.
+@kernel function _turbulent_gamma_kernel!(
+    gamT,
+    gamS,
+    @Const(ustar),
+    @Const(D),
+    @Const(tmask),
+    PrCorr,
+    ScCorr,
+    nu0,
+)
+    i, j = @index(Global, NTuple)
+    FT = typeof(nu0)
+    @inbounds begin
+        us = ustar[i, j]
+        logterm = FT(2.12) * max(log(us * D[i, j] / nu0 + FT(1e-12)), zero(FT))
+        active = tmask[i, j] > 0
+        gamT[i, j] = ifelse(active, us / (logterm + PrCorr), zero(FT))
+        gamS[i, j] = ifelse(active, us / (logterm + ScCorr), zero(FT))
+    end
+end
+
 function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamTMelting)
-    FT = typeof(mp.Pr)
-    PrCorr = FT(12.5) * mp.Pr^(FT(2)/FT(3)) - FT(8.68)
-    ScCorr = FT(12.5) * mp.Sc^(FT(2)/FT(3)) - FT(8.68)
-    nu0 = mp.nu0
-    @. m.gamT = ifelse(
-        m.tmask > 0,
-        m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + PrCorr),
-        zero(FT),
-    )
-    @. m.gamS = ifelse(
-        m.tmask > 0,
-        m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + ScCorr),
-        zero(FT),
+    launch!(
+        _turbulent_gamma_kernel!,
+        m.gamT,
+        m.gamT,
+        m.gamS,
+        m.ustar,
+        m.D.present,
+        m.tmask,
+        _log_layer_offset(mp.Pr),
+        _log_layer_offset(mp.Sc),
+        mp.nu0,
     )
 end
 
@@ -594,6 +678,8 @@ end
 # making the step functions read like the written equations.
 #
 # These are the readable REFERENCE implementation of the governing equations.
+# The momentum advection and diffusion terms are copied out of the shared work
+# buffers (`Cache.adv`, `Cache.lap`), which the next term would overwrite.
 # The time loop runs the fused kernels in numerics.jl instead (one pass per
 # prognostic, no intermediate allocations); the test suite asserts that the
 # kernels reproduce these terms exactly (testset "Fused kernels match
@@ -626,7 +712,7 @@ end
 # U·∂D/∂t  (thickness-tendency coupling)
 @inline u_thickness_tendency(m) = m.U.present .* ip_t(m, m.dDdt)
 # ∇·(DUu)  (momentum advection)
-@inline u_advection(m) = upwind_advection_U(m)
+@inline u_advection(m) = copy(upwind_advection_U(m))
 # Per-face weight on the depth-gradient PGF term: always 1 on a fully-interior
 # face; at a one-sided face (ice front, SinkGapsBC gap-sink edge) 1 under
 # FullDepthGradient and 0 under TruncatedDepthGradient.  See AbstractFrontPressure.
@@ -636,7 +722,7 @@ end
 # g·D̄·ρ̄·∂D/∂x  (pressure gradient from plume-thickness depth)
 @inline u_pressure_depth(m) =
     m.g .* ip_t(m, m.Ddrho) .* (xm1(m.D.present .* m.tmask) .- m.D.present) ./ m.dx .*
-    _pgf_gate(m, m.tmask_ip)
+    _pgf_gate(m, ip_count(m.tmask))
 # g·D̄·ρ̄·∂z_draft/∂x  (baroclinic pressure via ice-base slope)
 @inline u_pressure_slope(m) = m.g .* ip_t(m, m.Ddrho .* m.dzdx)
 # ½g·D̄²·∂δρ/∂x  (internal pressure gradient)
@@ -649,7 +735,7 @@ end
     m.C_d .* m.U.present .* sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
 # Ah·∇²(DU)  (lateral diffusion; the A_h/shear scaling is applied inside
 # laplace_U, since it dispatches on `Params.lateral_viscosity`)
-@inline u_diffusion(m) = laplace_U(m)
+@inline u_diffusion(m) = copy(laplace_U(m))
 # e·U  (detrainment momentum loss)
 @inline u_detrainment(m) = m.detr .* m.U.present
 
@@ -658,11 +744,11 @@ end
 # V·∂D/∂t  (thickness-tendency coupling)
 @inline v_thickness_tendency(m) = m.V.present .* jp_t(m, m.dDdt)
 # ∇·(DVv)  (momentum advection)
-@inline v_advection(m) = upwind_advection_V(m)
+@inline v_advection(m) = copy(upwind_advection_V(m))
 # g·D̄·ρ̄·∂D/∂y  (pressure gradient from plume-thickness depth; see u_pressure_depth)
 @inline v_pressure_depth(m) =
     m.g .* jp_t(m, m.Ddrho) .* (ym1(m.D.present .* m.tmask) .- m.D.present) ./ m.dy .*
-    _pgf_gate(m, m.tmask_jp)
+    _pgf_gate(m, jp_count(m.tmask))
 # g·D̄·ρ̄·∂z_draft/∂y  (baroclinic pressure via ice-base slope)
 @inline v_pressure_slope(m) = m.g .* jp_t(m, m.Ddrho .* m.dzdy)
 # ½g·D̄²·∂δρ/∂y  (internal pressure gradient)
@@ -675,7 +761,7 @@ end
     m.C_d .* m.V.present .* sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)
 # Ah·∇²(DV)  (lateral diffusion; the A_h/shear scaling is applied inside
 # laplace_V, since it dispatches on `Params.lateral_viscosity`)
-@inline v_diffusion(m) = laplace_V(m)
+@inline v_diffusion(m) = copy(laplace_V(m))
 # ė·V  (detrainment momentum loss)
 @inline v_detrainment(m) = m.detr .* m.V.present
 

@@ -94,6 +94,15 @@ The turbulent heat exchange coefficients are determined by:
 
 This results in a quadratic equation for the melt rate ``\\dot{m}``.
 
+The log term is floored at zero, i.e. ``u_\\star D/\\nu_0`` is taken as at least 1.
+Below that the layer is thinner than its own viscous sublayer, where the log law
+does not hold, and the unbounded log would drive the denominator through zero and
+give a negative or huge ``\\gamma``.  The floor never binds at the default
+parameters: `Params.u_tide` and `Params.D_min` keep ``u_\\star D/\\nu_0`` above
+about 170.  With the floor, both denominators stay positive when
+``12.5 \\, \\mathrm{Pr}^{2/3} > 8.68`` (and likewise for `Sc`), which the
+constructor checks.
+
 # Example
 
 ```julia
@@ -101,13 +110,31 @@ Params(; melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6))
 ```
 
 # Fields
- - `Pr`:  Prandtl number (default `13.8`).
- - `Sc`:  Schmidt number (default `2432.0`).
- - `nu0`: molecular kinematic viscosity, m² s⁻¹ (default `1.95e-6`).
+ - `Pr`:  Prandtl number (default `13.8`); must exceed `(8.68/12.5)^1.5 ≈ 0.58`.
+ - `Sc`:  Schmidt number (default `2432.0`); same bound as `Pr`.
+ - `nu0`: molecular kinematic viscosity, m² s⁻¹ (default `1.95e-6`); must be positive.
 
 """
 @kwdef struct TurbulentGamTMelting{FT} <: AbstractMelting
     Pr::FT = 13.8
     Sc::FT = 2432.0
     nu0::FT = 1.95e-6
+    function TurbulentGamTMelting(Pr::FT, Sc::FT, nu0::FT) where {FT}
+        for (name, x) in (("Pr", Pr), ("Sc", Sc))
+            _log_layer_offset(x) > 0 || throw(
+                ArgumentError(
+                    "TurbulentGamTMelting: $name = $x makes the transfer-coefficient " *
+                    "denominator non-positive; it must exceed (8.68/12.5)^1.5 ≈ 0.58",
+                ),
+            )
+        end
+        nu0 > 0 || throw(ArgumentError("TurbulentGamTMelting: nu0 must be positive, got $nu0"))
+        return new{FT}(Pr, Sc, nu0)
+    end
+end
+
+# Constant part of the γ_T/γ_S denominator, 12.5·x^(2/3) − 8.68 for x = Pr or Sc.
+function _log_layer_offset(x)
+    FT = typeof(x)
+    return FT(12.5) * x^(FT(2) / FT(3)) - FT(8.68)
 end

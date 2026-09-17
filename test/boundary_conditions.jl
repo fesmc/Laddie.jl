@@ -366,8 +366,8 @@ end
     # Under the default the interior term is live and the gate is exactly 1.0,
     # so nothing is altered anywhere.
     up = Laddie.u_pressure_depth(m.model)
-    @test any(!iszero, up[g.tmask_ip.==2])
-    @test all(Laddie._pgf_gate(m.model, g.tmask_ip) .== 1)
+    @test any(!iszero, up[Laddie.ip_count(g.tmask).==2])
+    @test all(Laddie._pgf_gate(m.model, Laddie.ip_count(g.tmask)) .== 1)
 
     # Selecting the truncation is bit-identical in the interior and exactly
     # zero on one-sided faces.
@@ -376,8 +376,8 @@ end
     g_t = getfield(m_t.model, :geometry)
     up_t = Laddie.u_pressure_depth(m_t.model)
     vp_t = Laddie.v_pressure_depth(m_t.model)
-    @test all(iszero, up_t[g_t.tmask_ip.!=2])
-    @test all(iszero, vp_t[g_t.tmask_jp.!=2])
+    @test all(iszero, up_t[Laddie.ip_count(g_t.tmask).!=2])
+    @test all(iszero, vp_t[Laddie.jp_count(g_t.tmask).!=2])
 
     # A SinkGapsBC gap edge is exactly such a one-sided face once the gap
     # is demoted to ocean, so it must be gated the same way as the true
@@ -398,15 +398,15 @@ end
     g_gap = getfield(m_gap.model, :geometry)
     up_gap = Laddie.u_pressure_depth(m_gap.model)
     vp_gap = Laddie.v_pressure_depth(m_gap.model)
-    @test all(iszero, up_gap[g_gap.tmask_ip.!=2])
-    @test all(iszero, vp_gap[g_gap.tmask_jp.!=2])
+    @test all(iszero, up_gap[Laddie.ip_count(g_gap.tmask).!=2])
+    @test all(iszero, vp_gap[Laddie.jp_count(g_gap.tmask).!=2])
 
     # Guard against the assertions above going vacuous: the gate only has
     # teeth on faces where momentum is actually solved (umask/vmask == 1),
     # and the ISOMIP channel has no such face in y at all — the gap domain
     # must supply both, or this testset stops testing the fix.
-    @test count((g_gap.tmask_ip .== 1) .& (g_gap.umask .== 1)) > 0
-    @test count((g_gap.tmask_jp .== 1) .& (g_gap.vmask .== 1)) > 0
+    @test count((Laddie.ip_count(g_gap.tmask) .== 1) .& (g_gap.umask .== 1)) > 0
+    @test count((Laddie.jp_count(g_gap.tmask) .== 1) .& (g_gap.vmask .== 1)) > 0
 
     # The choice is not cosmetic: on a domain that has an ice front, the two
     # settings must actually integrate to different states.

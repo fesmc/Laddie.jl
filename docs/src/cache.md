@@ -2,40 +2,53 @@
 
 ## Size
 
-The `Cache` struct holds **~47 pre-allocated `nx×ny` matrices** plus a handful of
+The `Cache` struct holds **40 pre-allocated `nx×ny` matrices** plus a handful of
 scalars (`gamT/gamS/conv2` for fixed-coefficient parameterisations).  At
-512×512 Float64 each matrix is ~2 MB, so the full cache is on the order of
-100 MB at that resolution.
+512×512 Float64 each matrix is ~2 MB, so the full cache is about 80 MB at that
+resolution.
 
-## Potential reductions
+## Reductions made
 
-A usage audit identified two tiers of buffer sharing that would reduce the
-matrix count without changing numerical results.
+A usage audit found three ways to reduce the matrix count without changing
+numerical results.  All three are done, and each was checked to be bit-identical.
 
-### Tier 1 — zero-code-change buffer sharing (−5 matrices)
+### Shared work buffers (−7 matrices)
 
-The following pairs are written and fully consumed in strictly non-overlapping
-phases of the leapfrog step, so they could safely share a single buffer:
+U, V, T and S are stepped one after another, and each step consumes its
+advection and Laplacian terms before the next step writes its own.  So one set of
+work buffers serves all four equations:
 
-| Merge | Rationale |
-|-------|-----------|
-| `cU` ↔ `cV` | U-momentum step completes before V-momentum starts |
-| `lU` ↔ `lV` | same ordering |
-| `cT` ↔ `cS` | temperature step completes before salinity starts |
-| `lT` ↔ `lS` | same ordering |
-| `DT` ↔ `DS` | `D·T` product is consumed before `D·S` is computed |
+| Buffer | Replaces |
+|--------|----------|
+| `adv` | `cU`, `cV`, `cT`, `cS` |
+| `lap` | `lU`, `lV`, `lT`, `lS` |
+| `Dq`  | `DT`, `DS` (the advected tracer content D·q) |
 
-Implementation would be a rename at ~5 call sites per pair.
+The reference equation terms in `physics.jl` (`u_advection`, `u_diffusion`, …)
+return copies of these buffers, because the next term to be evaluated would
+overwrite them.
 
-### Tier 2 — kernel refactoring (done)
+### Shifted fields formed in the kernels (−19 matrices)
 
 The D-shift group (`Dym1`, `Dxm1`, …), the upwind splits (`Upos`, `Vyp1neg`, …),
 the shifted velocities (`Vyp1`, `Uxp1`) and `signU`/`signV` used to be
 pre-computed each step and then consumed by the advection kernels.  They are now
 formed inline inside `_upwind_advection_{T,U,V}_kernel!` and the momentum kernels,
-which removed 19 matrices and two kernel passes per step, bit-identically.
+which also removed two kernel passes per step.
 
-### Fields that cannot be merged
+### Geometry (−20 matrices, outside the Cache)
+
+The same applies to the static `Geometry`: the shifted masks (`ocnxm1`,
+`tmaskym1`, …) and the stagger counts (`tmask_ip`, `umask_jm`, …) are no longer
+stored.  The kernels read the neighbouring cell instead, and the reference
+equation terms use `ip_count(mask)` and its siblings (`utils.jl`).
+
+Together with the shared buffers, this cut the memory of a 1000×1000 model from
+827 MiB to 621 MiB.  A time step became 7–9 % faster on one thread and 10–20 %
+faster on 16 threads (500×500 and 1000×1000), because the kernels move less
+data.
+
+## Fields that cannot be merged
 
 - **`Vip/Vim/Uip/Uim/Vjp/Vjm/Ujp/Ujm`** — all 8 live simultaneously; each
   represents a distinct stagger location and interpolation direction.
@@ -45,11 +58,3 @@ which removed 19 matrices and two kernel passes per step, bit-identically.
   and the PSI diagnostic in `printdiags`.
 - All physics output fields (`melt`, `Tb`, `drho`, `ustar`, …) — read at
   output time and consumed by downstream physics routines.
-
-## Decision
-
-We do not address these optimisations for now.  Merging buffers would require
-introducing shared aliases whose names no longer describe the physical quantity
-they currently hold at any given moment, making the code harder to read and
-debug.  The cache size is acceptable at current target resolutions, and clarity
-of the physics is the higher priority.

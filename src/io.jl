@@ -504,7 +504,7 @@ function _create_output_file!(sim)
             flag!(
                 "at_isf",
                 "active cell at ice-shelf front (ocean neighbour)",
-                (m.tmask .> 0) .& (m.ocnxm1 .+ m.ocnxp1 .+ m.ocnym1 .+ m.ocnyp1 .> 0),
+                (m.tmask .> 0) .& next_to_ocean(m.ocn),
             )
             # Wall diagnostics are split by wall type so a margin can be told apart
             # at a glance: `at_grl` is the grounding line (grounded ice, mask 2) and
@@ -680,55 +680,39 @@ function printdiags(sim)
     sim.io.nextdiag += sim.output.diagday * m.seconds_per_day
     t_days = _t_days(sim)
 
-    tmask = Array(m.tmask)
-    D = Array(m.D.present)
-    melt = Array(m.melt)
-    entr = Array(m.entr)
-    ent2 = Array(m.ent2)
-    detr = Array(m.detr)
-    convD = Array(m.convD)
-    drho = Array(m.drho)
-    conv = Array(m.convection)
-    U = Array(m.U.present)
-    V = Array(m.V.present)
-
+    # Device reductions over the scratch field `diag`, so no field is copied to the host.
+    d = m.diag
+    active_sum(x) = (@. d = x * m.tmask; sum(d))
     dxdy = m.dx * m.dy
-    area = sum(tmask) * dxdy
+    area = sum(m.tmask) * dxdy
 
-    d_Dav = sum(D .* tmask) * dxdy / area
-    icecells = findall(tmask .> 0)
-    d_Dmin = minimum(D[icecells])
-    d_Dmax = maximum(D[icecells])
+    d_Dav = active_sum(m.D.present) * dxdy / area
+    @. d = ifelse(m.tmask > 0, m.D.present, Inf)
+    d_Dmin = minimum(d)
+    @. d = ifelse(m.tmask > 0, m.D.present, -Inf)
+    d_Dmax = maximum(d)
 
-    # Melt statistics over ice-covered cells, as reported by `meltstats`.
+    # Melt statistics over ice-covered cells, and the largest T-point speed, as
+    # reported by `meltstats`.
     stats = meltstats(m)
     d_Mmax = stats.max_meltrate
     d_Mav = stats.mean_meltrate
     d_Mtot = stats.total_melt
+    d_Vmax = stats.max_speed
 
-    total = sum((melt .+ entr .+ ent2 .- detr) .* tmask) * dxdy
-    d_MWF = total > 0 ? 100.0 * sum(melt .* tmask) * dxdy / total : 0.0
+    @. d = (m.melt + m.entr + m.ent2 - m.detr) * m.tmask
+    total = sum(d) * dxdy
+    d_MWF = total > 0 ? 100.0 * active_sum(m.melt) * dxdy / total : 0.0
 
-    d_Etot = 1e-6 * sum(entr .* tmask) * dxdy
-    d_E2tot = 1e-6 * sum(ent2 .* tmask) * dxdy
-    d_DEtot = 1e-6 * sum(detr .* tmask) * dxdy
-    d_PSI = -1e-6 * sum(convD .* tmask) * dxdy
+    d_Etot = 1e-6 * active_sum(m.entr) * dxdy
+    d_E2tot = 1e-6 * active_sum(m.ent2) * dxdy
+    d_DEtot = 1e-6 * active_sum(m.detr) * dxdy
+    d_PSI = -1e-6 * active_sum(m.convD) * dxdy
 
-    # max t-grid speed without the im/jm circshift allocations
-    nx, ny = size(U)
-    d_Vmax = 0.0
-    for j = 1:ny, i = 1:nx
-        tmask[i, j] > 0 || continue
-        im1 = i == 1 ? nx : i - 1
-        jm1 = j == 1 ? ny : j - 1
-        u_t = (U[i, j] + U[im1, j]) / 2
-        v_t = (V[i, j] + V[i, jm1]) / 2
-        spd = sqrt(u_t^2 + v_t^2)
-        spd > d_Vmax && (d_Vmax = spd)
-    end
-
-    d_drho = 1000.0 * minimum(ifelse.(tmask .> 0, drho, 100.0))
-    d_conv = sum(conv .* (tmask .> 0))
+    @. d = ifelse(m.tmask > 0, m.drho, 100.0)
+    d_drho = 1000.0 * minimum(d)
+    @. d = m.convection * (m.tmask > 0)
+    d_conv = sum(d)
 
     line = @sprintf(
         "%8.3f days || %5.1f [%4.2f %4.0f] m || %5.2f | %3.0f m/yr | %7.2f Gt/yr || %5.2f %% || %5.3f + %5.3f - %5.3f | %5.3f Sv || %3.2f m/s || %5.5f %3.0f []",

@@ -22,14 +22,8 @@ end
     Ujm,
     @Const(V),
     @Const(U),
-    @Const(vmask_ip),
-    @Const(vmask_im),
-    @Const(vmask_jp),
-    @Const(vmask_jm),
-    @Const(umask_ip),
-    @Const(umask_im),
-    @Const(umask_jp),
-    @Const(umask_jm),
+    @Const(vmask),
+    @Const(umask),
     Nx,
     Ny,
 )
@@ -41,14 +35,14 @@ end
         im1 = _xm1(i, Nx)
         Vij = V[i, j]
         Uij = U[i, j]
-        Vip[i, j] = _safe_div(Vij + V[ip1, j], vmask_ip[i, j])
-        Vim[i, j] = _safe_div(Vij + V[im1, j], vmask_im[i, j])
-        Vjp[i, j] = _safe_div(Vij + V[i, jp1], vmask_jp[i, j])
-        Vjm[i, j] = _safe_div(Vij + V[i, jm1], vmask_jm[i, j])
-        Uip[i, j] = _safe_div(Uij + U[ip1, j], umask_ip[i, j])
-        Uim[i, j] = _safe_div(Uij + U[im1, j], umask_im[i, j])
-        Ujp[i, j] = _safe_div(Uij + U[i, jp1], umask_jp[i, j])
-        Ujm[i, j] = _safe_div(Uij + U[i, jm1], umask_jm[i, j])
+        Vip[i, j] = _safe_div(Vij + V[ip1, j], vmask[i, j] + vmask[ip1, j])
+        Vim[i, j] = _safe_div(Vij + V[im1, j], vmask[i, j] + vmask[im1, j])
+        Vjp[i, j] = _safe_div(Vij + V[i, jp1], vmask[i, j] + vmask[i, jp1])
+        Vjm[i, j] = _safe_div(Vij + V[i, jm1], vmask[i, j] + vmask[i, jm1])
+        Uip[i, j] = _safe_div(Uij + U[ip1, j], umask[i, j] + umask[ip1, j])
+        Uim[i, j] = _safe_div(Uij + U[im1, j], umask[i, j] + umask[im1, j])
+        Ujp[i, j] = _safe_div(Uij + U[i, jp1], umask[i, j] + umask[i, jp1])
+        Ujm[i, j] = _safe_div(Uij + U[i, jm1], umask[i, j] + umask[i, jm1])
     end
 end
 
@@ -58,10 +52,7 @@ end
     D0jp,
     D0jm,
     @Const(D),
-    @Const(tmask_ip),
-    @Const(tmask_im),
-    @Const(tmask_jp),
-    @Const(tmask_jm),
+    @Const(tmask),
     Nx,
     Ny,
 )
@@ -72,10 +63,10 @@ end
         ip1 = _xp1(i, Nx)
         im1 = _xm1(i, Nx)
         Dij = D[i, j]
-        D0ip[i, j] = _safe_div(Dij + D[ip1, j], tmask_ip[i, j])
-        D0im[i, j] = _safe_div(Dij + D[im1, j], tmask_im[i, j])
-        D0jp[i, j] = _safe_div(Dij + D[i, jp1], tmask_jp[i, j])
-        D0jm[i, j] = _safe_div(Dij + D[i, jm1], tmask_jm[i, j])
+        D0ip[i, j] = _safe_div(Dij + D[ip1, j], tmask[i, j] + tmask[ip1, j])
+        D0im[i, j] = _safe_div(Dij + D[im1, j], tmask[i, j] + tmask[im1, j])
+        D0jp[i, j] = _safe_div(Dij + D[i, jp1], tmask[i, j] + tmask[i, jp1])
+        D0jm[i, j] = _safe_div(Dij + D[i, jm1], tmask[i, j] + tmask[i, jm1])
     end
 end
 
@@ -106,6 +97,12 @@ function _update_conv2!(m, cs::RelaxToAmbient)
     @. m.conv2 = (m.drho < 0) * m.imask * m.D.present / cs.convection_time
 end
 
+# `dt` is the base time step.  dD/dt is always taken over 2·dt, as in Python LADDIE
+# v1 (`prepare_integrate`), although `D.future` and `D.past` are only dt apart in
+# the bootstrap step, which therefore sees half the thickness tendency.  Dividing
+# by the true step length instead is not a free fix: the ISOMIP+ spin-up is
+# sensitive to that one step, and the 1-day Python verification then fails
+# (max |ΔD| 3 → 35 m, mean melt −3 %).
 function precompute_integration_terms!(m, dt)
     @. m.dDdt = (m.D.future - m.D.past) / (dt + dt)
     @. m.Ddrho = m.D.present * m.drho
@@ -145,7 +142,6 @@ end
     @Const(cU),
     @Const(lU),
     @Const(tmask),
-    @Const(tmask_ip),
     @Const(umask),
     @Const(fu),
     g,
@@ -162,7 +158,7 @@ end
         half = FT(1/2)
         ip1 = _xp1(i, Nx)
         jm1 = _ym1(j, Ny)
-        tmip = tmask_ip[i, j]
+        tmip = tmask[i, j] + tmask[ip1, j]
         ip_dDdt = _safe_div(dDdt[i, j] + dDdt[ip1, j], tmip)
         ip_D_drho = _safe_div(Ddrho[i, j] + Ddrho[ip1, j], tmip)
         ip_D_dzdx = _safe_div(Ddrho[i, j] * dzdx[i, j] + Ddrho[ip1, j] * dzdx[ip1, j], tmip)
@@ -207,7 +203,6 @@ end
     @Const(cV),
     @Const(lV),
     @Const(tmask),
-    @Const(tmask_jp),
     @Const(vmask),
     @Const(fv),
     g,
@@ -224,7 +219,7 @@ end
         half = FT(0.5)
         jp1 = _yp1(j, Ny)
         im1 = _xm1(i, Nx)
-        tmjp = tmask_jp[i, j]
+        tmjp = tmask[i, j] + tmask[i, jp1]
         jp_dDdt = _safe_div(dDdt[i, j] + dDdt[i, jp1], tmjp)
         jp_D_drho = _safe_div(Ddrho[i, j] + Ddrho[i, jp1], tmjp)
         jp_D_dzdy = _safe_div(Ddrho[i, j] * dzdy[i, j] + Ddrho[i, jp1] * dzdy[i, jp1], tmjp)
@@ -345,10 +340,9 @@ function step_u_momentum!(m, dt)
         m.Vjm,
         m.V.present,
         m.detr,
-        m.cU,
-        m.lU,
+        m.adv,
+        m.lap,
         m.tmask,
-        m.tmask_ip,
         m.umask,
         m.fu,
         m.g,
@@ -379,10 +373,9 @@ function step_v_momentum!(m, dt)
         m.Uim,
         m.U.present,
         m.detr,
-        m.cV,
-        m.lV,
+        m.adv,
+        m.lap,
         m.tmask,
-        m.tmask_jp,
         m.vmask,
         m.fv,
         m.g,
@@ -396,21 +389,21 @@ function step_v_momentum!(m, dt)
     return
 end
 function step_temperature!(m, dt)
-    @. m.DT = m.D.present * m.T.present
-    upwind_advection_T(m.cT, m, m.DT)
-    laplace_T(m.lT, m, m.T.past)
+    @. m.Dq = m.D.present * m.T.present
+    upwind_advection_T(m.adv, m, m.Dq)
+    laplace_T(m.lap, m, m.T.past)
     args = (
         m.T.future,
         m.T.future,
         m.T.past,
         m.T.present,
         m.dDdt,
-        m.cT,
+        m.adv,
         m.nentr,
         m.Ta,
         m.melt,
         m.Tb,
-        m.lT,
+        m.lap,
         m.D.present,
         m.tmask,
     )
@@ -418,19 +411,19 @@ function step_temperature!(m, dt)
     return
 end
 function step_salinity!(m, dt)
-    @. m.DS = m.D.present * m.S.present
-    upwind_advection_T(m.cS, m, m.DS)
-    laplace_T(m.lS, m, m.S.past)
+    @. m.Dq = m.D.present * m.S.present
+    upwind_advection_T(m.adv, m, m.Dq)
+    laplace_T(m.lap, m, m.S.past)
     args = (
         m.S.future,
         m.S.future,
         m.S.past,
         m.S.present,
         m.dDdt,
-        m.cS,
+        m.adv,
         m.nentr,
         m.Sa,
-        m.lS,
+        m.lap,
         m.D.present,
         m.tmask,
     )
@@ -460,7 +453,8 @@ function _check_nans_shelf!(sim, varname, arr)
 end
 
 # One leapfrog integration over `nsteps × dt`: `nsteps = 2` is the centred step,
-# `nsteps = 1` the first-order bootstrap.  The tendency terms keep the base `dt`.
+# `nsteps = 1` the first-order bootstrap.  dD/dt keeps the base `dt` (see
+# `precompute_integration_terms!`).
 function leapfrog_step!(sim, nsteps)
     m = sim.model
     dt = nsteps * sim.clock.dt
@@ -542,6 +536,11 @@ function apply_robert_asselin_filter!(sim)
             sim.nu,
         )
     end
+    # Refresh density and convection on the filtered level, as Python LADDIE v1
+    # does.  The next `advance_leapfrog!` recomputes both on the rotated level, but
+    # this call is not redundant: under ResetToAmbient it resets the filtered T/S,
+    # which become `past`, and for every scheme it is the `drho` and `convection`
+    # that the output, the diagnostics and the CFL number read.
     update_density!(m)
     update_convection!(m)
     return

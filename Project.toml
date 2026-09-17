@@ -1,6 +1,6 @@
 name = "Laddie"
 uuid = "fce96c02-ee64-413e-b3bd-357dacaf3fdc"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["JanJereczek <jan.jereczek@gmail.com> and contributors"]
 
 [deps]

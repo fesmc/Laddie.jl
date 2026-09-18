@@ -21,6 +21,18 @@ if get(ENV, "LADDIE_DOCS_CROSSON_DOTSON", "false") == "true"
 end
 Literate.markdown(cd_script, gendir; documenter = true, codefence = "```julia" => "```")
 
+# The ice-shelf gaps example needs the Jesse et al. (2026) model output (7.6 GB) and ~7 min,
+# so it is static in the same way. Set LADDIE_DOCS_JESSE=true to run it.
+jesse_script = joinpath(exdir, "jesse-gaps.jl")
+if get(ENV, "LADDIE_DOCS_JESSE", "false") == "true"
+    # A bare Module has no `include` of its own, and the script includes its regridding
+    # helper, so give the sandbox module one that resolves relative to the included file.
+    jesse_mod = Module(:JesseGaps)
+    Core.eval(jesse_mod, :(include(path) = Base.include(@__MODULE__, path)))
+    Base.include(jesse_mod, jesse_script)
+end
+Literate.markdown(jesse_script, gendir; documenter = true, codefence = "```julia" => "```")
+
 DocMeta.setdocmeta!(Laddie, :DocTestSetup, :(using Laddie); recursive=true)
 
 makedocs(;
@@ -40,6 +52,7 @@ makedocs(;
         "Examples" => [
             "ISOMIP+" => "generated/isomip.md",
             "Crosson–Dotson" => "generated/crosson-dotson.md",
+            "Ice-shelf gaps" => "generated/jesse-gaps.md",
         ],
         "API reference" => [
             "Setup and running" => "API_public.md",

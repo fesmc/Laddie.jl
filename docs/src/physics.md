@@ -149,7 +149,9 @@ large range of coupled ice-sheet response (Jesse et al., 2026). LADDIE.jl offers
 | heat and momentum arriving at the gap | leave the cavity | continue downstream |
 
 Real gaps are full of sea ice, mélange and bergs, so neither end-member is right on its
-own; running both is how the uncertainty is quantified.
+own; running both is how the uncertainty is quantified. The
+[ice-shelf gaps example](generated/jesse-gaps.md) runs both on the paper's own geometries
+and compares them with LADDIE v2.
 
 A cell marked `4` is ice-free but *active*: the grid's `tmask` includes it, `imask`
 (ice-covered cells) does not, and its draft sits at the sea surface, ``z_b = 0``. Three

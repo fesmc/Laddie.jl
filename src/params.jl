@@ -23,6 +23,7 @@ struct Params{
     LV<:AbstractLateralViscosity,
     LW<:AbstractLaplacianWeights,
     FP<:AbstractFrontPressure,
+    MA<:AbstractMomentumAdvection,
     CP<:AbstractCoriolisParameter,
 }
     # Dynamics
@@ -106,6 +107,8 @@ struct Params{
     laplacian_weights::LW
     "ice-front pressure-gradient treatment, an [`AbstractFrontPressure`](@ref)"
     front_pressure::FP
+    "momentum-advection scheme, an [`AbstractMomentumAdvection`](@ref) (default centred, as in v1.x)"
+    momentum_advection::MA
     "Coriolis parameter, an [`AbstractCoriolisParameter`](@ref) (default f-plane at `-1.37e-4` s⁻¹)"
     coriolis::CP
 end
@@ -185,6 +188,7 @@ function Params(;
     lateral_viscosity = PrescribedLateralViscosity(),
     laplacian_weights = PresentLaplacianWeights(),
     front_pressure = FullDepthGradient(),
+    momentum_advection = CentredMomentumAdvection(),
 )
     # Keep every parameterization object's precision aligned with Params{FT}.
     entrainment = _promote_param(entrainment, FT)
@@ -193,6 +197,7 @@ function Params(;
     max_layer_thickness = _promote_param(max_layer_thickness, FT)
     lateral_viscosity = _promote_param(lateral_viscosity, FT)
     front_pressure = _promote_param(front_pressure, FT)
+    momentum_advection = _promote_param(momentum_advection, FT)
     coriolis = _promote_param(coriolis, FT)
     Params(
         FT(g),
@@ -232,6 +237,7 @@ function Params(;
         lateral_viscosity,
         laplacian_weights,
         front_pressure,
+        momentum_advection,
         coriolis,
     )
 end

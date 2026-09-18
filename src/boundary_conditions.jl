@@ -141,6 +141,60 @@ _wall_slips(m) = (
 )
 
 #############################
+# Wall momentum advection
+#############################
+
+"""
+Abstract supertype for how the wall slip condition enters the *advective* term
+of the momentum equations, as opposed to the viscous wall drag.  Pass a concrete
+instance as `BoundaryConditions(; wall_advection = ...)`:
+[`SlipScaledWallAdvection`](@ref) (the default) or [`NoWallAdvection`](@ref).
+
+The slip factor of [`AbstractGroundingLineBC`](@ref) / [`AbstractLandBC`](@ref)
+always scales the viscous wall drag; this choice decides whether it also scales
+the momentum carried across a wall face by the upwind advection.
+"""
+abstract type AbstractWallAdvection end
+
+"""
+$(TYPEDEF)
+
+Apply the wall slip factor to the upwind momentum advection as well as to the
+viscous wall drag, as Python LADDIE v1.x does (the default): the tangential
+momentum flux across a wall face is formed with a ghost velocity
+`(1 - slip)·u`, so free slip (`0`) leaves the flux at its interior value, no
+slip (`2`) reverses it.
+
+Select via `BoundaryConditions(; wall_advection = SlipScaledWallAdvection())`
+(the default).
+"""
+struct SlipScaledWallAdvection <: AbstractWallAdvection end
+
+"""
+$(TYPEDEF)
+
+Carry no momentum across walls: the upwind momentum advection sees a slip factor
+of `0` at grounding-line and land faces whatever the wall condition is, while
+the viscous wall drag keeps the factor of
+[`AbstractGroundingLineBC`](@ref) / [`AbstractLandBC`](@ref).
+
+This is what LADDIE v2 does: both of its momentum-advection schemes skip
+grounded neighbours outright (`laddie_velocity.f90`, "No flux across grounding
+line"), and no slip enters only through `compute_viscUV`.  Combine it with
+[`NoSlipGL`](@ref) / [`NoSlipLand`](@ref) to reproduce v2's walls; with free
+slip it is a no-op, since the factor is `0` in both terms.
+
+Select via `BoundaryConditions(; wall_advection = NoWallAdvection())`.
+"""
+struct NoWallAdvection <: AbstractWallAdvection end
+
+# Slip factors seen by the momentum-advection kernels, as opposed to the viscous
+# wall drag, which always uses `_wall_slips`.
+_advection_slips(m) = _advection_slips(m, m.boundary.wall_advection)
+_advection_slips(m, ::SlipScaledWallAdvection) = _wall_slips(m)
+_advection_slips(m, ::NoWallAdvection) = (zero(m.FT), zero(m.FT))
+
+#############################
 # Open BC
 #############################
 
@@ -321,6 +375,9 @@ BoundaryConditions(; land = FreeSlipLand(), gaps = ConnectedGapsBC())
 
 # Python LADDIE v1.x walls
 BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
+
+# LADDIE v2 walls: no slip in the viscosity, no momentum across walls
+BoundaryConditions(; wall_advection = NoWallAdvection())
 ```
 
 # Fields
@@ -331,6 +388,7 @@ struct BoundaryConditions{
     GL<:AbstractGroundingLineBC,
     LB<:AbstractLandBC,
     GB<:AbstractGapsBC,
+    WA<:AbstractWallAdvection,
 }
     "ice front: [`ZeroGradientInflow`](@ref) (default) or [`NoInflow`](@ref)"
     open_ocean::OB
@@ -340,6 +398,8 @@ struct BoundaryConditions{
     land::LB
     "ice-shelf gaps: [`SinkGapsBC`](@ref) (default) or [`ConnectedGapsBC`](@ref)"
     gaps::GB
+    "wall slip in the momentum advection: [`SlipScaledWallAdvection`](@ref) (default) or [`NoWallAdvection`](@ref)"
+    wall_advection::WA
 end
 
 BoundaryConditions(;
@@ -347,6 +407,8 @@ BoundaryConditions(;
     grounding_line = NoSlipGL(),
     land = NoSlipLand(),
     gaps = SinkGapsBC(),
-) = BoundaryConditions(open_ocean, grounding_line, land, gaps)
+    wall_advection = SlipScaledWallAdvection(),
+) = BoundaryConditions(open_ocean, grounding_line, land, gaps, wall_advection)
 
-_bc_tuple(b::BoundaryConditions) = (b.open_ocean, b.grounding_line, b.land, b.gaps)
+_bc_tuple(b::BoundaryConditions) =
+    (b.open_ocean, b.grounding_line, b.land, b.gaps, b.wall_advection)

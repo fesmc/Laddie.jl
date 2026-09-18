@@ -15,6 +15,7 @@
 
     b = BoundaryConditions()
     @test b.grounding_line isa NoSlipGL && b.land isa NoSlipLand
+    @test b.wall_advection isa SlipScaledWallAdvection
 
     run1(boundary) = (s = build_isomip(CPU(); FT, nx = 20, ny = 10,
                                        isomipcond = :warm, boundary);
@@ -414,4 +415,24 @@ end
     run!(m_full2; days = 0.5, verbose = false)
     @test m_full2.model.U.present != m_gap.model.U.present
     @test all(isfinite, m_gap.model.melt) && all(isfinite, m_full2.model.melt)
+end
+
+@testset "Wall advection: slip-scaled (v1) vs none (v2)" begin
+    # The slip factor always scales the viscous wall drag; `wall_advection`
+    # decides whether it also scales the momentum advected across a wall face.
+    # LADDIE v2 skips grounded neighbours in its advection schemes entirely, so
+    # its no-slip condition lives in `compute_viscUV` alone.
+    mk(wa, gl, ln) = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+        boundary = BoundaryConditions(;
+            grounding_line = gl, land = ln, wall_advection = wa)).model
+    m_v1 = mk(SlipScaledWallAdvection(), NoSlipGL(), NoSlipLand())
+    m_v2 = mk(NoWallAdvection(), NoSlipGL(), NoSlipLand())
+    m_fr = mk(NoWallAdvection(), FreeSlipGL(), FreeSlipLand())
+
+    @test Laddie._advection_slips(m_v1) === Laddie._wall_slips(m_v1) === (FT(2), FT(2))
+    # Zeroed in the advection, untouched in the viscous drag.
+    @test Laddie._advection_slips(m_v2) === (zero(FT), zero(FT))
+    @test Laddie._wall_slips(m_v2) === (FT(2), FT(2))
+    # Free slip is 0 in both terms, so the choice is a no-op there.
+    @test Laddie._advection_slips(m_fr) === Laddie._wall_slips(m_fr) === (zero(FT), zero(FT))
 end

@@ -9,6 +9,7 @@ include("convection.jl")
 include("coriolis.jl")
 include("boundary_conditions.jl")
 include("viscosity.jl")
+include("advection.jl")
 include("timestepping.jl")
 include("simulationend.jl")
 include("forcing.jl")
@@ -47,7 +48,7 @@ export build_isomip,
     to_backend
 
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
-export AbstractMelting, FixedGamTMelting, TurbulentGamTMelting, PrescribedMelting
+export AbstractMelting, FixedGamTMelting, TurbulentGamTMelting, UStarGamTMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
 export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D
 export AbstractMaxLayerThickness,
@@ -67,7 +68,9 @@ export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow
 export AbstractGroundingLineBC, NoSlipGL, FreeSlipGL, PartialSlipGL
 export AbstractLandBC, NoSlipLand, FreeSlipLand, PartialSlipLand
 export AbstractGapsBC, SinkGapsBC, ConnectedGapsBC
+export AbstractWallAdvection, SlipScaledWallAdvection, NoWallAdvection
 export AbstractLateralViscosity, PrescribedLateralViscosity, NonlinearLateralViscosity
+export AbstractMomentumAdvection, CentredMomentumAdvection, UpstreamMomentumAdvection
 export AbstractLaplacianWeights, PresentLaplacianWeights, PastLaplacianWeights
 export AbstractFrontPressure, FullDepthGradient, TruncatedDepthGradient
 export AbstractIceSlopeGradient, PyGradient, JlGradient

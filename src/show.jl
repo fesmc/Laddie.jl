@@ -115,7 +115,8 @@ Base.show(io::IO, b::BoundaryConditions) = print(
     io,
     "BoundaryConditions(open ocean = $(nameof(typeof(b.open_ocean))), ",
     "grounding line = $(nameof(typeof(b.grounding_line))), ",
-    "land = $(nameof(typeof(b.land))), gaps = $(nameof(typeof(b.gaps))))",
+    "land = $(nameof(typeof(b.land))), gaps = $(nameof(typeof(b.gaps))), ",
+    "wall advection = $(nameof(typeof(b.wall_advection))))",
 )
 
 Base.show(io::IO, ts::AdaptiveDt) = print(

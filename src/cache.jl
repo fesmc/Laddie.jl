@@ -7,7 +7,7 @@ every time step.  The physics outputs are read through the model, e.g.
 
 `A` is the concrete matrix type (matching the grid and state).  The scheme-dependent
 slots are scalars or fields: `GamT` (`gamT`, `gamS`) is a field for
-`TurbulentGamTMelting` and `PrescribedMelting`, `Conv2` (`conv2`) for
+`TurbulentGamTMelting`, `UStarGamTMelting` and `PrescribedMelting`, `Conv2` (`conv2`) for
 `RelaxToAmbient`, and `PM` (`melt_prescribed`) for `PrescribedMelting`.
 """
 mutable struct Cache{FT,A<:AbstractMatrix{FT},GamT,Conv2,PM}
@@ -75,6 +75,7 @@ _gamT_init(FT, _, _, ::Type{<:FixedGamTMelting}) = zero(FT)
 # takes the array path like TurbulentGamTMelting.
 _gamT_init(FT, nx, ny, ::Type{<:PrescribedMelting}) = zeros(FT, nx, ny)
 _gamT_init(FT, nx, ny, ::Type{<:TurbulentGamTMelting}) = zeros(FT, nx, ny)
+_gamT_init(FT, nx, ny, ::Type{<:UStarGamTMelting}) = zeros(FT, nx, ny)
 _prescribed_init(FT, _, _, ::Type) = zero(FT)
 _prescribed_init(FT, nx, ny, ::Type{<:PrescribedMelting}) = zeros(FT, nx, ny)
 _conv2_init(FT, _, _, ::Type{<:Union{ClampDensity,ResetToAmbient}}) = zero(FT)

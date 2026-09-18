@@ -23,6 +23,9 @@ with a single power of `D` and a factor `2 \\mu` in the production term. This
 differs from a literal reading of Eq. 14 (see [`GasparEntrainment`](@ref) and
 `docs/src/equations.md`).
 
+This is also what LADDIE v2 calls `'Gaspar1988'` (`laddie_physics.f90`,
+`compute_entrainment`); Laddie.jl's [`GasparEntrainment`](@ref) is a different form.
+
 - `mu`: dimensionless efficiency parameter (ISOMIP+ default: `2.5`).
 
 Select via `Params(; entrainment = LambertEntrainment(2.5))`.

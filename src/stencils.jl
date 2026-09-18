@@ -456,9 +456,179 @@ function upwind_advection_T(out, m, var)
     )
     return out
 end
-function upwind_advection_U(m)
+
+# ---------------------------------------------------------------------------
+# Donor-cell momentum advection (UpstreamMomentumAdvection)
+#
+# Flux form, built so the momentum fluxes ride on the *mass* fluxes of the
+# thickness equation: `_face_mass_x`/`_face_mass_y` are the donor-cell `D·u` of
+# `_upwind_advection_T_kernel!` (same zero-gradient treatment of an ocean
+# neighbour, same `umask`/`vmask` gate), averaged onto the staggered face from
+# the two adjacent T-cell faces.  Momentum comes from the upstream side of that
+# flux.  Consistency with discrete continuity is the point: a centred face
+# thickness with an upstream velocity lets momentum cross faces that carry no
+# mass, and blows up on a real geometry.
+# ---------------------------------------------------------------------------
+
+# Mass flux through the x-face at u-point (i, j), i.e. between T(i, j) and
+# T(i+1, j).  Zero-gradient thickness when the donor side is open ocean.
+@inline function _face_mass_x(U, D, tmask, ocn, umask, i, j, Nx)
+    @inbounds begin
+        ip1 = _xp1(i, Nx)
+        u = U[i, j]
+        Dd =
+            u > zero(u) ? D[i, j] * tmask[i, j] + D[ip1, j] * ocn[i, j] :
+            D[ip1, j] * tmask[ip1, j] + D[i, j] * ocn[ip1, j]
+        return umask[i, j] * u * Dd
+    end
+end
+
+# Mass flux through the y-face at v-point (i, j), between T(i, j) and T(i, j+1).
+@inline function _face_mass_y(V, D, tmask, ocn, vmask, i, j, Ny)
+    @inbounds begin
+        jp1 = _yp1(j, Ny)
+        v = V[i, j]
+        Dd =
+            v > zero(v) ? D[i, j] * tmask[i, j] + D[i, jp1] * ocn[i, j] :
+            D[i, jp1] * tmask[i, jp1] + D[i, j] * ocn[i, jp1]
+        return vmask[i, j] * v * Dd
+    end
+end
+
+# Upstream velocity on a face, with a zero-gradient fallback when the donor
+# point is inactive (ice front); at a wall the flux is zero anyway.
+@inline _donor(q_own, q_nb, mask_nb, take_own) =
+    take_own ? q_own : (mask_nb > zero(mask_nb) ? q_nb : q_own)
+
+@kernel function _upstream_advection_U_kernel!(
+    out,
+    @Const(D),
+    @Const(U),
+    @Const(V),
+    @Const(tmask),
+    @Const(ocn),
+    @Const(umask),
+    @Const(vmask),
+    dx,
+    dy,
+    Nx,
+    Ny,
+)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        u = U[i, j]
+        half = one(u) / 2
+        # Face mass fluxes of the U control volume: east and west sit on T-points,
+        # north and south on corners, each the mean of the two T-cell faces there.
+        MxE = half * (_face_mass_x(U, D, tmask, ocn, umask, i, j, Nx) +
+                      _face_mass_x(U, D, tmask, ocn, umask, ip1, j, Nx))
+        MxW = half * (_face_mass_x(U, D, tmask, ocn, umask, im1, j, Nx) +
+                      _face_mass_x(U, D, tmask, ocn, umask, i, j, Nx))
+        MyN = half * (_face_mass_y(V, D, tmask, ocn, vmask, i, j, Ny) +
+                      _face_mass_y(V, D, tmask, ocn, vmask, ip1, j, Ny))
+        MyS = half * (_face_mass_y(V, D, tmask, ocn, vmask, i, jm1, Ny) +
+                      _face_mass_y(V, D, tmask, ocn, vmask, ip1, jm1, Ny))
+        z = zero(u)
+        qE = _donor(u, U[ip1, j], umask[ip1, j], MxE > z)
+        qW = _donor(u, U[im1, j], umask[im1, j], MxW <= z)
+        qN = _donor(u, U[i, jp1], umask[i, jp1], MyN > z)
+        qS = _donor(u, U[i, jm1], umask[i, jm1], MyS <= z)
+        out[i, j] = -((MxE * qE - MxW * qW) / dx + (MyN * qN - MyS * qS) / dy)
+    end
+end
+
+@kernel function _upstream_advection_V_kernel!(
+    out,
+    @Const(D),
+    @Const(U),
+    @Const(V),
+    @Const(tmask),
+    @Const(ocn),
+    @Const(umask),
+    @Const(vmask),
+    dx,
+    dy,
+    Nx,
+    Ny,
+)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        ip1 = _xp1(i, Nx)
+        im1 = _xm1(i, Nx)
+        jp1 = _yp1(j, Ny)
+        jm1 = _ym1(j, Ny)
+        v = V[i, j]
+        half = one(v) / 2
+        MyN = half * (_face_mass_y(V, D, tmask, ocn, vmask, i, j, Ny) +
+                      _face_mass_y(V, D, tmask, ocn, vmask, i, jp1, Ny))
+        MyS = half * (_face_mass_y(V, D, tmask, ocn, vmask, i, jm1, Ny) +
+                      _face_mass_y(V, D, tmask, ocn, vmask, i, j, Ny))
+        MxE = half * (_face_mass_x(U, D, tmask, ocn, umask, i, j, Nx) +
+                      _face_mass_x(U, D, tmask, ocn, umask, i, jp1, Nx))
+        MxW = half * (_face_mass_x(U, D, tmask, ocn, umask, im1, j, Nx) +
+                      _face_mass_x(U, D, tmask, ocn, umask, im1, jp1, Nx))
+        z = zero(v)
+        qE = _donor(v, V[ip1, j], vmask[ip1, j], MxE > z)
+        qW = _donor(v, V[im1, j], vmask[im1, j], MxW <= z)
+        qN = _donor(v, V[i, jp1], vmask[i, jp1], MyN > z)
+        qS = _donor(v, V[i, jm1], vmask[i, jm1], MyS <= z)
+        out[i, j] = -((MxE * qE - MxW * qW) / dx + (MyN * qN - MyS * qS) / dy)
+    end
+end
+
+# Dispatch on `Params.momentum_advection`; the centred path is v1.x's.
+upwind_advection_U(m) = _advect_U(m, m.momentum_advection)
+upwind_advection_V(m) = _advect_V(m, m.momentum_advection)
+
+function _advect_U(m, ::UpstreamMomentumAdvection)
     nx, ny = size(m.U.present)
-    slip_gl, slip_land = _wall_slips(m)
+    launch!(
+        _upstream_advection_U_kernel!,
+        m.adv,
+        m.adv,
+        m.D.present,
+        m.U.present,
+        m.V.present,
+        m.tmask,
+        m.ocn,
+        m.umask,
+        m.vmask,
+        m.dx,
+        m.dy,
+        nx,
+        ny,
+    )
+    return m.adv
+end
+
+function _advect_V(m, ::UpstreamMomentumAdvection)
+    nx, ny = size(m.V.present)
+    launch!(
+        _upstream_advection_V_kernel!,
+        m.adv,
+        m.adv,
+        m.D.present,
+        m.U.present,
+        m.V.present,
+        m.tmask,
+        m.ocn,
+        m.umask,
+        m.vmask,
+        m.dx,
+        m.dy,
+        nx,
+        ny,
+    )
+    return m.adv
+end
+
+function _advect_U(m, ::CentredMomentumAdvection)
+    nx, ny = size(m.U.present)
+    slip_gl, slip_land = _advection_slips(m)
     launch!(
         _upwind_advection_U_kernel!,
         m.adv,
@@ -485,9 +655,9 @@ function upwind_advection_U(m)
     )
     return m.adv
 end
-function upwind_advection_V(m)
+function _advect_V(m, ::CentredMomentumAdvection)
     nx, ny = size(m.V.present)
-    slip_gl, slip_land = _wall_slips(m)
+    slip_gl, slip_land = _advection_slips(m)
     launch!(
         _upwind_advection_V_kernel!,
         m.adv,

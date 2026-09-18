@@ -6,6 +6,7 @@ Available subtypes:
  - [`PrescribedMelting`](@ref)
  - [`FixedGamTMelting`](@ref)
  - [`TurbulentGamTMelting`](@ref)
+ - [`UStarGamTMelting`](@ref)
 """
 abstract type AbstractMelting end
 
@@ -66,6 +67,33 @@ Params(; melting = FixedGamTMelting(0.00018))
 """
 @kwdef struct FixedGamTMelting{FT} <: AbstractMelting
     gamTfix::FT = 0.00018
+end
+
+"""
+$(TYPEDEF)
+
+Three-equation ice–ocean melt parameterisation (the equations are given under
+[`TurbulentGamTMelting`](@ref)) with transfer coefficients proportional to the friction
+velocity (Jenkins et al. 2010):
+
+```math
+\\gamma_T = \\Gamma_T \\, u_\\star, \\qquad \\gamma_S = \\gamma_T / 35 .
+```
+
+This is LADDIE v2's `'uniform'` option, which is also what the ISOMIP+ protocol tunes
+(Asay-Davis et al. 2016).  Jesse et al. (2026) use ``\\Gamma_T = 3 \\times 10^{-2}``.
+
+# Example
+
+```julia
+Params(; melting = UStarGamTMelting(3.0e-2))
+```
+
+# Fields
+ - `Gamma_T`: dimensionless heat transfer coefficient (default `3.0e-2`).
+"""
+@kwdef struct UStarGamTMelting{FT} <: AbstractMelting
+    Gamma_T::FT = 3.0e-2
 end
 
 """

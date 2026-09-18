@@ -61,6 +61,21 @@ end
     @test all(iszero, m.gamT[.!act])
 end
 
+@testset "UStarGamTMelting: γ scales with u★" begin
+    mp = UStarGamTMelting(FT(3.0e-2))
+    m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                     params = Params(; FT, melting = mp))
+    run!(m; days = 0.5, verbose = false)
+    mm = m.model
+    act = mm.tmask .> 0
+    @test all(isfinite, mm.D.present) && all(isfinite, mm.melt)
+    @test all(mm.melt[act] .>= 0)
+    @test mm.gamT[act] == mp.Gamma_T .* mm.ustar[act]
+    @test all(iszero, mm.gamT[.!act])
+    @test mm.gamS == mm.gamT ./ 35
+    @test any(>(0), mm.melt)
+end
+
 @testset "HollandEntrainment: build and short run" begin
     params = Params(;
         FT,
@@ -293,4 +308,48 @@ end
     # Float32 promotion follows Params, like every other parameterization.
     @test Params(; FT = Float32, coriolis = CoriolisParameter0D()).coriolis isa
           CoriolisParameter0D{Float32}
+end
+
+@testset "Momentum advection: centred (v1) vs upstream (v2)" begin
+    @test Params().momentum_advection isa CentredMomentumAdvection
+    @test Params(; FT, momentum_advection = UpstreamMomentumAdvection()).momentum_advection isa
+          UpstreamMomentumAdvection
+
+    mk(ma) = build_isomip(CPU(); FT, nx = 40, ny = 20, isomipcond = :warm,
+        params = Params(; FT, melting = FixedGamTMelting(0.00018),
+                        momentum_advection = ma)).model
+
+    # Consistency with discrete continuity: a uniform velocity field on a uniform
+    # layer has no advective tendency wherever the stencil sees only active
+    # cells.  This is what a centred face thickness with an upstream velocity
+    # would break.
+    for ma in (CentredMomentumAdvection(), UpstreamMomentumAdvection())
+        m = mk(ma)
+        m.U.present .= 1.0
+        m.V.present .= 0.0
+        m.D.present .= 10.0
+        au = Array(copy(Laddie.upwind_advection_U(m)))
+        av = Array(copy(Laddie.upwind_advection_V(m)))
+        um = Array(m.umask)
+        interior = [
+            2 <= i <= size(um, 1) - 1 && 2 <= j <= size(um, 2) - 1 &&
+            um[i, j] > 0 && um[i+1, j] > 0 && um[i-1, j] > 0 &&
+            um[i, j+1] > 0 && um[i, j-1] > 0
+            for i in axes(um, 1), j in axes(um, 2)
+        ]
+        @test count(interior) > 100
+        @test maximum(abs, au[interior]) == 0
+        @test maximum(abs, av) == 0
+    end
+
+    # Donor-cell upwinding is dissipative where the centred scheme is not, so it
+    # cannot leave the flow more energetic.
+    run1(ma) = (s = build_isomip(CPU(); FT, nx = 40, ny = 20, isomipcond = :warm,
+                    params = Params(; FT, melting = FixedGamTMelting(0.00018),
+                                    momentum_advection = ma));
+                run!(s; days = 1.0, verbose = false); meltstats(s))
+    centred = run1(CentredMomentumAdvection())
+    upstream = run1(UpstreamMomentumAdvection())
+    @test upstream.max_speed <= centred.max_speed
+    @test upstream.mean_meltrate ≈ centred.mean_meltrate rtol = 0.05
 end

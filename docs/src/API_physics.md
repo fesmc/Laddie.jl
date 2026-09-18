@@ -19,6 +19,7 @@ HollandEntrainment
 AbstractMelting
 FixedGamTMelting
 TurbulentGamTMelting
+UStarGamTMelting
 PrescribedMelting
 ```
 
@@ -55,6 +56,22 @@ AbstractLandBC
 NoSlipLand
 FreeSlipLand
 PartialSlipLand
+```
+
+## Wall momentum advection
+
+```@docs
+AbstractWallAdvection
+SlipScaledWallAdvection
+NoWallAdvection
+```
+
+## Momentum advection
+
+```@docs
+AbstractMomentumAdvection
+CentredMomentumAdvection
+UpstreamMomentumAdvection
 ```
 
 ## Lateral viscosity

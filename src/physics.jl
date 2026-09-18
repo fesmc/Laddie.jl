@@ -431,6 +431,29 @@ function update_melt!(m, mp::TurbulentGamTMelting)
     _launch_three_eq_melt!(m)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Three-equation melt with transfer coefficients proportional to the friction velocity,
+``\\gamma_T = \\Gamma_T u_\\star`` and ``\\gamma_S = \\gamma_T/35``.
+Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
+"""
+function update_melt!(m, mp::UStarGamTMelting)
+    update_ustar!(m)
+    launch!(_ustar_gamma_kernel!, m.gamT, m.gamT, m.gamS, m.ustar, m.tmask, mp.Gamma_T)
+    _launch_three_eq_melt!(m)
+end
+
+@kernel function _ustar_gamma_kernel!(gamT, gamS, @Const(ustar), @Const(tmask), Gamma_T)
+    i, j = @index(Global, NTuple)
+    FT = typeof(Gamma_T)
+    @inbounds begin
+        g = Gamma_T * ustar[i, j] * tmask[i, j]
+        gamT[i, j] = g
+        gamS[i, j] = g / FT(35)
+    end
+end
+
 update_melt!(m) = update_melt!(m, m.melting)
 
 """

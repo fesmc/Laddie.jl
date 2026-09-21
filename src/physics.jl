@@ -552,12 +552,45 @@ function update_entrainment!(m, dt)
     _compute_entrainment!(m, m.entrainment)
     upwind_advection_T(m.convD, m, m.D.present)
     FT = m.FT
-    dt2 = FT(2) * dt
-    @. m.ent2 =
-        max(zero(FT), (m.D_min - m.D.past) / dt2 - (m.convD + m.melt + m.entr - m.detr)) *
-        m.tmask
-    @. m.nentr = m.entr + m.ent2 - m.detr
+    launch!(
+        _net_entrainment_kernel!,
+        m.ent2,
+        m.ent2,
+        m.nentr,
+        m.D.past,
+        m.convD,
+        m.melt,
+        m.entr,
+        m.detr,
+        m.tmask,
+        m.D_min,
+        FT(2) * dt,
+    )
     return
+end
+
+@kernel function _net_entrainment_kernel!(
+    ent2,
+    nentr,
+    @Const(D_past),
+    @Const(convD),
+    @Const(melt),
+    @Const(entr),
+    @Const(detr),
+    @Const(tmask),
+    D_min,
+    dt2,
+)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        ent2[i, j] =
+            max(
+                zero(D_min),
+                (D_min - D_past[i, j]) / dt2 -
+                (convD[i, j] + melt[i, j] + entr[i, j] - detr[i, j]),
+            ) * tmask[i, j]
+        nentr[i, j] = entr[i, j] + ent2[i, j] - detr[i, j]
+    end
 end
 
 # Friction velocity at the T-point: u★ = √(C_d_top · (im_half(U)² + jm_half(V)² + u_tide²))

@@ -51,6 +51,8 @@ end
     D0im,
     D0jp,
     D0jm,
+    D_on_ugrid,
+    D_on_vgrid,
     @Const(D),
     @Const(tmask),
     Nx,
@@ -67,6 +69,8 @@ end
         D0im[i, j] = _safe_div(Dij + D[im1, j], tmask[i, j] + tmask[im1, j])
         D0jp[i, j] = _safe_div(Dij + D[i, jp1], tmask[i, j] + tmask[i, jp1])
         D0jm[i, j] = _safe_div(Dij + D[i, jm1], tmask[i, j] + tmask[i, jm1])
+        D_on_ugrid[i, j] = D0ip[i, j] * tmask[i, j]
+        D_on_vgrid[i, j] = D0jp[i, j] * tmask[i, j]
     end
 end
 
@@ -79,10 +83,21 @@ _workgroup(::CPU) = (128, 32)
 _workgroup(::Any) = (32, 8)   # GPU: 256 threads, warp-aligned x-dimension
 
 function launch!(kernel!, A, args...)
-    backend = KA.get_backend(A)
+    backend = _launch_backend(KA.get_backend(A))
     kernel!(backend, _workgroup(backend))(args...; ndrange = size(A))
     return nothing
 end
+
+# CPU: static thread assignment (`@threads :static` instead of one `@spawn` per
+# chunk), so the same chunk of the grid lands on the same thread in every kernel
+# and its arrays stay in that core's cache.  With dynamic assignment the chunks
+# migrate between cores from kernel to kernel; on the 241×466 ASE grid that made
+# 2 threads no faster than 1, and 8 threads only 1.7× (3.3× static, with the
+# threads pinned).  `:static` cannot run inside another threaded region, so a
+# launch from within `@threads` falls back to dynamic assignment.
+_launch_backend(backend) = backend
+_launch_backend(backend::CPU) =
+    ccall(:jl_in_threaded_region, Cint, ()) == 0 ? CPU(; static = true) : backend
 
 
 # ==================================================================
@@ -94,7 +109,45 @@ _update_conv2!(::Any, ::ResetToAmbient) = nothing
 function _update_conv2!(m, cs::RelaxToAmbient)
     # `imask`, not `tmask`: gap cells are never relaxed towards ambient.  See
     # `update_convection!(m, ::RelaxToAmbient)`.
-    @. m.conv2 = (m.drho < 0) * m.imask * m.D.present / cs.convection_time
+    launch!(
+        _relax_conv2_kernel!,
+        m.conv2,
+        m.conv2,
+        m.drho,
+        m.imask,
+        m.D.present,
+        cs.convection_time,
+    )
+end
+
+@kernel function _relax_conv2_kernel!(
+    conv2,
+    @Const(drho),
+    @Const(imask),
+    @Const(D),
+    convection_time,
+)
+    i, j = @index(Global, NTuple)
+    @inbounds conv2[i, j] = (drho[i, j] < 0) * imask[i, j] * D[i, j] / convection_time
+end
+
+# The per-step elementwise updates below are kernels rather than broadcasts: on
+# the CPU a broadcast runs on the main thread only, both costing its own time
+# serially and pulling the arrays the threaded kernels just wrote across cores.
+@kernel function _integration_terms_kernel!(
+    dDdt,
+    Ddrho,
+    @Const(D_future),
+    @Const(D_past),
+    @Const(D),
+    @Const(drho),
+    dt,
+)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        dDdt[i, j] = (D_future[i, j] - D_past[i, j]) / (dt + dt)
+        Ddrho[i, j] = D[i, j] * drho[i, j]
+    end
 end
 
 # `dt` is the base time step.  dD/dt is always taken over 2·dt, as in Python LADDIE
@@ -104,8 +157,17 @@ end
 # sensitive to that one step, and the 1-day Python verification then fails
 # (max |ΔD| 3 → 35 m, mean melt −3 %).
 function precompute_integration_terms!(m, dt)
-    @. m.dDdt = (m.D.future - m.D.past) / (dt + dt)
-    @. m.Ddrho = m.D.present * m.drho
+    launch!(
+        _integration_terms_kernel!,
+        m.dDdt,
+        m.dDdt,
+        m.Ddrho,
+        m.D.future,
+        m.D.past,
+        m.D.present,
+        m.drho,
+        dt,
+    )
     _update_conv2!(m, m.convection_scheme)
     return
 end
@@ -389,7 +451,7 @@ function step_v_momentum!(m, dt)
     return
 end
 function step_temperature!(m, dt)
-    @. m.Dq = m.D.present * m.T.present
+    launch!(_product_kernel!, m.Dq, m.Dq, m.D.present, m.T.present)
     upwind_advection_T(m.adv, m, m.Dq)
     laplace_T(m.lap, m, m.T.past)
     args = (
@@ -411,7 +473,7 @@ function step_temperature!(m, dt)
     return
 end
 function step_salinity!(m, dt)
-    @. m.Dq = m.D.present * m.S.present
+    launch!(_product_kernel!, m.Dq, m.Dq, m.D.present, m.S.present)
     upwind_advection_T(m.adv, m, m.Dq)
     laplace_T(m.lap, m, m.S.past)
     args = (
@@ -432,20 +494,67 @@ function step_salinity!(m, dt)
 end
 
 
+@kernel function _product_kernel!(out, @Const(a), @Const(b))
+    i, j = @index(Global, NTuple)
+    @inbounds out[i, j] = a[i, j] * b[i, j]
+end
+
+# The upper bound of `max_layer_thickness` (see `_max_layer_thickness`), then the
+# D_min floor, in one pass.
 function _clamp_thickness!(m)
-    max_layer_thickness!(m, m.params.max_layer_thickness)
-    # The D_min floor must respect the domain mask: inactive cells hold D = 0.  A
-    # non-zero D outside the domain would leak into the interior, because the
-    # face-average stencils in `_precompute_laplacian_kernel!` divide the *sum* over a
-    # cell pair by the number of active cells in it, biasing the diffusion of every
-    # boundary cell.
-    @. m.D.future = max(m.D.future, m.D_min) * m.tmask
+    launch!(
+        _clamp_thickness_kernel!,
+        m.D.future,
+        m.D.future,
+        m.z_draft,
+        m.z_bed,
+        m.tmask,
+        m.params.max_layer_thickness,
+        m.D_min,
+    )
     return
+end
+
+@kernel function _clamp_thickness_kernel!(
+    D,
+    @Const(z_draft),
+    @Const(z_bed),
+    @Const(tmask),
+    max_layer_thickness,
+    D_min,
+)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        D[i, j] = _max_layer_thickness(
+            max_layer_thickness,
+            D[i, j],
+            z_draft[i, j],
+            z_bed[i, j],
+            tmask[i, j],
+        )
+        # The D_min floor must respect the domain mask: inactive cells hold D = 0.
+        # A non-zero D outside the domain would leak into the interior, because
+        # the face-average stencils in `_precompute_laplacian_kernel!` divide the
+        # *sum* over a cell pair by the number of active cells in it, biasing the
+        # diffusion of every boundary cell.
+        D[i, j] = max(D[i, j], D_min) * tmask[i, j]
+    end
+end
+
+# Tracer bounds inside the domain only; see `leapfrog_step!`.
+@kernel function _clamp_tracer_kernel!(q, @Const(tmask), q_min, q_max)
+    i, j = @index(Global, NTuple)
+    @inbounds q[i, j] = ifelse(tmask[i, j] > 0, clamp(q[i, j], q_min, q_max), q[i, j])
+end
+
+@kernel function _nan_on_shelf_kernel!(flag, @Const(arr), @Const(tmask))
+    i, j = @index(Global, NTuple)
+    @inbounds flag[i, j] = isnan(arr[i, j]) & (tmask[i, j] > 0)
 end
 
 function _check_nans_shelf!(sim, varname, arr)
     m = sim.model
-    @. m.diag = isnan(arr) & (m.tmask > 0)
+    launch!(_nan_on_shelf_kernel!, m.diag, m.diag, arr, m.tmask)
     any(>(0), m.diag) && error(
         "NaN in $varname at t = $(round(_t_days(sim), digits=4)) days " *
         "(iteration $(sim.clock.iteration))",
@@ -483,13 +592,11 @@ function leapfrog_step!(sim, nsteps)
     # inactive cell from S = 0 to S_min, breaking the invariant that prognostics are
     # zero outside `tmask` (see `_clamp_thickness!`).
     step_temperature!(m, dt)
-    @. m.T.future =
-        ifelse(m.tmask > 0, clamp(m.T.future, m.T_min, m.T_max), m.T.future)
+    launch!(_clamp_tracer_kernel!, m.T.future, m.T.future, m.tmask, m.T_min, m.T_max)
     check_nans && _check_nans_shelf!(sim, "T", m.T.future)
 
     step_salinity!(m, dt)
-    @. m.S.future =
-        ifelse(m.tmask > 0, clamp(m.S.future, m.S_min, m.S_max), m.S.future)
+    launch!(_clamp_tracer_kernel!, m.S.future, m.S.future, m.tmask, m.S_min, m.S_max)
     check_nans && _check_nans_shelf!(sim, "S", m.S.future)
     return
 end

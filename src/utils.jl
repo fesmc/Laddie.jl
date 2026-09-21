@@ -84,18 +84,16 @@ Select via `Params(; max_layer_thickness = RelativeMaxLayerThickness(0.8))`.
     f_D_max::FT = 4/5
 end
 
-# No upper bound: `_clamp_thickness!` applies the `D_min` floor and the domain
-# mask on the next line, so there is nothing to do here.
-max_layer_thickness!(::Any, ::NoMaxLayerThickness) = nothing
-function max_layer_thickness!(m, ::TopographicMaxLayerThickness)
-    @. m.D.future = min(m.D.future, m.z_draft - m.z_bed) .* m.tmask
-end
-function max_layer_thickness!(m, c::AbsoluteMaxLayerThickness)
-    @. m.D.future = min(m.D.future, c.D_max) .* m.tmask
-end
-function max_layer_thickness!(m, c::RelativeMaxLayerThickness)
-    @. m.D.future = min(m.D.future, c.f_D_max * (m.z_draft - m.z_bed)) .* m.tmask
-end
+# Per-cell upper bound on the thickness `D`, applied in `_clamp_thickness_kernel!`
+# before the D_min floor.  No upper bound: the floor and the domain mask that
+# follow are all there is.
+@inline _max_layer_thickness(::NoMaxLayerThickness, D, z_draft, z_bed, tmask) = D
+@inline _max_layer_thickness(::TopographicMaxLayerThickness, D, z_draft, z_bed, tmask) =
+    min(D, z_draft - z_bed) * tmask
+@inline _max_layer_thickness(c::AbsoluteMaxLayerThickness, D, z_draft, z_bed, tmask) =
+    min(D, c.D_max) * tmask
+@inline _max_layer_thickness(c::RelativeMaxLayerThickness, D, z_draft, z_bed, tmask) =
+    min(D, c.f_D_max * (z_draft - z_bed)) * tmask
 
 # ============================================================================
 # Shift / interpolation primitives  (≡ np.roll & tools.py, GPU-capable)

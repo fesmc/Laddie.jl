@@ -880,12 +880,12 @@ function precompute_laplacian_stencils!(m)
         m.D0im,
         m.D0jp,
         m.D0jm,
+        m.D_on_ugrid,
+        m.D_on_vgrid,
         laplacian_thickness(m),
         m.tmask,
         nx,
         ny,
     )
-    @. m.D_on_ugrid = m.D0ip * m.tmask
-    @. m.D_on_vgrid = m.D0jp * m.tmask
     return
 end

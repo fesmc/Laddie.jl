@@ -135,10 +135,8 @@ _land_slip(::NoSlipLand, FT) = FT(2)
 _land_slip(bc::PartialSlipLand, FT) = FT(bc.factor)
 
 # Per-face slip factors of a model, as passed to the momentum kernels.
-_wall_slips(m) = (
-    _gl_slip(m.boundary.grounding_line, m.FT),
-    _land_slip(m.boundary.land, m.FT),
-)
+_wall_slips(m) =
+    (_gl_slip(m.boundary.grounding_line, m.FT), _land_slip(m.boundary.land, m.FT))
 
 #############################
 # Wall momentum advection

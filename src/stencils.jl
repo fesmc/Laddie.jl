@@ -238,13 +238,9 @@ end
         # Per-face wall drag, zero off the walls (see _upwind_advection_U_kernel!
         # for how the grounding-line and land factors compose).
         dragN =
-            (slip_gl * glNu[i, j] + slip_land * lndNu[i, j]) *
-            D_on_ugrid[i, j] *
-            v / dy2
+            (slip_gl * glNu[i, j] + slip_land * lndNu[i, j]) * D_on_ugrid[i, j] * v / dy2
         dragS =
-            (slip_gl * glSu[i, j] + slip_land * lndSu[i, j]) *
-            D_on_ugrid[i, j] *
-            v / dy2
+            (slip_gl * glSu[i, j] + slip_land * lndSu[i, j]) * D_on_ugrid[i, j] * v / dy2
         jpD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jp1], tmask[i, j] + tmask[i, jp1])
         jmD = _safe_div(D_on_ugrid[i, j] + D_on_ugrid[i, jm1], tmask[i, j] + tmask[i, jm1])
         flux_N = jpD * (var[i, jp1] - v) / dy2 * (o - ocn[i, jp1]) - dragN
@@ -285,13 +281,9 @@ end
         v = var[i, j]
         # See _laplace_U_kernel! for the slip-factor composition.
         dragE =
-            (slip_gl * glEv[i, j] + slip_land * lndEv[i, j]) *
-            D_on_vgrid[i, j] *
-            v / dx2
+            (slip_gl * glEv[i, j] + slip_land * lndEv[i, j]) * D_on_vgrid[i, j] * v / dx2
         dragW =
-            (slip_gl * glWv[i, j] + slip_land * lndWv[i, j]) *
-            D_on_vgrid[i, j] *
-            v / dx2
+            (slip_gl * glWv[i, j] + slip_land * lndWv[i, j]) * D_on_vgrid[i, j] * v / dx2
         ipD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[ip1, j], tmask[i, j] + tmask[ip1, j])
         imD = _safe_div(D_on_vgrid[i, j] + D_on_vgrid[im1, j], tmask[i, j] + tmask[im1, j])
         flux_N = D0[i, jp1] * (var[i, jp1] - v) / dy2 * (o - ocn[i, jp1])
@@ -524,14 +516,26 @@ end
         half = one(u) / 2
         # Face mass fluxes of the U control volume: east and west sit on T-points,
         # north and south on corners, each the mean of the two T-cell faces there.
-        MxE = half * (_face_mass_x(U, D, tmask, ocn, umask, i, j, Nx) +
-                      _face_mass_x(U, D, tmask, ocn, umask, ip1, j, Nx))
-        MxW = half * (_face_mass_x(U, D, tmask, ocn, umask, im1, j, Nx) +
-                      _face_mass_x(U, D, tmask, ocn, umask, i, j, Nx))
-        MyN = half * (_face_mass_y(V, D, tmask, ocn, vmask, i, j, Ny) +
-                      _face_mass_y(V, D, tmask, ocn, vmask, ip1, j, Ny))
-        MyS = half * (_face_mass_y(V, D, tmask, ocn, vmask, i, jm1, Ny) +
-                      _face_mass_y(V, D, tmask, ocn, vmask, ip1, jm1, Ny))
+        MxE =
+            half * (
+                _face_mass_x(U, D, tmask, ocn, umask, i, j, Nx) +
+                _face_mass_x(U, D, tmask, ocn, umask, ip1, j, Nx)
+            )
+        MxW =
+            half * (
+                _face_mass_x(U, D, tmask, ocn, umask, im1, j, Nx) +
+                _face_mass_x(U, D, tmask, ocn, umask, i, j, Nx)
+            )
+        MyN =
+            half * (
+                _face_mass_y(V, D, tmask, ocn, vmask, i, j, Ny) +
+                _face_mass_y(V, D, tmask, ocn, vmask, ip1, j, Ny)
+            )
+        MyS =
+            half * (
+                _face_mass_y(V, D, tmask, ocn, vmask, i, jm1, Ny) +
+                _face_mass_y(V, D, tmask, ocn, vmask, ip1, jm1, Ny)
+            )
         z = zero(u)
         qE = _donor(u, U[ip1, j], umask[ip1, j], MxE > z)
         qW = _donor(u, U[im1, j], umask[im1, j], MxW <= z)
@@ -563,14 +567,26 @@ end
         jm1 = _ym1(j, Ny)
         v = V[i, j]
         half = one(v) / 2
-        MyN = half * (_face_mass_y(V, D, tmask, ocn, vmask, i, j, Ny) +
-                      _face_mass_y(V, D, tmask, ocn, vmask, i, jp1, Ny))
-        MyS = half * (_face_mass_y(V, D, tmask, ocn, vmask, i, jm1, Ny) +
-                      _face_mass_y(V, D, tmask, ocn, vmask, i, j, Ny))
-        MxE = half * (_face_mass_x(U, D, tmask, ocn, umask, i, j, Nx) +
-                      _face_mass_x(U, D, tmask, ocn, umask, i, jp1, Nx))
-        MxW = half * (_face_mass_x(U, D, tmask, ocn, umask, im1, j, Nx) +
-                      _face_mass_x(U, D, tmask, ocn, umask, im1, jp1, Nx))
+        MyN =
+            half * (
+                _face_mass_y(V, D, tmask, ocn, vmask, i, j, Ny) +
+                _face_mass_y(V, D, tmask, ocn, vmask, i, jp1, Ny)
+            )
+        MyS =
+            half * (
+                _face_mass_y(V, D, tmask, ocn, vmask, i, jm1, Ny) +
+                _face_mass_y(V, D, tmask, ocn, vmask, i, j, Ny)
+            )
+        MxE =
+            half * (
+                _face_mass_x(U, D, tmask, ocn, umask, i, j, Nx) +
+                _face_mass_x(U, D, tmask, ocn, umask, i, jp1, Nx)
+            )
+        MxW =
+            half * (
+                _face_mass_x(U, D, tmask, ocn, umask, im1, j, Nx) +
+                _face_mass_x(U, D, tmask, ocn, umask, im1, jp1, Nx)
+            )
         z = zero(v)
         qE = _donor(v, V[ip1, j], vmask[ip1, j], MxE > z)
         qW = _donor(v, V[im1, j], vmask[im1, j], MxW <= z)

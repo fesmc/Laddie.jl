@@ -48,7 +48,8 @@ export build_isomip,
     to_backend
 
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
-export AbstractMelting, FixedGamTMelting, TurbulentGamTMelting, UStarGamTMelting, PrescribedMelting
+export AbstractMelting,
+    FixedGamTMelting, TurbulentGamTMelting, UStarGamTMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
 export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D
 export AbstractMaxLayerThickness,

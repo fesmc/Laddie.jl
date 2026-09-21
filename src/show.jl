@@ -97,7 +97,8 @@ Base.show(io::IO, p::Params{FT}) where {FT} = print(io, "Params{$FT}($(_schemes(
 
 function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "Params{$FT}:")
-    scal = [(fn, getfield(p, fn)) for fn in fieldnames(Params) if getfield(p, fn) isa Number]
+    scal =
+        [(fn, getfield(p, fn)) for fn in fieldnames(Params) if getfield(p, fn) isa Number]
     for chunk in Iterators.partition(scal, 4)
         println(io, "  ", join((rpad("$k = $v", 22) for (k, v) in chunk), " "))
     end

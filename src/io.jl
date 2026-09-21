@@ -159,25 +159,83 @@ const _OUTPUT_FIELDS = (
     _outfield(:save_D, :Dav, "D", "m", "mixed-layer thickness", m -> m.D.present),
     _outfield(:save_T, :Tav, "T", "degC", "layer-averaged temperature", m -> m.T.present),
     _outfield(:save_S, :Sav, "S", "psu", "layer-averaged salinity", m -> m.S.present),
-    _outfield(:save_melt, :meltav, "melt", "m yr-1", "basal melt rate", m -> m.melt;
-              per_year = true),
-    _outfield(:save_entr, :entrav, "entr", "m yr-1", "entrainment rate", m -> m.entr;
-              per_year = true),
-    _outfield(:save_ent2, :ent2av, "ent2", "m yr-1", "additional entrainment", m -> m.ent2;
-              per_year = true),
-    _outfield(:save_detr, :detrav, "detr", "m yr-1", "detrainment rate", m -> m.detr;
-              per_year = true),
+    _outfield(
+        :save_melt,
+        :meltav,
+        "melt",
+        "m yr-1",
+        "basal melt rate",
+        m -> m.melt;
+        per_year = true,
+    ),
+    _outfield(
+        :save_entr,
+        :entrav,
+        "entr",
+        "m yr-1",
+        "entrainment rate",
+        m -> m.entr;
+        per_year = true,
+    ),
+    _outfield(
+        :save_ent2,
+        :ent2av,
+        "ent2",
+        "m yr-1",
+        "additional entrainment",
+        m -> m.ent2;
+        per_year = true,
+    ),
+    _outfield(
+        :save_detr,
+        :detrav,
+        "detr",
+        "m yr-1",
+        "detrainment rate",
+        m -> m.detr;
+        per_year = true,
+    ),
     _outfield(:save_Tbase, :Tbav, "Tbase", "degC", "temperature at ice base", m -> m.Tb),
-    _outfield(:save_Tamb, :Taav, "Tamb", "degC", "ambient temperature at layer base",
-              m -> m.Ta),
-    _outfield(:save_gammaT, :gamTav, "gammaT", "m s-1", "turbulent heat exchange velocity",
-              m -> m.gamT),
-    _outfield(:save_ustar, :ustarav, "ustar", "m s-1", "friction velocity at the ice base",
-              m -> m.ustar),
-    _outfield(:save_drho, :drhoav, "drho", "1",
-              "reduced density contrast with ambient, (rho_a - rho)/rho_0", m -> m.drho),
-    _outfield(:save_convection, :convav, "convection", "1",
-              "fraction of time convectively unstable", m -> m.convection),
+    _outfield(
+        :save_Tamb,
+        :Taav,
+        "Tamb",
+        "degC",
+        "ambient temperature at layer base",
+        m -> m.Ta,
+    ),
+    _outfield(
+        :save_gammaT,
+        :gamTav,
+        "gammaT",
+        "m s-1",
+        "turbulent heat exchange velocity",
+        m -> m.gamT,
+    ),
+    _outfield(
+        :save_ustar,
+        :ustarav,
+        "ustar",
+        "m s-1",
+        "friction velocity at the ice base",
+        m -> m.ustar,
+    ),
+    _outfield(
+        :save_drho,
+        :drhoav,
+        "drho",
+        "1",
+        "reduced density contrast with ambient, (rho_a - rho)/rho_0",
+        m -> m.drho,
+    ),
+    _outfield(
+        :save_convection,
+        :convav,
+        "convection",
+        "1",
+        "fraction of time convectively unstable",
+        m -> m.convection,
+    ),
 )
 
 # ============================================================================
@@ -522,11 +580,19 @@ function _create_output_file!(sim)
                 "shelf cell at grounding line (grounded-ice neighbour)",
                 shelf_next_to(2),
             )
-            flag!("at_lnd", "shelf cell at a land margin (bedrock neighbour)", shelf_next_to(1))
+            flag!(
+                "at_lnd",
+                "shelf cell at a land margin (bedrock neighbour)",
+                shelf_next_to(1),
+            )
             # The internal margin opened by melt-through.  All zeros under
             # SinkGapsBC, which demotes gaps to ocean when the model is built — so
             # this field also records which gap treatment ran.
-            flag!("at_gap", "shelf cell at a melt-through gap (gap neighbour)", shelf_next_to(4))
+            flag!(
+                "at_gap",
+                "shelf cell at a melt-through gap (gap neighbour)",
+                shelf_next_to(4),
+            )
         end
         if sim.output.save_zb
             defVar(ds, "z_draft", Float64, ("x", "y"); attrib = ["units" => "m"])[:, :] =

@@ -255,7 +255,8 @@ end
 @kernel function _flag_unstable_ice_kernel!(convection, @Const(drho), @Const(imask))
     i, j = @index(Global, NTuple)
     FT = eltype(convection)
-    @inbounds convection[i, j] = ifelse((drho[i, j] < 0) & (imask[i, j] > 0), one(FT), zero(FT))
+    @inbounds convection[i, j] =
+        ifelse((drho[i, j] < 0) & (imask[i, j] > 0), one(FT), zero(FT))
 end
 
 update_convection!(m) = update_convection!(m, m.convection_scheme)

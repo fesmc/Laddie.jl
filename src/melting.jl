@@ -156,7 +156,8 @@ Params(; melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6))
                 ),
             )
         end
-        nu0 > 0 || throw(ArgumentError("TurbulentGamTMelting: nu0 must be positive, got $nu0"))
+        nu0 > 0 ||
+            throw(ArgumentError("TurbulentGamTMelting: nu0 must be positive, got $nu0"))
         return new{FT}(Pr, Sc, nu0)
     end
 end

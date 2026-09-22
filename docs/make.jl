@@ -21,6 +21,14 @@ if get(ENV, "LADDIE_DOCS_CROSSON_DOTSON", "false") == "true"
 end
 Literate.markdown(cd_script, gendir; documenter = true, codefence = "```julia" => "```")
 
+# The Amundsen Sea example needs BedMachine v3 and the Lambert et al. (2026) output, so it
+# is static too. Set LADDIE_DOCS_ASE=true to run it (with `julia -t 8`, as the page says).
+ase_script = joinpath(exdir, "lambert-ase.jl")
+if get(ENV, "LADDIE_DOCS_ASE", "false") == "true"
+    Base.include(Module(:LambertASE), ase_script)
+end
+Literate.markdown(ase_script, gendir; documenter = true, codefence = "```julia" => "```")
+
 # The ice-shelf gaps example needs the Jesse et al. (2026) model output (7.6 GB) and ~7 min,
 # so it is static in the same way. Set LADDIE_DOCS_JESSE=true to run it.
 jesse_script = joinpath(exdir, "jesse-gaps.jl")
@@ -52,6 +60,7 @@ makedocs(;
         "Examples" => [
             "ISOMIP+" => "generated/isomip.md",
             "Crosson–Dotson" => "generated/crosson-dotson.md",
+            "Amundsen Sea" => "generated/lambert-ase.md",
             "Ice-shelf gaps" => "generated/jesse-gaps.md",
         ],
         "API reference" => [

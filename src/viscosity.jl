@@ -46,10 +46,8 @@ components on a face. The flux of each component then goes as
 smooth flow, large viscosity where shear is strong — rather than the plain
 Laplacian of [`PrescribedLateralViscosity`](@ref).
 
-- `C_visc`: **dimensionless** coefficient, the reference's `C%laddie_viscosity`
-  (default `10.0`, its MISMIP+ configuration value; the Antarctic test config
-  uses `0.1`). Note `C_visc/100` plays the role of a squared Smagorinsky
-  constant, so the default corresponds to `Cs ≈ 0.32`.
+`C_visc/100` plays the role of a squared Smagorinsky constant, so the default
+corresponds to `Cs ≈ 0.32`.
 
 Because `Δ` is supplied internally, `C_visc` is resolution-independent and
 directly comparable to the reference's config value. It is *not* comparable to
@@ -70,8 +68,12 @@ controlled independently by `BoundaryConditions.grounding_line` / `.land`.
     (`ip_half(jm_half(V))` for the `U` equation, `jp_half(im_half(U))` for `V`).
 
 Select via `Params(; lateral_viscosity = NonlinearLateralViscosity(10.0))`.
+
+# Fields
+$(TYPEDFIELDS)
 """
 @kwdef struct NonlinearLateralViscosity{FT} <: AbstractLateralViscosity
+    "dimensionless coefficient, the reference `C%laddie_viscosity` (default `10.0`, its MISMIP+ value; the Antarctic test config uses `0.1`)"
     C_visc::FT = 10.0
 end
 

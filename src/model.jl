@@ -33,15 +33,18 @@ function _check_property_collisions(grid, geometry, state, cache, params, forcin
     return
 end
 
+# One type parameter per field, with no element type shared between them: each
+# component can then change its array type on its own (a Reactant trace turns the
+# matrices into traced arrays but leaves the scalar `Params` as they are).
 """
 $(TYPEDEF)
 
 The model: geometry, physics and prognostic state.  It knows nothing about time
 integration — wrap it in a [`Simulation`](@ref) to advance it with `run!`.
 
-`A` is the concrete matrix type (`Matrix{FT}` on CPU, `CuArray{FT,2}` on GPU).
+The fields are `Matrix{FT}` on CPU and `CuArray{FT,2}` on GPU.
 Use `to_backend(m, backend)` to obtain a model on a different backend —
-it returns a new `Model` with the appropriate `A`.
+it returns a new `Model` with the matching array types.
 
 Fields are accessed directly on `m` through a flat forwarding layer:
 
@@ -57,29 +60,41 @@ Fields are accessed directly on `m` through a flat forwarding layer:
 | `m.Tz`, `m.Sz`, `m.z` | Forcing (ocean) | ambient profile arrays |
 | `m.T_ice_base` | Forcing (ice) | basal ice temperature field |
 
-`m.FT` returns the floating-point type (`Float64` or `Float32`), and `m.nx`, `m.ny`
+`m.FT` returns the floating-point type (`Float64` or `Float32`) of the scalar
+parameters, which `Model` checks against the grid and forcing, and `m.nx`, `m.ny`
 the interior cell counts.
 
 `Grid`, `Geometry` and `Params` are immutable after construction.  `Cache` and
 `State` fields are mutable and updated in place each time step.
+
+# Fields
+$(TYPEDFIELDS)
 """
 mutable struct Model{
-    FT,
-    A<:AbstractMatrix{FT},
-    F<:CavityForcing,
-    P<:Params{FT},
-    B<:BoundaryConditions,
+    G<:Grid,
+    GE<:Geometry,
+    S<:State,
     C<:Cache,
+    P<:Params,
+    B<:BoundaryConditions,
+    F<:CavityForcing,
 }
-    grid::Grid{FT,A}
-    geometry::Geometry{FT,A}
-    state::State{FT,A}
+    "the [`Grid`](@ref): cell layout, mask, ice draft, bed and coordinates"
+    grid::G
+    "masks, wall indicators, ice-base slope and Coriolis field derived from the grid"
+    geometry::GE
+    "the prognostic fields `D`, `U`, `V`, `T`, `S`"
+    state::S
+    "diagnostic and scratch fields, updated in place every step"
     cache::C
+    "physical constants and parameterisation choices ([`Params`](@ref))"
     params::P
+    "boundary conditions ([`BoundaryConditions`](@ref))"
     boundary::B
+    "ocean and ice forcing ([`CavityForcing`](@ref))"
     forcing::F
 
-    function Model{FT,A,F,P,B,C}(
+    function Model{G,GE,S,C,P,B,F}(
         grid,
         geometry,
         state,
@@ -88,31 +103,31 @@ mutable struct Model{
         boundary,
         forcing,
     ) where {
-        FT,
-        A<:AbstractMatrix{FT},
-        F<:CavityForcing,
-        P<:Params{FT},
-        B<:BoundaryConditions,
+        G<:Grid,
+        GE<:Geometry,
+        S<:State,
         C<:Cache,
+        P<:Params,
+        B<:BoundaryConditions,
+        F<:CavityForcing,
     }
         _check_property_collisions(grid, geometry, state, cache, params, forcing)
-        new{FT,A,F,P,B,C}(grid, geometry, state, cache, params, boundary, forcing)
+        new{G,GE,S,C,P,B,F}(grid, geometry, state, cache, params, boundary, forcing)
     end
 end
 
-function Model(
-    grid::Grid{FT,A},
-    geometry::Geometry{FT,A},
-    state::State{FT,A},
+Model(
+    grid::G,
+    geometry::GE,
+    state::S,
     cache::C,
     params::P,
     boundary::B,
     forcing::F,
-) where {FT,A,C<:Cache,F<:CavityForcing,P<:Params{FT},B<:BoundaryConditions}
-    Model{FT,A,F,P,B,C}(grid, geometry, state, cache, params, boundary, forcing)
-end
+) where {G,GE,S,C,P,B,F} =
+    Model{G,GE,S,C,P,B,F}(grid, geometry, state, cache, params, boundary, forcing)
 
-function Base.getproperty(m::Model{FT}, k::Symbol) where {FT}
+function Base.getproperty(m::Model, k::Symbol)
     # Direct struct fields — fast path
     k === :grid && return getfield(m, :grid)
     k === :geometry && return getfield(m, :geometry)
@@ -121,7 +136,7 @@ function Base.getproperty(m::Model{FT}, k::Symbol) where {FT}
     k === :params && return getfield(m, :params)
     k === :boundary && return getfield(m, :boundary)
     k === :forcing && return getfield(m, :forcing)
-    k === :FT && return FT
+    k === :FT && return _float_type(getfield(m, :params))
     # Interior dimensions derived from grid (total minus 2 border cells)
     k === :ny && return getfield(m, :grid).Ny - 2
     k === :nx && return getfield(m, :grid).Nx - 2

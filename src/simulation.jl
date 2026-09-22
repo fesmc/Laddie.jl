@@ -14,20 +14,20 @@ successive `run!` calls continue from where the previous one stopped.
 # Fields
 $(TYPEDFIELDS)
 """
-mutable struct Clock{FT}
+mutable struct Clock{FT,T,I}
     "simulated time since the origin (s); a restarted simulation starts at the restart time"
-    time::Float64
+    time::T
     "time steps taken by this simulation (not restored from a restart)"
-    iteration::Int
+    iteration::I
     "current time step (s); varies under [`AdaptiveDt`](@ref)"
     dt::FT
 end
 
 # Empty I/O state on the model's backend: the 0×0 accumulators are allocated with
 # `similar`, so they already have the model's concrete array type.
-function IOState(m::Model{FT}) where {FT}
+function IOState(m::Model)
     empty = similar(m.tmask, 0, 0)
-    IOState{FT,typeof(empty)}(
+    IOState(
         0,       # count
         0.0,     # t_accum
         0,       # time_index
@@ -53,30 +53,33 @@ $(TYPEDFIELDS)
 """
 struct Simulation{
     M<:Model,
-    FT,
+    CL<:Clock,
     TS<:AbstractTimeStepper,
     C<:AbstractCFL,
+    N,
     E<:AbstractSimulationEnd,
+    O<:OutputConfig,
     IOS<:IOState,
+    D<:DebugConfig,
 }
     "the model being integrated"
     model::M
     "simulated time, iteration count and current `dt`"
-    clock::Clock{FT}
+    clock::CL
     "how `dt` evolves: [`FixedDt`](@ref) or [`AdaptiveDt`](@ref)"
     tstep::TS
     "how the in-loop CFL number is computed: [`ExactCFL`](@ref) or [`ConservativeCFL`](@ref)"
     cfl::C
     "Robert–Asselin filter coefficient"
-    nu::FT
+    nu::N
     "default stopping criterion of `run!`"
     stop::E
     "output cadence, field selection and run directory"
-    output::OutputConfig
+    output::O
     "runtime I/O state: accumulators, next-event times, run directory, log"
     io::IOS
     "debug options"
-    debug::DebugConfig
+    debug::D
 end
 
 """
@@ -110,7 +113,7 @@ run!(sim)
 ```
 """
 function Simulation(
-    model::Model{FT};
+    model::Model;
     dt = 210.0,
     tstep = FixedDt(),
     cfl = ExactCFL(),
@@ -119,7 +122,8 @@ function Simulation(
     output = OutputConfig(),
     restart = nothing,
     debug = DebugConfig(),
-) where {FT}
+)
+    FT = model.FT
     dt > 0 || throw(ArgumentError("dt must be positive, got $dt"))
     io = IOState(model)
     sim = Simulation(

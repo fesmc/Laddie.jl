@@ -30,12 +30,20 @@ Ambient T/S as one vertical profile resampled onto a uniform 1 m z-grid.
 Construct it from arbitrary samples with
 [`OceanForcing1D(Tz, Sz, z)`](@ref OceanForcing1D), which sorts by depth,
 resamples, and extrapolates flat beyond the data range.
+
+# Fields
+$(TYPEDFIELDS)
 """
-struct OceanForcing1D{FT,V<:AbstractVector{FT}} <: AbstractOceanForcing
+struct OceanForcing1D{FT,V<:AbstractVector} <: AbstractOceanForcing
+    "ambient temperature on the uniform z-grid (°C)"
     Tz::V
+    "ambient salinity on the uniform z-grid (psu)"
     Sz::V
+    "depths of the uniform z-grid (m, negative downward)"
     z::V
+    "z-grid spacing (m)"
     dz::FT
+    "depth of the first z-grid point (m)"
     z0::FT
 end
 
@@ -107,8 +115,12 @@ melt for the same thermal driving: `L_eff` runs from 3.34e5 J kg⁻¹ at 0 °C t
 PrescribedIceForcing(-25.0)          # uniform, the default
 PrescribedIceForcing(T_ice_matrix)   # 2D, same size as `mask`
 ```
+
+# Fields
+$(TYPEDFIELDS)
 """
 struct PrescribedIceForcing{M} <: AbstractIceForcing
+    "basal ice temperature (°C): a scalar, or a full-domain matrix the size of `mask`"
     T_ice_base::M
 end
 
@@ -135,9 +147,14 @@ The complete external forcing of a cavity: an ocean forcing and an ice forcing.
 CavityForcing(ISOMIPForcing(:warm))                                 # default ice
 CavityForcing(ocean, PrescribedIceForcing(T_ice_matrix))          # 2D ice
 ```
+
+# Fields
+$(TYPEDFIELDS)
 """
 struct CavityForcing{O<:AbstractOceanForcing,I<:AbstractIceForcing}
+    "the ocean forcing (ambient temperature and salinity)"
     ocean::O
+    "the ice forcing (basal ice temperature)"
     ice::I
 end
 

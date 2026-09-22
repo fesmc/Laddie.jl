@@ -553,9 +553,13 @@ $(TYPEDEF)
 
 Preprocessing step that applies [`fill_small_shelf_patches!`](@ref) with
 `min_cells = min_size` (default 10).
+
+# Fields
+$(TYPEDFIELDS)
 """
-@kwdef struct FillSmallShelfPatchesPreprocess <: AbstractPreprocess
-    min_size::Int = 10
+@kwdef struct FillSmallShelfPatchesPreprocess{I} <: AbstractPreprocess
+    "patches of fewer cells are filled (default `10`)"
+    min_size::I = 10
 end
 
 """
@@ -563,9 +567,13 @@ $(TYPEDEF)
 
 Preprocessing step that applies [`fill_small_grounded_patches!`](@ref) with
 `min_cells = min_size` (default 10).
+
+# Fields
+$(TYPEDFIELDS)
 """
-@kwdef struct FillSmallGroundedPatchesPreprocess <: AbstractPreprocess
-    min_size::Int = 10
+@kwdef struct FillSmallGroundedPatchesPreprocess{I} <: AbstractPreprocess
+    "patches of fewer cells are filled (default `10`)"
+    min_size::I = 10
 end
 
 """
@@ -647,11 +655,12 @@ model is given later) to the smallest rectangle that contains all dynamically
 active cells (floating shelf `mask == 3` and gaps `mask == 4`), expanded by `margin`
 cells in every direction.  Pass as `Grid(...; domain_cropping)`; this is the default.
 
-`margin` must be at least 1, since the outermost ring has to stay free of active
-cells (the stencils wrap periodically).  The default of 4 leaves a little context
-around the cavity, which mostly matters for plotting — a tight crop puts the ice
-front hard against the frame.  Use `margin = 1` for the tightest domain the
-solver accepts.
+`margin` must be at least 2.  The stencils skip the outermost ring, so an active
+cell must not border an ocean cell of that ring (see `Model`), and with a margin of
+1 an ice front at the edge of the cropped box would do exactly that.  The default
+of 4 leaves a little context around the cavity, which mostly matters for plotting —
+a tight crop puts the ice front hard against the frame.  Use `margin = 2` for the
+tightest domain the solver accepts.
 
 The result is clipped to the input array, so a `margin` larger than the available
 padding simply keeps what is there.  If the domain is already minimal, the arrays
@@ -660,9 +669,9 @@ are returned unchanged.
 # Fields
 $(TYPEDFIELDS)
 """
-@kwdef struct MinRectangleDomainCropping <: AbstractDomainCropping
-    "cells of padding kept around the active region (minimum 1)"
-    margin::Int = 4
+@kwdef struct MinRectangleDomainCropping{I} <: AbstractDomainCropping
+    "cells of padding kept around the active region (minimum 2)"
+    margin::I = 4
 end
 
 # Index ranges of the kept sub-rectangle.  Returned rather than applied so every
@@ -672,10 +681,10 @@ _crop_ranges(mask, ::NoDomainCropping) = axes(mask, 1), axes(mask, 2)
 
 function _crop_ranges(mask, cropping::MinRectangleDomainCropping)
     margin = cropping.margin
-    margin >= 1 || throw(
+    margin >= 2 || throw(
         ArgumentError(
-            "MinRectangleDomainCropping margin must be at least 1 — the outermost " *
-            "ring must stay free of active cells — got $margin",
+            "MinRectangleDomainCropping margin must be at least 2 — an ice front at the " *
+            "edge of the cropped box must not touch the outermost ring — got $margin",
         ),
     )
     # Gaps (4) are active cells too — cropping them away would silently remove the

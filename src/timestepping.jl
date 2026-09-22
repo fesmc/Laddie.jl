@@ -48,22 +48,30 @@ Select via `Simulation(model; tstep = AdaptiveDt())`; override fields as needed,
 `AdaptiveDt(; cfl_target = 0.4, ncheck = 10)`.
 
 # Fields
- - `cfl_target` — CFL setpoint the controller aims for (default 0.3)
- - `q` — response exponent (1 = CFL-exact, <1 damps, >1 overshoots)
- - `max_growth` — max dt increase per adjustment (e.g. 1.1 = +10%)
- - `grow_hyst` — grow only when cfl < grow_hyst · cfl_target (default 0.8)
- - `ncheck` — steps between CFL checks (default 20)
- - `dtmin` — lower clamp on dt (s, default 1.0)
- - `dtmax` — upper clamp on dt (s, default 1000.0)
+$(TYPEDFIELDS)
 """
-@kwdef struct AdaptiveDt{FT} <: AbstractTimeStepper
+@kwdef struct AdaptiveDt{FT,I} <: AbstractTimeStepper
+    "CFL setpoint the controller aims for (default `0.3`)"
     cfl_target::FT = 0.3
+    "response exponent: `1` is CFL-exact, `< 1` damps, `> 1` overshoots (default `1.0`)"
     q::FT = 1.0
+    "largest dt increase per adjustment, e.g. `1.1` = +10 % (default `1.1`)"
     max_growth::FT = 1.1
+    "grow only when `cfl < grow_hyst * cfl_target` (default `0.8`)"
     grow_hyst::FT = 0.8
-    ncheck::Int = 20
+    "steps between CFL checks (default `20`)"
+    ncheck::I = 20
+    "lower clamp on dt (s, default `1.0`)"
     dtmin::FT = 1.0
+    "upper clamp on dt (s, default `1000.0`)"
     dtmax::FT = 1000.0
+    AdaptiveDt{FT,I}(args...) where {FT,I} = new{FT,I}(args...)
+end
+
+# The float fields are promoted to one type, so `AdaptiveDt(; dtmax = 1000)` works.
+function AdaptiveDt(cfl_target, q, max_growth, grow_hyst, ncheck, dtmin, dtmax)
+    f = promote(map(float, (cfl_target, q, max_growth, grow_hyst, dtmin, dtmax))...)
+    return AdaptiveDt{eltype(f),typeof(ncheck)}(f[1:4]..., ncheck, f[5:6]...)
 end
 
 # (Float-type promotion of the stepper to the model's FT is handled generically by

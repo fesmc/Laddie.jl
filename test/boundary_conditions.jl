@@ -214,11 +214,11 @@ end
     edge_ref = zeros(Bool, 22, 12); edge_ref[4:18, 2:11] .= true
     edge_grid = Grid(edge_mask, z_draft_raw, 2000.0, 2000.0; FT,
                      preprocess = [MarkGapsPreprocess(edge_ref)],
-                     domain_cropping = MinRectangleDomainCropping(margin = 1))
+                     domain_cropping = MinRectangleDomainCropping(margin = 2))
     m_edge = Model(edge_grid; forcing, boundary = BoundaryConditions(; gaps = connected))
     @test count(==(4), m_edge.mask) == 10 * 3                  # x 16:18 are gaps
     @test sum(m_edge.tmask) == 10 * (15 - 4 + 1) + 10 * 3      # shelf + gaps all kept
-    @test size(m_edge.mask, 1) == (18 - 4 + 1) + 2             # footprint + 1-cell ring
+    @test size(m_edge.mask, 1) == (18 - 4 + 1) + 4             # footprint + 2-cell ring
 
     # -- Bucket 3: no melt in gaps, and no ice-ocean heat exchange either ---
     @test all(mc.model.melt[gap_ix] .== 0)

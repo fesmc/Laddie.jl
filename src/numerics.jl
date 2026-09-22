@@ -24,15 +24,14 @@ end
     @Const(U),
     @Const(vmask),
     @Const(umask),
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        jm1 = j - 1
+        ip1 = i + 1
+        im1 = i - 1
         Vij = V[i, j]
         Uij = U[i, j]
         Vip[i, j] = _safe_div(Vij + V[ip1, j], vmask[i, j] + vmask[ip1, j])
@@ -55,15 +54,14 @@ end
     D_on_vgrid,
     @Const(D),
     @Const(tmask),
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        jm1 = j - 1
+        ip1 = i + 1
+        im1 = i - 1
         Dij = D[i, j]
         D0ip[i, j] = _safe_div(Dij + D[ip1, j], tmask[i, j] + tmask[ip1, j])
         D0im[i, j] = _safe_div(Dij + D[im1, j], tmask[i, j] + tmask[im1, j])
@@ -85,6 +83,19 @@ _workgroup(::Any) = (32, 8)   # GPU: 256 threads, warp-aligned x-dimension
 function launch!(kernel!, A, args...)
     backend = _launch_backend(KA.get_backend(A))
     kernel!(backend, _workgroup(backend))(args...; ndrange = size(A))
+    return nothing
+end
+
+# Launch a stencil kernel over the interior cells only, the full array minus its
+# one-cell border ring.  The kernel offsets its index by one past the ring, so
+# `i ± 1`, `j ± 1` always stay inside the array and need no periodic wrap: the
+# border ring is never active, and a stencil output there was only ever multiplied
+# by a zero mask.  Plain `i ± 1` also keeps the indices affine, which lets Reactant
+# raise the neighbour reads to slices; a wrapped read along x (the contiguous axis)
+# becomes a gather, and a wrapped diagonal read a gather plus a transpose.
+function launch_interior!(kernel!, A, args...)
+    backend = _launch_backend(KA.get_backend(A))
+    kernel!(backend, _workgroup(backend))(args...; ndrange = size(A) .- 2)
     return nothing
 end
 
@@ -211,15 +222,14 @@ end
     pgf_w,
     dx,
     dt,
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
         FT = typeof(g)
         half = FT(1/2)
-        ip1 = _xp1(i, Nx)
-        jm1 = _ym1(j, Ny)
+        ip1 = i + 1
+        jm1 = j - 1
         tmip = tmask[i, j] + tmask[ip1, j]
         ip_dDdt = _safe_div(dDdt[i, j] + dDdt[ip1, j], tmip)
         ip_D_drho = _safe_div(Ddrho[i, j] + Ddrho[ip1, j], tmip)
@@ -272,15 +282,14 @@ end
     pgf_w,
     dy,
     dt,
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
         FT = typeof(g)
         half = FT(0.5)
-        jp1 = _yp1(j, Ny)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        im1 = i - 1
         tmjp = tmask[i, j] + tmask[i, jp1]
         jp_dDdt = _safe_div(dDdt[i, j] + dDdt[i, jp1], tmjp)
         jp_D_drho = _safe_div(Ddrho[i, j] + Ddrho[i, jp1], tmjp)
@@ -387,8 +396,7 @@ end
 function step_u_momentum!(m, dt)
     upwind_advection_U(m)
     laplace_U(m)
-    nx, ny = size(m.U.future)
-    launch!(
+    launch_interior!(
         _step_u_momentum_kernel!,
         m.U.future,
         m.U.future,
@@ -412,16 +420,13 @@ function step_u_momentum!(m, dt)
         _front_pgf_weight(m.front_pressure, m.g),
         m.dx,
         dt,
-        nx,
-        ny,
     )
     return
 end
 function step_v_momentum!(m, dt)
     upwind_advection_V(m)
     laplace_V(m)
-    nx, ny = size(m.V.future)
-    launch!(
+    launch_interior!(
         _step_v_momentum_kernel!,
         m.V.future,
         m.V.future,
@@ -445,8 +450,6 @@ function step_v_momentum!(m, dt)
         _front_pgf_weight(m.front_pressure, m.g),
         m.dy,
         dt,
-        nx,
-        ny,
     )
     return
 end
@@ -669,14 +672,15 @@ end
 # On the C-grid U and V are not co-located, so the partner component is averaged
 # onto the point being limited — the same four-point stencil the bottom-drag
 # terms use (`u_bottom_drag` / `v_bottom_drag` in physics.jl).
-@kernel function _speed_scale_kernel!(sU, sV, @Const(U), @Const(V), v_cut, Nx, Ny)
-    i, j = @index(Global, NTuple)
+@kernel function _speed_scale_kernel!(sU, sV, @Const(U), @Const(V), v_cut)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     FT = typeof(v_cut)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        jm1 = j - 1
+        ip1 = i + 1
+        im1 = i - 1
         Vbar = (V[i, j] + V[i, jm1] + V[ip1, j] + V[ip1, jm1]) / FT(4)   # V at the U-point
         Ubar = (U[i, j] + U[im1, j] + U[i, jp1] + U[im1, jp1]) / FT(4)   # U at the V-point
         spdU = sqrt(U[i, j] * U[i, j] + Vbar * Vbar)
@@ -710,8 +714,7 @@ with a 4-point average of the other component; all factors are computed from the
 unlimited field before either component is scaled.
 """
 function clamp_velocities!(m)
-    nx, ny = size(m.U.future)
-    launch!(
+    launch_interior!(
         _speed_scale_kernel!,
         m.U.future,
         m.scaleU,
@@ -719,8 +722,6 @@ function clamp_velocities!(m)
         m.U.future,
         m.V.future,
         m.v_cut,
-        nx,
-        ny,
     )
     launch!(_apply_scale_kernel!, m.U.future, m.U.future, m.V.future, m.scaleU, m.scaleV)
     return

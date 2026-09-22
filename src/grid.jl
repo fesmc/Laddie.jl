@@ -81,50 +81,83 @@ function _icebase_slope(::JlGradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
 end
 
 # ============================================================================
-# Geometry{FT, A} — everything derived from the grid once a model has decided
-# which cells are active: the gap-resolved mask, the masks and wall indicators,
-# the ice-base slope and the Coriolis field.  Neighbour values of the masks and the
-# stagger counts (active cells in a two-point average) are not stored: the kernels
-# read them from the neighbouring cell, and the reference equation terms use
-# `ip_count` & co. (utils.jl).  Owned by
-# the Model; the Grid itself carries only what is independent of any modelling
-# choice.
-# A is the concrete matrix type (Matrix{FT} on CPU, CuArray{FT,2} on GPU).
-# resolved_mask is always kept as Matrix{Int} on the CPU for host-side branching.
+# Geometry{A, M} — everything derived from the grid once a model has decided
+# which cells are active.  Owned by the Model; the Grid itself carries only what is
+# independent of any modelling choice.
 # ============================================================================
 
-struct Geometry{FT,A<:AbstractMatrix{FT}}
-    # The grid's mask after the gaps boundary condition: under SinkGapsBC gap cells
-    # (4) are open ocean (0), under ConnectedGapsBC they stay 4.
-    resolved_mask::Matrix{Int}
+"""
+$(TYPEDEF)
+
+Everything derived from a [`Grid`](@ref) once a [`Model`](@ref) has decided which
+cells are active: the gap-resolved mask, the masks and wall indicators, the
+ice-base slope and the Coriolis field.  Read through the model, e.g. `model.tmask`.
+
+Neighbour values of the masks and the stagger counts (active cells in a two-point
+average) are not stored: the kernels read them from the neighbouring cell, and the
+reference equation terms use `ip_count` & co. (utils.jl).
+
+`A` is the float matrix type (`Matrix{FT}` on CPU, `CuArray{FT,2}` on GPU) and `M`
+the integer mask's, with no separate element-type parameter, so traced or dual
+arrays fit them as they are.  `resolved_mask` stays on the CPU for host-side
+branching.
+
+The wall-indicator names keep the reference's compass letters: read `N`/`S`/`E`/`W`
+as +y/−y/+x/−x.  The grounding-line (`gl…`) and land (`lnd…`) indicators partition
+the wall faces, with the grounding line taking precedence at a face touching both,
+so each wall face gets exactly one slip factor.
+
+# Fields
+$(TYPEDFIELDS)
+"""
+struct Geometry{A<:AbstractMatrix,M<:AbstractMatrix}
+    "the grid mask after the gaps condition: gap cells (`4`) become ocean (`0`) under `SinkGapsBC` and stay `4` under `ConnectedGapsBC` (CPU)"
+    resolved_mask::M
+    "ice-base slope along x (dimensionless)"
     dzdx::A
+    "ice-base slope along y (dimensionless)"
     dzdy::A
 
-    # Coriolis parameter.  `f` is the T-point field (diagnostic, and what the
-    # reference writes out); `fu`/`fv` are its face averages, which is what the
-    # momentum kernels need — on a C-grid the two components live on different
-    # faces, so one staggered copy each.
+    "Coriolis parameter on T-points (s⁻¹); diagnostic, and what the reference writes out"
     f::A
+    "Coriolis parameter averaged onto the u-points (s⁻¹), read by the momentum kernels"
     fu::A
+    "Coriolis parameter averaged onto the v-points (s⁻¹), read by the momentum kernels"
     fv::A
 
+    "dynamically active cells: shelf (`3`) and gaps (`4`), where every prognostic is stepped"
     tmask::A
+    "cells under ice (shelf, `3`): the subset of `tmask` that can melt"
     imask::A
+    "wall cells the plume cannot flow into: grounded ice and land"
     grd::A
+    "land cells (exposed bedrock and the border ring, `1`)"
     lnd::A
+    "open-ocean cells (`0`)"
     ocn::A
 
+    "grounding-line wall indicator of the u-faces on the +y side"
     glNu::A
+    "grounding-line wall indicator of the u-faces on the −y side"
     glSu::A
+    "grounding-line wall indicator of the v-faces on the +x side"
     glEv::A
+    "grounding-line wall indicator of the v-faces on the −x side"
     glWv::A
+    "land wall indicator of the u-faces on the +y side (excluding grounding-line faces)"
     lndNu::A
+    "land wall indicator of the u-faces on the −y side (excluding grounding-line faces)"
     lndSu::A
+    "land wall indicator of the v-faces on the +x side (excluding grounding-line faces)"
     lndEv::A
+    "land wall indicator of the v-faces on the −x side (excluding grounding-line faces)"
     lndWv::A
+    "ice-front cells: on ocean cells, the number of active neighbours"
     isf::A
 
+    "active u-points: between two active cells, or an active cell and the ocean beyond, not facing a wall"
     umask::A
+    "active v-points: between two active cells, or an active cell and the ocean beyond, not facing a wall"
     vmask::A
 end
 
@@ -214,14 +247,18 @@ function Geometry(
     resolved_mask = Matrix{Int}(mask)
     # Every field is a local of the same name (not every local is a field).
     vars = Base.@locals
-    return Geometry{FT,Matrix{FT}}((vars[fn] for fn in fieldnames(Geometry))...)
+    return Geometry((vars[fn] for fn in fieldnames(Geometry))...)
 end
 
 # ============================================================================
-# Grid{FT, A} — where the cells are and what is under them: the cell layout and
+# Grid{FT, A, V, I, M, R, S} — where the cells are and what is under them: the cell layout and
 # spacing, the (preprocessed, cropped) mask with gaps still marked 4, the ice draft
 # and bed, and the cell-centre coordinates.  Nothing here depends on a modelling
 # choice; everything that does lives in the Model's `Geometry`.
+# Every field type is a parameter, and no two kinds of field share one: FT for the
+# spacing, A for the float matrices, V for the coordinate vectors, I for the cell
+# counts, M for the integer mask, R for the crop ranges, S for the input size.  A
+# traced or dual type can then replace any of them on its own.
 # ============================================================================
 
 """
@@ -238,29 +275,29 @@ by the model, and so are the ice-base slope and the Coriolis field.
 # Fields
 $(TYPEDFIELDS)
 """
-struct Grid{FT,A<:AbstractMatrix{FT}}
+struct Grid{FT,A<:AbstractMatrix,V<:AbstractVector,I,M<:AbstractMatrix,R,S}
     "total cells in x, including the one-cell border ring"
-    Nx::Int
+    Nx::I
     "total cells in y, including the one-cell border ring"
-    Ny::Int
+    Ny::I
     "cell spacing in x (m)"
     dx::FT
     "cell spacing in y (m)"
     dy::FT
     "cell classification after preprocessing and cropping; gaps still marked `4` (CPU)"
-    mask::Matrix{Int}
+    mask::M
     "ice-base depth (m, ≤ 0), zeroed outside grounded ice and shelf"
     z_draft::A
     "bed elevation (m); `-Inf` when none was given (no cap on the layer thickness)"
     z_bed::A
     "interior cell-centre x coordinates (m, CPU)"
-    x::Vector{FT}
+    x::V
     "interior cell-centre y coordinates (m, CPU)"
-    y::Vector{FT}
+    y::V
     "row and column ranges of the input arrays that the grid keeps"
-    crop::Tuple{UnitRange{Int},UnitRange{Int}}
+    crop::R
     "size of the input arrays, before cropping"
-    input_size::Tuple{Int,Int}
+    input_size::S
 end
 
 """
@@ -344,7 +381,7 @@ function _grid(
     _validate_grid_mask(mask)
     nx_total, ny_total = size(mask)
     z_bed_ft = z_bed === nothing ? fill(FT(-Inf), nx_total, ny_total) : FT.(z_bed[r, c])
-    grid = Grid{FT,Matrix{FT}}(
+    grid = Grid(
         nx_total,
         ny_total,
         FT(dx),
@@ -352,9 +389,9 @@ function _grid(
         mask,
         _adjust_z_draft(mask, z_draft[r, c], FT),
         z_bed_ft,
-        x[r][2:(end-1)],
-        y[c][2:(end-1)],
-        (r, c),
+        Vector{FT}(x[r][2:(end-1)]),   # concrete CPU vectors, not lazy ranges
+        Vector{FT}(y[c][2:(end-1)]),
+        (UnitRange{Int}(r), UnitRange{Int}(c)),
         input_size,
     )
     return backend isa CPU ? grid : _grid_to_backend(grid, backend)

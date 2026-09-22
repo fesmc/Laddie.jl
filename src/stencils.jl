@@ -2,7 +2,12 @@
 # Periodic neighbour indices along each axis.  Arrays are [ix, iy]: `_xp1`/`_xm1`
 # step the first index, `_yp1`/`_ym1` the second.  These are index directions, not
 # compass directions — the grid axes of a projected domain need not align with
-# east/north (see the note on the shift primitives in utils.jl).
+# east/north (see the note on the shift primitives in utils.jl).  The time-step
+# stencils are launched over the interior (`launch_interior!`) and use plain
+# `i ± 1`; the wrap remains only where a stencil must also cover the border ring:
+# the collocated cross-velocities of `NonlinearLateralViscosity` (a u-point at
+# index 1 is a real face), the second-neighbour reads of the upstream momentum
+# advection, and the host-side diagnostics and output averages.
 @inline _xp1(i, N) = ifelse(i == N, 1, i + 1)
 @inline _xm1(i, N) = ifelse(i == 1, N, i - 1)
 @inline _yp1(j, N) = ifelse(j == N, 1, j + 1)
@@ -19,15 +24,14 @@
     @Const(tmask),
     dy2,
     dx2,
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        jm1 = j - 1
+        ip1 = i + 1
+        im1 = i - 1
         flux_N = D0jp[i, j] * (var[i, jp1] - var[i, j]) * tmask[i, jp1] / dy2
         flux_S = D0jm[i, j] * (var[i, jm1] - var[i, j]) * tmask[i, jm1] / dy2
         flux_E = D0ip[i, j] * (var[ip1, j] - var[i, j]) * tmask[ip1, j] / dx2
@@ -54,15 +58,14 @@ end
     inflow,
     dx,
     dy,
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        jm1 = j - 1
+        ip1 = i + 1
+        im1 = i - 1
         FT = typeof(inflow)
         z = zero(FT)
         keep = one(FT) - inflow          # weight of the raw neighbour value
@@ -107,14 +110,13 @@ _inflow_weight(::NoInflow, FT) = zero(FT)
     slip_land,
     dx,
     dy,
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
+        jp1 = j + 1
+        jm1 = j - 1
+        ip1 = i + 1
         FT = typeof(slip_gl)
         D0 = D[i, j] * tmask[i, j]
         De = D[ip1, j] * tmask[ip1, j]
@@ -168,14 +170,13 @@ end
     slip_land,
     dx,
     dy,
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        ip1 = i + 1
+        im1 = i - 1
         FT = typeof(slip_gl)
         D0 = D[i, j] * tmask[i, j]
         Dn = D[i, jp1] * tmask[i, jp1]
@@ -223,16 +224,15 @@ end
     A_h,
     dx2,
     dy2,
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     FT = typeof(slip_gl)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        jm1 = j - 1
+        ip1 = i + 1
+        im1 = i - 1
         o = one(FT)
         v = var[i, j]
         # Per-face wall drag, zero off the walls (see _upwind_advection_U_kernel!
@@ -267,16 +267,15 @@ end
     A_h,
     dx2,
     dy2,
-    Nx,
-    Ny,
 )
     FT = typeof(slip_gl)
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        jm1 = j - 1
+        ip1 = i + 1
+        im1 = i - 1
         o = one(FT)
         v = var[i, j]
         # See _laplace_U_kernel! for the slip-factor composition.
@@ -323,16 +322,15 @@ end
     visc_y,
     dx2,
     dy2,
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     FT = typeof(slip_gl)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        jm1 = j - 1
+        ip1 = i + 1
+        im1 = i - 1
         o = one(FT)
         v = var[i, j]
         dragN =
@@ -385,16 +383,15 @@ end
     visc_y,
     dx2,
     dy2,
-    Nx,
-    Ny,
 )
     FT = typeof(slip_gl)
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
+        jp1 = j + 1
+        jm1 = j - 1
+        ip1 = i + 1
+        im1 = i - 1
         o = one(FT)
         v = var[i, j]
         dragE =
@@ -428,8 +425,7 @@ end
 end
 
 function upwind_advection_T(out, m, var)
-    nx, ny = size(var)
-    launch!(
+    launch_interior!(
         _upwind_advection_T_kernel!,
         out,
         out,
@@ -443,8 +439,6 @@ function upwind_advection_T(out, m, var)
         _inflow_weight(m.boundary.open_ocean, m.FT),
         m.dx,
         m.dy,
-        nx,
-        ny,
     )
     return out
 end
@@ -506,12 +500,13 @@ end
     Nx,
     Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
+        ip1 = i + 1
+        im1 = i - 1
+        jp1 = j + 1
+        jm1 = j - 1
         u = U[i, j]
         half = one(u) / 2
         # Face mass fluxes of the U control volume: east and west sit on T-points,
@@ -559,12 +554,13 @@ end
     Nx,
     Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        ip1 = _xp1(i, Nx)
-        im1 = _xm1(i, Nx)
-        jp1 = _yp1(j, Ny)
-        jm1 = _ym1(j, Ny)
+        ip1 = i + 1
+        im1 = i - 1
+        jp1 = j + 1
+        jm1 = j - 1
         v = V[i, j]
         half = one(v) / 2
         MyN =
@@ -602,7 +598,7 @@ upwind_advection_V(m) = _advect_V(m, m.momentum_advection)
 
 function _advect_U(m, ::UpstreamMomentumAdvection)
     nx, ny = size(m.U.present)
-    launch!(
+    launch_interior!(
         _upstream_advection_U_kernel!,
         m.adv,
         m.adv,
@@ -623,7 +619,7 @@ end
 
 function _advect_V(m, ::UpstreamMomentumAdvection)
     nx, ny = size(m.V.present)
-    launch!(
+    launch_interior!(
         _upstream_advection_V_kernel!,
         m.adv,
         m.adv,
@@ -643,9 +639,8 @@ function _advect_V(m, ::UpstreamMomentumAdvection)
 end
 
 function _advect_U(m, ::CentredMomentumAdvection)
-    nx, ny = size(m.U.present)
     slip_gl, slip_land = _advection_slips(m)
-    launch!(
+    launch_interior!(
         _upwind_advection_U_kernel!,
         m.adv,
         m.adv,
@@ -666,15 +661,12 @@ function _advect_U(m, ::CentredMomentumAdvection)
         slip_land,
         m.dx,
         m.dy,
-        nx,
-        ny,
     )
     return m.adv
 end
 function _advect_V(m, ::CentredMomentumAdvection)
-    nx, ny = size(m.V.present)
     slip_gl, slip_land = _advection_slips(m)
-    launch!(
+    launch_interior!(
         _upwind_advection_V_kernel!,
         m.adv,
         m.adv,
@@ -695,14 +687,11 @@ function _advect_V(m, ::CentredMomentumAdvection)
         slip_land,
         m.dx,
         m.dy,
-        nx,
-        ny,
     )
     return m.adv
 end
 function laplace_T(out, m, var)
-    nx, ny = size(var)
-    launch!(
+    launch_interior!(
         _lapT_kernel!,
         out,
         out,
@@ -714,8 +703,6 @@ function laplace_T(out, m, var)
         m.tmask,
         m.dy^2,
         m.dx^2,
-        nx,
-        ny,
     )
     return out
 end
@@ -725,9 +712,8 @@ laplace_V(m) = laplace_V(m, m.lateral_viscosity)
 # PrescribedLateralViscosity: the plain Laplacian kernel, with the global A_h
 # folded into its output.
 function laplace_U(m, ::PrescribedLateralViscosity)
-    nx, ny = size(m.U.past)
     slip_gl, slip_land = _wall_slips(m)
-    launch!(
+    launch_interior!(
         _laplace_U_kernel!,
         m.lap,
         m.lap,
@@ -745,15 +731,12 @@ function laplace_U(m, ::PrescribedLateralViscosity)
         m.A_h,
         m.dx^2,
         m.dy^2,
-        nx,
-        ny,
     )
     return m.lap
 end
 function laplace_V(m, ::PrescribedLateralViscosity)
-    nx, ny = size(m.V.past)
     slip_gl, slip_land = _wall_slips(m)
-    launch!(
+    launch_interior!(
         _laplace_V_kernel!,
         m.lap,
         m.lap,
@@ -771,8 +754,6 @@ function laplace_V(m, ::PrescribedLateralViscosity)
         m.A_h,
         m.dx^2,
         m.dy^2,
-        nx,
-        ny,
     )
     return m.lap
 end
@@ -781,12 +762,12 @@ end
 # be applied inside the kernel rather than as a post-hoc scalar multiply; wall
 # drag keeps using the plain, unscaled m.A_h (see _nonlinear_laplace_U_kernel!).
 function laplace_U(m, lv::NonlinearLateralViscosity)
-    nx, ny = size(m.U.past)
     slip_gl, slip_land = _wall_slips(m)
+    nx, ny = size(m.V.past)
     # V collocated onto the U points, so the kernel can form |Δu| across a face.
     # Same 4-point average the drag term uses for the speed magnitude.
     launch!(_v_at_u_kernel!, m.VatU, m.VatU, m.V.past, nx, ny)
-    launch!(
+    launch_interior!(
         _nonlinear_laplace_U_kernel!,
         m.lap,
         m.lap,
@@ -807,17 +788,15 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
         lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
-        nx,
-        ny,
     )
     return m.lap
 end
 function laplace_V(m, lv::NonlinearLateralViscosity)
-    nx, ny = size(m.V.past)
     slip_gl, slip_land = _wall_slips(m)
+    nx, ny = size(m.U.past)
     # U collocated onto the V points; mirrors laplace_U above.
     launch!(_u_at_v_kernel!, m.UatV, m.UatV, m.U.past, nx, ny)
-    launch!(
+    launch_interior!(
         _nonlinear_laplace_V_kernel!,
         m.lap,
         m.lap,
@@ -838,8 +817,6 @@ function laplace_V(m, lv::NonlinearLateralViscosity)
         lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
-        nx,
-        ny,
     )
     return m.lap
 end
@@ -865,8 +842,7 @@ end
 
 # Staggered velocity averages shared by the momentum-advection and -step kernels.
 function precompute_advection_stencils!(m)
-    nx, ny = size(m.D.present)
-    launch!(
+    launch_interior!(
         _precompute_staggered_kernel!,
         m.Vip,
         m.Vip,
@@ -881,15 +857,12 @@ function precompute_advection_stencils!(m)
         m.U.present,
         m.vmask,
         m.umask,
-        nx,
-        ny,
     )
     return
 end
 
 function precompute_laplacian_stencils!(m)
-    nx, ny = size(m.D.present)
-    launch!(
+    launch_interior!(
         _precompute_laplacian_kernel!,
         m.D0ip,
         m.D0ip,
@@ -900,8 +873,6 @@ function precompute_laplacian_stencils!(m)
         m.D_on_vgrid,
         laplacian_thickness(m),
         m.tmask,
-        nx,
-        ny,
     )
     return
 end

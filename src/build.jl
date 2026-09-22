@@ -123,10 +123,37 @@ function _validate_border(mask, active)
         any(active, @view mask[:, end])
     on_border && throw(
         ArgumentError(
-            "active cells (3 = shelf, 4 = gap) on the domain border: the stencils wrap " *
-            "periodically, so the outermost ring must be ocean/land/grounded (0–2)",
+            "active cells (3 = shelf, 4 = gap) on the domain border: the stencils skip " *
+            "the outermost ring, so it must be ocean/land/grounded (0–2)",
         ),
     )
+    return
+end
+
+# The stencils are launched over the interior only (`launch_interior!`), so nothing
+# is computed on the border ring.  That is exact when every ring cell next to an
+# active cell is a wall (land or grounded ice), but not at an ice front: the
+# velocity faces between an active cell and an ocean ring cell would never be
+# updated.  Diagonal neighbours count, since the momentum stencils read them.
+function _validate_front_margin(mask, active)
+    nx, ny = size(mask)
+    on_ring(i, j) = i == 1 || i == nx || j == 1 || j == ny
+    for j = 2:(ny-1), i = 2:(nx-1)
+        (i in (2, nx - 1) || j in (2, ny - 1)) && active(mask[i, j]) || continue
+        for dj = -1:1, di = -1:1
+            ii, jj = i + di, j + dj
+            if on_ring(ii, jj) && mask[ii, jj] == 0
+                throw(
+                    ArgumentError(
+                        "active cell ($i, $j) borders the ocean cell ($ii, $jj) of the " *
+                        "domain border: an ice front must keep at least one ocean cell " *
+                        "between it and the outermost ring. Pad the mask with ocean, or " *
+                        "crop with MinRectangleDomainCropping(margin ≥ 2)",
+                    ),
+                )
+            end
+        end
+    end
     return
 end
 
@@ -134,6 +161,7 @@ end
 # is legal under SinkGapsBC, which demotes it to ocean) and precision agreement.
 function _validate_model_inputs(resolved_mask, forcing, params, FT)
     _validate_border(resolved_mask, v -> v == 3 || v == 4)
+    _validate_front_margin(resolved_mask, v -> v == 3 || v == 4)
     _float_type(params) === FT || throw(
         ArgumentError(
             "params is Params{$(_float_type(params))} but the grid is Grid{$FT}; " *
@@ -191,6 +219,13 @@ The model lives on the grid's backend and precision; `params` and `forcing` must
 match that precision (an `ArgumentError` is thrown otherwise).  It holds its
 initial fields only; secondary fields (melt, entrainment, …) are computed when a
 `Simulation` is constructed from it, because they depend on the time step.
+
+The outermost ring of the grid is never computed by the stencils.  It must hold no
+active cell (3 or 4), and no active cell may border one of its ocean cells: an ice
+front needs at least one ocean cell between it and the ring.  Walls (land or
+grounded ice) may sit on the ring right next to the shelf.  An `ArgumentError` is
+thrown otherwise; [`MinRectangleDomainCropping`](@ref) with its minimum margin of 2
+always satisfies this.
 
 # Example
 ```julia

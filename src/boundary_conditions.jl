@@ -68,8 +68,12 @@ Python LADDIE v1.x applies one factor, `slip = 1`, to every wall; reproduce it w
 `BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))`.
 
 Select via `BoundaryConditions(; grounding_line = PartialSlipGL(1.0))`.
+
+# Fields
+$(TYPEDFIELDS)
 """
 struct PartialSlipGL{FT} <: AbstractGroundingLineBC
+    "slip factor, from `0` (free slip) to `2` (no slip)"
     factor::FT
     PartialSlipGL(factor::Real) = (f = _check_slip(factor); new{typeof(f)}(f))
 end
@@ -122,8 +126,12 @@ between `0` (free slip) and `2` (no slip).  See [`PartialSlipGL`](@ref) for
 reproducing Python LADDIE v1.x.
 
 Select via `BoundaryConditions(; land = PartialSlipLand(1.0))`.
+
+# Fields
+$(TYPEDFIELDS)
 """
 struct PartialSlipLand{FT} <: AbstractLandBC
+    "slip factor, from `0` (free slip) to `2` (no slip)"
     factor::FT
     PartialSlipLand(factor::Real) = (f = _check_slip(factor); new{typeof(f)}(f))
 end

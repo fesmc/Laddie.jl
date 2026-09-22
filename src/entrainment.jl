@@ -26,11 +26,13 @@ differs from a literal reading of Eq. 14 (see [`GasparEntrainment`](@ref) and
 This is also what LADDIE v2 calls `'Gaspar1988'` (`laddie_physics.f90`,
 `compute_entrainment`); Laddie.jl's [`GasparEntrainment`](@ref) is a different form.
 
-- `mu`: dimensionless efficiency parameter (ISOMIP+ default: `2.5`).
-
 Select via `Params(; entrainment = LambertEntrainment(2.5))`.
+
+# Fields
+$(TYPEDFIELDS)
 """
 @kwdef struct LambertEntrainment{FT} <: AbstractEntrainment
+    "dimensionless efficiency parameter (ISOMIP+ default `2.5`)"
     mu::FT = 2.5
 end
 
@@ -49,11 +51,13 @@ the form the reference LADDIE actually integrates — for that, use the default
 [`LambertEntrainment`](@ref). The melt-buoyancy/detrainment term
 ``-(\\delta\\rho_b/\\delta\\rho)\\,\\dot{m}`` is identical in both.
 
-- `mu`: dimensionless efficiency parameter (ISOMIP+ default: `2.5`).
-
 Select via `Params(; entrainment = GasparEntrainment(2.5))`.
+
+# Fields
+$(TYPEDFIELDS)
 """
 @kwdef struct GasparEntrainment{FT} <: AbstractEntrainment
+    "dimensionless efficiency parameter (ISOMIP+ default `2.5`)"
     mu::FT = 2.5
 end
 
@@ -70,10 +74,12 @@ with ``|\\mathbf{u}|`` the speed at the T-point, ``\\delta\\rho`` the reduced de
 contrast and ``K_h``, ``A_h`` the lateral diffusivity and viscosity of `Params`.
 There is no detrainment.
 
-- `cl`: entrainment coefficient (default: `0.01775`).
-
 Select via `Params(; entrainment = HollandEntrainment(0.01775))`.
+
+# Fields
+$(TYPEDFIELDS)
 """
 @kwdef struct HollandEntrainment{FT} <: AbstractEntrainment
+    "entrainment coefficient (default `0.01775`)"
     cl::FT = 0.01775
 end

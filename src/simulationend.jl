@@ -22,10 +22,19 @@ call).  This is the default and exactly reproduces `run!(sim; days = t_end)`.
 
 Select via `Simulation(model; stop = FixedSimulationEnd(t_end = 30.0))` or
 `run!(sim; until = FixedSimulationEnd(t_end = 30.0))`.
+
+# Fields
+$(TYPEDFIELDS)
 """
-Base.@kwdef struct FixedSimulationEnd <: AbstractSimulationEnd
-    t_end::Float64 = 30.0
+Base.@kwdef struct FixedSimulationEnd{T} <: AbstractSimulationEnd
+    "duration of the `run!` call (days, default `30`)"
+    t_end::T = 30.0
+    FixedSimulationEnd{T}(t_end) where {T} = new{T}(t_end)
 end
+
+# Positional (and keyword) construction converts to floating point, as the
+# former `Float64` field did: `FixedSimulationEnd(t_end = 30)` holds 30.0.
+FixedSimulationEnd(t_end) = (t = float(t_end); FixedSimulationEnd{typeof(t)}(t))
 
 """
 $(TYPEDEF)
@@ -46,11 +55,19 @@ computational mode, and independent of the run length.  `t_end` is a safety cap 
 the duration of the `run!` call.
 
 Select via `run!(sim; until = SteadyStateEnd(tol = 1e-3, t_end = 365.0))`.
+
+# Fields
+$(TYPEDFIELDS)
 """
-Base.@kwdef struct SteadyStateEnd <: AbstractSimulationEnd
-    tol::Float64 = 1e-3
-    t_end::Float64 = 365.0
+Base.@kwdef struct SteadyStateEnd{T} <: AbstractSimulationEnd
+    "relative change in the mean melt rate between daily samples below which the run stops (default `1e-3`)"
+    tol::T = 1e-3
+    "cap on the duration of the `run!` call (days, default `365`)"
+    t_end::T = 365.0
+    SteadyStateEnd{T}(tol, t_end) where {T} = new{T}(tol, t_end)
 end
+
+SteadyStateEnd(tol, t_end) = (p = promote(float(tol), float(t_end)); SteadyStateEnd{eltype(p)}(p...))
 
 # Hard time cap in seconds (both criteria carry one).
 _end_seconds(e::AbstractSimulationEnd, spd) = e.t_end * spd

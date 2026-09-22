@@ -30,22 +30,19 @@
     @test size(mc.tmask) == (nx_i + 2, ny_i + 2)
     @test sum(mc.tmask) == sum(m.model.tmask)     # no active cell is lost
 
-    # margin = 1 is the tightest the solver accepts: the shelf bounding box plus
-    # the one-cell ring, dropping the outer grounded row and the far border
-    # row (8 rows -> 6).
-    m1 = Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
-                    domain_cropping = MinRectangleDomainCropping(margin = 1)); forcing, params)
-    @test size(m1.tmask) == (6, ny_i + 2)
-    @test sum(m1.tmask) == sum(m.model.tmask)
-
-    # margin = 2 keeps one more ring than that.
+    # margin = 2 is the tightest the solver accepts: the shelf bounding box plus
+    # a two-cell ring, dropping the far border row (8 rows -> 7).
     m2 = Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
                     domain_cropping = MinRectangleDomainCropping(margin = 2)); forcing, params)
     @test size(m2.tmask) == (7, ny_i + 2)
+    @test sum(m2.tmask) == sum(m.model.tmask)
 
-    # margin = 0 would put shelf cells on the wrapping border ring.
-    @test_throws ArgumentError Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
-                                    domain_cropping = MinRectangleDomainCropping(margin = 0))
+    # margin = 1 could leave an ice front against the border ring, which the
+    # stencils skip; margin = 0 would put shelf cells on the ring itself.
+    for margin in (0, 1)
+        @test_throws ArgumentError Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
+                                        domain_cropping = MinRectangleDomainCropping(; margin))
+    end
     @test MinRectangleDomainCropping().margin == 4
 end
 
@@ -81,7 +78,7 @@ end
     big = zeros(Int, nx_i + 8, ny_i + 2); big[:, [1, end]] .= 1; big[[1, end], :] .= 1
     big[5:6, 2:end-1] .= 2; big[7:end-3, 2:end-1] .= 3
     gcrop = Grid(big, zeros(size(big)), 2000.0, 2000.0;
-                 domain_cropping = MinRectangleDomainCropping(margin = 1))
+                 domain_cropping = MinRectangleDomainCropping(margin = 2))
     r, _ = gcrop.crop
     @test gcrop.x[1] == 2000.0 * first(r)
     # mask value outside 0:3
@@ -96,6 +93,20 @@ end
     edge = copy(mask); edge[1, 4] = 3
     @test_throws ArgumentError Model(Grid(edge, z_draft, 2000.0, 2000.0; FT);
                                      forcing, params)
+    # An ice front against an ocean cell of the border ring: the stencils skip the
+    # ring, so the front faces would never be updated.  Walls on the ring are fine,
+    # and so is a front with one ocean cell between it and the ring.
+    ring(v) = (r = fill(3, 10, 8); r[[1, end], :] .= v; r[:, [1, end]] .= v; r)
+    front_ring = ring(1); front_ring[end, 3:6] .= 0          # ocean ring next to the shelf
+    diag_ring = ring(1); diag_ring[end, 1] = 0               # ocean corner: shelf (end-1, 2) touches it diagonally
+    padded = ring(1); padded[end-1:end, 2:7] .= 0            # front, one ocean cell, then the ring
+    zd = fill(-300.0, 10, 8)
+    build(mk) = Model(Grid(mk, zd, 2000.0, 2000.0; FT, domain_cropping = NoDomainCropping());
+                      forcing, params)
+    @test_throws ArgumentError build(front_ring)
+    @test_throws ArgumentError build(diag_ring)
+    @test build(ring(1)) isa Model                           # land ring: walls are fine
+    @test build(padded) isa Model                            # one ocean cell before the ring
     # FT mismatch with params and with forcing
     @test_throws ArgumentError Model(Grid(mask, z_draft, 2000.0, 2000.0; FT);
                                      forcing, params = Params(; FT = Float32))

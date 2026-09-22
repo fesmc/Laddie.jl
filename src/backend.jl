@@ -13,28 +13,32 @@ function _moved_fields(x, ::Type{A0}, backend) where {A0}
     return map(fn -> mv(getfield(x, fn)), fieldnames(typeof(x)))
 end
 
+# The matrix type on `backend` with the element type of the source matrices `A0`.
+_moved_matrix_type(backend, ::Type{A0}) where {A0} = _matrix_type(backend, eltype(A0))
+
+# Grid, Geometry and IOState have every type parameter as a field type, so their
+# default constructors re-infer the parameters from the moved fields.
 _grid_to_backend(g::Grid{FT,A0}, backend) where {FT,A0} =
-    Grid{FT,_matrix_type(backend, FT)}(_moved_fields(g, A0, backend)...)
+    Grid(_moved_fields(g, A0, backend)...)
 
-_geometry_to_backend(g::Geometry{FT,A0}, backend) where {FT,A0} =
-    Geometry{FT,_matrix_type(backend, FT)}(_moved_fields(g, A0, backend)...)
+_geometry_to_backend(g::Geometry{A0}, backend) where {A0} =
+    Geometry(_moved_fields(g, A0, backend)...)
 
-_iostate_to_backend(io::IOState{FT,A0}, backend) where {FT,A0} =
-    IOState{FT,_matrix_type(backend, FT)}(_moved_fields(io, A0, backend)...)
+_iostate_to_backend(io::IOState{A0}, backend) where {A0} =
+    IOState(_moved_fields(io, A0, backend)...)
 
-_var_to_backend(v::Var{LX,LY,FT,A0}, backend) where {LX,LY,FT,A0} =
-    Var{LX,LY,FT,_matrix_type(backend, FT)}(_moved_fields(v, A0, backend)...)
+_var_to_backend(v::Var{LX,LY,A0}, backend) where {LX,LY,A0} =
+    Var{LX,LY,_moved_matrix_type(backend, A0)}(_moved_fields(v, A0, backend)...)
 
-_state_to_backend(s::State{FT}, backend) where {FT} = State{FT,_matrix_type(backend, FT)}(
-    map(fn -> _var_to_backend(getfield(s, fn), backend), fieldnames(State))...,
-)
+_state_to_backend(s::State, backend) =
+    State(map(fn -> _var_to_backend(getfield(s, fn), backend), fieldnames(State))...)
 
 # The scheme-dependent slots (GamT, Conv2, PM) are scalars or matrices; the
 # matrix ones follow the backend.
-function _cache_to_backend(c::Cache{FT,A0,G,C,P}, backend) where {FT,A0,G,C,P}
-    A = _matrix_type(backend, FT)
+function _cache_to_backend(c::Cache{A0,G,C,P}, backend) where {A0,G,C,P}
+    A = _moved_matrix_type(backend, A0)
     slot(T) = T <: AbstractArray ? A : T
-    return Cache{FT,A,slot(G),slot(C),slot(P)}(_moved_fields(c, A0, backend)...)
+    return Cache{A,slot(G),slot(C),slot(P)}(_moved_fields(c, A0, backend)...)
 end
 
 # Reconstruct a forcing struct with all float arrays moved to backend, so the

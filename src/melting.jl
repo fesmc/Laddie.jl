@@ -38,9 +38,10 @@ Params(; melting = PrescribedMelting(melt_matrix))   # 2D, same size as `mask`
 ```
 
 # Fields
- - `melt` — prescribed melt rate (m yr⁻¹ freshwater), scalar or matrix (default `0`).
+$(TYPEDFIELDS)
 """
 @kwdef struct PrescribedMelting{M} <: AbstractMelting
+    "prescribed melt rate (m yr⁻¹ freshwater), a scalar or a matrix the size of `mask` (default `0`)"
     melt::M = 0.0
 end
 
@@ -61,11 +62,10 @@ Params(; melting = FixedGamTMelting(0.00018))
 ```
 
 # Fields
- - `gamTfix`: heat transfer coefficient, dimensionless in the reference's
-   formulation (ISOMIP+ default: `1.8e-4`).
-
+$(TYPEDFIELDS)
 """
 @kwdef struct FixedGamTMelting{FT} <: AbstractMelting
+    "heat transfer coefficient, dimensionless in the reference formulation (ISOMIP+ default `1.8e-4`)"
     gamTfix::FT = 0.00018
 end
 
@@ -90,9 +90,10 @@ Params(; melting = UStarGamTMelting(3.0e-2))
 ```
 
 # Fields
- - `Gamma_T`: dimensionless heat transfer coefficient (default `3.0e-2`).
+$(TYPEDFIELDS)
 """
 @kwdef struct UStarGamTMelting{FT} <: AbstractMelting
+    "dimensionless heat transfer coefficient (default `3.0e-2`)"
     Gamma_T::FT = 3.0e-2
 end
 
@@ -138,14 +139,14 @@ Params(; melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6))
 ```
 
 # Fields
- - `Pr`:  Prandtl number (default `13.8`); must exceed `(8.68/12.5)^1.5 ≈ 0.58`.
- - `Sc`:  Schmidt number (default `2432.0`); same bound as `Pr`.
- - `nu0`: molecular kinematic viscosity, m² s⁻¹ (default `1.95e-6`); must be positive.
-
+$(TYPEDFIELDS)
 """
 @kwdef struct TurbulentGamTMelting{FT} <: AbstractMelting
+    "Prandtl number (default `13.8`); must exceed `(8.68/12.5)^1.5 ≈ 0.58`"
     Pr::FT = 13.8
+    "Schmidt number (default `2432.0`); same bound as `Pr`"
     Sc::FT = 2432.0
+    "molecular kinematic viscosity (m² s⁻¹, default `1.95e-6`); must be positive"
     nu0::FT = 1.95e-6
     function TurbulentGamTMelting(Pr::FT, Sc::FT, nu0::FT) where {FT}
         for (name, x) in (("Pr", Pr), ("Sc", Sc))

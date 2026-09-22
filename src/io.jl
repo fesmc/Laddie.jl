@@ -16,10 +16,17 @@ Optional debug configuration passed via `Simulation(model; debug = DebugConfig(.
 Set `check_nans = true` to check every prognostic variable for NaNs over the
 shelf mask after each sub-step of `leapfrog_step!`.  When a NaN is found the
 run errors immediately, naming the first variable to blow up and the time.
+
+# Fields
+$(TYPEDFIELDS)
 """
-Base.@kwdef struct DebugConfig
-    check_nans::Bool = false
+Base.@kwdef struct DebugConfig{B}
+    "check the prognostic fields for NaNs after each leapfrog sub-step (default `false`)"
+    check_nans::B = false
+    DebugConfig{B}(check_nans) where {B} = new{B}(check_nans)
 end
+
+DebugConfig(check_nans) = DebugConfig{Bool}(check_nans)
 
 # ============================================================================
 # OutputConfig — static output configuration (all fields have defaults).
@@ -45,103 +52,149 @@ OutputConfig(; name = "warm", saveday = 1.0, save_entr = true)
 # Fields
 $(TYPEDFIELDS)
 """
-Base.@kwdef struct OutputConfig
+Base.@kwdef struct OutputConfig{T,B}
     "run name; files go to `joinpath(resultdir, name)`"
     name::String = "run"
     "averaging and output interval in days; `0` disables all file I/O"
-    saveday::Float64 = 0.0
+    saveday::T = 0.0
     "interval of the log-file diagnostics in days (must be positive)"
-    diagday::Float64 = 1.0
+    diagday::T = 1.0
     "interval of the restart files in days (must be positive)"
-    restday::Float64 = 30.0
+    restday::T = 30.0
     "parent directory of the run directory"
     resultdir::String = "./output/"
     "log file name inside the run directory"
     logfilename::String = "log.txt"
     "reserved: an existing run directory is currently always reused"
-    forcenewdir::Bool = true
+    forcenewdir::B = true
     "write `Ut`, the x-velocity averaged onto T-points (m s⁻¹)"
-    save_Ut::Bool = true
+    save_Ut::B = true
     "write `Uu`, the x-velocity on its own u-points (m s⁻¹)"
-    save_Uu::Bool = false
+    save_Uu::B = false
     "write `Vt`, the y-velocity averaged onto T-points (m s⁻¹)"
-    save_Vt::Bool = true
+    save_Vt::B = true
     "write `Vv`, the y-velocity on its own v-points (m s⁻¹)"
-    save_Vv::Bool = false
+    save_Vv::B = false
     "write `D`, the layer thickness (m)"
-    save_D::Bool = true
+    save_D::B = true
     "write `T`, the layer temperature (°C)"
-    save_T::Bool = true
+    save_T::B = true
     "write `S`, the layer salinity (psu)"
-    save_S::Bool = true
+    save_S::B = true
     "write `melt`, the basal melt rate (m yr⁻¹)"
-    save_melt::Bool = true
+    save_melt::B = true
     "write `entr`, the entrainment rate (m yr⁻¹)"
-    save_entr::Bool = false
+    save_entr::B = false
     "write `ent2`, the extra entrainment that keeps `D ≥ D_min` (m yr⁻¹)"
-    save_ent2::Bool = false
+    save_ent2::B = false
     "write `detr`, the detrainment rate (m yr⁻¹)"
-    save_detr::Bool = false
+    save_detr::B = false
     "write `Tbase`, the temperature at the ice–ocean interface (°C)"
-    save_Tbase::Bool = false
+    save_Tbase::B = false
     "write `Tamb`, the ambient temperature at the layer base (°C)"
-    save_Tamb::Bool = false
+    save_Tamb::B = false
     "write `gammaT`, the turbulent heat-exchange velocity (m s⁻¹)"
-    save_gammaT::Bool = false
+    save_gammaT::B = false
     "write `ustar`, the friction velocity at the ice base (m s⁻¹)"
-    save_ustar::Bool = false
+    save_ustar::B = false
     "write `drho`, the reduced density contrast with the ambient water (–)"
-    save_drho::Bool = false
+    save_drho::B = false
     "write `convection`, the fraction of time a cell was convectively unstable"
-    save_convection::Bool = false
+    save_convection::B = false
     "write the static masks: `mask` and the margin flags `at_isf`, `at_grl`, `at_lnd`, `at_gap`"
-    save_mask::Bool = true
+    save_mask::B = true
     "write the static ice draft `z_draft` (m)"
-    save_zb::Bool = true
+    save_zb::B = true
+    OutputConfig{T,B}(args...) where {T,B} = new{T,B}(args...)
+end
+
+# Positional (and keyword) construction converts the intervals to one float type
+# and the switches to Bool, as the former `Float64`/`Bool` fields did.
+function OutputConfig(name, saveday, diagday, restday, resultdir, logfilename, flags...)
+    days = promote(float(saveday), float(diagday), float(restday))
+    return OutputConfig{eltype(days),Bool}(
+        name,
+        days...,
+        resultdir,
+        logfilename,
+        map(Bool, flags)...,
+    )
 end
 
 # ============================================================================
-# IOState{FT, A} — mutable runtime I/O state: counters, run directory, log, and
-# time-average accumulators.  Owned by the Simulation;
-# the simulated time itself lives in its `Clock`.
-# A is the concrete matrix type (matches Grid/State/Cache).  Accumulators are
-# allocated 0×0 at construction; `prepare_output!` replaces the enabled ones
-# with full-size device arrays (the `save_*` flags in OutputConfig guard access).
-# The cell-centre coordinates written to NetCDF live on the Grid.
+# IOState{A, I, T} — mutable runtime I/O state.  Owned by the Simulation.
 # ============================================================================
 
-mutable struct IOState{FT,A<:AbstractMatrix{FT}}
-    # Time-average accumulation window
-    count::Int        # steps accumulated since the last output write
-    t_accum::Float64    # simulated time accumulated since the last write (s)
-    time_index::Int     # number of time slices written to output.nc so far
-    # Next-event times for periodic I/O (s on the simulation clock)
-    nextsave::Float64
-    nextdiag::Float64
-    nextrest::Float64
-    # Run directory and log
+"""
+$(TYPEDEF)
+
+Runtime I/O state of a [`Simulation`](@ref): counters, next-event times, run
+directory, log, and the time-average accumulators.  The simulated time itself lives
+in the [`Clock`](@ref), and the cell-centre coordinates written to NetCDF on the
+[`Grid`](@ref).
+
+`A` is the matrix type (matching the grid, state and cache).  The accumulators are
+allocated 0×0 at construction; `prepare_output!` replaces the enabled ones with
+full-size device arrays (the `save_*` flags of [`OutputConfig`](@ref) guard access).
+Each accumulator sums its field over the current averaging window.
+
+# Fields
+$(TYPEDFIELDS)
+"""
+mutable struct IOState{A<:AbstractMatrix,I,T}
+    "steps accumulated since the last output write"
+    count::I
+    "simulated time accumulated since the last output write (s)"
+    t_accum::T
+    "number of time slices written to `output.nc` so far"
+    time_index::I
+    "clock time of the next output write (s)"
+    nextsave::T
+    "clock time of the next log diagnostics (s)"
+    nextdiag::T
+    "clock time of the next restart write (s)"
+    nextrest::T
+    "run directory (empty while I/O is disabled)"
     rundir::String
+    "path of the log file"
     logfile::String
-    walltime_start::Float64
-    # Restart file this simulation was started from ("" for a fresh start)
+    "wall-clock time at which the run started (s since the epoch)"
+    walltime_start::T
+    "restart file this simulation was started from (empty for a fresh start)"
     restartfile::String
-    # Time-average accumulators
+    "accumulated x-velocity on T-points of the averaging window"
     Utav::A
+    "accumulated x-velocity on u-points of the averaging window"
     Uuav::A
+    "accumulated y-velocity on T-points of the averaging window"
     Vtav::A
+    "accumulated y-velocity on v-points of the averaging window"
     Vvav::A
+    "accumulated layer thickness of the averaging window"
     Dav::A
+    "accumulated layer temperature of the averaging window"
     Tav::A
+    "accumulated layer salinity of the averaging window"
     Sav::A
+    "accumulated basal melt rate of the averaging window"
     meltav::A
+    "accumulated entrainment rate of the averaging window"
     entrav::A
+    "accumulated extra entrainment `ent2` of the averaging window"
     ent2av::A
+    "accumulated detrainment rate of the averaging window"
     detrav::A
+    "accumulated interface temperature of the averaging window"
     Tbav::A
+    "accumulated ambient temperature of the averaging window"
     Taav::A
+    "accumulated heat transfer velocity of the averaging window"
     gamTav::A
+    "accumulated friction velocity of the averaging window"
     ustarav::A
+    "accumulated density contrast of the averaging window"
     drhoav::A
+    "accumulated convective-instability indicator of the averaging window"
     convav::A
 end
 

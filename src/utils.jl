@@ -56,15 +56,16 @@ Cap the layer thickness at a fixed value, `D <= D_max`, independent of
 bathymetry: the cap is the same everywhere, whether or not a bed elevation was
 given.  Read the warning on [`AbstractMaxLayerThickness`](@ref) first.
 
-- `D_max`: maximum layer thickness in metres (default `100`; converted to the
-  model's precision by `Params`).
-
 Select via `Params(; max_layer_thickness = AbsoluteMaxLayerThickness(100.0))`.
 
 See also [`NoMaxLayerThickness`](@ref) (the default) and
 [`RelativeMaxLayerThickness`](@ref).
+
+# Fields
+$(TYPEDFIELDS)
 """
 @kwdef struct AbsoluteMaxLayerThickness{FT} <: AbstractMaxLayerThickness
+    "maximum layer thickness (m, default `100`; converted to the model precision by `Params`)"
     D_max::FT = 100.0f0
 end
 
@@ -76,11 +77,13 @@ Cap the layer thickness at a fraction of the local water-column depth,
 plume.  Like [`TopographicMaxLayerThickness`](@ref) this only bites when a bed
 elevation `z_bed` was given to [`Grid`](@ref).
 
-- `f_D_max`: fraction of the water column (default `4/5`).
-
 Select via `Params(; max_layer_thickness = RelativeMaxLayerThickness(0.8))`.
+
+# Fields
+$(TYPEDFIELDS)
 """
 @kwdef struct RelativeMaxLayerThickness{FT} <: AbstractMaxLayerThickness
+    "fraction of the local water column (default `4/5`)"
     f_D_max::FT = 4/5
 end
 

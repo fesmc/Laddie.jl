@@ -14,23 +14,23 @@ function _range_str(a, d)
     return lo == hi ? string(_r(lo, d)) : "$(_r(lo, d)) … $(_r(hi, d))"
 end
 
-Base.show(io::IO, v::Var{LX,LY,FT}) where {LX,LY,FT} = print(
+Base.show(io::IO, v::Var{LX,LY}) where {LX,LY} = print(
     io,
-    "Var{$(nameof(LX)), $(nameof(LY))}($FT, $(_sz(v.present)), ",
+    "Var{$(nameof(LX)), $(nameof(LY))}($(eltype(v.present)), $(_sz(v.present)), ",
     "levels: past/present/future)",
 )
 
-Base.show(io::IO, s::State{FT}) where {FT} =
-    print(io, "State{$FT}: D, U, V, T, S — 3-level Vars of $(_sz(s.D.present))")
+Base.show(io::IO, s::State) =
+    print(io, "State{$(eltype(s.D.present))}: D, U, V, T, S — 3-level Vars of $(_sz(s.D.present))")
 
-function Base.show(io::IO, c::Cache{FT}) where {FT}
+function Base.show(io::IO, c::Cache)
     nmat = count(fn -> getfield(c, fn) isa AbstractMatrix, fieldnames(typeof(c)))
-    print(io, "Cache{$FT}: $nmat scratch/diagnostic arrays of $(_sz(c.melt))")
+    print(io, "Cache{$(eltype(c.melt))}: $nmat scratch/diagnostic arrays of $(_sz(c.melt))")
 end
 
-function Base.show(io::IO, s::IOState{FT}) where {FT}
+function Base.show(io::IO, s::IOState{A}) where {A}
     rd = isempty(s.rundir) ? "I/O disabled" : "rundir = \"$(s.rundir)\""
-    print(io, "IOState{$FT}: $(s.time_index) output slices, $rd")
+    print(io, "IOState{$(eltype(A))}: $(s.time_index) output slices, $rd")
 end
 
 # Generic one-liner for a profile forcing.  extrema/length are reductions, so this
@@ -74,9 +74,9 @@ function Base.show(io::IO, ::MIME"text/plain", g::Grid)
     )
 end
 
-Base.show(io::IO, g::Geometry{FT}) where {FT} = print(
+Base.show(io::IO, g::Geometry) = print(
     io,
-    "Geometry{$FT}: $(count(>(0), g.tmask)) active cells ",
+    "Geometry{$(eltype(g.tmask))}: $(count(>(0), g.tmask)) active cells ",
     "($(count(>(0), g.imask)) under ice)",
 )
 
@@ -128,19 +128,19 @@ Base.show(io::IO, ts::AdaptiveDt) = print(
 
 _backend_name(m::Model) = nameof(typeof(KA.get_backend(getfield(m, :grid).z_draft)))
 
-function Base.show(io::IO, m::Model{FT}) where {FT}
+function Base.show(io::IO, m::Model)
     g = getfield(m, :grid)
     ocean = getfield(m, :forcing).ocean
     print(
         io,
-        "Model{$FT} on $(_backend_name(m)): $(g.Nx - 2)×$(g.Ny - 2) interior, ",
+        "Model{$(m.FT)} on $(_backend_name(m)): $(g.Nx - 2)×$(g.Ny - 2) interior, ",
         "$(nameof(typeof(ocean))) forcing",
     )
 end
 
-function Base.show(io::IO, ::MIME"text/plain", m::Model{FT}) where {FT}
+function Base.show(io::IO, ::MIME"text/plain", m::Model)
     g = getfield(m, :grid)
-    println(io, "Model{$FT} on $(_backend_name(m))")
+    println(io, "Model{$(m.FT)} on $(_backend_name(m))")
     println(
         io,
         "  grid:    $(g.Nx - 2)×$(g.Ny - 2) interior cells, dx = $(g.dx) m, ",
@@ -165,16 +165,16 @@ Base.show(io::IO, o::OutputConfig) = print(
     "OutputConfig: disabled (saveday = 0)",
 )
 
-Base.show(io::IO, sim::Simulation{M,FT}) where {M,FT} = print(
+Base.show(io::IO, sim::Simulation) = print(
     io,
-    "Simulation{$FT} on $(_backend_name(sim.model)) at day ",
+    "Simulation{$(sim.model.FT)} on $(_backend_name(sim.model)) at day ",
     "$(_days(sim.clock.time, sim.model.seconds_per_day)), dt = $(sim.clock.dt) s",
 )
 
-function Base.show(io::IO, ::MIME"text/plain", sim::Simulation{M,FT}) where {M,FT}
+function Base.show(io::IO, ::MIME"text/plain", sim::Simulation)
     m = sim.model
     c = sim.clock
-    println(io, "Simulation{$FT} on $(_backend_name(m))")
+    println(io, "Simulation{$(m.FT)} on $(_backend_name(m))")
     println(io, "  model:   ", m)
     println(
         io,

@@ -43,8 +43,12 @@ The default is the ISOMIP+ value ``f = -1.37\\times10^{-4}`` s⁻¹, which
 corresponds to 69.95 °S.
 
 Select via `Params(; coriolis = CoriolisParameter0D(-1.4e-4))`.
+
+# Fields
+$(TYPEDFIELDS)
 """
 @kwdef struct CoriolisParameter0D{FT} <: AbstractCoriolisParameter
+    "Coriolis parameter (s⁻¹, default the ISOMIP+ value `-1.37e-4`)"
     f::FT = DEFAULT_CORIOLIS_F
 end
 
@@ -69,8 +73,12 @@ feels it even though the range looks narrow.
 Params(; coriolis = CoriolisParameter2D(-75.0))      # f-plane at 75°S
 Params(; coriolis = CoriolisParameter2D(lat_matrix)) # varying with latitude
 ```
+
+# Fields
+$(TYPEDFIELDS)
 """
 @kwdef struct CoriolisParameter2D{L} <: AbstractCoriolisParameter
+    "latitude in degrees north: a scalar (f-plane) or a full-domain matrix the size of `mask`"
     lat::L = DEFAULT_LATITUDE
 end
 

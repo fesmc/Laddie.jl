@@ -94,7 +94,9 @@ end
         # so trunc always receives a representable value.
         depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
         depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
-        idx_lo = trunc(Int, depth_idx)
+        # unsafe_trunc: the value is in range after the clamp, and the checked
+        # `trunc` leaves an InexactError branch (a trap) that Reactant cannot raise.
+        idx_lo = unsafe_trunc(Int, depth_idx)
         idx_hi = clamp(idx_lo + 1, 0, nz - 1)
         weight = depth_idx - FT(idx_lo)
         Ta[i, j] = weight * Tz[idx_hi+1] + (one(FT) - weight) * Tz[idx_lo+1]
@@ -466,8 +468,7 @@ alternative to the buoyancy-flux form of Lambert et al. (2023, Eq. 14).
 function _compute_entrainment!(m, ep::HollandEntrainment)
     coeff = ep.cl * m.K_h / m.A_h^2
     drho_coeff = m.g * m.K_h / m.A_h
-    nx, ny = size(m.entr)
-    launch!(
+    launch_interior!(
         _holland_entrainment_kernel!,
         m.entr,
         m.entr,
@@ -479,8 +480,6 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
         m.tmask,
         coeff,
         drho_coeff,
-        nx,
-        ny,
     )
 end
 
@@ -597,8 +596,7 @@ end
 # Friction velocity at the T-point: u★ = √(C_d_top · (im_half(U)² + jm_half(V)² + u_tide²))
 # im_half(U)[i,j] = (U[i,j] + U[i−1,j]) / 2,  jm_half(V)[i,j] = (V[i,j] + V[i,j−1]) / 2
 function update_ustar!(m)
-    nx, ny = size(m.ustar)
-    launch!(
+    launch_interior!(
         _ustar_kernel!,
         m.ustar,
         m.ustar,
@@ -607,8 +605,6 @@ function update_ustar!(m)
         m.tmask,
         m.C_d_top,
         m.u_tide,
-        nx,
-        ny,
     )
 end
 
@@ -619,15 +615,14 @@ end
     @Const(tmask),
     C_d_top,
     u_tide,
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
         FT = typeof(C_d_top)
         half = FT(0.5)
-        im1 = _xm1(i, Nx)
-        jm1 = _ym1(j, Ny)
+        im1 = i - 1
+        jm1 = j - 1
         u_im = (U[i, j] + U[im1, j]) * half
         v_jm = (V[i, j] + V[i, jm1]) * half
         ustar[i, j] =
@@ -698,15 +693,14 @@ end
     @Const(tmask),
     coeff,
     drho_coeff,
-    Nx,
-    Ny,
 )
-    i, j = @index(Global, NTuple)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
         FT = typeof(coeff)
         half = FT(0.5)
-        im1 = _xm1(i, Nx)
-        jm1 = _ym1(j, Ny)
+        im1 = i - 1
+        jm1 = j - 1
         u_im = (U[i, j] + U[im1, j]) * half
         v_jm = (V[i, j] + V[i, jm1]) * half
         speed_sq =

@@ -82,15 +82,15 @@ end
 # CFL signal.  `allow_grow = false` (startup rescue) only ever shrinks, so a
 # small initial CFL (e.g. zero velocity at t = 0) can never inflate dt0.
 function _controller_dt(ts::AdaptiveDt, dt, cfl; allow_grow::Bool)
-    target = Float64(ts.cfl_target)
-    dt = Float64(dt)
-    dtmin = Float64(ts.dtmin)
-    dtmax = Float64(ts.dtmax)
+    target = _float64(ts.cfl_target)
+    dt = _float64(dt)
+    dtmin = _float64(ts.dtmin)
+    dtmax = _float64(ts.dtmax)
     (cfl > 0 && isfinite(cfl)) || return clamp(dt, dtmin, dtmax)
     if cfl > target                                            # above target → shrink now
-        dtn = dt * (target / cfl)^Float64(ts.q)
-    elseif allow_grow && cfl < Float64(ts.grow_hyst) * target  # well below → grow slowly
-        dtn = dt * min((target / cfl)^Float64(ts.q), Float64(ts.max_growth))
+        dtn = dt * (target / cfl)^_float64(ts.q)
+    elseif allow_grow && cfl < _float64(ts.grow_hyst) * target  # well below → grow slowly
+        dtn = dt * min((target / cfl)^_float64(ts.q), _float64(ts.max_growth))
     else                                                       # hysteresis band → hold
         return clamp(dt, dtmin, dtmax)
     end

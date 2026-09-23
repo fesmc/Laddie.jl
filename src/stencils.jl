@@ -13,6 +13,15 @@
 @inline _yp1(j, N) = ifelse(j == N, 1, j + 1)
 @inline _ym1(j, N) = ifelse(j == 1, N, j - 1)
 @inline _safe_div(a, b) = iszero(b) ? zero(a) : a / b
+# The plain value of a number, without derivative parts.  Used where a value
+# leaves the differentiable computation: integer indices, the dt controller,
+# display and file output.  The ForwardDiff extension strips `Dual` numbers.
+@inline _primal(x) = x
+_float64(x) = Float64(_primal(x))
+# `sqrt` for arguments that reach exactly zero (a speed at rest, a clipped
+# discriminant).  Plain `sqrt` for floats; the ForwardDiff extension returns a
+# zero derivative there instead of the NaN of `0 × Inf`.
+@inline _safe_sqrt(x) = sqrt(x)
 
 @kernel function _lapT_kernel!(
     out,
@@ -352,10 +361,10 @@ end
         dW = var[im1, j] - v
         # |Δu| across each face: this component's difference combined with the
         # cross-component's difference over the same displacement.
-        aN = sqrt(dN * dN + (other[i, jp1] - ov)^2)
-        aS = sqrt(dS * dS + (other[i, jm1] - ov)^2)
-        aE = sqrt(dE * dE + (other[ip1, j] - ov)^2)
-        aW = sqrt(dW * dW + (other[im1, j] - ov)^2)
+        aN = _safe_sqrt(dN * dN + (other[i, jp1] - ov)^2)
+        aS = _safe_sqrt(dS * dS + (other[i, jm1] - ov)^2)
+        aE = _safe_sqrt(dE * dE + (other[ip1, j] - ov)^2)
+        aW = _safe_sqrt(dW * dW + (other[im1, j] - ov)^2)
         flux_N = visc_y * aN * jpD * dN / dy2 * (o - ocn[i, jp1]) - dragN
         flux_S = visc_y * aS * jmD * dS / dy2 * (o - ocn[i, jm1]) - dragS
         flux_E = visc_x * aE * D0[ip1, j] * dE / dx2 * (o - ocn[ip1, j])
@@ -412,10 +421,10 @@ end
         dE = var[ip1, j] - v
         dW = var[im1, j] - v
         # See _nonlinear_laplace_U_kernel! for the |Δu| composition.
-        aN = sqrt(dN * dN + (other[i, jp1] - ov)^2)
-        aS = sqrt(dS * dS + (other[i, jm1] - ov)^2)
-        aE = sqrt(dE * dE + (other[ip1, j] - ov)^2)
-        aW = sqrt(dW * dW + (other[im1, j] - ov)^2)
+        aN = _safe_sqrt(dN * dN + (other[i, jp1] - ov)^2)
+        aS = _safe_sqrt(dS * dS + (other[i, jm1] - ov)^2)
+        aE = _safe_sqrt(dE * dE + (other[ip1, j] - ov)^2)
+        aW = _safe_sqrt(dW * dW + (other[im1, j] - ov)^2)
         flux_N = visc_y * aN * D0[i, jp1] * dN / dy2 * (o - ocn[i, jp1])
         flux_S = visc_y * aS * D0[i, j] * dS / dy2 * (o - ocn[i, j])
         flux_E = visc_x * aE * ipD * dE / dx2 * (o - ocn[ip1, j]) - dragE

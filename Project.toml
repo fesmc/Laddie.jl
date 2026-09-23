@@ -12,8 +12,15 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
+[weakdeps]
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+
+[extensions]
+LaddieForwardDiffExt = "ForwardDiff"
+
 [compat]
 DocStringExtensions = "0.9.5"
+ForwardDiff = "1"
 JLD2 = "0.6.4"
 KernelAbstractions = "0.9.41"
 NCDatasets = "0.14.15"

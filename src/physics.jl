@@ -56,7 +56,7 @@ end
         quad_c = cp_over_Leff * gT * gS * (Tf_depth - T[i, j] + l1 * S[i, j])
         disc = quad_b * quad_b - FT(4) * quad_c
         disc = ifelse(disc < zero(FT), zero(FT), disc)
-        melt_rate = (-quad_b + sqrt(disc)) / FT(2)
+        melt_rate = (-quad_b + _safe_sqrt(disc)) / FT(2)
         # Only ice-covered cells melt.  Gap cells (in tmask, not in imask) are ice-free,
         # so they add no meltwater volume and no buoyancy — and their Tb is set to T,
         # which makes the ice-ocean heat exchange -gamT*(T - Tb) in the temperature
@@ -96,7 +96,7 @@ end
         depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
         # unsafe_trunc: the value is in range after the clamp, and the checked
         # `trunc` leaves an InexactError branch (a trap) that Reactant cannot raise.
-        idx_lo = unsafe_trunc(Int, depth_idx)
+        idx_lo = unsafe_trunc(Int, _primal(depth_idx))
         idx_hi = clamp(idx_lo + 1, 0, nz - 1)
         weight = depth_idx - FT(idx_lo)
         Ta[i, j] = weight * Tz[idx_hi+1] + (one(FT) - weight) * Tz[idx_lo+1]
@@ -705,7 +705,7 @@ end
         v_jm = (V[i, j] + V[i, jm1]) * half
         speed_sq =
             max(zero(FT), u_im * u_im + v_jm * v_jm - drho_coeff * drho[i, j] * D[i, j])
-        entr[i, j] = coeff * sqrt(speed_sq) * tmask[i, j]
+        entr[i, j] = coeff * _safe_sqrt(speed_sq) * tmask[i, j]
         detr[i, j] = zero(FT)
     end
 end
@@ -783,7 +783,8 @@ end
 @inline u_coriolis(m) = m.fu .* ip_t(m, m.D.present .* m.Vjm)
 # Cd·U·|u|  (quadratic bottom drag)
 @inline u_bottom_drag(m) =
-    m.C_d .* m.U.present .* sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
+    m.C_d .* m.U.present .*
+    _safe_sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
 # Ah·∇²(DU)  (lateral diffusion; the A_h/shear scaling is applied inside
 # laplace_U, since it dispatches on `Params.lateral_viscosity`)
 @inline u_diffusion(m) = copy(laplace_U(m))
@@ -809,7 +810,8 @@ end
 @inline v_coriolis(m) = m.fv .* jp_t(m, m.D.present .* m.Uim)
 # Cd·V·|u|  (quadratic bottom drag)
 @inline v_bottom_drag(m) =
-    m.C_d .* m.V.present .* sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)
+    m.C_d .* m.V.present .*
+    _safe_sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)
 # Ah·∇²(DV)  (lateral diffusion; the A_h/shear scaling is applied inside
 # laplace_V, since it dispatches on `Params.lateral_viscosity`)
 @inline v_diffusion(m) = copy(laplace_V(m))

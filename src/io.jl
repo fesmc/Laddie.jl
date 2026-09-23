@@ -314,8 +314,8 @@ _log_dt_change!(sim, dt_old, dt_new, cfl) = _print2log(
     @sprintf(
         "%.3f days: dt %.1f → %.1f s (CFL %.2f)",
         _t_days(sim),
-        Float64(dt_old),
-        Float64(dt_new),
+        _float64(dt_old),
+        _float64(dt_new),
         cfl
     )
 )
@@ -346,7 +346,7 @@ end
 
 _toml_value(v::Bool) = v
 _toml_value(v::Integer) = Int(v)
-_toml_value(v::AbstractFloat) = Float64(v)
+_toml_value(v::Real) = _float64(v)   # floats, and ForwardDiff duals
 _toml_value(v::String) = v
 _toml_value(v::Symbol) = String(v)
 _toml_value(::Any) = nothing   # arrays etc. are skipped
@@ -368,14 +368,14 @@ function _forcing_metadata(f::CavityForcing)
     o, i = f.ocean, f.ice
     ocean = _scalar_fields(o)
     if hasproperty(o, :Tz)
-        ocean["T_range"] = [Float64(x) for x in extrema(o.Tz)]
-        ocean["S_range"] = [Float64(x) for x in extrema(o.Sz)]
-        ocean["z_range"] = [Float64(x) for x in extrema(o.z)]
+        ocean["T_range"] = [_float64(x) for x in extrema(o.Tz)]
+        ocean["S_range"] = [_float64(x) for x in extrema(o.Sz)]
+        ocean["z_range"] = [_float64(x) for x in extrema(o.z)]
         ocean["nz"] = length(o.z)
     end
     ice = _scalar_fields(i)
     if hasproperty(i, :T_ice_base)
-        ice["T_ice_base_range"] = [Float64(x) for x in extrema(i.T_ice_base)]
+        ice["T_ice_base_range"] = [_float64(x) for x in extrema(i.T_ice_base)]
     end
     return Dict{String,Any}("ocean" => ocean, "ice" => ice)
 end
@@ -391,7 +391,7 @@ function _write_run_metadata(sim)
     params_d["entrainment"] = _scalar_fields(p.entrainment)
     params_d["melt"] = _scalar_fields(p.melting)
     if p.melting isa PrescribedMelting && p.melting.melt isa AbstractArray
-        params_d["melt"]["melt_range"] = [Float64(x) for x in extrema(p.melting.melt)]
+        params_d["melt"]["melt_range"] = [_float64(x) for x in extrema(p.melting.melt)]
     end
     params_d["convection"] = _scalar_fields(p.convection_scheme)
     # Recorded because the choice can change the melt field by an order of magnitude
@@ -411,11 +411,11 @@ function _write_run_metadata(sim)
     # the entry says more than just which option was chosen.
     params_d["coriolis"] = _scalar_fields(p.coriolis)
     if p.coriolis isa CoriolisParameter2D && p.coriolis.lat isa AbstractArray
-        params_d["coriolis"]["lat_range"] = [Float64(x) for x in extrema(p.coriolis.lat)]
+        params_d["coriolis"]["lat_range"] = [_float64(x) for x in extrema(p.coriolis.lat)]
     end
     sim_d = Dict{String,Any}(
-        "dt0" => Float64(sim.clock.dt),
-        "nu" => Float64(sim.nu),
+        "dt0" => _float64(sim.clock.dt),
+        "nu" => _float64(sim.nu),
         "time_stepper" => _scalar_fields(sim.tstep),
         "cfl" => _scalar_fields(sim.cfl),
         "stop" => _scalar_fields(sim.stop),
@@ -434,8 +434,8 @@ function _write_run_metadata(sim)
         "grid" => Dict{String,Any}(
             "nx" => m.nx,
             "ny" => m.ny,
-            "dx" => Float64(m.dx),
-            "dy" => Float64(m.dy),
+            "dx" => _float64(m.dx),
+            "dy" => _float64(m.dy),
         ),
         "forcing" => _forcing_metadata(getfield(m, :forcing)),
         "params" => params_d,
@@ -467,7 +467,7 @@ event times.  Must be called after the leapfrog is bootstrapped and after
 """
 function prepare_output!(sim)
     m = sim.model
-    out, spd = sim.output, Float64(m.seconds_per_day)
+    out, spd = sim.output, _float64(m.seconds_per_day)
     sim.io.nextsave = sim.clock.time + out.saveday * spd
     sim.io.nextdiag = sim.clock.time + out.diagday * spd
     sim.io.nextrest = sim.clock.time + out.restday * spd
@@ -495,7 +495,7 @@ end
 # Per-step accumulation helpers
 # ============================================================================
 
-_int(a) = Array(a)[2:(end-1), 2:(end-1)]
+_int(a) = _primal.(view(Array(a), 2:(size(a, 1)-1), 2:(size(a, 2)-1)))
 
 # t-grid velocity accumulation fused with the staggered average — avoids the
 # two circshift allocations per step that im_half()/jm_half() would cost.  Accumulation
@@ -524,7 +524,7 @@ function _accum!(sim)
     m, io = sim.model, sim.io
     dt = sim.clock.dt
     io.count += 1
-    io.t_accum += dt
+    io.t_accum += _primal(dt)
     for f in _OUTPUT_FIELDS
         getfield(sim.output, f.flag) && _accum_field!(getfield(io, f.acc), f.src, m, dt)
     end
@@ -562,8 +562,8 @@ function _create_output_file!(sim)
         defDim(ds, "y", m.ny)
         defDim(ds, "time", Inf)   # unlimited
 
-        defVar(ds, "x", Float64, ("x",); attrib = ["units" => "m"])[:] = m.x
-        defVar(ds, "y", Float64, ("y",); attrib = ["units" => "m"])[:] = m.y
+        defVar(ds, "x", Float64, ("x",); attrib = ["units" => "m"])[:] = _primal.(m.x)
+        defVar(ds, "y", Float64, ("y",); attrib = ["units" => "m"])[:] = _primal.(m.y)
         defVar(
             ds,
             "time",
@@ -678,7 +678,11 @@ function _write_output!(sim, t_days)
 
         for f in _OUTPUT_FIELDS
             getfield(sim.output, f.flag) || continue
-            wv(f.name, getfield(sim.io, f.acc), f.per_year ? m.seconds_per_year : 1.0)
+            wv(
+                f.name,
+                getfield(sim.io, f.acc),
+                f.per_year ? _primal(m.seconds_per_year) : 1.0,
+            )
         end
     end
     _print2log(sim, @sprintf("%.3f days: appended output → output.nc (step %d)", t_days, k))
@@ -701,7 +705,7 @@ function savefields!(sim)
     if _event_due(sim, sim.io.nextsave)
         _write_output!(sim, _t_days(sim))
         _reset_accum!(sim)
-        sim.io.nextsave += sim.output.saveday * sim.model.seconds_per_day
+        sim.io.nextsave += sim.output.saveday * _primal(sim.model.seconds_per_day)
     end
 end
 
@@ -720,14 +724,17 @@ function _write_restart!(sim, t_days)
     m = sim.model
     filename = joinpath(sim.io.rundir, @sprintf("restart_%06.0f.jld2", t_days))
 
-    _v(var) =
-        (past = Array(var.past), present = Array(var.present), future = Array(var.future))
+    _v(var) = (
+        past = _primal.(Array(var.past)),
+        present = _primal.(Array(var.present)),
+        future = _primal.(Array(var.future)),
+    )
     # Save the current dt so an adaptive run resumes at the step it left off
     # (the saved leapfrog levels are separated by this dt); FixedDt saves dt0.
     jldsave(
         filename;
         t_days,
-        dt = Float64(sim.clock.dt),
+        dt = _float64(sim.clock.dt),
         D = _v(m.D),
         U = _v(m.U),
         V = _v(m.V),
@@ -751,7 +758,7 @@ backend-agnostic; the native `FT` precision is preserved.
 function saverestart!(sim)
     _event_due(sim, sim.io.nextrest) || return
     _write_restart!(sim, _t_days(sim))
-    sim.io.nextrest += sim.output.restday * sim.model.seconds_per_day
+    sim.io.nextrest += sim.output.restday * _primal(sim.model.seconds_per_day)
 end
 
 """
@@ -767,7 +774,7 @@ function init_from_restart!(sim, path::AbstractString)
     m = sim.model
     sim.io.restartfile = path
     jldopen(path, "r") do f
-        sim.clock.time = f["t_days"] * Float64(m.seconds_per_day)
+        sim.clock.time = f["t_days"] * _float64(m.seconds_per_day)
         # Resume at the saved dt when present (adaptive runs); older files
         # without it keep the dt the simulation was constructed with.
         haskey(f, "dt") && (sim.clock.dt = m.FT(f["dt"]))
@@ -796,7 +803,7 @@ Write a one-line diagnostic to the log file at every `output.diagday`-day interv
 function printdiags(sim)
     _event_due(sim, sim.io.nextdiag) || return
     m = sim.model
-    sim.io.nextdiag += sim.output.diagday * m.seconds_per_day
+    sim.io.nextdiag += sim.output.diagday * _primal(m.seconds_per_day)
     t_days = _t_days(sim)
 
     # Device reductions over the scratch field `diag`, so no field is copied to the host.

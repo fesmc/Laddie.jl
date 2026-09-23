@@ -67,7 +67,7 @@ end
     @inbounds begin
         u = (U[i, j] + U[_xm1(i, Nx), j]) / 2
         v = (V[i, j] + V[i, _ym1(j, Ny)]) / 2
-        out[i, j] = sqrt(u^2 + v^2) * tmask[i, j]
+        out[i, j] = _safe_sqrt(u^2 + v^2) * tmask[i, j]
     end
 end
 
@@ -91,7 +91,7 @@ end
         FT = typeof(g)
         u = (U[i, j] + U[_xm1(i, Nx), j]) / 2
         v = (V[i, j] + V[i, _ym1(j, Ny)]) / 2
-        c = sqrt(g * max(zero(FT), drho[i, j] * D[i, j]))
+        c = _safe_sqrt(g * max(zero(FT), drho[i, j] * D[i, j]))
         out[i, j] = (abs(u) / dx + abs(v) / dy + c / dx + c / dy) * tmask[i, j]
     end
 end
@@ -135,9 +135,9 @@ function _cfl_number(sim, ::ConservativeCFL)
     @. d = abs(m.V.present) * m.vmask
     vmax = maximum(d)
     c = sqrt(m.g * max(zero(FT), _max_Ddrho(m)))
-    return Float64(sim.clock.dt) * (
-        (Float64(umax) + Float64(c)) / Float64(m.dx) +
-        (Float64(vmax) + Float64(c)) / Float64(m.dy)
+    return _float64(sim.clock.dt) * (
+        (_float64(umax) + _float64(c)) / _float64(m.dx) +
+        (_float64(vmax) + _float64(c)) / _float64(m.dy)
     )
 end
 
@@ -146,7 +146,7 @@ end
 function _cfl_number(sim, ::ExactCFL)
     m = sim.model
     _launch_tpoint_diag!(_cfl_rate_kernel!, m)
-    return Float64(sim.clock.dt) * Float64(maximum(m.diag))
+    return _float64(sim.clock.dt) * _float64(maximum(m.diag))
 end
 
 # Worst-case CFL: the advective term uses the velocity cap `v_cut` instead of the
@@ -157,10 +157,10 @@ end
 function _cfl_worstcase(sim)
     m = sim.model
     FT = m.FT
-    v_cut = Float64(m.v_cut)
-    c = Float64(sqrt(m.g * max(zero(FT), _max_Ddrho(m))))
-    return Float64(sim.clock.dt) *
-           ((v_cut + c) / Float64(m.dx) + (v_cut + c) / Float64(m.dy))
+    v_cut = _float64(m.v_cut)
+    c = _float64(sqrt(m.g * max(zero(FT), _max_Ddrho(m))))
+    return _float64(sim.clock.dt) *
+           ((v_cut + c) / _float64(m.dx) + (v_cut + c) / _float64(m.dy))
 end
 
 # Abort with a clear message as soon as the integration produces non-finite
@@ -176,7 +176,7 @@ function _check_blowup(sim, t, nt)
     error(
         "Simulation blew up: non-finite values in D/U/V at step $t/$nt " *
         "(≈ day $(round(_t_days(sim), digits = 2))). Common causes: time step too " *
-        "large for this grid (dt = $(sim.clock.dt) s, dx = $(m.dx) m) or unstable " *
+        "large for this grid (dt = $(_primal(sim.clock.dt)) s, dx = $(m.dx) m) or unstable " *
         "forcing. Reduce dt in Simulation, or check the inputs.",
     )
 end
@@ -196,7 +196,7 @@ function time_step!(sim::Simulation)
     advance_leapfrog!(sim)
     leapfrog_step!(sim, 2)
     apply_robert_asselin_filter!(sim)
-    sim.clock.time += sim.clock.dt
+    sim.clock.time += _primal(sim.clock.dt)
     sim.clock.iteration += 1
     return sim
 end
@@ -241,8 +241,8 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     end
     until =
         until !== nothing ? until :
-        days !== nothing ? FixedSimulationEnd(t_end = Float64(days)) : sim.stop
-    total = _end_seconds(until, m.seconds_per_day)  # hard time cap (s) for this call
+        days !== nothing ? FixedSimulationEnd(t_end = _float64(days)) : sim.stop
+    total = _end_seconds(until, _primal(m.seconds_per_day))  # hard time cap (s) for this call
     io_on = sim.output.saveday > 0
     # Predictive adaptive dt: rescue a too-large dt before the first step
     # (no-op for FixedDt). nt/checkint below then reflect the adjusted dt.
@@ -251,7 +251,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     checkint = _check_interval(sim.tstep, nt)
     cfl = _cfl_worstcase(sim)
     cfl > 1.0 && @warn "Worst-case CFL (advection at v_cut + gravity wave) is " *
-          "$(round(cfl, digits = 2)) > 1 (dt = $(clock.dt) s, dx = $(m.dx) m, " *
+          "$(round(cfl, digits = 2)) > 1 (dt = $(_primal(clock.dt)) s, dx = $(m.dx) m, " *
           "dy = $(m.dy) m); the run is likely unstable — reduce dt or coarsen the grid."
     backend = nameof(typeof(KA.get_backend(m.tmask)))
     # Progress is tracked in simulated seconds (nt is only an estimate under
@@ -267,7 +267,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     # (independent of run length, so `tol` means the same thing for any cap).
     # Disabled (next_steady = Inf) unless the criterion needs it.
     prev_mean = NaN
-    next_steady = _needs_melt_sample(until) ? Float64(m.seconds_per_day) : Inf
+    next_steady = _needs_melt_sample(until) ? _float64(m.seconds_per_day) : Inf
     # Steps and simulated seconds of *this call*: the stopping rule, the check
     # cadence and the progress bar are all relative to where the call started,
     # while the clock and the I/O event times are absolute.
@@ -278,7 +278,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     while elapsed + clock.dt / 2 < total
         step += 1
         time_step!(sim)
-        elapsed += clock.dt
+        elapsed += _primal(clock.dt)
         if io_on
             savefields!(sim)
             printdiags(sim)
@@ -299,7 +299,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
                 break
             end
             prev_mean = mean_melt
-            next_steady += Float64(m.seconds_per_day)
+            next_steady += _float64(m.seconds_per_day)
         end
         # Device-reduction diagnostics force a GPU sync, so they run only at
         # this cadence (~5 %, or every `ncheck` steps under AdaptiveDt — the
@@ -316,18 +316,12 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
                 @. m.diag = ifelse(m.tmask > 0, m.D.present, FT(-Inf))
                 Dmax = maximum(m.diag)
                 showvals = [
-                    ("simulated days", round(_t_days(sim), digits = 2)),
-                    (
-                        "melt mean/max [m/yr]",
-                        string(round(mn, digits = 2), " / ", round(mx, digits = 2)),
-                    ),
-                    ("Dmax [m]", round(Dmax, digits = 1)),
-                    ("total melt [Gt/yr]", round(gt, digits = 2)),
-                    ("|u|max [m/s]", round(sp, digits = 3)),
-                    (
-                        "dt [s] / CFL",
-                        string(round(clock.dt, digits = 1), " / ", round(cfl, digits = 3)),
-                    ),
+                    ("simulated days", _r(_t_days(sim), 2)),
+                    ("melt mean/max [m/yr]", string(_r(mn, 2), " / ", _r(mx, 2))),
+                    ("Dmax [m]", _r(Dmax, 1)),
+                    ("total melt [Gt/yr]", _r(gt, 2)),
+                    ("|u|max [m/s]", _r(sp, 3)),
+                    ("dt [s] / CFL", string(_r(clock.dt, 1), " / ", _r(cfl, 3))),
                 ]
             end
         end

@@ -253,7 +253,7 @@ end
             g * ip_D_dzdx +                                             # pressure: ice-shelf slope
             -half * g * ip_D^2 * (drho[ip1, j] - drho[i, j]) / dx +     # pressure: density gradient
             fu[i, j] * ip_D_Vjm +                                              # Coriolis
-            -C_d * U1[i, j] * sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
+            -C_d * U1[i, j] * _safe_sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
             lU[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * U1[i, j]                                     # momentum loss by detrainment
         out[i, j] = Up[i, j] + _safe_div(rhs, ip_D) * umask[i, j] * dt
@@ -307,7 +307,7 @@ end
             g * jp_D_dzdy +                                             # pressure: ice-shelf slope
             -half * g * jp_D^2 * (drho[i, jp1] - drho[i, j]) / dy +     # pressure: density gradient
             -fv[i, j] * jp_D_Uim +                                             # Coriolis
-            -C_d * V1[i, j] * sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
+            -C_d * V1[i, j] * _safe_sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
             lV[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * V1[i, j]                                     # momentum loss by detrainment
         out[i, j] = Vp[i, j] + _safe_div(rhs, jp_D) * vmask[i, j] * dt
@@ -683,8 +683,8 @@ end
         im1 = i - 1
         Vbar = (V[i, j] + V[i, jm1] + V[ip1, j] + V[ip1, jm1]) / FT(4)   # V at the U-point
         Ubar = (U[i, j] + U[im1, j] + U[i, jp1] + U[im1, jp1]) / FT(4)   # U at the V-point
-        spdU = sqrt(U[i, j] * U[i, j] + Vbar * Vbar)
-        spdV = sqrt(V[i, j] * V[i, j] + Ubar * Ubar)
+        spdU = _safe_sqrt(U[i, j] * U[i, j] + Vbar * Vbar)
+        spdV = _safe_sqrt(V[i, j] * V[i, j] + Ubar * Ubar)
         sU[i, j] = spdU > v_cut ? v_cut / spdU : one(FT)
         sV[i, j] = spdV > v_cut ? v_cut / spdV : one(FT)
     end

@@ -2,6 +2,7 @@ using Laddie
 using Test
 using KernelAbstractions
 using Aqua
+using ForwardDiff
 import CUDA
 
 # Shared setup for every test file: precision, GPU detection, fake forcing types and

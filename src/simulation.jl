@@ -150,7 +150,7 @@ end
 
 # Absolute simulation time in days, including the restart offset, so output and
 # restart files of a continuation run never collide with those it restarted from.
-_t_days(sim::Simulation) = sim.clock.time / sim.model.seconds_per_day
+_t_days(sim::Simulation) = sim.clock.time / _primal(sim.model.seconds_per_day)
 
 """
 $(TYPEDSIGNATURES)

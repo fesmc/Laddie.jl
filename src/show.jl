@@ -7,7 +7,7 @@
 # ============================================================================
 
 _sz(a) = join(size(a), "×")
-_r(x, d) = round(Float64(x); digits = d)
+_r(x, d) = round(_float64(x); digits = d)
 # A field summarised as its value, or its range when it varies.
 function _range_str(a, d)
     lo, hi = extrema(a)
@@ -151,11 +151,11 @@ function Base.show(io::IO, ::MIME"text/plain", m::Model)
     print(io, "  boundary: ", getfield(m, :boundary))
 end
 
-_days(seconds, spd) = _r(seconds / Float64(spd), 3)
+_days(seconds, spd) = _r(seconds / _float64(spd), 3)
 
 Base.show(io::IO, c::Clock{FT}) where {FT} = print(
     io,
-    "Clock{$FT}(time = $(_r(c.time, 1)) s, iteration = $(c.iteration), dt = $(c.dt) s)",
+    "Clock{$FT}(time = $(_r(c.time, 1)) s, iteration = $(c.iteration), dt = $(_primal(c.dt)) s)",
 )
 
 Base.show(io::IO, o::OutputConfig) = print(
@@ -168,7 +168,7 @@ Base.show(io::IO, o::OutputConfig) = print(
 Base.show(io::IO, sim::Simulation) = print(
     io,
     "Simulation{$(sim.model.FT)} on $(_backend_name(sim.model)) at day ",
-    "$(_days(sim.clock.time, sim.model.seconds_per_day)), dt = $(sim.clock.dt) s",
+    "$(_days(sim.clock.time, sim.model.seconds_per_day)), dt = $(_primal(sim.clock.dt)) s",
 )
 
 function Base.show(io::IO, ::MIME"text/plain", sim::Simulation)
@@ -179,9 +179,17 @@ function Base.show(io::IO, ::MIME"text/plain", sim::Simulation)
     println(
         io,
         "  clock:   day $(_days(c.time, m.seconds_per_day)), iteration $(c.iteration), ",
-        "dt = $(c.dt) s",
+        "dt = $(_primal(c.dt)) s",
     )
-    println(io, "  stepper: ", sim.tstep, ", ", sim.cfl, ", Robert–Asselin ν = ", sim.nu)
+    println(
+        io,
+        "  stepper: ",
+        sim.tstep,
+        ", ",
+        sim.cfl,
+        ", Robert–Asselin ν = ",
+        _primal(sim.nu),
+    )
     println(io, "  stop:    ", sim.stop)
     print(io, "  output:  ", sim.output)
 end

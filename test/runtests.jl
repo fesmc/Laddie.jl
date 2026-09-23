@@ -14,6 +14,7 @@ include("setup.jl")
     @testset "Output" begin include("output.jl") end
     @testset "Display" begin include("display.jl") end
     @testset "Verification" begin include("verification.jl") end
+    @testset "Autodiff" begin include("autodiff.jl") end
     # Skipped entirely when no CUDA device is present.
     if gpu_backend !== nothing
         @testset "GPU" begin include("gpu.jl") end

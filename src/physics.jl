@@ -608,14 +608,7 @@ function update_ustar!(m)
     )
 end
 
-@kernel function _ustar_kernel!(
-    ustar,
-    @Const(U),
-    @Const(V),
-    @Const(tmask),
-    C_d_top,
-    u_tide,
-)
+@kernel function _ustar_kernel!(ustar, @Const(U), @Const(V), @Const(tmask), C_d_top, u_tide)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin

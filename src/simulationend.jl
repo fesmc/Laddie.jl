@@ -67,7 +67,8 @@ Base.@kwdef struct SteadyStateEnd{T} <: AbstractSimulationEnd
     SteadyStateEnd{T}(tol, t_end) where {T} = new{T}(tol, t_end)
 end
 
-SteadyStateEnd(tol, t_end) = (p = promote(float(tol), float(t_end)); SteadyStateEnd{eltype(p)}(p...))
+SteadyStateEnd(tol, t_end) =
+    (p = promote(float(tol), float(t_end)); SteadyStateEnd{eltype(p)}(p...))
 
 # Hard time cap in seconds (both criteria carry one).
 _end_seconds(e::AbstractSimulationEnd, spd) = e.t_end * spd

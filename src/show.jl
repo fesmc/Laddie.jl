@@ -20,8 +20,10 @@ Base.show(io::IO, v::Var{LX,LY}) where {LX,LY} = print(
     "levels: past/present/future)",
 )
 
-Base.show(io::IO, s::State) =
-    print(io, "State{$(eltype(s.D.present))}: D, U, V, T, S — 3-level Vars of $(_sz(s.D.present))")
+Base.show(io::IO, s::State) = print(
+    io,
+    "State{$(eltype(s.D.present))}: D, U, V, T, S — 3-level Vars of $(_sz(s.D.present))",
+)
 
 function Base.show(io::IO, c::Cache)
     nmat = count(fn -> getfield(c, fn) isa AbstractMatrix, fieldnames(typeof(c)))

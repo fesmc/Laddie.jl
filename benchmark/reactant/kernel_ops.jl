@@ -15,6 +15,7 @@ const LAUNCHES = Any[]
 const RECORDING = Ref(false)
 # CPU-only method: more specific than Laddie's `launch!(kernel!, A, args...)`.
 function Laddie.launch!(kernel!, A::Matrix, args...)
+    args = (A, args...)
     RECORDING[] && push!(LAUNCHES, (kernel!, size(A), deepcopy(args)))
     backend = Laddie._launch_backend(CPU())
     kernel!(backend, Laddie._workgroup(backend))(args...; ndrange = size(A))

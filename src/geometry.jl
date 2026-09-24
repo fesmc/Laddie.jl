@@ -107,7 +107,47 @@ end
 # Geometry ingestion utilities
 # ============================================================================
 
-const _cardinal_dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
+_neighbours(c::CartesianIndex{2}) = (
+    c + CartesianIndex(-1, 0),
+    c + CartesianIndex(1, 0),
+    c + CartesianIndex(0, -1),
+    c + CartesianIndex(0, 1),
+)
+
+# A cell on the outermost ring of the array or directly inside it.
+function _near_border(mask, c)
+    nx, ny = size(mask)
+    i, j = Tuple(c)
+    return i <= 2 || j <= 2 || i >= nx - 1 || j >= ny - 1
+end
+
+# Flood fill: marks in `reached` every cell reachable from `seeds` through
+# 4-connected cells whose mask value satisfies `passable`, and returns the cells
+# reached from these seeds.
+function _flood!(reached, mask, seeds, passable)
+    queue = collect(CartesianIndex{2}, seeds)
+    reached[queue] .= true
+    k = 1
+    while k <= length(queue)
+        for n in _neighbours(queue[k])
+            if checkbounds(Bool, mask, n) && !reached[n] && passable(mask[n])
+                reached[n] = true
+                push!(queue, n)
+            end
+        end
+        k += 1
+    end
+    return queue
+end
+
+# The 4-connected components of the cells whose mask value satisfies `member`.
+function _components(mask, member)
+    reached = falses(size(mask))
+    return [
+        _flood!(reached, mask, (c,), member) for
+        c in CartesianIndices(mask) if member(mask[c]) && !reached[c]
+    ]
+end
 
 # Dynamically active mask values: floating shelf and ice-shelf gap.  Gaps are ice-free
 # but still carry the plume, so connectivity-based mask cleaning must not treat them as
@@ -266,43 +306,18 @@ println("Reclassified \$n isolated ocean cells")
 ```
 """
 function fill_ocean_holes!(mask::AbstractMatrix{Int})
-    nx, ny = size(mask)
-    visited = falses(nx, ny)
-    queue = Tuple{Int,Int}[]
-
     # Seed: ocean cells on the outermost ring of the array, or directly inside it.
     # The ring is the domain boundary and is normally land, so the seeds are the
     # ocean cells of the second ring.  The test is positional because land also
     # marks interior bedrock (nunataks, rock islands), and seeding off those would
     # declare every pocket beside an island part of the open ocean.
-    for j = 1:ny, i = 1:nx
-        if mask[i, j] == 0 && (i <= 2 || j <= 2 || i >= nx - 1 || j >= ny - 1)
-            visited[i, j] = true
-            push!(queue, (i, j))
-        end
-    end
-
-    # BFS to mark all reachable ocean cells
-    while !isempty(queue)
-        i, j = popfirst!(queue)
-        for (di, dj) in _cardinal_dirs
-            ni, nj = i + di, j + dj
-            if 1 <= ni <= nx && 1 <= nj <= ny && !visited[ni, nj] && mask[ni, nj] == 0
-                visited[ni, nj] = true
-                push!(queue, (ni, nj))
-            end
-        end
-    end
-
-    # Reclassify unreachable ocean cells as land
-    n_filled = 0
-    for j = 1:ny, i = 1:nx
-        if mask[i, j] == 0 && !visited[i, j]
-            mask[i, j] = 1
-            n_filled += 1
-        end
-    end
-    return n_filled
+    cells = CartesianIndices(mask)
+    seeds = [c for c in cells if mask[c] == 0 && _near_border(mask, c)]
+    reached = falses(size(mask))
+    _flood!(reached, mask, seeds, ==(0))
+    holes = [c for c in cells if mask[c] == 0 && !reached[c]]
+    mask[holes] .= 1
+    return length(holes)
 end
 
 """
@@ -332,49 +347,17 @@ println("Reclassified \$n isolated shelf cells")
 ```
 """
 function fill_shelf_holes!(mask::AbstractMatrix{Int})
-    nx, ny = size(mask)
-    visited = falses(nx, ny)
-    queue = Tuple{Int,Int}[]
-
-    # Seed: active cells adjacent to at least one ocean cell
-    for j = 1:ny, i = 1:nx
-        if _is_active(mask[i, j]) && !visited[i, j]
-            for (di, dj) in _cardinal_dirs
-                ni, nj = i + di, j + dj
-                if 1 <= ni <= nx && 1 <= nj <= ny && mask[ni, nj] == 0
-                    visited[i, j] = true
-                    push!(queue, (i, j))
-                    break
-                end
-            end
-        end
-    end
-
-    # BFS through active cells only.  Gaps (4) conduct connectivity: a shelf region
-    # reachable only through a gap is still attached to the ocean.
-    while !isempty(queue)
-        i, j = popfirst!(queue)
-        for (di, dj) in _cardinal_dirs
-            ni, nj = i + di, j + dj
-            if 1 <= ni <= nx &&
-               1 <= nj <= ny &&
-               !visited[ni, nj] &&
-               _is_active(mask[ni, nj])
-                visited[ni, nj] = true
-                push!(queue, (ni, nj))
-            end
-        end
-    end
-
-    # Reclassify isolated shelf cells as grounded ice
-    n_filled = 0
-    for j = 1:ny, i = 1:nx
-        if mask[i, j] == 3 && !visited[i, j]
-            mask[i, j] = 2
-            n_filled += 1
-        end
-    end
-    return n_filled
+    # Seed: active cells next to the ocean.  The fill runs through active cells only,
+    # and gaps (4) conduct it: a shelf region reachable only through a gap is still
+    # attached to the ocean.
+    cells = CartesianIndices(mask)
+    at_ocean(c) = any(n -> checkbounds(Bool, mask, n) && mask[n] == 0, _neighbours(c))
+    seeds = [c for c in cells if _is_active(mask[c]) && at_ocean(c)]
+    reached = falses(size(mask))
+    _flood!(reached, mask, seeds, _is_active)
+    holes = [c for c in cells if mask[c] == 3 && !reached[c]]
+    mask[holes] .= 2
+    return length(holes)
 end
 
 """
@@ -411,39 +394,14 @@ println("Reclassified \$n cells in undersized isolated grounded patches")
 ```
 """
 function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
-    nx, ny = size(mask)
-    visited = falses(nx, ny)
     n_filled = 0
-
-    for j = 1:ny, i = 1:nx
-        mask[i, j] == 2 && !visited[i, j] || continue
-
-        component = Tuple{Int,Int}[]
-        queue = Tuple{Int,Int}[(i, j)]
-        visited[i, j] = true
-        touches_border = false
-        while !isempty(queue)
-            c_i, cj = popfirst!(queue)
-            push!(component, (c_i, cj))
-            for (di, dj) in _cardinal_dirs
-                ni, nj = c_i + di, cj + dj
-                1 <= ni <= nx && 1 <= nj <= ny || continue
-                # Positional border test: `mask == 1` also marks interior bedrock,
-                # which must not count as "attached to the ice sheet".
-                (ni == 1 || ni == nx || nj == 1 || nj == ny) && (touches_border = true)
-                if !visited[ni, nj] && mask[ni, nj] == 2
-                    visited[ni, nj] = true
-                    push!(queue, (ni, nj))
-                end
-            end
-        end
-
-        if !touches_border && length(component) < min_cells
-            for (c_i, cj) in component
-                mask[c_i, cj] = 3
-            end
-            n_filled += length(component)
-        end
+    for component in _components(mask, ==(2))
+        # Positional border test: `mask == 1` also marks interior bedrock, which must
+        # not count as "attached to the ice sheet".
+        any(c -> _near_border(mask, c), component) && continue
+        length(component) < min_cells || continue
+        mask[component] .= 3
+        n_filled += length(component)
     end
     return n_filled
 end
@@ -482,41 +440,17 @@ println("Removed \$n cells in undersized shelf patches")
 ```
 """
 function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
-    nx, ny = size(mask)
-    visited = falses(nx, ny)
     n_filled = 0
-
-    for j = 1:ny, i = 1:nx
-        _is_active(mask[i, j]) && !visited[i, j] || continue
-
-        # BFS to collect the full connected component.  Gaps (4) belong to the
-        # component they sit in, so a gap never splits one shelf into two.
-        component = Tuple{Int,Int}[]
-        queue = Tuple{Int,Int}[(i, j)]
-        visited[i, j] = true
-        while !isempty(queue)
-            c_i, cj = popfirst!(queue)
-            push!(component, (c_i, cj))
-            for (di, dj) in _cardinal_dirs
-                ni, nj = c_i + di, cj + dj
-                if 1 <= ni <= nx &&
-                   1 <= nj <= ny &&
-                   !visited[ni, nj] &&
-                   _is_active(mask[ni, nj])
-                    visited[ni, nj] = true
-                    push!(queue, (ni, nj))
-                end
-            end
+    # Gaps (4) belong to the component they sit in, so a gap never splits one shelf
+    # into two.
+    for component in _components(mask, _is_active)
+        length(component) < min_cells || continue
+        for c in component
+            # Shelf becomes grounded; a gap has no ice to ground, so it reverts to
+            # open ocean.
+            mask[c] = mask[c] == 4 ? 0 : 2
         end
-
-        if length(component) < min_cells
-            for (c_i, cj) in component
-                # Shelf becomes grounded; a gap has no ice to ground, so it reverts
-                # to open ocean.
-                mask[c_i, cj] = mask[c_i, cj] == 4 ? 0 : 2
-            end
-            n_filled += length(component)
-        end
+        n_filled += length(component)
     end
     return n_filled
 end

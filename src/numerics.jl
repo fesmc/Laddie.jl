@@ -6,12 +6,14 @@
     @Const(mask),
     nu,
 )
+    nu = _val(nu)
     i, j = @index(Global, NTuple)
     @inbounds present[i, j] +=
         nu / 2 * (past[i, j] + future[i, j] - 2 * present[i, j]) * mask[i, j]
 end
 
-# Infer backend from array `A`, launch `kernel!` over the full array extent.
+# Launch `kernel!(out, args...)` over the full extent of `out`, on its backend.  Every
+# kernel writes its first argument, and every array has the grid's size.
 # CPU: long blocks along the first (column-major inner) index keep the inner loops
 # vectorisable, and a grid smaller than one block runs on a single task instead of
 # paying the spawn overhead — measured 1.1–1.8× faster than (8, 8) from 80×20 to
@@ -19,11 +21,7 @@ end
 _workgroup(::CPU) = (128, 32)
 _workgroup(::Any) = (32, 8)   # GPU: 256 threads, warp-aligned x-dimension
 
-function launch!(kernel!, A, args...)
-    backend = _launch_backend(KA.get_backend(A))
-    kernel!(backend, _workgroup(backend))(args...; ndrange = size(A))
-    return nothing
-end
+launch!(kernel!, out, args...) = _launch!(kernel!, size(out), out, args...)
 
 # Launch a stencil kernel over the interior cells only, the full array minus its
 # one-cell border ring.  The kernel offsets its index by one past the ring, so
@@ -32,9 +30,11 @@ end
 # by a zero mask.  Plain `i ± 1` also keeps the indices affine, which lets Reactant
 # raise the neighbour reads to slices; a wrapped read along x (the contiguous axis)
 # becomes a gather, and a wrapped diagonal read a gather plus a transpose.
-function launch_interior!(kernel!, A, args...)
-    backend = _launch_backend(KA.get_backend(A))
-    kernel!(backend, _workgroup(backend))(args...; ndrange = size(A) .- 2)
+launch_interior!(kernel!, out, args...) = _launch!(kernel!, size(out) .- 2, out, args...)
+
+function _launch!(kernel!, ndrange, out, args...)
+    backend = _launch_backend(KA.get_backend(out))
+    kernel!(backend, _workgroup(backend))(out, args...; ndrange)
     return nothing
 end
 
@@ -62,7 +62,6 @@ function _update_conv2!(m, cs::RelaxToAmbient)
     launch!(
         _relax_conv2_kernel!,
         m.conv2,
-        m.conv2,
         m.drho,
         m.imask,
         m.D.present,
@@ -77,6 +76,7 @@ end
     @Const(D),
     convection_time,
 )
+    convection_time = _val(convection_time)
     i, j = @index(Global, NTuple)
     @inbounds conv2[i, j] = (drho[i, j] < 0) * imask[i, j] * D[i, j] / convection_time
 end
@@ -93,6 +93,7 @@ end
     @Const(drho),
     dt,
 )
+    dt = _val(dt)
     i, j = @index(Global, NTuple)
     @inbounds begin
         dDdt[i, j] = (D_future[i, j] - D_past[i, j]) / (dt + dt)
@@ -109,7 +110,6 @@ end
 function precompute_integration_terms!(m, dt)
     launch!(
         _integration_terms_kernel!,
-        m.dDdt,
         m.dDdt,
         m.Ddrho,
         m.D.future,
@@ -131,6 +131,7 @@ end
     @Const(tmask),
     dt,
 )
+    dt = _val(dt)
     i, j = @index(Global, NTuple)
     @inbounds out[i, j] = ifelse(
         iszero(tmask[i, j]),
@@ -162,6 +163,7 @@ end
     dx,
     dt,
 )
+    g, C_d, pgf_w, dx, dt = _val(g), _val(C_d), _val(pgf_w), _val(dx), _val(dt)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -224,6 +226,7 @@ end
     dy,
     dt,
 )
+    g, C_d, pgf_w, dy, dt = _val(g), _val(C_d), _val(pgf_w), _val(dy), _val(dt)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -281,6 +284,7 @@ end
     conv2,
     dt,
 )
+    gamT, K_h, conv2, dt = _val(gamT), _val(K_h), _val(conv2), _val(dt)
     i, j = @index(Global, NTuple)
     @inbounds begin
         rhs =
@@ -310,6 +314,7 @@ end
     conv2,
     dt,
 )
+    K_h, conv2, dt = _val(K_h), _val(conv2), _val(dt)
     i, j = @index(Global, NTuple)
     @inbounds begin
         rhs =
@@ -326,7 +331,6 @@ function step_thickness!(m, dt)
     launch!(
         _step_thickness_kernel!,
         m.D.future,
-        m.D.future,
         m.D.past,
         m.convD,
         m.melt,
@@ -341,7 +345,6 @@ function step_u_momentum!(m, dt)
     laplace_U(m)
     launch_interior!(
         _step_u_momentum_kernel!,
-        m.U.future,
         m.U.future,
         m.U.past,
         m.U.present,
@@ -372,7 +375,6 @@ function step_v_momentum!(m, dt)
     launch_interior!(
         _step_v_momentum_kernel!,
         m.V.future,
-        m.V.future,
         m.V.past,
         m.V.present,
         m.dDdt,
@@ -397,11 +399,10 @@ function step_v_momentum!(m, dt)
     return
 end
 function step_temperature!(m, dt)
-    launch!(_product_kernel!, m.Dq, m.Dq, m.D.present, m.T.present)
+    launch!(_product_kernel!, m.Dq, m.D.present, m.T.present)
     upwind_advection_T(m.adv, m, m.Dq)
     laplace_T(m.lap, m, m.T.past)
     args = (
-        m.T.future,
         m.T.future,
         m.T.past,
         m.T.present,
@@ -415,15 +416,15 @@ function step_temperature!(m, dt)
         m.D.present,
         m.tmask,
     )
-    launch!(_step_temperature_kernel!, args..., m.gamT, m.K_h, m.conv2, dt)
+    gamT = first(_exchange_velocities(m))
+    launch!(_step_temperature_kernel!, args..., gamT, m.K_h, m.conv2, dt)
     return
 end
 function step_salinity!(m, dt)
-    launch!(_product_kernel!, m.Dq, m.Dq, m.D.present, m.S.present)
+    launch!(_product_kernel!, m.Dq, m.D.present, m.S.present)
     upwind_advection_T(m.adv, m, m.Dq)
     laplace_T(m.lap, m, m.S.past)
     args = (
-        m.S.future,
         m.S.future,
         m.S.past,
         m.S.present,
@@ -451,7 +452,6 @@ function _clamp_thickness!(m)
     launch!(
         _clamp_thickness_kernel!,
         m.D.future,
-        m.D.future,
         m.z_draft,
         m.z_bed,
         m.tmask,
@@ -469,6 +469,7 @@ end
     max_layer_thickness,
     D_min,
 )
+    D_min = _val(D_min)
     i, j = @index(Global, NTuple)
     @inbounds begin
         D[i, j] = _max_layer_thickness(
@@ -489,6 +490,7 @@ end
 
 # Tracer bounds inside the domain only; see `leapfrog_step!`.
 @kernel function _clamp_tracer_kernel!(q, @Const(tmask), q_min, q_max)
+    q_min, q_max = _val(q_min), _val(q_max)
     i, j = @index(Global, NTuple)
     @inbounds q[i, j] = ifelse(tmask[i, j] > 0, clamp(q[i, j], q_min, q_max), q[i, j])
 end
@@ -500,7 +502,7 @@ end
 
 function _check_nans_shelf!(sim, varname, arr)
     m = sim.model
-    launch!(_nan_on_shelf_kernel!, m.diag, m.diag, arr, m.tmask)
+    launch!(_nan_on_shelf_kernel!, m.diag, arr, m.tmask)
     any(>(0), m.diag) && error(
         "NaN in $varname at t = $(round(_t_days(sim), digits=4)) days " *
         "(iteration $(sim.clock.iteration))",
@@ -538,19 +540,19 @@ function leapfrog_step!(sim, nsteps)
     # inactive cell from S = 0 to S_min, breaking the invariant that prognostics are
     # zero outside `tmask` (see `_clamp_thickness!`).
     step_temperature!(m, dt)
-    launch!(_clamp_tracer_kernel!, m.T.future, m.T.future, m.tmask, m.T_min, m.T_max)
+    launch!(_clamp_tracer_kernel!, m.T.future, m.tmask, m.T_min, m.T_max)
     check_nans && _check_nans_shelf!(sim, "T", m.T.future)
 
     step_salinity!(m, dt)
-    launch!(_clamp_tracer_kernel!, m.S.future, m.S.future, m.tmask, m.S_min, m.S_max)
+    launch!(_clamp_tracer_kernel!, m.S.future, m.tmask, m.S_min, m.S_max)
     check_nans && _check_nans_shelf!(sim, "S", m.S.future)
     return
 end
 
 # Start the leapfrog: refresh secondary fields at the current dt, then take one
 # first-order step.  Run when a Simulation is constructed on a freshly
-# initialised model (whose three time levels are identical); `init_from_restart!`
-# does the same after loading the saved levels.
+# initialised model (whose three time levels are identical), and by
+# `init_from_restart!` after loading the saved levels.
 function _bootstrap_leapfrog!(sim)
     update_secondary_fields!(sim.model, sim.clock.dt)
     leapfrog_step!(sim, 1)
@@ -563,7 +565,8 @@ end
 # new dt, so the following centred `leapfrog_step!(sim, 2)` is consistent.  The
 # anchor is the Robert–Asselin-filtered `present`, exactly as at startup.
 _rebootstrap_leapfrog!(sim) = _rebootstrap_leapfrog!(sim.exec, sim)
-function _rebootstrap_leapfrog!(::NativeExecution, sim)
+_rebootstrap_leapfrog!(::NativeExecution, sim) = _collapse_and_bootstrap!(sim)
+function _collapse_and_bootstrap!(sim)
     m = sim.model
     for var in (m.D, m.U, m.V, m.T, m.S)
         var.past .= var.present
@@ -582,7 +585,6 @@ function apply_robert_asselin_filter!(sim)
         ((m.D, m.tmask), (m.U, m.umask), (m.V, m.vmask), (m.T, m.tmask), (m.S, m.tmask))
         launch!(
             _robert_asselin_kernel!,
-            var.present,
             var.present,
             var.past,
             var.future,
@@ -617,6 +619,7 @@ end
 # onto the point being limited — the same four-point stencil the bottom-drag
 # terms use (`u_bottom_drag` / `v_bottom_drag` in physics.jl).
 @kernel function _speed_scale_kernel!(sU, sV, @Const(U), @Const(V), v_cut)
+    v_cut = _val(v_cut)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     FT = typeof(v_cut)
@@ -663,13 +666,12 @@ function clamp_velocities!(m)
     scaleU, scaleV = m.adv, m.lap
     launch_interior!(
         _speed_scale_kernel!,
-        m.U.future,
         scaleU,
         scaleV,
         m.U.future,
         m.V.future,
         m.v_cut,
     )
-    launch!(_apply_scale_kernel!, m.U.future, m.U.future, m.V.future, scaleU, scaleV)
+    launch!(_apply_scale_kernel!, m.U.future, m.V.future, scaleU, scaleV)
     return
 end

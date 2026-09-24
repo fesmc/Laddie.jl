@@ -8,6 +8,7 @@
     beta,
     alpha,
 )
+    beta, alpha = _val(beta), _val(alpha)
     i, j = @index(Global, NTuple)
     @inbounds drho[i, j] =
         (beta * (Sa[i, j] - S[i, j]) - alpha * (Ta[i, j] - T[i, j])) * tmask[i, j]
@@ -34,6 +35,8 @@ end
     l2,
     l3,
 )
+    gamT, gamS, c_p, c_i, L, l1, l2, l3 =
+        _val(gamT), _val(gamS), _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3)
     i, j = @index(Global, NTuple)
     FT = typeof(c_p)
     @inbounds begin
@@ -79,6 +82,7 @@ end
     dz,
     nz,
 )
+    z0, dz = _val(z0), _val(dz)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(z0)
@@ -112,7 +116,6 @@ function update_ambient_fields!(m)
     launch!(
         _ambient_interp_kernel!,
         m.Ta,
-        m.Ta,
         m.Sa,
         m.z_draft,
         m.D.present,
@@ -128,7 +131,6 @@ end
 "Reduced (dimensionless) density ``\\delta\\rho = \\Delta\\rho_a/\\rho_0 = \\beta(S_a - S) - \\alpha(T_a - T)``  (Lambert et al. 2023, Eqs. 6–7)."
 update_density!(m) = launch!(
     _density_kernel!,
-    m.drho,
     m.drho,
     m.Sa,
     m.S.present,
@@ -151,13 +153,14 @@ domain, gaps included.
 """
 function update_convection!(m, cs::ClampDensity)
     thr = cs.d_rho_min / m.rho0_seawater
-    launch!(_clamp_density_kernel!, m.drho, m.convection, m.drho, thr)
+    launch!(_clamp_density_kernel!, m.convection, m.drho, thr)
 end
 
 # The convection schemes are pointwise, and run as kernels rather than broadcasts so
 # that they are threaded on the CPU: they run twice per step (see
 # `apply_robert_asselin_filter!`).  Each reads the `drho` of the current T/S.
 @kernel function _clamp_density_kernel!(convection, drho, thr)
+    thr = _val(thr)
     i, j = @index(Global, NTuple)
     FT = typeof(thr)
     @inbounds begin
@@ -184,7 +187,6 @@ function update_convection!(m, cs::ResetToAmbient)
     S_adj = cs.d_rho_min / (m.rho0_seawater * m.beta)
     launch!(
         _reset_to_ambient_kernel!,
-        m.drho,
         m.convection,
         m.T.present,
         m.S.present,
@@ -216,6 +218,7 @@ end
     beta,
     alpha,
 )
+    thr, S_adj, beta, alpha = _val(thr), _val(S_adj), _val(beta), _val(alpha)
     i, j = @index(Global, NTuple)
     FT = typeof(thr)
     @inbounds begin
@@ -242,7 +245,7 @@ Restricted to ice-covered cells (`imask`) for the same reason as
 version of the same sink.
 """
 function update_convection!(m, ::RelaxToAmbient)
-    launch!(_flag_unstable_ice_kernel!, m.drho, m.convection, m.drho, m.imask)
+    launch!(_flag_unstable_ice_kernel!, m.convection, m.drho, m.imask)
 end
 
 @kernel function _flag_unstable_ice_kernel!(convection, @Const(drho), @Const(imask))
@@ -268,6 +271,7 @@ update_convection!(m) = update_convection!(m, m.convection_scheme)
     ScCorr,
     nu0,
 )
+    PrCorr, ScCorr, nu0 = _val(PrCorr), _val(ScCorr), _val(nu0)
     i, j = @index(Global, NTuple)
     FT = typeof(nu0)
     @inbounds begin
@@ -282,7 +286,6 @@ end
 function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamTMelting)
     launch!(
         _turbulent_gamma_kernel!,
-        m.gamT,
         m.gamT,
         m.gamS,
         m.ustar,
@@ -299,19 +302,27 @@ $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with a fixed heat transfer
 coefficient ``\\gamma_T`` (Jenkins 1991; Lambert et al. 2023, Eqs. 8–10 and 13).
-Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
+Sets `m.ustar`, `m.melt`, `m.Tb`; `m.gamT` and `m.gamS` hold the constant
+exchange velocities from the start.
 """
-function update_melt!(m, mp::FixedGamTMelting)
+function update_melt!(m, ::FixedGamTMelting)
     update_ustar!(m)
-    m.gamT = mp.gamTfix
-    m.gamS = m.gamT / m.FT(35)
     _launch_three_eq_melt!(m)
 end
 
+# γ_T and γ_S as the kernels take them.  FixedGamTMelting's constants come straight
+# from the parameter, so that a parameter traced by Reactant reaches the kernels
+# (the cache holds a copy for reporting, set at build: a traced time step cannot
+# reassign a scalar field).  The other schemes compute fields into the cache.
+_exchange_velocities(m) = _exchange_velocities(m, m.params.melting)
+_exchange_velocities(m, mp::FixedGamTMelting) = _fixed_exchange_velocities(mp, m.FT)
+_exchange_velocities(m, ::AbstractMelting) = (m.gamT, m.gamS)
+_fixed_exchange_velocities(mp, FT) = (mp.gamTfix, mp.gamTfix / FT(35))
+
 function _launch_three_eq_melt!(m)
+    gamT, gamS = _exchange_velocities(m)
     launch!(
         _three_eq_melt_kernel!,
-        m.melt,
         m.melt,
         m.Tb,
         m.T.present,
@@ -320,8 +331,8 @@ function _launch_three_eq_melt!(m)
         m.tmask,
         m.imask,
         m.T_ice_base,
-        m.gamT,
-        m.gamS,
+        gamT,
+        gamS,
         m.c_p,
         m.c_i,
         m.L,
@@ -343,7 +354,6 @@ function update_melt!(m, ::PrescribedMelting)
     update_ustar!(m)
     launch!(
         _prescribed_melt_kernel!,
-        m.melt,
         m.melt,
         m.Tb,
         m.gamT,
@@ -388,6 +398,7 @@ end
     l2,
     l3,
 )
+    c_p, c_i, L, l1, l2, l3 = _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3)
     i, j = @index(Global, NTuple)
     FT = typeof(c_p)
     @inbounds begin
@@ -434,11 +445,12 @@ Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::UStarGamTMelting)
     update_ustar!(m)
-    launch!(_ustar_gamma_kernel!, m.gamT, m.gamT, m.gamS, m.ustar, m.tmask, mp.Gamma_T)
+    launch!(_ustar_gamma_kernel!, m.gamT, m.gamS, m.ustar, m.tmask, mp.Gamma_T)
     _launch_three_eq_melt!(m)
 end
 
 @kernel function _ustar_gamma_kernel!(gamT, gamS, @Const(ustar), @Const(tmask), Gamma_T)
+    Gamma_T = _val(Gamma_T)
     i, j = @index(Global, NTuple)
     FT = typeof(Gamma_T)
     @inbounds begin
@@ -461,7 +473,6 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
     drho_coeff = m.g * m.K_h / m.A_h
     launch_interior!(
         _holland_entrainment_kernel!,
-        m.entr,
         m.entr,
         m.detr,
         m.U.present,
@@ -504,7 +515,6 @@ function _launch_buoyancy_entrainment!(m, prefactor, D_squared)
     launch!(
         _buoyancy_entrainment_kernel!,
         m.entr,
-        m.entr,
         m.detr,
         m.T.present,
         m.S.present,
@@ -543,7 +553,6 @@ function update_entrainment!(m, dt)
     launch!(
         _net_entrainment_kernel!,
         m.ent2,
-        m.ent2,
         m.nentr,
         m.D.past,
         m.convD,
@@ -569,6 +578,7 @@ end
     D_min,
     dt2,
 )
+    D_min, dt2 = _val(D_min), _val(dt2)
     i, j = @index(Global, NTuple)
     @inbounds begin
         ent2[i, j] =
@@ -587,7 +597,6 @@ function update_ustar!(m)
     launch_interior!(
         _ustar_kernel!,
         m.ustar,
-        m.ustar,
         m.U.present,
         m.V.present,
         m.tmask,
@@ -597,6 +606,7 @@ function update_ustar!(m)
 end
 
 @kernel function _ustar_kernel!(ustar, @Const(U), @Const(V), @Const(tmask), C_d_top, u_tide)
+    C_d_top, u_tide = _val(C_d_top), _val(u_tide)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -639,6 +649,8 @@ end
     l2,
     l3,
 )
+    prefactor, max_detrainment, drho_floor, alpha, beta, l1, l2, l3 =
+        _val(prefactor), _val(max_detrainment), _val(drho_floor), _val(alpha), _val(beta), _val(l1), _val(l2), _val(l3)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(prefactor)
@@ -669,6 +681,7 @@ end
     coeff,
     drho_coeff,
 )
+    coeff, drho_coeff = _val(coeff), _val(drho_coeff)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin

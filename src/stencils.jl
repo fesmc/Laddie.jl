@@ -22,6 +22,20 @@ _float64(x) = Float64(_primal(x))
 # discriminant).  Plain `sqrt` for floats; the ForwardDiff extension returns a
 # zero derivative there instead of the NaN of `0 × Inf`.
 @inline _safe_sqrt(x) = sqrt(x)
+# A kernel's scalar argument as a plain value.  The kernels unwrap their scalars
+# with it on entry.  `getindex(x::Number)` is `x` for floats and `Dual`s; a scalar
+# traced by Reactant arrives as a device reference, which `x[]` loads, so that the
+# kernel body computes with a plain float (`FT(…)`, `clamp`, `promote` do not work
+# on the reference).  Arrays pass through: some slots are scalars or fields.
+@inline _val(x::Number) = x[]
+@inline _val(x::NamedTuple) = map(_val, x)
+@inline _val(x) = x
+
+# The slip factor of a wall face, from the grounding-line and land indicators `gl`
+# and `lnd` of the face and the slip factors in `walls` (`_u_walls`/`_v_walls`); zero
+# off the walls.  The indicators partition the wall faces (the grounding line takes
+# precedence at mixed corners), so exactly one of the two factors applies on a wall.
+@inline _slip(walls, gl, lnd, i, j) = walls.slip_gl * gl[i, j] + walls.slip_land * lnd[i, j]
 
 # Masked two-point average of `a` over the cells (i, j) and (i2, j2): the mean of the
 # active ones, zero if neither is active.  The kernels form their staggered
@@ -50,6 +64,7 @@ end
     dy2,
     dx2,
 )
+    dy2, dx2 = _val(dy2), _val(dx2)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -88,6 +103,7 @@ end
     dx,
     dy,
 )
+    inflow, dx, dy = _val(inflow), _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -129,15 +145,11 @@ _inflow_weight(::NoInflow, FT) = zero(FT)
     @Const(vmask),
     @Const(U),
     @Const(umask),
-    @Const(glNu),
-    @Const(glSu),
-    @Const(lndNu),
-    @Const(lndSu),
-    slip_gl,
-    slip_land,
+    walls,
     dx,
     dy,
 )
+    walls, dx, dy = _val(walls), _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -145,7 +157,7 @@ _inflow_weight(::NoInflow, FT) = zero(FT)
         jm1 = j - 1
         ip1 = i + 1
         im1 = i - 1
-        FT = typeof(slip_gl)
+        FT = typeof(dx)
         Vip = _face_avg(V, vmask, i, j, ip1, j)
         Vip_jm = _face_avg_ring0(V, vmask, i, jm1, 1, 0)
         Ujp = _face_avg(U, umask, i, j, i, jp1)
@@ -171,11 +183,8 @@ _inflow_weight(::NoInflow, FT) = zero(FT)
         D_W = D0 + ocn[i, j] * De
         u = U[i, j]
         sU = sign(u)
-        # Per-face slip factor, zero off the walls: gl?? and lnd?? partition the wall
-        # faces (the grounding line takes precedence at mixed corners), so exactly
-        # one of the two factors applies on a wall face.
-        wallN = slip_gl * glNu[i, j] + slip_land * lndNu[i, j]
-        wallS = slip_gl * glSu[i, j] + slip_land * lndSu[i, j]
+        wallN = _slip(walls, walls.glN, walls.lndN, i, j)
+        wallS = _slip(walls, walls.glS, walls.lndS, i, j)
         flux_N = -D_N * Vip * (Ujp - wallN * u) / dy
         flux_S = D_S * Vip_jm * (Ujm - wallS * u) / dy
         flux_E = -D_E * Uip * (Uip - (one(FT) - sU) * u * ocn_e) / dx
@@ -194,15 +203,11 @@ end
     @Const(vmask),
     @Const(U),
     @Const(umask),
-    @Const(glEv),
-    @Const(glWv),
-    @Const(lndEv),
-    @Const(lndWv),
-    slip_gl,
-    slip_land,
+    walls,
     dx,
     dy,
 )
+    walls, dx, dy = _val(walls), _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -210,7 +215,7 @@ end
         jm1 = j - 1
         ip1 = i + 1
         im1 = i - 1
-        FT = typeof(slip_gl)
+        FT = typeof(dx)
         Vjp = _face_avg(V, vmask, i, j, i, jp1)
         Vjm = _face_avg(V, vmask, i, j, i, jm1)
         Vip = _face_avg(V, vmask, i, j, ip1, j)
@@ -238,9 +243,8 @@ end
         sV = sign(v)
         flux_N = -D_N * Vjp * (Vjp - (one(FT) - sV) * v * ocn_n) / dy
         flux_S = D_S * Vjm * (Vjm - sV * v * ocn[i, j]) / dy
-        # Per-face slip factor: see _upwind_advection_U_kernel! for the composition.
-        wallE = slip_gl * glEv[i, j] + slip_land * lndEv[i, j]
-        wallW = slip_gl * glWv[i, j] + slip_land * lndWv[i, j]
+        wallE = _slip(walls, walls.glE, walls.lndE, i, j)
+        wallW = _slip(walls, walls.glW, walls.lndW, i, j)
         flux_E = -D_E * Ujp * (Vip - wallE * v) / dx
         flux_W = D_W * Ujp_im * (Vim - wallW * v) / dx
         out[i, j] = flux_N + flux_S + flux_E + flux_W
@@ -253,19 +257,15 @@ end
     @Const(D0),
     @Const(tmask),
     @Const(ocn),
-    @Const(glNu),
-    @Const(glSu),
-    @Const(lndNu),
-    @Const(lndSu),
-    slip_gl,
-    slip_land,
+    walls,
     A_h,
     dx2,
     dy2,
 )
+    walls, A_h, dx2, dy2 = _val(walls), _val(A_h), _val(dx2), _val(dy2)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
-    FT = typeof(slip_gl)
+    FT = typeof(A_h)
     @inbounds begin
         jp1 = j + 1
         jm1 = j - 1
@@ -278,12 +278,9 @@ end
         DU = _face_avg(D0, tmask, i, j, ip1, j) * tmask[i, j]
         DU_jp = _face_avg_ring0(D0, tmask, i, jp1, 1, 0) * tmask[i, jp1]
         DU_jm = _face_avg_ring0(D0, tmask, i, jm1, 1, 0) * tmask[i, jm1]
-        # Per-face wall drag, zero off the walls (see _upwind_advection_U_kernel!
-        # for how the grounding-line and land factors compose).
-        dragN =
-            (slip_gl * glNu[i, j] + slip_land * lndNu[i, j]) * DU * v / dy2
-        dragS =
-            (slip_gl * glSu[i, j] + slip_land * lndSu[i, j]) * DU * v / dy2
+        # Per-face wall drag, zero off the walls.
+        dragN = _slip(walls, walls.glN, walls.lndN, i, j) * DU * v / dy2
+        dragS = _slip(walls, walls.glS, walls.lndS, i, j) * DU * v / dy2
         jpD = _safe_div(DU + DU_jp, tmask[i, j] + tmask[i, jp1])
         jmD = _safe_div(DU + DU_jm, tmask[i, j] + tmask[i, jm1])
         flux_N = jpD * (var[i, jp1] - v) / dy2 * (o - ocn[i, jp1]) - dragN
@@ -300,17 +297,13 @@ end
     @Const(D0),
     @Const(tmask),
     @Const(ocn),
-    @Const(glEv),
-    @Const(glWv),
-    @Const(lndEv),
-    @Const(lndWv),
-    slip_gl,
-    slip_land,
+    walls,
     A_h,
     dx2,
     dy2,
 )
-    FT = typeof(slip_gl)
+    walls, A_h, dx2, dy2 = _val(walls), _val(A_h), _val(dx2), _val(dy2)
+    FT = typeof(A_h)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -324,11 +317,8 @@ end
         DV = _face_avg(D0, tmask, i, j, i, jp1) * tmask[i, j]
         DV_ip = _face_avg_ring0(D0, tmask, ip1, j, 0, 1) * tmask[ip1, j]
         DV_im = _face_avg_ring0(D0, tmask, im1, j, 0, 1) * tmask[im1, j]
-        # See _laplace_U_kernel! for the slip-factor composition.
-        dragE =
-            (slip_gl * glEv[i, j] + slip_land * lndEv[i, j]) * DV * v / dx2
-        dragW =
-            (slip_gl * glWv[i, j] + slip_land * lndWv[i, j]) * DV * v / dx2
+        dragE = _slip(walls, walls.glE, walls.lndE, i, j) * DV * v / dx2
+        dragW = _slip(walls, walls.glW, walls.lndW, i, j) * DV * v / dx2
         ipD = _safe_div(DV + DV_ip, tmask[i, j] + tmask[ip1, j])
         imD = _safe_div(DV + DV_im, tmask[i, j] + tmask[im1, j])
         flux_N = D0[i, jp1] * (var[i, jp1] - v) / dy2 * (o - ocn[i, jp1])
@@ -356,21 +346,18 @@ end
     @Const(D0),
     @Const(tmask),
     @Const(ocn),
-    @Const(glNu),
-    @Const(glSu),
-    @Const(lndNu),
-    @Const(lndSu),
-    slip_gl,
-    slip_land,
+    walls,
     A_h_wall,
     visc_x,
     visc_y,
     dx2,
     dy2,
 )
+    walls, A_h_wall, visc_x, visc_y, dx2, dy2 =
+        _val(walls), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
-    FT = typeof(slip_gl)
+    FT = typeof(A_h_wall)
     @inbounds begin
         jp1 = j + 1
         jm1 = j - 1
@@ -383,16 +370,8 @@ end
         DU = _face_avg(D0, tmask, i, j, ip1, j) * tmask[i, j]
         DU_jp = _face_avg_ring0(D0, tmask, i, jp1, 1, 0) * tmask[i, jp1]
         DU_jm = _face_avg_ring0(D0, tmask, i, jm1, 1, 0) * tmask[i, jm1]
-        dragN =
-            A_h_wall *
-            (slip_gl * glNu[i, j] + slip_land * lndNu[i, j]) *
-            DU *
-            v / dy2
-        dragS =
-            A_h_wall *
-            (slip_gl * glSu[i, j] + slip_land * lndSu[i, j]) *
-            DU *
-            v / dy2
+        dragN = A_h_wall * _slip(walls, walls.glN, walls.lndN, i, j) * DU * v / dy2
+        dragS = A_h_wall * _slip(walls, walls.glS, walls.lndS, i, j) * DU * v / dy2
         jpD = _safe_div(DU + DU_jp, tmask[i, j] + tmask[i, jp1])
         jmD = _safe_div(DU + DU_jm, tmask[i, j] + tmask[i, jm1])
         ov = other[i, j]
@@ -421,19 +400,16 @@ end
     @Const(D0),
     @Const(tmask),
     @Const(ocn),
-    @Const(glEv),
-    @Const(glWv),
-    @Const(lndEv),
-    @Const(lndWv),
-    slip_gl,
-    slip_land,
+    walls,
     A_h_wall,
     visc_x,
     visc_y,
     dx2,
     dy2,
 )
-    FT = typeof(slip_gl)
+    walls, A_h_wall, visc_x, visc_y, dx2, dy2 =
+        _val(walls), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
+    FT = typeof(A_h_wall)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -447,16 +423,8 @@ end
         DV = _face_avg(D0, tmask, i, j, i, jp1) * tmask[i, j]
         DV_ip = _face_avg_ring0(D0, tmask, ip1, j, 0, 1) * tmask[ip1, j]
         DV_im = _face_avg_ring0(D0, tmask, im1, j, 0, 1) * tmask[im1, j]
-        dragE =
-            A_h_wall *
-            (slip_gl * glEv[i, j] + slip_land * lndEv[i, j]) *
-            DV *
-            v / dx2
-        dragW =
-            A_h_wall *
-            (slip_gl * glWv[i, j] + slip_land * lndWv[i, j]) *
-            DV *
-            v / dx2
+        dragE = A_h_wall * _slip(walls, walls.glE, walls.lndE, i, j) * DV * v / dx2
+        dragW = A_h_wall * _slip(walls, walls.glW, walls.lndW, i, j) * DV * v / dx2
         ipD = _safe_div(DV + DV_ip, tmask[i, j] + tmask[ip1, j])
         imD = _safe_div(DV + DV_im, tmask[i, j] + tmask[im1, j])
         ov = other[i, j]
@@ -480,7 +448,6 @@ end
 function upwind_advection_T(out, m, var)
     launch_interior!(
         _upwind_advection_T_kernel!,
-        out,
         out,
         var,
         m.U.present,
@@ -553,6 +520,7 @@ end
     Nx,
     Ny,
 )
+    dx, dy = _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -607,6 +575,7 @@ end
     Nx,
     Ny,
 )
+    dx, dy = _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -654,7 +623,6 @@ function _advect_U(m, ::UpstreamMomentumAdvection)
     launch_interior!(
         _upstream_advection_U_kernel!,
         m.adv,
-        m.adv,
         m.D.present,
         m.U.present,
         m.V.present,
@@ -675,7 +643,6 @@ function _advect_V(m, ::UpstreamMomentumAdvection)
     launch_interior!(
         _upstream_advection_V_kernel!,
         m.adv,
-        m.adv,
         m.D.present,
         m.U.present,
         m.V.present,
@@ -692,10 +659,8 @@ function _advect_V(m, ::UpstreamMomentumAdvection)
 end
 
 function _advect_U(m, ::CentredMomentumAdvection)
-    slip_gl, slip_land = _advection_slips(m)
     launch_interior!(
         _upwind_advection_U_kernel!,
-        m.adv,
         m.adv,
         m.D.present,
         m.tmask,
@@ -704,22 +669,15 @@ function _advect_U(m, ::CentredMomentumAdvection)
         m.vmask,
         m.U.present,
         m.umask,
-        m.glNu,
-        m.glSu,
-        m.lndNu,
-        m.lndSu,
-        slip_gl,
-        slip_land,
+        _u_walls(m, _advection_slips(m)),
         m.dx,
         m.dy,
     )
     return m.adv
 end
 function _advect_V(m, ::CentredMomentumAdvection)
-    slip_gl, slip_land = _advection_slips(m)
     launch_interior!(
         _upwind_advection_V_kernel!,
-        m.adv,
         m.adv,
         m.D.present,
         m.tmask,
@@ -728,12 +686,7 @@ function _advect_V(m, ::CentredMomentumAdvection)
         m.vmask,
         m.U.present,
         m.umask,
-        m.glEv,
-        m.glWv,
-        m.lndEv,
-        m.lndWv,
-        slip_gl,
-        slip_land,
+        _v_walls(m, _advection_slips(m)),
         m.dx,
         m.dy,
     )
@@ -742,7 +695,6 @@ end
 function laplace_T(out, m, var)
     launch_interior!(
         _lapT_kernel!,
-        out,
         out,
         var,
         laplacian_thickness(m),
@@ -758,21 +710,14 @@ laplace_V(m) = laplace_V(m, m.lateral_viscosity)
 # PrescribedLateralViscosity: the plain Laplacian kernel, with the global A_h
 # folded into its output.
 function laplace_U(m, ::PrescribedLateralViscosity)
-    slip_gl, slip_land = _wall_slips(m)
     launch_interior!(
         _laplace_U_kernel!,
-        m.lap,
         m.lap,
         m.U.past,
         laplacian_thickness(m),
         m.tmask,
         m.ocn,
-        m.glNu,
-        m.glSu,
-        m.lndNu,
-        m.lndSu,
-        slip_gl,
-        slip_land,
+        _u_walls(m, _wall_slips(m)),
         m.A_h,
         m.dx^2,
         m.dy^2,
@@ -780,21 +725,14 @@ function laplace_U(m, ::PrescribedLateralViscosity)
     return m.lap
 end
 function laplace_V(m, ::PrescribedLateralViscosity)
-    slip_gl, slip_land = _wall_slips(m)
     launch_interior!(
         _laplace_V_kernel!,
-        m.lap,
         m.lap,
         m.V.past,
         laplacian_thickness(m),
         m.tmask,
         m.ocn,
-        m.glEv,
-        m.glWv,
-        m.lndEv,
-        m.lndWv,
-        slip_gl,
-        slip_land,
+        _v_walls(m, _wall_slips(m)),
         m.A_h,
         m.dx^2,
         m.dy^2,
@@ -806,28 +744,21 @@ end
 # be applied inside the kernel rather than as a post-hoc scalar multiply; wall
 # drag keeps using the plain, unscaled m.A_h (see _nonlinear_laplace_U_kernel!).
 function laplace_U(m, lv::NonlinearLateralViscosity)
-    slip_gl, slip_land = _wall_slips(m)
     nx, ny = size(m.V.past)
     # V collocated onto the U points, so the kernel can form |Δu| across a face.
     # Same 4-point average the drag term uses for the speed magnitude.  Stored in
     # the `Dq` work buffer, which only the tracer steps use.
     VatU = m.Dq
-    launch!(_v_at_u_kernel!, VatU, VatU, m.V.past, nx, ny)
+    launch!(_v_at_u_kernel!, VatU, m.V.past, nx, ny)
     launch_interior!(
         _nonlinear_laplace_U_kernel!,
-        m.lap,
         m.lap,
         m.U.past,
         VatU,
         laplacian_thickness(m),
         m.tmask,
         m.ocn,
-        m.glNu,
-        m.glSu,
-        m.lndNu,
-        m.lndSu,
-        slip_gl,
-        slip_land,
+        _u_walls(m, _wall_slips(m)),
         m.A_h,
         lv.C_visc * m.dx / 100,
         lv.C_visc * m.dy / 100,
@@ -837,26 +768,19 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
     return m.lap
 end
 function laplace_V(m, lv::NonlinearLateralViscosity)
-    slip_gl, slip_land = _wall_slips(m)
     nx, ny = size(m.U.past)
     # U collocated onto the V points (in `Dq`); mirrors laplace_U above.
     UatV = m.Dq
-    launch!(_u_at_v_kernel!, UatV, UatV, m.U.past, nx, ny)
+    launch!(_u_at_v_kernel!, UatV, m.U.past, nx, ny)
     launch_interior!(
         _nonlinear_laplace_V_kernel!,
-        m.lap,
         m.lap,
         m.V.past,
         UatV,
         laplacian_thickness(m),
         m.tmask,
         m.ocn,
-        m.glEv,
-        m.glWv,
-        m.lndEv,
-        m.lndWv,
-        slip_gl,
-        slip_land,
+        _v_walls(m, _wall_slips(m)),
         m.A_h,
         lv.C_visc * m.dx / 100,
         lv.C_visc * m.dy / 100,

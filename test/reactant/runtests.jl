@@ -64,9 +64,42 @@ maxrel(a, b) = maximum(maximum(abs, x .- y) / max(maximum(abs, y), eps()) for (x
         @test d ≈ fd rtol = 1e-5
     end
 
+    @testset "traced parameters" begin
+        mk(; kw...) = to_backend(build_isomip(CPU(); KW..., kw...), ReactantBackend())
+        loss(model, dt, n) =
+            (integrate!(model, dt, n); sum(model.melt .* model.imask) / sum(model.imask))
+        sim = mk()
+        model = trace_parameters(sim.model)
+        @test model.FT === Float64
+        @test model.params.melting.gamTfix isa Reactant.ConcreteRNumber
+        @test_throws ArgumentError trace_parameters(model; nope = 1)
+        traced_sim = Simulation(map(f -> f === :model ? model : getfield(sim, f), fieldnames(Simulation))...)
+        @test_throws ArgumentError run!(traced_sim; days = 0.1, verbose = false)
+        dt, n = ConcreteRNumber(sim.clock.dt), ConcreteRNumber(30)
+        primal = reactant_compile(loss, model, dt, n)
+        # Other parameter values run through the same program, and match a program
+        # compiled with them as constants (to round-off: XLA folds constants).
+        C_d = 3e-3
+        other = mk(; params = Params(; C_d))
+        @test Reactant.to_number(primal(trace_parameters(mk().model; C_d), dt, n)) ≈
+              Reactant.to_number(reactant_compile(loss, other.model, dt, n)(other.model, dt, n)) rtol = 1e-10
+        # Forward derivatives with respect to C_d and L, from one program: the
+        # direction is an input too.
+        fwd(m, dm, dt, n) = Enzyme.autodiff(Enzyme.Forward, loss, Enzyme.Duplicated(m, dm),
+                                            Enzyme.Const(dt), Enzyme.Const(n))
+        tangent(name) = trace_parameters(Enzyme.make_zero(model); name => 1)
+        dprog = reactant_compile(fwd, model, tangent(:C_d), dt, n)
+        for (name, v) in ((:C_d, sim.model.C_d), (:L, sim.model.L))
+            f(h) = Reactant.to_number(primal(trace_parameters(mk().model; name => v * (1 + h)), dt, n))
+            fd = (f(1e-4) - f(-1e-4)) / (2e-4 * v)
+            d = Reactant.to_number(only(dprog(trace_parameters(mk().model), tangent(name), dt, n)))
+            @test d ≈ fd rtol = 1e-4
+        end
+    end
+
     @testset "fusion strategies" begin
         @test_throws ArgumentError to_backend(build_isomip(CPU(); KW...), ReactantBackend(; fusion = :nope))
-        strategies = GPU ? (:native, :kernel, :stencil, :xla) : (:kernel, :stencil, :xla)
+        strategies = GPU ? (:native, :kernel, :xla) : (:kernel, :xla)
         ref = build_isomip(CPU(); KW...)
         run!(ref; days = 0.1, verbose = false)
         for fusion in strategies

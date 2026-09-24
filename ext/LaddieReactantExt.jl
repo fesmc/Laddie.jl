@@ -29,11 +29,11 @@ const Adapt = KA.Adapt
 # intermediate fields per output cell; an `optimization_barrier` on a kernel's arrays
 # forces them to memory and splits the fusions there.
 #   :kernel   a barrier on every kernel's arrays after it runs (≈ one fusion per kernel)
-#   :stencil  a barrier on the arrays of each stencil kernel before it runs, so the
-#             fields it reads at neighbour offsets are in memory
 #   :xla      no barriers: XLA's heuristics decide.  The only strategy Enzyme can
 #             differentiate (barriers have no derivative rule).
-const FUSION_STRATEGIES = (:native, :kernel, :stencil, :xla)
+# A barrier before each stencil kernel instead (`:stencil`, removed 2026-09-24) was
+# slower than `:kernel` on every grid: 2.2× at 2000×2000.
+const FUSION_STRATEGIES = (:native, :kernel, :xla)
 # The strategy of the program being traced; set by `_compile` around each trace.
 const TRACING_FUSION = Ref(:kernel)
 
@@ -60,19 +60,18 @@ end
 # as one block: with Laddie's (32, 8) GPU workgroup the tiling leaks into the raised
 # program as gathers and transposes, and the step runs about 2× slower.  Native
 # kernels keep that workgroup, as on the CUDA backend.
-function _launch_traced!(kernel!, A, ndrange, stencil, args)
+function _launch_traced!(kernel!, ndrange, args)
     f = TRACING_FUSION[]
-    f === :stencil && stencil && _barrier!(args...)
-    backend = KA.get_backend(A)
+    backend = KA.get_backend(first(args))
     k = f === :native ? kernel!(backend, Laddie._workgroup(backend)) : kernel!(backend)
     k(args...; ndrange)
     f === :kernel && _barrier!(args...)
     return nothing
 end
-Laddie.launch!(kernel!, A::Reactant.AnyTracedRArray, args...) =
-    _launch_traced!(kernel!, A, size(A), false, args)
-Laddie.launch_interior!(kernel!, A::Reactant.AnyTracedRArray, args...) =
-    _launch_traced!(kernel!, A, size(A) .- 2, true, args)
+Laddie.launch!(kernel!, out::Reactant.AnyTracedRArray, args...) =
+    _launch_traced!(kernel!, size(out), (out, args...))
+Laddie.launch_interior!(kernel!, out::Reactant.AnyTracedRArray, args...) =
+    _launch_traced!(kernel!, size(out) .- 2, (out, args...))
 
 # Reactant 0.2.286: `ReactantCUDAExt.Const{T,N,AS}` stores a `CuTracedArray`
 # without its `Size` parameter, so the field is abstract and every `@Const` read
@@ -114,18 +113,6 @@ end
 Laddie._reactant_execution(b::ReactantBackend) =
     ReactantExecution(_fusion(b.fusion), Dict{Symbol,Any}(), nothing, nothing)
 
-# What the step functions read from a Simulation (they take `sim` untyped).  The
-# clock carries only `dt`, traced so that an adaptive dt change does not recompile;
-# the clock time stays on the host.  `check_nans` is a data-dependent error and
-# cannot be traced.
-struct TracedSim{M,C,N,D}
-    model::M
-    clock::C
-    nu::N
-    debug::D
-end
-_traced_sim(model, dt, nu) = TracedSim(model, (; dt), nu, (; check_nans = false))
-
 # Extra keyword arguments for `Reactant.compile` (e.g. `xla_debug_options`), for
 # experiments with XLA's code generation; see `benchmark/reactant/fusion.jl`.
 const EXTRA_COMPILE_OPTIONS = Ref{Any}((;))
@@ -152,17 +139,46 @@ function Laddie.reactant_compile(f, args...; fusion = :xla, kwargs...)
     return _compile_with(f, fusion, args, kwargs)
 end
 
-# `integrate!` inside a trace: the steps become a traced loop.  (Written out rather
-# than through a closure: `@trace` finds the loop state in the body's variables.)
-function Laddie.integrate!(model, dt, n::Reactant.TracedRNumber; nu = 0.8)
-    s = Laddie._stepping_view(model, dt, nu)
-    @trace track_numbers = false for _ = 1:n
-        Laddie.advance_leapfrog!(s)
-        Laddie.leapfrog_step!(s, 2)
-        Laddie.apply_robert_asselin_filter!(s)
-    end
-    return model
+# ============================================================================
+# Traced parameters
+# ============================================================================
+
+# The float type a traced scalar wraps: `m.FT` of a model from `trace_parameters`.
+Laddie._value_type(::Type{T}) where {T<:Reactant.RNumber} = Reactant.unwrapped_eltype(T)
+
+# Every float in `x` (a parameter or parameterisation object) as a Reactant number
+# of precision FT.  Objects are rebuilt through their constructor, which infers the
+# type parameters from the fields; arrays, integers and field-less singletons stay.
+_traced(x::Reactant.RNumber, FT) = x
+_traced(x::AbstractFloat, FT) = ConcreteRNumber(FT(x))
+_traced(x::Number, FT) = x
+function _traced(x, FT)
+    (x isa AbstractArray || fieldcount(typeof(x)) == 0) && return x
+    fields = map(fn -> _traced(getfield(x, fn), FT), fieldnames(typeof(x)))
+    return Base.typename(typeof(x)).wrapper(fields...)
 end
+
+_override(v::Number, FT) = FT(v)
+_override(v, FT) = Laddie._promote_param(v, FT)
+
+function Laddie.trace_parameters(model::Model; overrides...)
+    p = model.params
+    FT = model.FT
+    names = fieldnames(typeof(p))
+    for k in keys(overrides)
+        k in names || throw(ArgumentError("Params has no field `$k`"))
+    end
+    fields = map(names) do fn
+        v = haskey(overrides, fn) ? _override(overrides[fn], FT) : getfield(p, fn)
+        return _traced(v, FT)
+    end
+    return Model(model.grid, model.geometry, model.state, model.cache,
+                 Laddie.Params(fields...), model.boundary, model.forcing)
+end
+
+# `integrate!` inside a trace: the steps become a traced loop.
+Laddie.integrate!(model, dt, n::Reactant.TracedRNumber; nu = 0.8) =
+    (_steps!(model, (), dt, n, model.FT(nu), ()); model)
 
 function _program(build, exec, name)
     get!(exec.programs, name) do
@@ -172,21 +188,18 @@ end
 
 _dt(sim) = ConcreteRNumber(sim.model.FT(Laddie._primal(sim.clock.dt)))
 
-# The output accumulators that are switched on (the others are 0×0).
-_accumulators(sim) = Tuple(
-    getfield(sim.io, f.acc) for f in Laddie._OUTPUT_FIELDS if getfield(sim.output, f.flag)
-)
-_accumulated_fields(sim) =
-    Tuple(f for f in Laddie._OUTPUT_FIELDS if getfield(sim.output, f.flag))
+# The output accumulators, and where each reads its field (`_accum_field!`).
+_accumulators(sim) = values(sim.io.acc)
+_sources(sim) = map(name -> Laddie._OUTPUT_FIELDS[name].src, keys(sim.io.acc))
 
-# n leapfrog steps, with the output accumulation after each when `fields` is not
-# empty: `time_step!` without the clock, then `_accum!` without its host counters.
-function _step!(rs, accs, dt, fields)
-    Laddie.advance_leapfrog!(rs)
-    Laddie.leapfrog_step!(rs, 2)
-    Laddie.apply_robert_asselin_filter!(rs)
-    for (acc, f) in zip(accs, fields)
-        Laddie._accum_field!(acc, f.src, rs.model, dt)
+# One leapfrog step, with the output accumulation when `accs` is not empty:
+# `time_step!` without the clock, then `_accum!` without its host counters.  The
+# clock of the step view carries only `dt`, traced so that an adaptive dt change does
+# not recompile; the clock time stays on the host.
+function _step!(rs, accs, dt, srcs)
+    Laddie._step_model!(rs)
+    for (acc, src) in zip(accs, srcs)
+        Laddie._accum_field!(acc, src, rs.model, dt)
     end
     return nothing
 end
@@ -199,20 +212,20 @@ end
 const NATIVE_UNROLL = Ref(4)
 _unroll(fusion) = fusion === :native ? NATIVE_UNROLL[] : 1
 
-function _steps!(model, accs, dt, n, nu, fields, unroll = 1)
-    rs = _traced_sim(model, dt, nu)
+function _steps!(model, accs, dt, n, nu, srcs, unroll = 1)
+    rs = Laddie._stepping_view(model, dt, nu)
     if unroll > 1
         @trace track_numbers = false for _ = 1:(n ÷ unroll)
             for _ = 1:unroll
-                _step!(rs, accs, dt, fields)
+                _step!(rs, accs, dt, srcs)
             end
         end
         @trace track_numbers = false for _ = 1:(n % unroll)
-            _step!(rs, accs, dt, fields)
+            _step!(rs, accs, dt, srcs)
         end
     else
         @trace track_numbers = false for _ = 1:n
-            _step!(rs, accs, dt, fields)
+            _step!(rs, accs, dt, srcs)
         end
     end
     return nothing
@@ -223,7 +236,7 @@ function Laddie._batch_length(::ReactantExecution, sim, args...)
 end
 
 function Laddie._advance_batch!(exec::ReactantExecution, sim, n, io_on)
-    fields = io_on ? _accumulated_fields(sim) : ()
+    srcs = io_on ? _sources(sim) : ()
     accs = io_on ? _accumulators(sim) : ()
     dt = _dt(sim)
     nn = ConcreteRNumber(n)
@@ -231,7 +244,7 @@ function Laddie._advance_batch!(exec::ReactantExecution, sim, n, io_on)
     unroll = _unroll(exec.fusion)
     prog = _program(exec, io_on ? :steps_io : :steps) do
         _compile(
-            (model, accs, dt, n) -> _steps!(model, accs, dt, n, nu, fields, unroll),
+            (model, accs, dt, n) -> _steps!(model, accs, dt, n, nu, srcs, unroll),
             exec,
             sim.model,
             accs,
@@ -255,15 +268,8 @@ function Laddie._advance_batch!(exec::ReactantExecution, sim, n, io_on)
 end
 
 # Re-bootstrap after a dt change (`_rebootstrap_leapfrog!` on the native path).
-function _rebootstrap!(model, dt, nu)
-    for var in (model.D, model.U, model.V, model.T, model.S)
-        var.past .= var.present
-    end
-    rs = _traced_sim(model, dt, nu)
-    Laddie.update_secondary_fields!(model, dt)
-    Laddie.leapfrog_step!(rs, 1)
-    return nothing
-end
+_rebootstrap!(model, dt, nu) =
+    Laddie._collapse_and_bootstrap!(Laddie._stepping_view(model, dt, nu))
 
 function Laddie._rebootstrap_leapfrog!(exec::ReactantExecution, sim)
     dt = _dt(sim)
@@ -280,30 +286,17 @@ end
 # Sync-point diagnostics, compiled into one program
 # ============================================================================
 
-_cfl_rates(m, ::Laddie.ExactCFL) =
-    (Laddie._launch_tpoint_diag!(Laddie._cfl_rate_kernel!, m); maximum(m.diag))
-function _cfl_rates(m, ::Laddie.ConservativeCFL)
-    FT = m.FT
-    d = m.diag
-    @. d = abs(m.U.present) * m.umask
-    umax = maximum(d)
-    @. d = abs(m.V.present) * m.vmask
-    vmax = maximum(d)
-    c = sqrt(m.g * max(zero(FT), Laddie._max_Ddrho(m)))
-    return (umax + c) / m.dx + (vmax + c) / m.dy
+# The sync-point diagnostics as one flat tuple of numbers: finiteness, the largest
+# δρ·D, the four melt statistics, the largest active D, then the CFL reductions,
+# which the host combines as the native path does (`_cfl_rate`).
+function _diagnostics(m, cfl)
+    stats = Laddie.meltstats(m)
+    return (Laddie._prognostics_finite(m), Laddie._max_Ddrho(m), stats...,
+            Laddie._max_active_D(m), Laddie._cfl_reductions(m, cfl)...)
 end
 
-function _diagnostics(m, cfl)
-    finite = all(isfinite, m.D.present) & all(isfinite, m.U.present) &
-             all(isfinite, m.V.present)
-    rate = _cfl_rates(m, cfl)
-    Ddrho = Laddie._max_Ddrho(m)
-    stats = Laddie.meltstats(m)
-    @. m.diag = ifelse(m.tmask > 0, m.D.present, m.FT(-Inf))
-    Dmax = maximum(m.diag)
-    return (finite, rate, Ddrho, stats.max_meltrate, stats.mean_meltrate,
-            stats.max_speed, stats.total_melt, Dmax)
-end
+_host_number(x::Reactant.RNumber) = Reactant.to_number(x)
+_host_number(x) = x
 
 function _diag(exec::ReactantExecution, sim)
     exec.diag === nothing || return exec.diag
@@ -311,11 +304,10 @@ function _diag(exec::ReactantExecution, sim)
     prog = _program(exec, :diagnostics) do
         _compile(m -> _diagnostics(m, cfl), exec, sim.model)
     end
-    r = map(x -> x isa Number && !(x isa Reactant.RNumber) ? x : Reactant.to_number(x),
-            prog(sim.model))
-    exec.diag = (finite = Bool(r[1]), rate = Float64(r[2]), Ddrho = r[3],
-                 stats = (max_meltrate = r[4], mean_meltrate = r[5], max_speed = r[6],
-                          total_melt = r[7]), Dmax = r[8])
+    r = map(_host_number, prog(sim.model))
+    stats = NamedTuple{(:max_meltrate, :mean_meltrate, :max_speed, :total_melt)}(r[3:6])
+    exec.diag = (finite = Bool(r[1]), Ddrho = r[2], stats, Dmax = r[7],
+                 rate = Laddie._cfl_rate(sim.model, cfl, r[8:end]))
     return exec.diag
 end
 

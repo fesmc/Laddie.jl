@@ -1,4 +1,3 @@
-using ProgressMeter
 
 # =================================================================
 # Driver
@@ -31,7 +30,7 @@ on `tmask` — the layer really does flow through gaps, and that flow is the poi
 """
 meltstats(sim::Simulation) = meltstats(sim.model)
 
-const _KG_PER_GT = 1e12
+const _KG_PER_GT = 1e12     # kilogrammms per gigatonne
 
 function meltstats(m::Model)
     imask = m.imask
@@ -42,15 +41,15 @@ function meltstats(m::Model)
     melt_sum = sum(d)                             # m yr⁻¹ summed over ice cells
     mean_meltrate = melt_sum / n
     total_melt = melt_sum * m.dx * m.dy * m.rho_freshwater / _KG_PER_GT
-    _launch_tpoint_diag!(_speed_kernel!, m)
+    _launch_tpoint_diag!(_speed_norm_kernel!, m)
     max_speed = maximum(d)
     return (; max_meltrate, mean_meltrate, max_speed, total_melt)
 end
 
-# Per-cell diagnostics on T-points, written into `m.diag`.  Velocities are
-# averaged onto the T-point as `im_half(U)`, `jm_half(V)`.  Both kernels share
+# Per-cell diagnostics on T-points, written into `m.diag`. Velocities are
+# averaged onto the T-point as `im_half(U)`, `jm_half(V)`. Both kernels share
 # one argument list (see `_launch_tpoint_diag!`), so the speed ignores some of it.
-@kernel function _speed_kernel!(
+@kernel function _speed_norm_kernel!(
     out,
     @Const(U),
     @Const(V),
@@ -63,6 +62,7 @@ end
     Nx,
     Ny,
 )
+    g, dx, dy = _val(g), _val(dx), _val(dy)
     i, j = @index(Global, NTuple)
     @inbounds begin
         u = (U[i, j] + U[_xm1(i, Nx), j]) / 2
@@ -86,6 +86,7 @@ end
     Nx,
     Ny,
 )
+    g, dx, dy = _val(g), _val(dx), _val(dy)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(g)
@@ -101,7 +102,6 @@ function _launch_tpoint_diag!(kernel!, m)
     launch!(
         kernel!,
         m.diag,
-        m.diag,
         m.U.present,
         m.V.present,
         m.drho,
@@ -115,8 +115,13 @@ function _launch_tpoint_diag!(kernel!, m)
     )
 end
 
-# Dispatch on Simulation.cfl — selects ConservativeCFL or ExactCFL.
-_cfl_number(sim) = _cfl_number(sim, sim.cfl)
+# The CFL number of the current state, for the dt controller.  `Simulation.cfl`
+# selects ConservativeCFL or ExactCFL.  The device reductions and the host formula
+# that combines them are separate functions, so that the Reactant extension can
+# compile the reductions and still combine them the same way.
+_cfl_number(sim) =
+    _float64(sim.clock.dt) *
+    _cfl_rate(sim.model, sim.cfl, _cfl_reductions(sim.model, sim.cfl))
 
 # Largest δρ·D over the active domain, for the gravity-wave speed.
 function _max_Ddrho(m)
@@ -126,28 +131,26 @@ end
 
 # Conservative: global max of |U|, |V|, and c taken independently, then combined.
 # Overestimates the true CFL but cheap (three scalar reductions).
-function _cfl_number(sim, ::ConservativeCFL)
-    m = sim.model
-    FT = m.FT
+function _cfl_reductions(m, ::ConservativeCFL)
     d = m.diag
     @. d = abs(m.U.present) * m.umask
     umax = maximum(d)
     @. d = abs(m.V.present) * m.vmask
     vmax = maximum(d)
-    c = sqrt(m.g * max(zero(FT), _max_Ddrho(m)))
-    return _float64(sim.clock.dt) * (
-        (_float64(umax) + _float64(c)) / _float64(m.dx) +
-        (_float64(vmax) + _float64(c)) / _float64(m.dy)
-    )
+    c = sqrt(m.g * max(zero(m.FT), _max_Ddrho(m)))
+    return (umax, vmax, c)
 end
+_cfl_rate(m, ::ConservativeCFL, (umax, vmax, c)) =
+    (_float64(umax) + _float64(c)) / _float64(m.dx) +
+    (_float64(vmax) + _float64(c)) / _float64(m.dy)
 
 # Exact: per-cell CFL using T-point-interpolated velocities; maximum over active
 # cells.  Tighter than ConservativeCFL at the cost of one kernel pass.
-function _cfl_number(sim, ::ExactCFL)
-    m = sim.model
+function _cfl_reductions(m, ::ExactCFL)
     _launch_tpoint_diag!(_cfl_rate_kernel!, m)
-    return _float64(sim.clock.dt) * _float64(maximum(m.diag))
+    return (maximum(m.diag),)
 end
+_cfl_rate(m, ::ExactCFL, (rate,)) = _float64(rate)
 
 # Worst-case CFL: the advective term uses the velocity cap `v_cut` instead of the
 # actual speed.  At startup the flow is ~stationary, so the actual CFL is tiny
@@ -183,22 +186,20 @@ $(TYPEDSIGNATURES)
 
 Advance `sim` by one leapfrog time step: `advance_leapfrog!` → `leapfrog_step!`
 (2×dt, which ends each momentum step with `clamp_velocities!`) →
-`apply_robert_asselin_filter!`, then move the clock forward by `dt`.  No I/O, no CFL control, no blow-up check — those belong
-to [`run!`](@ref).
+`apply_robert_asselin_filter!`, then move the clock forward by `dt`.
+No I/O, no CFL control, no blow-up check — those belong to [`run!`](@ref).
 
 Returns `sim`.
 """
 function time_step!(sim::Simulation)
-    advance_leapfrog!(sim)
-    leapfrog_step!(sim, 2)
-    apply_robert_asselin_filter!(sim)
+    _step_model!(sim)
     sim.clock.time += _primal(sim.clock.dt)
     sim.clock.iteration += 1
     return sim
 end
 
 """
-    integrate!(model, dt, n; nu = 0.8)
+$(TYPEDSIGNATURES)
 
 Advance `model` by `n` leapfrog steps of `dt` seconds (Robert–Asselin coefficient
 `nu`), without a [`Simulation`](@ref): no clock, output, dt control or blow-up check.
@@ -217,9 +218,7 @@ loss(model, dt, n) = (integrate!(model, dt, n); sum(model.melt .* model.imask) /
 function integrate!(model, dt, n; nu = 0.8)
     s = _stepping_view(model, dt, nu)
     for _ = 1:n
-        advance_leapfrog!(s)
-        leapfrog_step!(s, 2)
-        apply_robert_asselin_filter!(s)
+        _step_model!(s)
     end
     return model
 end
@@ -228,8 +227,16 @@ end
 _stepping_view(model, dt, nu) =
     (; model, clock = (; dt), nu = model.FT(nu), debug = (; check_nans = false))
 
+# One leapfrog step of the model: `time_step!` without the clock.
+function _step_model!(sim)
+    advance_leapfrog!(sim)
+    leapfrog_step!(sim, 2)
+    apply_robert_asselin_filter!(sim)
+    return
+end
+
 """
-    reactant_compile(f, args...; fusion = :xla, kwargs...)
+$(TYPEDSIGNATURES)
 
 Compile `f(args...)` with Reactant for the arrays of a model moved to a
 [`ReactantBackend`](@ref), with the kernel settings Laddie needs (requires `using
@@ -237,9 +244,14 @@ Reactant, CUDA`).  Returns the compiled function; call it with arguments of the 
 types and sizes.
 
 The kernels are raised to XLA operations before any differentiation
-(`raise_first = true`), so `f` may call `Enzyme.autodiff`.  `fusion` is one of the
+(`raise_first = true`), so `f` may call `Enzyme.autodiff`. `fusion` is one of the
 strategies of `ReactantBackend`; only `:xla` can be differentiated.  Other keywords
 go to `Reactant.compile`.
+
+The scalar parameters of a model are compiled in as constants: the program ignores
+the parameters of the model it is called with.  Pass a model from
+[`trace_parameters`](@ref) to make them inputs of the program, which can then be
+called with other parameter values and differentiated with respect to them.
 
 ```julia
 using Laddie, Reactant, CUDA
@@ -255,6 +267,39 @@ dloss = only(reactant_compile(fwd, sim.model, dmodel, dt, n)(sim.model, dmodel, 
 ```
 """
 function reactant_compile end
+
+"""
+    trace_parameters(model; overrides...)
+
+A model whose scalar parameters ([`Params`](@ref), including the floats of its
+parameterisation objects) are Reactant numbers, so that a program compiled by
+[`reactant_compile`](@ref) takes them as inputs rather than constants (requires
+`using Reactant, CUDA`).  The model shares its arrays with `model`.  Keywords replace
+fields of `Params`: numbers are converted to the model precision, parameterisation
+objects are converted as by `Params`.
+
+The compiled program then runs for any parameter values without recompiling, and
+Enzyme differentiates it with respect to a parameter through a tangent model seeded
+with `trace_parameters` too.  Parameters that only act when the model is built
+(`coriolis`, `D_init`, `dT_init`, `dS_init`) have no effect on the program.
+
+```julia
+using Laddie, Reactant, CUDA
+using Reactant: Enzyme
+sim = to_backend(build_isomip(CPU(); FT = Float64), ReactantBackend())
+model = trace_parameters(sim.model)
+loss(model, dt, n) = (integrate!(model, dt, n); sum(model.melt .* model.imask) / sum(model.imask))
+dmodel = trace_parameters(Enzyme.make_zero(model); C_d = 1)      # direction: C_d
+fwd(m, dm, dt, n) = Enzyme.autodiff(Enzyme.Forward, loss, Enzyme.Duplicated(m, dm),
+                                     Enzyme.Const(dt), Enzyme.Const(n))
+dt, n = ConcreteRNumber(sim.clock.dt), ConcreteRNumber(100)
+dloss = only(reactant_compile(fwd, model, dmodel, dt, n)(model, dmodel, dt, n))
+```
+
+Do not `run!` a simulation on such a model: `run!` compiles its own programs, and its
+host-side dt control and diagnostics expect plain numbers.
+"""
+function trace_parameters end
 
 # ============================================================================
 # Execution hooks of `run!`.  The native (KernelAbstractions) versions step one
@@ -295,15 +340,16 @@ function _advance_batch!(::NativeExecution, sim, n, io_on)
     return
 end
 
-_prognostics_finite(::NativeExecution, sim) = (
-    m = sim.model;
-    all(isfinite, m.D.present) && all(isfinite, m.U.present) && all(isfinite, m.V.present)
-)
+_prognostics_finite(::NativeExecution, sim) = _prognostics_finite(sim.model)
 _sync_cfl_number(::NativeExecution, sim) = _cfl_number(sim)
 _meltstats(::NativeExecution, sim) = meltstats(sim.model)
 _max_Ddrho(::NativeExecution, sim) = _max_Ddrho(sim.model)
-function _max_active_D(::NativeExecution, sim)
-    m = sim.model
+_max_active_D(::NativeExecution, sim) = _max_active_D(sim.model)
+
+# `&`, not `&&`: also evaluated on traced values by the Reactant extension.
+_prognostics_finite(m) =
+    all(isfinite, m.D.present) & all(isfinite, m.U.present) & all(isfinite, m.V.present)
+function _max_active_D(m)
     @. m.diag = ifelse(m.tmask > 0, m.D.present, m.FT(-Inf))
     return maximum(m.diag)
 end
@@ -327,9 +373,10 @@ restart files are stamped accordingly.  Each call rounds its own duration to a
 whole number of steps, so a sequence of calls matches one long call exactly only
 when the durations are multiples of `dt`.
 
-Each step is one [`time_step!`](@ref).  When `sim.output.saveday > 0`,
-`savefields!`, `printdiags`, and `saverestart!` are also called, and the call
-ends by flushing the partial averaging window and writing a restart.  When
+Each step is one [`time_step!`](@ref).  When `sim.output.saveday > 0`, the
+output fields are accumulated after every step, `savefields!`, `printdiags` and
+`saverestart!` write whenever their interval is due, and the call ends by flushing
+the partial averaging window and writing a restart.  When
 `verbose = true`, a progress bar with throughput and ETA is displayed;
 melt/thickness/speed diagnostics attached to the bar refresh every ~5 % of
 steps (they are device reductions, so they are deliberately not per-step).
@@ -348,6 +395,12 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     if days !== nothing && until !== nothing
         throw(ArgumentError("pass either `days` or `until`, not both"))
     end
+    _float_type(m.params) === _scalar_type(m.params) || throw(
+        ArgumentError(
+            "run! needs plain scalar parameters; a model from `trace_parameters` is " *
+            "for programs compiled with `reactant_compile`",
+        ),
+    )
     until =
         until !== nothing ? until :
         days !== nothing ? FixedSimulationEnd(t_end = _float64(days)) : sim.stop
@@ -394,7 +447,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
             elapsed += _primal(clock.dt)
         end
         if io_on
-            _write_output_if_due!(sim)
+            savefields!(sim)
             printdiags(sim)
             saverestart!(sim)
         end

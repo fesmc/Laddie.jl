@@ -1,0 +1,7 @@
+variant,FT,nx,ny,ms_per_step,compile_s
+reactant-kernel,Float32,640,320,0.822,86.6
+reactant-stencil,Float32,640,320,0.986,13.7
+reactant-kernel,Float32,1280,640,3.976,117.5
+reactant-stencil,Float32,1280,640,4.411,41.2
+reactant-kernel,Float32,2000,2000,21.020,246.7
+reactant-stencil,Float32,2000,2000,46.713,179.6

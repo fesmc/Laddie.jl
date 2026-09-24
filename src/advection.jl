@@ -1,6 +1,10 @@
 """
+$(TYPEDEF)
+
 Abstract supertype for the momentum-advection scheme — how the momentum carried
-through a face of a velocity control volume is evaluated.  Pass a concrete
+through a face of a velocity control volume is evaluated. 
+
+To use this within a simulation, pass a concrete
 instance as `Params(; momentum_advection = ...)`:
 [`CentredMomentumAdvection`](@ref) (the default) or
 [`UpstreamMomentumAdvection`](@ref).
@@ -57,8 +61,3 @@ order `|u|·Δ/2`, which at 1 km and 0.1 m s⁻¹ is ≈ 50 m² s⁻¹, far abov
 Select via `Params(; momentum_advection = UpstreamMomentumAdvection())`.
 """
 struct UpstreamMomentumAdvection <: AbstractMomentumAdvection end
-
-# Kernel-side flag: the momentum-advection kernels take a Bool rather than the
-# scheme object, so the two paths share one compiled kernel.
-_is_upstream(::CentredMomentumAdvection) = false
-_is_upstream(::UpstreamMomentumAdvection) = true

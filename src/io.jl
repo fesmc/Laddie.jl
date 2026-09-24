@@ -45,14 +45,33 @@ restart every `restday` days (plus one at the end of every `run!`).  Event times
 are absolute on the simulation clock, so a simulation advanced by several `run!`
 calls writes on the same cadence as one advanced by a single call.
 
+`fields` names the variables of `output.nc`.  Time averages:
+
+| name | field | units |
+|------|-------|-------|
+| `:Ut`, `:Vt` | x- and y-velocity averaged onto T-points | m s⁻¹ |
+| `:Uu`, `:Vv` | x- and y-velocity on their own u- and v-points | m s⁻¹ |
+| `:D`, `:T`, `:S` | layer thickness, temperature, salinity | m, °C, psu |
+| `:melt` | basal melt rate | m yr⁻¹ |
+| `:entr`, `:detr` | entrainment and detrainment rates | m yr⁻¹ |
+| `:ent2` | the extra entrainment that keeps `D ≥ D_min` | m yr⁻¹ |
+| `:Tbase`, `:Tamb` | temperature at the ice–ocean interface, ambient temperature at the layer base | °C |
+| `:gammaT` | turbulent heat-exchange velocity | m s⁻¹ |
+| `:ustar` | friction velocity at the ice base | m s⁻¹ |
+| `:drho` | reduced density contrast with the ambient water | – |
+| `:convection` | fraction of time a cell was convectively unstable | – |
+
+Static fields, written once: `:mask` (the mask and the margin flags `at_isf`,
+`at_grl`, `at_lnd`, `at_gap`) and `:z_draft` (the ice draft, m).
+
 ```julia
-OutputConfig(; name = "warm", saveday = 1.0, save_entr = true)
+OutputConfig(; name = "warm", saveday = 1.0, fields = (:D, :melt, :entr))
 ```
 
 # Fields
 $(TYPEDFIELDS)
 """
-Base.@kwdef struct OutputConfig{T,B}
+Base.@kwdef struct OutputConfig{T,F}
     "run name; files go to `joinpath(resultdir, name)`"
     name::String = "run"
     "averaging and output interval in days; `0` disables all file I/O"
@@ -65,64 +84,33 @@ Base.@kwdef struct OutputConfig{T,B}
     resultdir::String = "./output/"
     "log file name inside the run directory"
     logfilename::String = "log.txt"
-    "reserved: an existing run directory is currently always reused"
-    forcenewdir::B = true
-    "write `Ut`, the x-velocity averaged onto T-points (m s⁻¹)"
-    save_Ut::B = true
-    "write `Uu`, the x-velocity on its own u-points (m s⁻¹)"
-    save_Uu::B = false
-    "write `Vt`, the y-velocity averaged onto T-points (m s⁻¹)"
-    save_Vt::B = true
-    "write `Vv`, the y-velocity on its own v-points (m s⁻¹)"
-    save_Vv::B = false
-    "write `D`, the layer thickness (m)"
-    save_D::B = true
-    "write `T`, the layer temperature (°C)"
-    save_T::B = true
-    "write `S`, the layer salinity (psu)"
-    save_S::B = true
-    "write `melt`, the basal melt rate (m yr⁻¹)"
-    save_melt::B = true
-    "write `entr`, the entrainment rate (m yr⁻¹)"
-    save_entr::B = false
-    "write `ent2`, the extra entrainment that keeps `D ≥ D_min` (m yr⁻¹)"
-    save_ent2::B = false
-    "write `detr`, the detrainment rate (m yr⁻¹)"
-    save_detr::B = false
-    "write `Tbase`, the temperature at the ice–ocean interface (°C)"
-    save_Tbase::B = false
-    "write `Tamb`, the ambient temperature at the layer base (°C)"
-    save_Tamb::B = false
-    "write `gammaT`, the turbulent heat-exchange velocity (m s⁻¹)"
-    save_gammaT::B = false
-    "write `ustar`, the friction velocity at the ice base (m s⁻¹)"
-    save_ustar::B = false
-    "write `drho`, the reduced density contrast with the ambient water (–)"
-    save_drho::B = false
-    "write `convection`, the fraction of time a cell was convectively unstable"
-    save_convection::B = false
-    "write the static masks: `mask` and the margin flags `at_isf`, `at_grl`, `at_lnd`, `at_gap`"
-    save_mask::B = true
-    "write the static ice draft `z_draft` (m)"
-    save_zb::B = true
-    OutputConfig{T,B}(args...) where {T,B} = new{T,B}(args...)
+    "variables written to `output.nc` (see the table above)"
+    fields::F = (:Ut, :Vt, :D, :T, :S, :melt, :mask, :z_draft)
+    OutputConfig{T,F}(args...) where {T,F} = new{T,F}(args...)
 end
 
-# Positional (and keyword) construction converts the intervals to one float type
-# and the switches to Bool, as the former `Float64`/`Bool` fields did.
-function OutputConfig(name, saveday, diagday, restday, resultdir, logfilename, flags...)
+const _STATIC_FIELDS = (:mask, :z_draft)
+
+# Positional (and keyword) construction converts the intervals to one float type and
+# the field names to a tuple of symbols, and rejects unknown names.
+function OutputConfig(name, saveday, diagday, restday, resultdir, logfilename, fields)
     days = promote(float(saveday), float(diagday), float(restday))
-    return OutputConfig{eltype(days),Bool}(
+    fields = Tuple(Symbol.(fields))
+    known = (keys(_OUTPUT_FIELDS)..., _STATIC_FIELDS...)
+    for f in fields
+        f in known || throw(ArgumentError("unknown output field :$f; use one of $known"))
+    end
+    return OutputConfig{eltype(days),typeof(fields)}(
         name,
         days...,
         resultdir,
         logfilename,
-        map(Bool, flags)...,
+        fields,
     )
 end
 
 # ============================================================================
-# IOState{A, I, T} — mutable runtime I/O state.  Owned by the Simulation.
+# IOState{I, T, C} — mutable runtime I/O state.  Owned by the Simulation.
 # ============================================================================
 
 """
@@ -133,15 +121,10 @@ directory, log, and the time-average accumulators.  The simulated time itself li
 in the [`Clock`](@ref), and the cell-centre coordinates written to NetCDF on the
 [`Grid`](@ref).
 
-`A` is the matrix type (matching the grid, state and cache).  The accumulators are
-allocated 0×0 at construction; `prepare_output!` replaces the enabled ones with
-full-size device arrays (the `save_*` flags of [`OutputConfig`](@ref) guard access).
-Each accumulator sums its field over the current averaging window.
-
 # Fields
 $(TYPEDFIELDS)
 """
-mutable struct IOState{A<:AbstractMatrix,I,T}
+mutable struct IOState{I,T,C}
     "steps accumulated since the last output write"
     count::I
     "simulated time accumulated since the last output write (s)"
@@ -162,133 +145,36 @@ mutable struct IOState{A<:AbstractMatrix,I,T}
     walltime_start::T
     "restart file this simulation was started from (empty for a fresh start)"
     restartfile::String
-    "accumulated x-velocity on T-points of the averaging window"
-    Utav::A
-    "accumulated x-velocity on u-points of the averaging window"
-    Uuav::A
-    "accumulated y-velocity on T-points of the averaging window"
-    Vtav::A
-    "accumulated y-velocity on v-points of the averaging window"
-    Vvav::A
-    "accumulated layer thickness of the averaging window"
-    Dav::A
-    "accumulated layer temperature of the averaging window"
-    Tav::A
-    "accumulated layer salinity of the averaging window"
-    Sav::A
-    "accumulated basal melt rate of the averaging window"
-    meltav::A
-    "accumulated entrainment rate of the averaging window"
-    entrav::A
-    "accumulated extra entrainment `ent2` of the averaging window"
-    ent2av::A
-    "accumulated detrainment rate of the averaging window"
-    detrav::A
-    "accumulated interface temperature of the averaging window"
-    Tbav::A
-    "accumulated ambient temperature of the averaging window"
-    Taav::A
-    "accumulated heat transfer velocity of the averaging window"
-    gamTav::A
-    "accumulated friction velocity of the averaging window"
-    ustarav::A
-    "accumulated density contrast of the averaging window"
-    drhoav::A
-    "accumulated convective-instability indicator of the averaging window"
-    convav::A
+    "the dt-weighted sums over the averaging window of the time-averaged output fields, by name (full-size model arrays)"
+    acc::C
 end
 
-# The time-averaged output fields.  `flag` is the `OutputConfig` switch and `acc`
-# the `IOState` accumulator; `src` reads the field from the model, or is `Val(:t_u)`
-# / `Val(:t_v)` for a velocity averaged onto T-points; `per_year` marks rates
-# (m s⁻¹) written in m yr⁻¹.
-_outfield(flag, acc, name, units, long, src; per_year = false) =
-    (; flag, acc, name, units, long, src, per_year)
+# The time-averaged output fields, by output name.  `src` reads the field from the
+# model, or is `Val(:t_u)` / `Val(:t_v)` for a velocity averaged onto T-points;
+# `per_year` marks rates (m s⁻¹) written in m yr⁻¹.
+_outfield(units, long, src; per_year = false) = (; units, long, src, per_year)
 const _OUTPUT_FIELDS = (
-    _outfield(:save_Ut, :Utav, "Ut", "m s-1", "x-velocity on t-grid", Val(:t_u)),
-    _outfield(:save_Uu, :Uuav, "Uu", "m s-1", "x-velocity on u-grid", m -> m.U.present),
-    _outfield(:save_Vt, :Vtav, "Vt", "m s-1", "y-velocity on t-grid", Val(:t_v)),
-    _outfield(:save_Vv, :Vvav, "Vv", "m s-1", "y-velocity on v-grid", m -> m.V.present),
-    _outfield(:save_D, :Dav, "D", "m", "mixed-layer thickness", m -> m.D.present),
-    _outfield(:save_T, :Tav, "T", "degC", "layer-averaged temperature", m -> m.T.present),
-    _outfield(:save_S, :Sav, "S", "psu", "layer-averaged salinity", m -> m.S.present),
-    _outfield(
-        :save_melt,
-        :meltav,
-        "melt",
-        "m yr-1",
-        "basal melt rate",
-        m -> m.melt;
-        per_year = true,
-    ),
-    _outfield(
-        :save_entr,
-        :entrav,
-        "entr",
-        "m yr-1",
-        "entrainment rate",
-        m -> m.entr;
-        per_year = true,
-    ),
-    _outfield(
-        :save_ent2,
-        :ent2av,
-        "ent2",
-        "m yr-1",
-        "additional entrainment",
-        m -> m.ent2;
-        per_year = true,
-    ),
-    _outfield(
-        :save_detr,
-        :detrav,
-        "detr",
-        "m yr-1",
-        "detrainment rate",
-        m -> m.detr;
-        per_year = true,
-    ),
-    _outfield(:save_Tbase, :Tbav, "Tbase", "degC", "temperature at ice base", m -> m.Tb),
-    _outfield(
-        :save_Tamb,
-        :Taav,
-        "Tamb",
-        "degC",
-        "ambient temperature at layer base",
-        m -> m.Ta,
-    ),
-    _outfield(
-        :save_gammaT,
-        :gamTav,
-        "gammaT",
-        "m s-1",
-        "turbulent heat exchange velocity",
-        m -> m.gamT,
-    ),
-    _outfield(
-        :save_ustar,
-        :ustarav,
-        "ustar",
-        "m s-1",
-        "friction velocity at the ice base",
-        m -> m.ustar,
-    ),
-    _outfield(
-        :save_drho,
-        :drhoav,
-        "drho",
+    Ut = _outfield("m s-1", "x-velocity on t-grid", Val(:t_u)),
+    Uu = _outfield("m s-1", "x-velocity on u-grid", m -> m.U.present),
+    Vt = _outfield("m s-1", "y-velocity on t-grid", Val(:t_v)),
+    Vv = _outfield("m s-1", "y-velocity on v-grid", m -> m.V.present),
+    D = _outfield("m", "mixed-layer thickness", m -> m.D.present),
+    T = _outfield("degC", "layer-averaged temperature", m -> m.T.present),
+    S = _outfield("psu", "layer-averaged salinity", m -> m.S.present),
+    melt = _outfield("m yr-1", "basal melt rate", m -> m.melt; per_year = true),
+    entr = _outfield("m yr-1", "entrainment rate", m -> m.entr; per_year = true),
+    ent2 = _outfield("m yr-1", "additional entrainment", m -> m.ent2; per_year = true),
+    detr = _outfield("m yr-1", "detrainment rate", m -> m.detr; per_year = true),
+    Tbase = _outfield("degC", "temperature at ice base", m -> m.Tb),
+    Tamb = _outfield("degC", "ambient temperature at layer base", m -> m.Ta),
+    gammaT = _outfield("m s-1", "turbulent heat exchange velocity", m -> m.gamT),
+    ustar = _outfield("m s-1", "friction velocity at the ice base", m -> m.ustar),
+    drho = _outfield(
         "1",
         "reduced density contrast with ambient, (rho_a - rho)/rho_0",
         m -> m.drho,
     ),
-    _outfield(
-        :save_convection,
-        :convav,
-        "convection",
-        "1",
-        "fraction of time convectively unstable",
-        m -> m.convection,
-    ),
+    convection = _outfield("1", "fraction of time convectively unstable", m -> m.convection),
 )
 
 # ============================================================================
@@ -325,14 +211,12 @@ $(TYPEDSIGNATURES)
 
 Create the output directory at `joinpath(output.resultdir, output.name)` (if it
 does not exist yet) and open the log file, which is appended to.  An existing
-directory is reused whatever `output.forcenewdir` says, and its `output.nc` is
+directory is reused, and its `output.nc` is
 replaced by the new run's; the run metadata never overwrites an earlier file.
 """
 function create_rundir!(sim)
     rundir = joinpath(sim.output.resultdir, sim.output.name)
-    if sim.output.forcenewdir || !isdir(rundir)
-        mkpath(rundir)
-    end
+    mkpath(rundir)
     sim.io.rundir = rundir
     sim.io.logfile = joinpath(rundir, sim.output.logfilename)
     sim.io.walltime_start = time()
@@ -349,36 +233,31 @@ _toml_value(v::Integer) = Int(v)
 _toml_value(v::Real) = _float64(v)   # floats, and ForwardDiff duals
 _toml_value(v::String) = v
 _toml_value(v::Symbol) = String(v)
-_toml_value(::Any) = nothing   # arrays etc. are skipped
+_toml_value(v::Tuple) = [_toml_value(x) for x in v]
+_toml_value(::Any) = nothing   # functions etc. are skipped
 
-# Type name + all TOML-representable fields of a struct.
+# A struct as a TOML table: its type name, its numbers, strings and symbols, nested
+# structs (the parameterisation objects) as tables of their own, and the value range
+# of a numeric array as `<field>_range` — a warm and a cold forcing profile then
+# differ in the metadata, not just in the type they share.
 function _scalar_fields(x)
     d = Dict{String,Any}("type" => string(nameof(typeof(x))))
     for fn in fieldnames(typeof(x))
-        v = _toml_value(getfield(x, fn))
-        v === nothing || (d[string(fn)] = v)
+        v = getfield(x, fn)
+        if v isa AbstractArray{<:Real}
+            isempty(v) || (d["$(fn)_range"] = [_float64(y) for y in extrema(v)])
+        elseif _is_table(v)
+            d[string(fn)] = _scalar_fields(v)
+        else
+            t = _toml_value(v)
+            t === nothing || (d[string(fn)] = t)
+        end
     end
     return d
 end
-
-# Forcing metadata.  The profiles themselves are arrays, which `_scalar_fields`
-# skips, so record their ranges explicitly — otherwise the entry would say only
-# which type was used and a warm run would be indistinguishable from a cold one.
-function _forcing_metadata(f::CavityForcing)
-    o, i = f.ocean, f.ice
-    ocean = _scalar_fields(o)
-    if hasproperty(o, :Tz)
-        ocean["T_range"] = [_float64(x) for x in extrema(o.Tz)]
-        ocean["S_range"] = [_float64(x) for x in extrema(o.Sz)]
-        ocean["z_range"] = [_float64(x) for x in extrema(o.z)]
-        ocean["nz"] = length(o.z)
-    end
-    ice = _scalar_fields(i)
-    if hasproperty(i, :T_ice_base)
-        ice["T_ice_base_range"] = [_float64(x) for x in extrema(i.T_ice_base)]
-    end
-    return Dict{String,Any}("ocean" => ocean, "ice" => ice)
-end
+_is_table(v) =
+    isstructtype(typeof(v)) &&
+    !(v isa Union{Number,AbstractString,Symbol,Tuple,AbstractArray,Function})
 
 # Write the effective configuration of this run — parameters, forcing, grid,
 # time integration, output, precision, backend, package/Julia versions — so any
@@ -386,33 +265,6 @@ end
 # continuation run into the same directory gets run_metadata_1.toml, _2.toml, ...
 function _write_run_metadata(sim)
     m = sim.model
-    p = getfield(m, :params)
-    params_d = _scalar_fields(p)
-    params_d["entrainment"] = _scalar_fields(p.entrainment)
-    params_d["melt"] = _scalar_fields(p.melting)
-    if p.melting isa PrescribedMelting && p.melting.melt isa AbstractArray
-        params_d["melt"]["melt_range"] = [_float64(x) for x in extrema(p.melting.melt)]
-    end
-    params_d["convection"] = _scalar_fields(p.convection_scheme)
-    # Recorded because the choice can change the melt field by an order of magnitude
-    # on a real cavity (see AbstractMaxLayerThickness).
-    params_d["max_layer_thickness"] = _scalar_fields(p.max_layer_thickness)
-    b = getfield(m, :boundary)
-    boundary_d = Dict{String,Any}(
-        "open_ocean" => _scalar_fields(b.open_ocean),
-        "grounding_line" => _scalar_fields(b.grounding_line),
-        "land" => _scalar_fields(b.land),
-        "gaps" => _scalar_fields(b.gaps),
-    )
-    params_d["lateral_viscosity"] = _scalar_fields(p.lateral_viscosity)
-    params_d["laplacian_weights"] = _scalar_fields(p.laplacian_weights)
-    params_d["front_pressure"] = _scalar_fields(p.front_pressure)
-    # A 2D latitude is an array, which `_scalar_fields` skips; record its range so
-    # the entry says more than just which option was chosen.
-    params_d["coriolis"] = _scalar_fields(p.coriolis)
-    if p.coriolis isa CoriolisParameter2D && p.coriolis.lat isa AbstractArray
-        params_d["coriolis"]["lat_range"] = [_float64(x) for x in extrema(p.coriolis.lat)]
-    end
     sim_d = Dict{String,Any}(
         "dt0" => _float64(sim.clock.dt),
         "nu" => _float64(sim.nu),
@@ -437,9 +289,9 @@ function _write_run_metadata(sim)
             "dx" => _float64(m.dx),
             "dy" => _float64(m.dy),
         ),
-        "forcing" => _forcing_metadata(getfield(m, :forcing)),
-        "params" => params_d,
-        "boundary" => boundary_d,
+        "forcing" => _scalar_fields(getfield(m, :forcing)),
+        "params" => _scalar_fields(getfield(m, :params)),
+        "boundary" => _scalar_fields(getfield(m, :boundary)),
         "simulation" => sim_d,
         "output" => _scalar_fields(sim.output),
     )
@@ -474,14 +326,6 @@ function prepare_output!(sim)
     sim.io.count = 0
     sim.io.t_accum = 0.0
     sim.io.time_index = 0
-
-    # Allocate on same device and with same FT as the model arrays.
-    # Full grid size (including halos) so _accum! can do bare .+= without
-    # border-stripping; halos are masked out when writing to NetCDF.
-    z = zero(m.tmask)
-    for f in _OUTPUT_FIELDS
-        getfield(out, f.flag) && setfield!(sim.io, f.acc, copy(z))
-    end
     _write_run_metadata(sim)
     _create_output_file!(sim)
     # Write the initial state as the first time slice before any stepping.
@@ -501,6 +345,7 @@ _int(a) = _primal.(view(Array(a), 2:(size(a, 1)-1), 2:(size(a, 2)-1)))
 # two circshift allocations per step that im_half()/jm_half() would cost.  Accumulation
 # is dt-weighted (× dt) so the time average is correct when dt varies.
 @kernel function _accum_ut_kernel!(av, @Const(U), Nx, dt)
+    dt = _val(dt)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(av)
@@ -511,6 +356,7 @@ _int(a) = _primal.(view(Array(a), 2:(size(a, 1)-1), 2:(size(a, 2)-1)))
 end
 
 @kernel function _accum_vt_kernel!(av, @Const(V), Ny, dt)
+    dt = _val(dt)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(av)
@@ -525,27 +371,22 @@ function _accum!(sim)
     dt = sim.clock.dt
     io.count += 1
     io.t_accum += _primal(dt)
-    for f in _OUTPUT_FIELDS
-        getfield(sim.output, f.flag) && _accum_field!(getfield(io, f.acc), f.src, m, dt)
+    for (name, acc) in pairs(io.acc)
+        _accum_field!(acc, _OUTPUT_FIELDS[name].src, m, dt)
     end
 end
 
 _accum_field!(av, src, m, dt) = (av .+= src(m) .* dt)
 _accum_field!(av, ::Val{:t_u}, m, dt) =
-    launch!(_accum_ut_kernel!, av, av, m.U.present, size(av, 1), dt)
+    launch!(_accum_ut_kernel!, av, m.U.present, size(av, 1), dt)
 _accum_field!(av, ::Val{:t_v}, m, dt) =
-    launch!(_accum_vt_kernel!, av, av, m.V.present, size(av, 2), dt)
+    launch!(_accum_vt_kernel!, av, m.V.present, size(av, 2), dt)
 
 function _reset_accum!(sim)
     io = sim.io
     io.count = 0
     io.t_accum = 0.0
-    for f in _OUTPUT_FIELDS
-        acc = getfield(io, f.acc)
-        # Disabled accumulators are 0×0.  (`length`, not `isempty`: Reactant 0.2.286
-        # reports a 0×0 array as non-empty.)
-        length(acc) == 0 || fill!(acc, 0)
-    end
+    foreach(acc -> fill!(acc, 0), io.acc)
 end
 
 # ============================================================================
@@ -602,12 +443,13 @@ function _create_output_file!(sim)
                 attrib = ["units" => units, "long_name" => longname],
             )
         end
-        for f in _OUTPUT_FIELDS
-            getfield(sim.output, f.flag) && dv(f.name, f.units, f.long)
+        for name in keys(sim.io.acc)
+            f = _OUTPUT_FIELDS[name]
+            dv(string(name), f.units, f.long)
         end
 
         # Static fields — written once
-        if sim.output.save_mask
+        if :mask in sim.output.fields
             defVar(ds, "mask", Int32, ("x", "y"))[:, :] = Int32.(_int(m.resolved_mask))
             flag!(name, long, cells) =
                 defVar(ds, name, Int8, ("x", "y"); attrib = ["long_name" => long])[:, :] =
@@ -650,7 +492,7 @@ function _create_output_file!(sim)
                 shelf_next_to(4),
             )
         end
-        if sim.output.save_zb
+        if :z_draft in sim.output.fields
             defVar(ds, "z_draft", Float64, ("x", "y"); attrib = ["units" => "m"])[:, :] =
                 _int(m.z_draft)
         end
@@ -679,13 +521,9 @@ function _write_output!(sim, t_days)
             ds[name][:, :, k] = ifelse.(tmask_int .> 0, av_int ./ n .* scale, FT0)
         end
 
-        for f in _OUTPUT_FIELDS
-            getfield(sim.output, f.flag) || continue
-            wv(
-                f.name,
-                getfield(sim.io, f.acc),
-                f.per_year ? _primal(m.seconds_per_year) : 1.0,
-            )
+        for (name, acc) in pairs(sim.io.acc)
+            scale = _OUTPUT_FIELDS[name].per_year ? _primal(m.seconds_per_year) : 1.0
+            wv(string(name), acc, scale)
         end
     end
     _print2log(sim, @sprintf("%.3f days: appended output → output.nc (step %d)", t_days, k))
@@ -699,23 +537,16 @@ _event_due(sim, next) = sim.clock.time + sim.clock.dt / 2 >= next
 """
 $(TYPEDSIGNATURES)
 
-Accumulate model fields into time averages and write a NetCDF output file
-at every `output.saveday`-day interval.  Called once per time step inside `run!`;
-the final partial window is flushed by `run!` after the loop.
+Write the time averages accumulated since the last write to `output.nc`, once every
+`output.saveday` days.  Called by `run!` after each batch of steps, which also
+accumulates the averages; the final partial window is flushed after the loop.
 """
 function savefields!(sim)
-    _accum!(sim)
-    _write_output_if_due!(sim)
-end
-
-# The write half of `savefields!`: `run!` accumulates while it steps (in compiled
-# batches under Reactant) and writes here.
-function _write_output_if_due!(sim)
-    if _event_due(sim, sim.io.nextsave)
-        _write_output!(sim, _t_days(sim))
-        _reset_accum!(sim)
-        sim.io.nextsave += sim.output.saveday * _primal(sim.model.seconds_per_day)
-    end
+    _event_due(sim, sim.io.nextsave) || return
+    _write_output!(sim, _t_days(sim))
+    _reset_accum!(sim)
+    sim.io.nextsave += sim.output.saveday * _primal(sim.model.seconds_per_day)
+    return
 end
 
 # Flush any unwritten accumulation as a final output file (end of run).
@@ -794,8 +625,7 @@ function init_from_restart!(sim, path::AbstractString)
             var.future .= data.future
         end
     end
-    update_secondary_fields!(m, sim.clock.dt)
-    leapfrog_step!(sim, 1)
+    _bootstrap_leapfrog!(sim)
     _print2log(sim, "Restarted from $(path) at $(_t_days(sim)) days")
     return sim
 end

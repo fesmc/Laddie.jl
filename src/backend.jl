@@ -16,16 +16,18 @@ end
 # The matrix type on `backend` with the element type of the source matrices `A0`.
 _moved_matrix_type(backend, ::Type{A0}) where {A0} = _matrix_type(backend, eltype(A0))
 
-# Grid, Geometry and IOState have every type parameter as a field type, so their
-# default constructors re-infer the parameters from the moved fields.
+# Grid and Geometry have every type parameter as a field type, so their default
+# constructors re-infer the parameters from the moved fields.
 _grid_to_backend(g::Grid{FT,A0}, backend) where {FT,A0} =
     Grid(_moved_fields(g, A0, backend)...)
 
 _geometry_to_backend(g::Geometry{A0}, backend) where {A0} =
     Geometry(_moved_fields(g, A0, backend)...)
 
-_iostate_to_backend(io::IOState{A0}, backend) where {A0} =
-    IOState(_moved_fields(io, A0, backend)...)
+_iostate_to_backend(io::IOState, backend) = IOState(
+    map(fn -> getfield(io, fn), fieldnames(IOState)[1:(end-1)])...,
+    map(a -> _to_device(backend, a), io.acc),
+)
 
 _var_to_backend(v::Var{LX,LY,A0}, backend) where {LX,LY,A0} =
     Var{LX,LY,_moved_matrix_type(backend, A0)}(_moved_fields(v, A0, backend)...)

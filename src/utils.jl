@@ -94,9 +94,9 @@ end
 @inline _max_layer_thickness(::TopographicMaxLayerThickness, D, z_draft, z_bed, tmask) =
     min(D, z_draft - z_bed) * tmask
 @inline _max_layer_thickness(c::AbsoluteMaxLayerThickness, D, z_draft, z_bed, tmask) =
-    min(D, c.D_max) * tmask
+    min(D, _val(c.D_max)) * tmask
 @inline _max_layer_thickness(c::RelativeMaxLayerThickness, D, z_draft, z_bed, tmask) =
-    min(D, c.f_D_max * (z_draft - z_bed)) * tmask
+    min(D, _val(c.f_D_max) * (z_draft - z_bed)) * tmask
 
 # ============================================================================
 # Shift / interpolation primitives  (≡ np.roll & tools.py, GPU-capable)
@@ -132,18 +132,10 @@ im_count(mask) = mask .+ xp1(mask)
 ip_count(mask) = mask .+ xm1(mask)
 jm_count(mask) = mask .+ yp1(mask)
 jp_count(mask) = mask .+ ym1(mask)
-im_t(m, a) = div0(a .+ xp1(a), im_count(m.tmask))
 ip_t(m, a) = div0(a .+ xm1(a), ip_count(m.tmask))
-jm_t(m, a) = div0(a .+ yp1(a), jm_count(m.tmask))
 jp_t(m, a) = div0(a .+ ym1(a), jp_count(m.tmask))
 im_u(m, a) = div0(a .+ xp1(a), im_count(m.umask))
-ip_u(m, a) = div0(a .+ xm1(a), ip_count(m.umask))
-jm_u(m, a) = div0(a .+ yp1(a), jm_count(m.umask))
-jp_u(m, a) = div0(a .+ ym1(a), jp_count(m.umask))
-im_v(m, a) = div0(a .+ xp1(a), im_count(m.vmask))
-ip_v(m, a) = div0(a .+ xm1(a), ip_count(m.vmask))
 jm_v(m, a) = div0(a .+ yp1(a), jm_count(m.vmask))
-jp_v(m, a) = div0(a .+ ym1(a), jp_count(m.vmask))
 
 # Cells with at least one open-ocean neighbour.
 next_to_ocean(ocn) = xm1(ocn) .+ xp1(ocn) .+ ym1(ocn) .+ yp1(ocn) .> 0

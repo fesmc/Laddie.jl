@@ -1,6 +1,7 @@
 module Laddie
 using KernelAbstractions
 using DocStringExtensions
+using ProgressMeter
 const KA = KernelAbstractions
 
 include("entrainment.jl")
@@ -48,7 +49,8 @@ export build_isomip,
     to_backend,
     ReactantBackend,
     integrate!,
-    reactant_compile
+    reactant_compile,
+    trace_parameters
 
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
 export AbstractMelting,

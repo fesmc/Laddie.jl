@@ -50,8 +50,13 @@ function barrier!(args...)
     return nothing
 end
 
+# Since 2026-09-24 `launch!(kernel!, out, args...)` passes `out` to the kernel too;
+# before, the caller repeated it (`launch!(kernel!, out, out, args...)`).
+_kernel_args(A, args) = isdefined(Laddie, :_launch!) ? (A, args...) : args
+
 if get(ENV, "WG", "0") != "1"
     function Laddie.launch!(kernel!, A::Reactant.AnyTracedRArray, args...)
+        args = _kernel_args(A, args)
         kernel!(RB())(args...; ndrange = size(A))
         (BARRIER || barrier_after(kernel!)) && barrier!(args...)
         return nothing
@@ -59,6 +64,7 @@ if get(ENV, "WG", "0") != "1"
     # (Laddie versions before the interior launch have no `launch_interior!`.)
     if isdefined(Laddie, :launch_interior!)
         @eval function Laddie.launch_interior!(kernel!, A::Reactant.AnyTracedRArray, args...)
+            args = _kernel_args(A, args)
             BARRIER_PRE && barrier!(args...)
             kernel!(RB())(args...; ndrange = size(A) .- 2)
             (BARRIER_INTERIOR || barrier_after(kernel!)) && barrier!(args...)

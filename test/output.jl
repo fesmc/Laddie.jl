@@ -22,8 +22,9 @@ end
     xs = -1.5e6 .+ 2000.0 .* (0:21)
     grid = Grid(mk, zd; x = xs, y = 3.0e5 .- 2000.0 .* (0:11),
                 domain_cropping = NoDomainCropping())
-    output = OutputConfig(; name = "extra", resultdir = tmp, saveday = 0.25,
-                          save_ustar = true, save_drho = true, save_convection = true)
+    fields = (:Ut, :Vt, :D, :T, :S, :melt, :mask, :z_draft, :ustar, :drho, :convection)
+    output = OutputConfig(; name = "extra", resultdir = tmp, saveday = 0.25, fields)
+    @test_throws ArgumentError OutputConfig(; fields = (:D, :nope))
     sim = Simulation(Model(grid; forcing = ISOMIPForcing(:warm)); output)
     run!(sim; days = 0.5, verbose = false)
     Laddie.NCDatasets.Dataset(joinpath(tmp, "extra", "output.nc")) do ds
@@ -63,17 +64,18 @@ end
     @test meta["simulation"]["cfl"]["type"] == "ExactCFL"
     @test meta["simulation"]["restart"] == ""
     @test !haskey(meta["params"], "dt0") && !haskey(meta["params"], "time_stepper")
-    @test meta["params"]["melt"]["type"] == "FixedGamTMelting"
-    @test meta["params"]["melt"]["gamTfix"] ≈ 0.00018
+    @test meta["params"]["melting"]["type"] == "FixedGamTMelting"
+    @test meta["params"]["melting"]["gamTfix"] ≈ 0.00018
+    @test meta["params"]["momentum_advection"]["type"] == "CentredMomentumAdvection"
+    @test meta["boundary"]["wall_advection"]["type"] == "SlipScaledWallAdvection"
     @test meta["boundary"]["grounding_line"]["type"] == "NoSlipGL"
     @test meta["boundary"]["gaps"]["type"] == "SinkGapsBC"
     @test !haskey(meta["params"], "grounding_line")
-    # The forcing entry is split ocean/ice, and records the profile ranges:
-    # the arrays themselves are skipped by _scalar_fields, so without these a
-    # warm run would be indistinguishable from a cold one in the metadata.
+    # The forcing entry is split ocean/ice, and records the profile ranges, so that
+    # a warm run is distinguishable from a cold one in the metadata.
     @test meta["forcing"]["ocean"]["type"] == "OceanForcing1D"
-    @test meta["forcing"]["ocean"]["T_range"][2] ≈ 18.23888888888889
-    @test meta["forcing"]["ocean"]["nz"] == 5000
+    @test meta["forcing"]["ocean"]["Tz_range"][2] ≈ 18.23888888888889
+    @test meta["forcing"]["ocean"]["z_range"][1] < 0
     @test meta["forcing"]["ice"]["type"] == "PrescribedIceForcing"
     @test meta["forcing"]["ice"]["T_ice_base_range"] == [-25.0, -25.0]
     @test meta["output"]["saveday"] == 0.5

@@ -25,6 +25,7 @@ See [Reactant backend](@ref) for the setup, the fusion strategies and their cost
 ReactantBackend
 integrate!
 reactant_compile
+trace_parameters
 ```
 
 ## Geometry ingestion

@@ -30,9 +30,9 @@ function Base.show(io::IO, c::Cache)
     print(io, "Cache{$(eltype(c.melt))}: $nmat scratch/diagnostic arrays of $(_sz(c.melt))")
 end
 
-function Base.show(io::IO, s::IOState{A}) where {A}
+function Base.show(io::IO, s::IOState)
     rd = isempty(s.rundir) ? "I/O disabled" : "rundir = \"$(s.rundir)\""
-    print(io, "IOState{$(eltype(A))}: $(s.time_index) output slices, $rd")
+    print(io, "IOState: $(length(s.acc)) averaged fields, $(s.time_index) output slices, $rd")
 end
 
 # Generic one-liner for a profile forcing.  extrema/length are reductions, so this

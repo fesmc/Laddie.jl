@@ -42,7 +42,6 @@ operations, which XLA then fuses. `ReactantBackend(; fusion)` picks the form:
 |---|---|---|---|
 | `:native` | CUDA code from CUDA.jl, called from the compiled loop | GPU | no |
 | `:kernel` | raised, with an optimisation barrier after every kernel | GPU, CPU | no |
-| `:stencil` | raised, with a barrier before each stencil kernel | GPU, CPU | no |
 | `:xla` | raised, fused by XLA's heuristics | GPU, CPU | **yes** |
 
 `:auto`, the default, picks `:native` on the GPU and `:kernel` on the CPU.
@@ -50,7 +49,9 @@ operations, which XLA then fuses. `ReactantBackend(; fusion)` picks the form:
 Without barriers, XLA fuses a whole step into a few giant fusions. These recompute
 intermediate fields for every output cell and use up to 255 registers at 17 %
 occupancy. A barrier makes XLA write a kernel's arrays to memory, so every kernel
-becomes about one fusion. Enzyme has no derivative rule for barriers, and none for
+becomes about one fusion. A barrier before each stencil kernel instead, so that the fields it
+reads at neighbour offsets are in memory, was slower than `:kernel` on every grid (2.2×
+at 2000×2000; `benchmark/reactant/results-2026-09-24.csv`) and was removed. Enzyme has no derivative rule for barriers, and none for
 native kernel calls. That leaves `:xla` as the one strategy that can be
 differentiated.
 
@@ -103,17 +104,52 @@ dloss = only(reactant_compile(fwd, sim.model, dmodel, dt, n)(sim.model, dmodel, 
 ```
 
 This matches central differences to about 1e-8 relative (the extension's tests check
-it). The limitations:
+it).
 
-- **Only fields of the model can be inputs.** That covers the state, the forcing
-  profiles `Tz` and `Sz`, and the ice temperature. Scalar parameters (`C_d`, `γ_T`, …)
-  are compiled in as constants. To trace them, the kernels must stop taking their
-  float type from a scalar argument (`FT = typeof(g)` in 22 kernels); taking it from an
-  array's `eltype` would do.
+### Scalar parameters
+
+A compiled program takes the scalar parameters of the model it was compiled with as
+constants, and ignores the parameters of the model it is later called with.
+[`trace_parameters`](@ref) returns the model with every float of [`Params`](@ref)
+(including those of the parameterisation objects) as a Reactant number, so that they
+become inputs of the program. The program then runs for other parameter values
+without recompiling, and Enzyme differentiates with respect to a parameter through a
+tangent model seeded with `trace_parameters`:
+
+```julia
+sim = to_backend(build_isomip(CPU(); FT = Float64), ReactantBackend())
+model = trace_parameters(sim.model)
+dmodel = trace_parameters(Enzyme.make_zero(model); C_d = 1)     # direction: C_d
+prog = reactant_compile(fwd, model, dmodel, dt, n)
+dloss = only(prog(model, dmodel, dt, n))
+
+# Another drag coefficient, same program:
+model2 = trace_parameters(model; C_d = 3e-3)
+dloss2 = only(prog(model2, dmodel, dt, n))
+```
+
+The derivatives with respect to `C_d` and `L` match central differences (Float64).
+The traced parameters reach the kernels as device references, which each kernel loads
+once on entry (`_val`). In Float32 on the GPU (ms/step, 2000×2000):
+
+| strategy  | constant parameters | traced parameters |
+|-----------|---------------------|-------------------|
+| `:native` | 12.7                | 12.4              |
+| `:xla`    | 25.2                | 30.0              |
+
+Native kernels cost the same. Raised kernels are 19 % slower, since XLA can no longer
+fold the parameters into its fusions; this is the price of differentiating with
+respect to them. `run!` keeps parameters as constants; do not run
+a simulation on a model from `trace_parameters`. Parameters that act only when the
+model is built (`coriolis`, `D_init`, `dT_init`, `dS_init`) have no effect on a
+program.
+
+### Limitations
+
 - **Raised kernels without barriers** (`:xla`) are the slowest strategy, 2–2.5× KA.
   A derivative in forward mode costs roughly one such run per direction.
-- For gradients with respect to a few scalar parameters, the ForwardDiff extension
-  already works on every backend (build the model at `FT = Dual`).
+- The ForwardDiff extension remains the option for gradients on the CPU backends and
+  on the KA GPU backends (build the model at `FT = Dual`).
 
 ## Tests
 

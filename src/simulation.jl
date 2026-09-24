@@ -23,10 +23,11 @@ mutable struct Clock{FT,T,I}
     dt::FT
 end
 
-# Empty I/O state on the model's backend: the 0×0 accumulators are allocated with
-# `similar`, so they already have the model's concrete array type.
-function IOState(m::Model)
-    empty = similar(m.tmask, 0, 0)
+# I/O state on the model's backend, with a zeroed accumulator for each time-averaged
+# output field when file I/O is on.  Full grid size (including the border ring), so
+# `_accum!` can do bare `.+=`; the ring is masked out when writing to NetCDF.
+function IOState(m::Model, output::OutputConfig)
+    names = output.saveday > 0 ? filter(in(keys(_OUTPUT_FIELDS)), output.fields) : ()
     IOState(
         0,       # count
         0.0,     # t_accum
@@ -38,7 +39,7 @@ function IOState(m::Model)
         "",      # logfile
         0.0,     # walltime_start
         "",      # restartfile
-        ntuple(_ -> similar(empty), fieldcount(IOState) - 10)...,   # accumulators
+        NamedTuple{names}(map(_ -> zero(m.tmask), names)),
     )
 end
 
@@ -137,7 +138,7 @@ function Simulation(
 )
     FT = model.FT
     dt > 0 || throw(ArgumentError("dt must be positive, got $dt"))
-    io = IOState(model)
+    io = IOState(model, output)
     sim = Simulation(
         model,
         Clock(0.0, 0, FT(dt)),

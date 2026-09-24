@@ -200,6 +200,15 @@ _advection_slips(m) = _advection_slips(m, m.boundary.wall_advection)
 _advection_slips(m, ::SlipScaledWallAdvection) = _wall_slips(m)
 _advection_slips(m, ::NoWallAdvection) = (zero(m.FT), zero(m.FT))
 
+# The walls of the u- and v-points as the momentum kernels take them: the
+# grounding-line and land indicators of the two wall faces (north and south of a
+# u-point, east and west of a v-point), and the slip factors `(slip_gl, slip_land)`
+# of `_wall_slips` or `_advection_slips`.
+_u_walls(m, (slip_gl, slip_land)) =
+    (; glN = m.glNu, glS = m.glSu, lndN = m.lndNu, lndS = m.lndSu, slip_gl, slip_land)
+_v_walls(m, (slip_gl, slip_land)) =
+    (; glE = m.glEv, glW = m.glWv, lndE = m.lndEv, lndW = m.lndWv, slip_gl, slip_land)
+
 #############################
 # Open BC
 #############################

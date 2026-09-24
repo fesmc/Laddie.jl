@@ -2,7 +2,13 @@
 # General model builder
 # ============================================================================
 
-_float_type(::Params{FT}) where {FT} = FT
+_float_type(::Params{FT}) where {FT} = _value_type(FT)
+# The number type a scalar parameter holds: the type itself, except for a scalar
+# traced by Reactant (see `trace_parameters`), whose extension returns the float
+# type it wraps.
+_value_type(::Type{T}) where {T} = T
+# The type the parameters are stored as (the Reactant number type once traced).
+_scalar_type(::Params{FT}) where {FT} = FT
 _float_type(f::OceanForcing1D) = eltype(f.Tz)
 _float_type(f::CavityForcing) = _float_type(f.ocean)
 
@@ -42,6 +48,14 @@ _crop_ice_forcing(ice::PrescribedIceForcing, r, c) =
 # their own grid-shaped `T_ice_base`.
 _expand_ice_forcing(ice::AbstractIceForcing, sz, FT) = ice
 _crop_ice_forcing(ice::AbstractIceForcing, r, c) = ice
+
+# FixedGamTMelting: the cache reports the constant exchange velocities, which the
+# kernels read from the parameter (`_exchange_velocities`).
+_init_exchange_velocities!(cache, ::AbstractMelting) = nothing
+function _init_exchange_velocities!(cache, mp::FixedGamTMelting)
+    cache.gamT, cache.gamS = _fixed_exchange_velocities(mp, typeof(cache.gamT))
+    return
+end
 
 # Fill the Cache's prescribed melt field (m s⁻¹, grid-shaped) from a
 # `PrescribedMelting` given in m yr⁻¹ as a scalar or a full-domain matrix.  Other
@@ -273,6 +287,7 @@ function Model(
         ny_total,
     )
     _init_prescribed_melt!(cache, params.melting, grid, params)
+    _init_exchange_velocities!(cache, params.melting)
     m = Model(grid, geometry, state, cache, params, boundary, forcing)
     _initialize_prognostics!(m)
     backend isa CPU || (m = to_backend(m, backend))

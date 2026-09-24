@@ -15,6 +15,51 @@ const KW = (; nx = 40, ny = 20, isomipcond = :warm)
 prognostics(m) = [Array(getfield(getproperty(m, v), :present)) for v in (:D, :U, :V, :T, :S)]
 maxrel(a, b) = maximum(maximum(abs, x .- y) / max(maximum(abs, y), eps()) for (x, y) in zip(a, b))
 
+# A 40×20 cavity with a melt-through gap (mask 4) under ConnectedGapsBC, and a bed for
+# the relative thickness cap: neither fits `build_isomip`.
+function gaps_sim(; kw...)
+    mask = zeros(Int, 42, 22)
+    mask[[1, end], :] .= 1
+    mask[:, [1, end]] .= 1
+    mask[2:4, 2:21] .= 2
+    mask[5:39, 2:21] .= 3
+    mask[40:41, 2:21] .= 0
+    mask[18:21, 8:12] .= 4
+    z_draft = [-600.0 + 400 * (i - 5) / 34 for i = 1:42, _ = 1:22]
+    grid = Grid(mask, z_draft, 2000.0, 2000.0; z_bed = fill(-700.0, 42, 22),
+                domain_cropping = NoDomainCropping())
+    model = Model(grid; forcing = ISOMIPForcing(:warm),
+                  params = Params(; max_layer_thickness = RelativeMaxLayerThickness(0.8)),
+                  boundary = BoundaryConditions(; gaps = ConnectedGapsBC()))
+    return Simulation(model; kw...)
+end
+
+# Every non-default scheme, in four runs.  Not covered: TopographicMaxLayerThickness
+# (the kernel of RelativeMaxLayerThickness at fraction 1) and OceanForcing2D (not
+# implemented).
+const SCHEME_SCENARIOS = [
+    "mixing" => () -> build_isomip(CPU(); KW..., gradient = PyGradient(),
+        cfl = ConservativeCFL(), tstep = AdaptiveDt(),
+        params = Params(; melting = TurbulentGamTMelting(), entrainment = GasparEntrainment(),
+                        convection_scheme = RelaxToAmbient(),
+                        max_layer_thickness = AbsoluteMaxLayerThickness(50.0),
+                        lateral_viscosity = NonlinearLateralViscosity(),
+                        front_pressure = TruncatedDepthGradient(),
+                        momentum_advection = UpstreamMomentumAdvection()),
+        boundary = BoundaryConditions(; open_ocean = NoInflow(), grounding_line = FreeSlipGL(),
+                                      land = PartialSlipLand(1.0))),
+    "rotation" => () -> build_isomip(CPU(); KW...,
+        params = Params(; melting = UStarGamTMelting(), entrainment = HollandEntrainment(),
+                        convection_scheme = ClampDensity(),
+                        laplacian_weights = PastLaplacianWeights(),
+                        coriolis = CoriolisParameter2D([-75.0 + 0.2j for _ = 1:42, j = 1:22])),
+        boundary = BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = FreeSlipLand(),
+                                      wall_advection = NoWallAdvection())),
+    "prescribed" => () -> build_isomip(CPU(); KW...,
+        params = Params(; melting = PrescribedMelting([i < 25 ? 2.0 : 8.0 for i = 1:42, _ = 1:22]))),
+    "gaps" => gaps_sim,
+]
+
 @testset "Reactant extension" begin
     @testset "run! matches the CPU ($(GPU ? "GPU" : "CPU") target)" begin
         for FT in (Float64, Float32), tstep in (FixedDt(), AdaptiveDt())
@@ -107,5 +152,34 @@ maxrel(a, b) = maximum(maximum(abs, x .- y) / max(maximum(abs, y), eps()) for (x
             run!(rsim; days = 0.1, verbose = false)
             @test maxrel(prognostics(rsim.model), prognostics(ref.model)) < 1e-10
         end
+    end
+
+    # Each scheme through `run!` (default strategy) and through the forward derivative
+    # of the raised `:xla` program with respect to a traced parameter.  The loss is
+    # the mean layer temperature, which depends on C_d under prescribed melting too.
+    @testset "scheme coverage: $name" for (name, build) in SCHEME_SCENARIOS
+        ref = build()
+        rsim = to_backend(build(), ReactantBackend())
+        run!(ref; days = 0.5, verbose = false)
+        run!(rsim; days = 0.5, verbose = false)
+        @test rsim.clock.iteration == ref.clock.iteration
+        @test maxrel(prognostics(rsim.model), prognostics(ref.model)) < 1e-10
+
+        mk(; kw...) = trace_parameters(to_backend(build(), ReactantBackend()).model; kw...)
+        loss(model, dt, n) =
+            (integrate!(model, dt, n); sum(model.T.present .* model.tmask) / sum(model.tmask))
+        fwd(m, dm, dt, n) = Enzyme.autodiff(Enzyme.Forward, loss, Enzyme.Duplicated(m, dm),
+                                            Enzyme.Const(dt), Enzyme.Const(n))
+        model = mk()
+        fresh = build()
+        dt, n = ConcreteRNumber(fresh.clock.dt), ConcreteRNumber(20)
+        primal = reactant_compile(loss, model, dt, n)
+        C_d = fresh.model.C_d
+        f(h) = Reactant.to_number(primal(mk(; C_d = C_d * (1 + h)), dt, n))
+        fd = (f(1e-4) - f(-1e-4)) / (2e-4 * C_d)
+        # The zero tangent goes through validating constructors (TurbulentGamTMelting).
+        tangent = trace_parameters(Enzyme.make_zero(model); C_d = 1)
+        d = Reactant.to_number(only(reactant_compile(fwd, model, tangent, dt, n)(mk(), tangent, dt, n)))
+        @test d ≈ fd rtol = 1e-4
     end
 end

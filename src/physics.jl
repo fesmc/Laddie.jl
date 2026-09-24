@@ -95,9 +95,14 @@ end
         depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
         # unsafe_trunc: the value is in range after the clamp, and the checked
         # `trunc` leaves an InexactError branch (a trap) that Reactant cannot raise.
-        idx_lo = unsafe_trunc(Int, _primal(depth_idx))
+        # The weight subtracts `floor` (= trunc, depth_idx ≥ 0), not the index
+        # converted back: Enzyme on raised kernels (Reactant 0.2.286) passes the
+        # derivative through the int round trip, so `depth_idx - FT(idx_lo)` gets
+        # a zero tangent.
+        lo = floor(_primal(depth_idx))
+        idx_lo = unsafe_trunc(Int, lo)
         idx_hi = clamp(idx_lo + 1, 0, nz - 1)
-        weight = depth_idx - FT(idx_lo)
+        weight = depth_idx - lo
         Ta[i, j] = weight * Tz[idx_hi+1] + (one(FT) - weight) * Tz[idx_lo+1]
         Sa[i, j] = weight * Sz[idx_hi+1] + (one(FT) - weight) * Sz[idx_lo+1]
     end

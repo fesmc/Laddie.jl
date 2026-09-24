@@ -12,16 +12,20 @@
 @inline _xm1(i, N) = ifelse(i == 1, N, i - 1)
 @inline _yp1(j, N) = ifelse(j == N, 1, j + 1)
 @inline _ym1(j, N) = ifelse(j == 1, N, j - 1)
-@inline _safe_div(a, b) = iszero(b) ? zero(a) : a / b
+# Zero where `b` is zero.  The divisor of the unused branch is swapped for one as well:
+# reverse-mode AD (Enzyme) still differentiates that branch, and its zero adjoint
+# times 1/0 would give NaN.
+@inline _safe_div(a, b) = ifelse(iszero(b), zero(a), a / ifelse(iszero(b), one(b), b))
 # The plain value of a number, without derivative parts.  Used where a value
 # leaves the differentiable computation: integer indices, the dt controller,
 # display and file output.  The ForwardDiff extension strips `Dual` numbers.
 @inline _primal(x) = x
 _float64(x) = Float64(_primal(x))
 # `sqrt` for arguments that reach exactly zero (a speed at rest, a clipped
-# discriminant).  Plain `sqrt` for floats; the ForwardDiff extension returns a
-# zero derivative there instead of the NaN of `0 × Inf`.
-@inline _safe_sqrt(x) = sqrt(x)
+# discriminant), with a zero derivative there instead of the NaN of `0 × Inf`.  The
+# same double `ifelse` as `_safe_div`, for Enzyme; the ForwardDiff extension has its
+# own method for `Dual`s.
+@inline _safe_sqrt(x) = ifelse(iszero(x), zero(x), sqrt(ifelse(iszero(x), one(x), x)))
 # A kernel's scalar argument as a plain value.  The kernels unwrap their scalars
 # with it on entry.  `getindex(x::Number)` is `x` for floats and `Dual`s; a scalar
 # traced by Reactant arrives as a device reference, which `x[]` loads, so that the

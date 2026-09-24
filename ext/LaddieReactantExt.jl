@@ -155,8 +155,18 @@ _traced(x::Number, FT) = x
 function _traced(x, FT)
     (x isa AbstractArray || fieldcount(typeof(x)) == 0) && return x
     fields = map(fn -> _traced(getfield(x, fn), FT), fieldnames(typeof(x)))
-    return Base.typename(typeof(x)).wrapper(fields...)
+    T = _traced_type(typeof(x), FT)
+    # Built without the constructor, as `Enzyme.make_zero` builds a tangent: a
+    # validating constructor (`TurbulentGamTMelting`) rejects the zero tangent.
+    fieldtypes(T) == map(typeof, fields) ||
+        return Base.typename(typeof(x)).wrapper(fields...)
+    return ccall(:jl_new_structv, Any, (Any, Ptr{Any}, UInt32), T, Any[fields...], length(fields))::T
 end
+# Every field type is a type parameter, so tracing the floats means tracing the
+# float parameters.
+_traced_type(T::DataType, FT) =
+    Base.typename(T).wrapper{map(p -> p isa Type && p <: AbstractFloat ?
+                                      typeof(ConcreteRNumber(FT(0))) : p, T.parameters)...}
 
 _override(v::Number, FT) = FT(v)
 _override(v, FT) = Laddie._promote_param(v, FT)

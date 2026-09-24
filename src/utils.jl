@@ -98,6 +98,12 @@ end
 @inline _max_layer_thickness(c::RelativeMaxLayerThickness, D, z_draft, z_bed, tmask) =
     min(D, _val(c.f_D_max) * (z_draft - z_bed)) * tmask
 
+# The caps reach `_clamp_thickness_kernel!` whole, so their field has to be adapted
+# with the other kernel arguments: a traced parameter (Reactant) becomes a device
+# scalar there.  Identity on the CPU and CUDA backends.
+KA.Adapt.@adapt_structure AbsoluteMaxLayerThickness
+KA.Adapt.@adapt_structure RelativeMaxLayerThickness
+
 # ============================================================================
 # Shift / interpolation primitives  (≡ np.roll & tools.py, GPU-capable)
 # ============================================================================

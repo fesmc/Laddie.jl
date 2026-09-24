@@ -1,8 +1,3 @@
-@kernel function _freezing_point_kernel!(Tf, @Const(S), @Const(z_draft), l1, l2, l3)
-    i, j = @index(Global, NTuple)
-    @inbounds Tf[i, j] = l1 * S[i, j] + l2 + l3 * z_draft[i, j]
-end
-
 @kernel function _density_kernel!(
     drho,
     @Const(Sa),
@@ -129,10 +124,6 @@ function update_ambient_fields!(m)
     )
     return
 end
-
-"Linear liquidus: ``T_f = l_1 S + l_2 + l_3 z_b``  (Lambert et al. 2023, Eq. 10)."
-update_freezing_temperature!(m) =
-    launch!(_freezing_point_kernel!, m.Tf, m.Tf, m.S.present, m.z_draft, m.l1, m.l2, m.l3)
 
 "Reduced (dimensionless) density ``\\delta\\rho = \\Delta\\rho_a/\\rho_0 = \\beta(S_a - S) - \\alpha(T_a - T)``  (Lambert et al. 2023, Eqs. 6–7)."
 update_density!(m) = launch!(
@@ -513,9 +504,6 @@ function _launch_buoyancy_entrainment!(m, prefactor, D_squared)
     launch!(
         _buoyancy_entrainment_kernel!,
         m.entr,
-        m.Sb,
-        m.drhob,
-        m.ent,
         m.entr,
         m.detr,
         m.T.present,
@@ -623,16 +611,13 @@ end
     end
 end
 
-# Buoyancy-flux entrainment, fusing Sb, drhob, drho_pos, ent, entr and detr into one
-# pass.  Production term = prefactor·u★³/(D·δρ) for the reference form
+# Buoyancy-flux entrainment, fusing S_b, δρ_b, drho_pos, the signed rate, entr and
+# detr into one pass; only entr and detr are stored.  Production term = prefactor·u★³/(D·δρ) for the reference form
 # (LambertEntrainment, prefactor = 2μ/g) and prefactor·u★³/(D²·δρ) for the literal
 # Eq. 14 (GasparEntrainment, prefactor = μ/g, `D_squared = true`).
-# drho_pos = max(drho_floor, drho) is never zero, so the drhob/drho_pos division is
+# drho_pos = max(drho_floor, drho) is never zero, so the δρ_b/drho_pos division is
 # safe; D can be zero outside the domain, hence _safe_div for the production term.
 @kernel function _buoyancy_entrainment_kernel!(
-    Sb,
-    drhob,
-    ent,
     entr,
     detr,
     @Const(T),
@@ -659,16 +644,13 @@ end
         FT = typeof(prefactor)
         drho_pos = max(drho_floor, drho[i, j])
         sb = (Tb[i, j] - l2 - l3 * z_draft[i, j]) / l1
-        Sb[i, j] = sb
         db_ij = (beta * (S[i, j] - sb) - alpha * (T[i, j] - Tb[i, j])) * tmask[i, j]
-        drhob[i, j] = db_ij
         us3 = ustar[i, j]^3
         Dij = D[i, j]
         Dpow = D_squared ? Dij * Dij : Dij
         e_ij =
             prefactor * _safe_div(us3, Dpow * drho_pos) -
             db_ij / drho_pos * melt[i, j] * tmask[i, j]
-        ent[i, j] = e_ij
         z = zero(FT)
         entr[i, j] = max(e_ij, z)
         detr[i, j] = min(max_detrainment, max(-e_ij, z))
@@ -706,12 +688,9 @@ end
 # `dt` is the base time step; only the `ent2` top-up in `update_entrainment!` needs it.
 function update_secondary_fields!(m, dt)
     update_ambient_fields!(m)
-    update_freezing_temperature!(m)
     update_density!(m)
     update_convection!(m)
     update_melt!(m)
-    precompute_advection_stencils!(m)
-    precompute_laplacian_stencils!(m)
     update_entrainment!(m, dt)
     return
 end
@@ -773,7 +752,7 @@ end
 @inline u_pressure_density(m) =
     (m.g / 2) .* ip_t(m, m.D.present) .^ 2 .* (xm1(m.drho) .- m.drho) ./ m.dx
 # f·D̄·V  (Coriolis)
-@inline u_coriolis(m) = m.fu .* ip_t(m, m.D.present .* m.Vjm)
+@inline u_coriolis(m) = m.fu .* ip_t(m, m.D.present .* jm_v(m, m.V.present))
 # Cd·U·|u|  (quadratic bottom drag)
 @inline u_bottom_drag(m) =
     m.C_d .* m.U.present .*
@@ -800,7 +779,7 @@ end
 @inline v_pressure_density(m) =
     (m.g / 2) .* jp_t(m, m.D.present) .^ 2 .* (ym1(m.drho) .- m.drho) ./ m.dy
 # f·D̄·U  (Coriolis)
-@inline v_coriolis(m) = m.fv .* jp_t(m, m.D.present .* m.Uim)
+@inline v_coriolis(m) = m.fv .* jp_t(m, m.D.present .* im_u(m, m.U.present))
 # Cd·V·|u|  (quadratic bottom drag)
 @inline v_bottom_drag(m) =
     m.C_d .* m.V.present .*

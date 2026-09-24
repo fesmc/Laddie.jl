@@ -45,7 +45,10 @@ export build_isomip,
     fill_small_grounded_patches!,
     run!,
     meltstats,
-    to_backend
+    to_backend,
+    ReactantBackend,
+    integrate!,
+    reactant_compile
 
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
 export AbstractMelting,

@@ -96,3 +96,44 @@ function to_backend(m::Model, backend)
         new_forcing,
     )
 end
+
+"""
+$(TYPEDEF)
+
+Run a simulation through [Reactant.jl](https://github.com/EnzymeAD/Reactant.jl):
+the time step is traced, compiled with XLA and executed in batches of steps, on the
+GPU or the CPU that Reactant targets.  Requires `using Reactant, CUDA` (CUDA.jl is
+needed even for the CPU target, since Reactant compiles the kernels through it).
+
+```julia
+using Laddie, Reactant, CUDA
+sim = build_isomip(CPU(); FT = Float32)          # build and bootstrap on the CPU
+rsim = to_backend(sim, ReactantBackend())        # move to Reactant
+run!(rsim; days = 30)                            # compiled on the first call
+```
+
+Results agree with the KernelAbstractions backends to round-off, not bit for bit:
+XLA reorders floating-point operations.
+
+# Fields
+$(TYPEDFIELDS)
+"""
+struct ReactantBackend{F}
+    "how XLA may fuse the kernels of a step (see the Reactant docs page); `:auto` picks the measured best"
+    fusion::F
+end
+ReactantBackend(; fusion = :auto) = ReactantBackend(fusion)
+
+# Implemented by the Reactant extension: the KernelAbstractions backend that
+# Reactant arrays report, and the batched execution.
+function _reactant_ka_backend end
+function _reactant_execution end
+_reactant_ka_backend(::Any) = error(
+    "ReactantBackend requires the Reactant extension: run `using Reactant, CUDA` first",
+)
+_reactant_execution(b) = _reactant_ka_backend(b)
+
+to_backend(m::Model, b::ReactantBackend) = to_backend(m, _reactant_ka_backend(b))
+_iostate_to_backend(io::IOState, b::ReactantBackend) =
+    _iostate_to_backend(io, _reactant_ka_backend(b))
+_execution(b::ReactantBackend) = _reactant_execution(b)

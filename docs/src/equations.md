@@ -37,7 +37,7 @@ kernels in `src/numerics.jl` are asserted equal to it by the test suite.
 | ``\dot m`` | `m.melt` | basal melt rate (``>0`` = melting) | m s⁻¹ |
 | ``\dot e`` | `m.nentr` | net entrainment ``= \mathrm{entr} + \mathrm{ent2} - \mathrm{detr}`` | m s⁻¹ |
 | ``T_a, S_a`` | `m.Ta`, `m.Sa` | ambient T/S at layer base ``z_b-D`` | °C / psu |
-| ``T_b, S_b`` | `m.Tb`, `m.Sb` | ice–ocean interface (boundary) T/S | °C / psu |
+| ``T_b, S_b`` | `m.Tb` (``S_b`` is not stored) | ice–ocean interface (boundary) T/S | °C / psu |
 | ``\Delta\rho_a`` | ``\rho_0\,```m.drho` | dimensional plume–ambient density anomaly | kg m⁻³ |
 | ``\delta\rho`` | `m.drho` | dimensionless reduced density ``\Delta\rho_a/\rho_0`` | – |
 | ``g_a'`` | `m.g * m.drho` | reduced gravity, Eq. (6) | m s⁻² |
@@ -197,8 +197,7 @@ c_p\,\gamma_T\,(T - T_b) = \dot m\,L + \dot m\,c_i\,(T_b - T_i) \tag{8}
 T_b = \lambda_1 S_b + \lambda_2 + \lambda_3 z_b \tag{10}
 ```
 
-Equation (10) is the linear liquidus; `update_freezing_temperature!` also uses
-it for the plume freezing point ``T_f = \lambda_1 S + \lambda_2 + \lambda_3 z_b``.
+Equation (10) is the linear liquidus.
 Define the **effective latent heat** ``L_\text{eff} = L - c_i T_i``, where the basal
 ice temperature ``T_i`` is supplied per cell by the ice forcing. Eliminating
 ``T_b, S_b`` gives a quadratic in ``\dot m``, solved pointwise in
@@ -249,7 +248,7 @@ D^2 g_b'\,\dot m + D^2 g_a'\,\dot e = \mu\,u_\star^3, \tag{14}
 ```
 
 where ``g_b' = g\,\delta\rho_b`` uses the **plume–interface** density contrast
-``\delta\rho_b = \beta(S - S_b) - \alpha(T - T_b)`` (field `m.drhob`). The melt
+``\delta\rho_b = \beta(S - S_b) - \alpha(T - T_b)`` (computed in `_buoyancy_entrainment_kernel!`, not stored). The melt
 and detrainment term is the same in every variant below; with
 ``\delta\rho^{+} = \max(10^{-4}, \delta\rho)`` and
 ``\mathrm{entr} = \max(\dot e,0)``,
@@ -340,7 +339,7 @@ fields instead.
 | (4) | heat | `_step_temperature_kernel!` + `mat_*` variants |
 | (5) | salt | `_step_salinity_kernel!` + `mat_*` variant |
 | (6)/(7) | reduced gravity / EOS | `update_density!`, `_density_kernel!` |
-| (8)–(10) | three-eq melt + liquidus | `_three_eq_melt_kernel!`, `update_freezing_temperature!` |
+| (8)–(10) | three-eq melt + liquidus | `_three_eq_melt_kernel!` |
 | (11)/(12) | ``\gamma_T,\gamma_S`` | `_compute_turbulent_transfer_coefficients!` |
 | (13) | ``u_\star`` | `_ustar_kernel!` |
 | (14) | entrainment | `LambertEntrainment` → `_lambert_entrainment_kernel!` (default); `GasparEntrainment` → `_gaspar_entrainment_kernel!` (literal Eq. 14); Holland → `_holland_entrainment_kernel!` |

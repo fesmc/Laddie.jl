@@ -37,7 +37,7 @@ Two complementary mechanisms give device portability:
    array type is a type parameter. Broadcasting and `circshift` already run on GPU
    via GPUArrays, so the *whole* model runs on any backend.
 2. **Fused `@kernel`s** for the hot paths:
-   - **elementwise physics**: EOS (`_density_kernel!`, `_freezing_point_kernel!`), the three-equation
+   - **elementwise physics**: EOS (`_density_kernel!`), the three-equation
      melt (`_three_eq_melt_kernel!`), Robert–Asselin filter (`_robert_asselin_kernel!`), velocity clip
      (`_clamp_kernel!`);
    - **stencil operators**: advection `_upwind_advection_T/U/V_kernel!`, diffusion `_lapT/U/V_kernel!`,

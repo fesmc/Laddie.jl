@@ -541,7 +541,10 @@ function _reset_accum!(sim)
     io.count = 0
     io.t_accum = 0.0
     for f in _OUTPUT_FIELDS
-        fill!(getfield(io, f.acc), 0)   # disabled accumulators are 0×0 — no-op
+        acc = getfield(io, f.acc)
+        # Disabled accumulators are 0×0.  (`length`, not `isempty`: Reactant 0.2.286
+        # reports a 0×0 array as non-empty.)
+        length(acc) == 0 || fill!(acc, 0)
     end
 end
 
@@ -702,6 +705,12 @@ the final partial window is flushed by `run!` after the loop.
 """
 function savefields!(sim)
     _accum!(sim)
+    _write_output_if_due!(sim)
+end
+
+# The write half of `savefields!`: `run!` accumulates while it steps (in compiled
+# batches under Reactant) and writes here.
+function _write_output_if_due!(sim)
     if _event_due(sim, sim.io.nextsave)
         _write_output!(sim, _t_days(sim))
         _reset_accum!(sim)
@@ -802,7 +811,7 @@ Write a one-line diagnostic to the log file at every `output.diagday`-day interv
 """
 function printdiags(sim)
     _event_due(sim, sim.io.nextdiag) || return
-    m = sim.model
+    m = _diag_model(sim.exec, sim)
     sim.io.nextdiag += sim.output.diagday * _primal(m.seconds_per_day)
     t_days = _t_days(sim)
 

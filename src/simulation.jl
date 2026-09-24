@@ -42,6 +42,15 @@ function IOState(m::Model)
     )
 end
 
+# How `run!` advances a simulation: step by step with the KernelAbstractions
+# kernels (`NativeExecution`), or in compiled batches of steps (the Reactant
+# extension's execution, selected by `to_backend(sim, ReactantBackend())`).
+abstract type AbstractExecution end
+struct NativeExecution <: AbstractExecution end
+
+# The execution a simulation moved to `backend` runs with.
+_execution(backend) = NativeExecution()
+
 """
 $(TYPEDEF)
 
@@ -61,6 +70,7 @@ struct Simulation{
     O<:OutputConfig,
     IOS<:IOState,
     D<:DebugConfig,
+    X<:AbstractExecution,
 }
     "the model being integrated"
     model::M
@@ -80,6 +90,8 @@ struct Simulation{
     io::IOS
     "debug options"
     debug::D
+    "how `run!` advances the model: step by step (KernelAbstractions) or in compiled batches (Reactant)"
+    exec::X
 end
 
 """
@@ -136,6 +148,7 @@ function Simulation(
         output,
         io,
         debug,
+        NativeExecution(),
     )
     output.saveday > 0 && create_rundir!(sim)
     if restart === nothing
@@ -158,6 +171,9 @@ $(TYPEDSIGNATURES)
 Return a new simulation whose model and I/O accumulators live on `backend`.
 The clock, time stepper and output configuration are carried over; the original
 simulation is not modified.
+
+With a [`ReactantBackend`](@ref), `run!` then advances the simulation in compiled
+batches of steps (requires `using Reactant, CUDA`).
 """
 function to_backend(sim::Simulation, backend)
     c = sim.clock
@@ -171,5 +187,6 @@ function to_backend(sim::Simulation, backend)
         sim.output,
         _iostate_to_backend(sim.io, backend),
         sim.debug,
+        _execution(backend),
     )
 end

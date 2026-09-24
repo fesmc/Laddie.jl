@@ -56,6 +56,7 @@ makedocs(;
         "Home"           => "index.md",
         "Physics"        => "physics.md",
         "Numerics"       => "numerics.md",
+        "Reactant backend" => "reactant.md",
         # "Implementation" => "implementation.md",
         "Examples" => [
             "ISOMIP+" => "generated/isomip.md",

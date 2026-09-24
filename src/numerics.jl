@@ -11,67 +11,6 @@
         nu / 2 * (past[i, j] + future[i, j] - 2 * present[i, j]) * mask[i, j]
 end
 
-@kernel function _precompute_staggered_kernel!(
-    Vip,
-    Vim,
-    Vjp,
-    Vjm,
-    Uip,
-    Uim,
-    Ujp,
-    Ujm,
-    @Const(V),
-    @Const(U),
-    @Const(vmask),
-    @Const(umask),
-)
-    i0, j0 = @index(Global, NTuple)
-    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
-    @inbounds begin
-        jp1 = j + 1
-        jm1 = j - 1
-        ip1 = i + 1
-        im1 = i - 1
-        Vij = V[i, j]
-        Uij = U[i, j]
-        Vip[i, j] = _safe_div(Vij + V[ip1, j], vmask[i, j] + vmask[ip1, j])
-        Vim[i, j] = _safe_div(Vij + V[im1, j], vmask[i, j] + vmask[im1, j])
-        Vjp[i, j] = _safe_div(Vij + V[i, jp1], vmask[i, j] + vmask[i, jp1])
-        Vjm[i, j] = _safe_div(Vij + V[i, jm1], vmask[i, j] + vmask[i, jm1])
-        Uip[i, j] = _safe_div(Uij + U[ip1, j], umask[i, j] + umask[ip1, j])
-        Uim[i, j] = _safe_div(Uij + U[im1, j], umask[i, j] + umask[im1, j])
-        Ujp[i, j] = _safe_div(Uij + U[i, jp1], umask[i, j] + umask[i, jp1])
-        Ujm[i, j] = _safe_div(Uij + U[i, jm1], umask[i, j] + umask[i, jm1])
-    end
-end
-
-@kernel function _precompute_laplacian_kernel!(
-    D0ip,
-    D0im,
-    D0jp,
-    D0jm,
-    D_on_ugrid,
-    D_on_vgrid,
-    @Const(D),
-    @Const(tmask),
-)
-    i0, j0 = @index(Global, NTuple)
-    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
-    @inbounds begin
-        jp1 = j + 1
-        jm1 = j - 1
-        ip1 = i + 1
-        im1 = i - 1
-        Dij = D[i, j]
-        D0ip[i, j] = _safe_div(Dij + D[ip1, j], tmask[i, j] + tmask[ip1, j])
-        D0im[i, j] = _safe_div(Dij + D[im1, j], tmask[i, j] + tmask[im1, j])
-        D0jp[i, j] = _safe_div(Dij + D[i, jp1], tmask[i, j] + tmask[i, jp1])
-        D0jm[i, j] = _safe_div(Dij + D[i, jm1], tmask[i, j] + tmask[i, jm1])
-        D_on_ugrid[i, j] = D0ip[i, j] * tmask[i, j]
-        D_on_vgrid[i, j] = D0jp[i, j] * tmask[i, j]
-    end
-end
-
 # Infer backend from array `A`, launch `kernel!` over the full array extent.
 # CPU: long blocks along the first (column-major inner) index keep the inner loops
 # vectorisable, and a grid smaller than one block runs on a single task instead of
@@ -209,13 +148,13 @@ end
     @Const(D1),
     @Const(drho),
     @Const(dzdx),
-    @Const(Vjm),
     @Const(V1),
     @Const(detr),
     @Const(cU),
     @Const(lU),
     @Const(tmask),
     @Const(umask),
+    @Const(vmask),
     @Const(fu),
     g,
     C_d,
@@ -235,7 +174,9 @@ end
         ip_D_drho = _safe_div(Ddrho[i, j] + Ddrho[ip1, j], tmip)
         ip_D_dzdx = _safe_div(Ddrho[i, j] * dzdx[i, j] + Ddrho[ip1, j] * dzdx[ip1, j], tmip)
         ip_D = _safe_div(D1[i, j] + D1[ip1, j], tmip)
-        ip_D_Vjm = _safe_div(D1[i, j] * Vjm[i, j] + D1[ip1, j] * Vjm[ip1, j], tmip)
+        Vjm = _face_avg(V1, vmask, i, j, i, jm1)
+        Vjm_ip = _face_avg_ring0(V1, vmask, ip1, j, 0, -1)
+        ip_D_Vjm = _safe_div(D1[i, j] * Vjm + D1[ip1, j] * Vjm_ip, tmip)
         ipjmV = half * (half * (V1[i, j] + V1[i, jm1]) + half * (V1[ip1, j] + V1[ip1, jm1]))
         # tmip is 2 at a fully-interior face (both neighbours active) and 1 at a
         # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where the
@@ -269,13 +210,13 @@ end
     @Const(D1),
     @Const(drho),
     @Const(dzdy),
-    @Const(Uim),
     @Const(U1),
     @Const(detr),
     @Const(cV),
     @Const(lV),
     @Const(tmask),
     @Const(vmask),
+    @Const(umask),
     @Const(fv),
     g,
     C_d,
@@ -295,7 +236,9 @@ end
         jp_D_drho = _safe_div(Ddrho[i, j] + Ddrho[i, jp1], tmjp)
         jp_D_dzdy = _safe_div(Ddrho[i, j] * dzdy[i, j] + Ddrho[i, jp1] * dzdy[i, jp1], tmjp)
         jp_D = _safe_div(D1[i, j] + D1[i, jp1], tmjp)
-        jp_D_Uim = _safe_div(D1[i, j] * Uim[i, j] + D1[i, jp1] * Uim[i, jp1], tmjp)
+        Uim = _face_avg(U1, umask, i, j, im1, j)
+        Uim_jp = _face_avg_ring0(U1, umask, i, jp1, -1, 0)
+        jp_D_Uim = _safe_div(D1[i, j] * Uim + D1[i, jp1] * Uim_jp, tmjp)
         jpimU = half * (half * (U1[i, j] + U1[im1, j]) + half * (U1[i, jp1] + U1[im1, jp1]))
         # See _step_u_momentum_kernel! for the ice-front gate.
         pgf_gate = one(FT) + pgf_w * (tmjp - FT(2))
@@ -407,13 +350,13 @@ function step_u_momentum!(m, dt)
         m.D.present,
         m.drho,
         m.dzdx,
-        m.Vjm,
         m.V.present,
         m.detr,
         m.adv,
         m.lap,
         m.tmask,
         m.umask,
+        m.vmask,
         m.fu,
         m.g,
         m.C_d,
@@ -437,13 +380,13 @@ function step_v_momentum!(m, dt)
         m.D.present,
         m.drho,
         m.dzdy,
-        m.Uim,
         m.U.present,
         m.detr,
         m.adv,
         m.lap,
         m.tmask,
         m.vmask,
+        m.umask,
         m.fv,
         m.g,
         m.C_d,
@@ -537,7 +480,7 @@ end
         )
         # The D_min floor must respect the domain mask: inactive cells hold D = 0.
         # A non-zero D outside the domain would leak into the interior, because
-        # the face-average stencils in `_precompute_laplacian_kernel!` divide the
+        # the face averages of the Laplacian stencils (`_face_avg`) divide the
         # *sum* over a cell pair by the number of active cells in it, biasing the
         # diffusion of every boundary cell.
         D[i, j] = max(D[i, j], D_min) * tmask[i, j]
@@ -619,7 +562,8 @@ end
 # next `advance_leapfrog!` rotation leaves a past/present pair separated by the
 # new dt, so the following centred `leapfrog_step!(sim, 2)` is consistent.  The
 # anchor is the Robert–Asselin-filtered `present`, exactly as at startup.
-function _rebootstrap_leapfrog!(sim)
+_rebootstrap_leapfrog!(sim) = _rebootstrap_leapfrog!(sim.exec, sim)
+function _rebootstrap_leapfrog!(::NativeExecution, sim)
     m = sim.model
     for var in (m.D, m.U, m.V, m.T, m.S)
         var.past .= var.present
@@ -714,15 +658,18 @@ with a 4-point average of the other component; all factors are computed from the
 unlimited field before either component is scaled.
 """
 function clamp_velocities!(m)
+    # The scale factors live in the `adv`/`lap` work buffers: both momentum steps
+    # have consumed them, and the tracer steps overwrite them.
+    scaleU, scaleV = m.adv, m.lap
     launch_interior!(
         _speed_scale_kernel!,
         m.U.future,
-        m.scaleU,
-        m.scaleV,
+        scaleU,
+        scaleV,
         m.U.future,
         m.V.future,
         m.v_cut,
     )
-    launch!(_apply_scale_kernel!, m.U.future, m.U.future, m.V.future, m.scaleU, m.scaleV)
+    launch!(_apply_scale_kernel!, m.U.future, m.U.future, m.V.future, scaleU, scaleV)
     return
 end

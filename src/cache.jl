@@ -12,7 +12,8 @@ slots are scalars or fields: `GamT` (`gamT`, `gamS`) is a field for
 
 `adv`, `lap` and `Dq` are shared by the four stepped equations: U, V, T and S are
 stepped one after another, and each consumes its terms before the next one writes
-them.  `diag` is never read by the time step, so any host-side diagnostic may
+them.  In between, `adv` and `lap` hold the speed limiter's per-point scale factors,
+and `Dq` the collocated cross-velocity of `NonlinearLateralViscosity`.  `diag` is never read by the time step, so any host-side diagnostic may
 overwrite it.
 
 # Fields
@@ -23,8 +24,6 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,PM}
     melt::A
     "temperature at the ice–ocean interface (°C)"
     Tb::A
-    "freezing temperature of the layer at the ice base (°C)"
-    Tf::A
     "ambient temperature at the layer base (°C)"
     Ta::A
     "ambient salinity at the layer base (psu)"
@@ -33,20 +32,14 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,PM}
     drho::A
     "friction velocity at the ice base (m s⁻¹)"
     ustar::A
-    "entrainment rate, the positive part of `ent` (m s⁻¹)"
+    "entrainment rate, the positive part of the signed rate ė (m s⁻¹)"
     entr::A
-    "detrainment rate, the capped negative part of `ent` (m s⁻¹)"
+    "detrainment rate, the capped negative part of ė (m s⁻¹)"
     detr::A
     "extra entrainment that keeps `D ≥ D_min` after the thickness step (m s⁻¹)"
     ent2::A
     "net entrainment `entr + ent2 - detr` of the thickness and tracer equations (m s⁻¹)"
     nentr::A
-    "signed entrainment rate before the split into `entr` and `detr` (m s⁻¹)"
-    ent::A
-    "salinity at the ice–ocean interface (psu)"
-    Sb::A
-    "reduced density contrast at the ice base (dimensionless)"
-    drhob::A
     "convective-instability indicator: `1` where `drho < 0` was corrected"
     convection::A
     "upwind advection term of the thickness equation (m s⁻¹)"
@@ -63,48 +56,12 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,PM}
     gamS::GamT
     "prescribed melt rate under `PrescribedMelting` (m s⁻¹), else an unused scalar"
     melt_prescribed::PM
-    "V averaged onto the +x face (`precompute_advection_stencils!`)"
-    Vip::A
-    "V averaged onto the −x face"
-    Vim::A
-    "U averaged onto the +x face"
-    Uip::A
-    "U averaged onto the −x face"
-    Uim::A
-    "V averaged onto the +y face"
-    Vjp::A
-    "V averaged onto the −y face"
-    Vjm::A
-    "U averaged onto the +y face"
-    Ujp::A
-    "U averaged onto the −y face"
-    Ujm::A
-    "D averaged onto the +x face (`precompute_laplacian_stencils!`)"
-    D0ip::A
-    "D averaged onto the −x face"
-    D0im::A
-    "D averaged onto the +y face"
-    D0jp::A
-    "D averaged onto the −y face"
-    D0jm::A
-    "D on the u-points, masked"
-    D_on_ugrid::A
-    "D on the v-points, masked"
-    D_on_vgrid::A
     "advection term of the equation being stepped (work buffer)"
     adv::A
     "Laplacian term of the equation being stepped (work buffer)"
     lap::A
     "advected tracer content `D * q` of the equation being stepped (work buffer)"
     Dq::A
-    "per-point scale factor of the speed limiter for U"
-    scaleU::A
-    "per-point scale factor of the speed limiter for V"
-    scaleV::A
-    "V collocated onto the u-points, for `NonlinearLateralViscosity`"
-    VatU::A
-    "U collocated onto the v-points, for `NonlinearLateralViscosity`"
-    UatV::A
     "scratch for host-side diagnostics (CFL, melt statistics)"
     diag::A
 end

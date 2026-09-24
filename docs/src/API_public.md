@@ -17,6 +17,16 @@ meltstats
 to_backend
 ```
 
+## Reactant backend and automatic differentiation
+
+See [Reactant backend](@ref) for the setup, the fusion strategies and their cost.
+
+```@docs
+ReactantBackend
+integrate!
+reactant_compile
+```
+
 ## Geometry ingestion
 
 ```@docs

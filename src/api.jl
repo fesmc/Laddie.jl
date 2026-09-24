@@ -158,7 +158,7 @@ function _cfl_worstcase(sim)
     m = sim.model
     FT = m.FT
     v_cut = _float64(m.v_cut)
-    c = _float64(sqrt(m.g * max(zero(FT), _max_Ddrho(m))))
+    c = _float64(sqrt(m.g * max(zero(FT), _max_Ddrho(sim.exec, sim))))
     return _float64(sim.clock.dt) *
            ((v_cut + c) / _float64(m.dx) + (v_cut + c) / _float64(m.dy))
 end
@@ -168,11 +168,7 @@ end
 # count the steps of the current `run!` call.
 function _check_blowup(sim, t, nt)
     m = sim.model
-    (
-        all(isfinite, m.D.present) &&
-        all(isfinite, m.U.present) &&
-        all(isfinite, m.V.present)
-    ) && return
+    _prognostics_finite(sim.exec, sim) && return
     error(
         "Simulation blew up: non-finite values in D/U/V at step $t/$nt " *
         "(≈ day $(round(_t_days(sim), digits = 2))). Common causes: time step too " *
@@ -200,6 +196,119 @@ function time_step!(sim::Simulation)
     sim.clock.iteration += 1
     return sim
 end
+
+"""
+    integrate!(model, dt, n; nu = 0.8)
+
+Advance `model` by `n` leapfrog steps of `dt` seconds (Robert–Asselin coefficient
+`nu`), without a [`Simulation`](@ref): no clock, output, dt control or blow-up check.
+The model must already be bootstrapped, e.g. taken from a simulation after
+construction (`sim.model`).  Returns `model`.
+
+This is the model as a plain function of its inputs, for automatic differentiation:
+with ForwardDiff through a model built at `FT = Dual`, and with Enzyme through a
+program compiled by [`reactant_compile`](@ref), where `n` is a traced number and the
+steps run as a traced loop.
+
+```julia
+loss(model, dt, n) = (integrate!(model, dt, n); sum(model.melt .* model.imask) / sum(model.imask))
+```
+"""
+function integrate!(model, dt, n; nu = 0.8)
+    s = _stepping_view(model, dt, nu)
+    for _ = 1:n
+        advance_leapfrog!(s)
+        leapfrog_step!(s, 2)
+        apply_robert_asselin_filter!(s)
+    end
+    return model
+end
+
+# What the step functions read from a Simulation (they take `sim` untyped).
+_stepping_view(model, dt, nu) =
+    (; model, clock = (; dt), nu = model.FT(nu), debug = (; check_nans = false))
+
+"""
+    reactant_compile(f, args...; fusion = :xla, kwargs...)
+
+Compile `f(args...)` with Reactant for the arrays of a model moved to a
+[`ReactantBackend`](@ref), with the kernel settings Laddie needs (requires `using
+Reactant, CUDA`).  Returns the compiled function; call it with arguments of the same
+types and sizes.
+
+The kernels are raised to XLA operations before any differentiation
+(`raise_first = true`), so `f` may call `Enzyme.autodiff`.  `fusion` is one of the
+strategies of `ReactantBackend`; only `:xla` can be differentiated.  Other keywords
+go to `Reactant.compile`.
+
+```julia
+using Laddie, Reactant, CUDA
+using Reactant: Enzyme
+sim = to_backend(build_isomip(CPU()), ReactantBackend())
+loss(model, dt, n) = (integrate!(model, dt, n); sum(model.melt .* model.imask) / sum(model.imask))
+dmodel = Enzyme.make_zero(sim.model)
+dmodel.forcing.ocean.Tz .= 1                       # direction: uniform warming
+fwd(m, dm, dt, n) = Enzyme.autodiff(Enzyme.Forward, loss, Enzyme.Duplicated(m, dm),
+                                     Enzyme.Const(dt), Enzyme.Const(n))
+dt, n = ConcreteRNumber(sim.clock.dt), ConcreteRNumber(100)
+dloss = only(reactant_compile(fwd, sim.model, dmodel, dt, n)(sim.model, dmodel, dt, n))
+```
+"""
+function reactant_compile end
+
+# ============================================================================
+# Execution hooks of `run!`.  The native (KernelAbstractions) versions step one
+# time step at a time and compute the diagnostics directly on the model; the
+# Reactant extension replaces them with compiled programs.
+# ============================================================================
+
+# Steps to take before `run!` must act on the host again.
+_batch_length(::NativeExecution, sim, step, checkint, elapsed, total, next_steady, io_on) = 1
+
+# The number of steps until the next host event: the check cadence, the end of the
+# run, a steady-state sample, or (with output) an output, diagnostics or restart
+# time.  Replays the host arithmetic of `run!` step by step, so a batched run meets
+# every event at the same step as a one-step-at-a-time run.
+function _steps_to_next_event(sim, step, checkint, elapsed, total, next_steady, io_on)
+    dt = _primal(sim.clock.dt)
+    t = sim.clock.time
+    io = sim.io
+    k = 0
+    while true
+        k += 1
+        t += dt
+        elapsed += dt
+        half = dt / 2
+        (step + k) % checkint == 0 && return k
+        (elapsed + half >= total || elapsed + half >= next_steady) && return k
+        io_on && (t + half >= io.nextsave || t + half >= io.nextdiag ||
+                  t + half >= io.nextrest) && return k
+    end
+end
+
+# Advance `n` steps, accumulating the output averages after each one.
+function _advance_batch!(::NativeExecution, sim, n, io_on)
+    for _ = 1:n
+        time_step!(sim)
+        io_on && _accum!(sim)
+    end
+    return
+end
+
+_prognostics_finite(::NativeExecution, sim) = (
+    m = sim.model;
+    all(isfinite, m.D.present) && all(isfinite, m.U.present) && all(isfinite, m.V.present)
+)
+_sync_cfl_number(::NativeExecution, sim) = _cfl_number(sim)
+_meltstats(::NativeExecution, sim) = meltstats(sim.model)
+_max_Ddrho(::NativeExecution, sim) = _max_Ddrho(sim.model)
+function _max_active_D(::NativeExecution, sim)
+    m = sim.model
+    @. m.diag = ifelse(m.tmask > 0, m.D.present, m.FT(-Inf))
+    return maximum(m.diag)
+end
+# The model the log diagnostics (`printdiags`) are computed on.
+_diag_model(::NativeExecution, sim) = sim.model
 
 """
 $(TYPEDSIGNATURES)
@@ -276,11 +385,16 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     # Time cap (round-half-up rule: round(total/dt) steps for fixed dt); a
     # SteadyStateEnd may break out earlier once the mean melt rate is steady.
     while elapsed + clock.dt / 2 < total
-        step += 1
-        time_step!(sim)
-        elapsed += _primal(clock.dt)
+        # Steps up to the next host event (1 on the KernelAbstractions backends;
+        # a compiled batch under Reactant), with the output accumulation.
+        n = _batch_length(sim.exec, sim, step, checkint, elapsed, total, next_steady, io_on)
+        _advance_batch!(sim.exec, sim, n, io_on)
+        step += n
+        for _ = 1:n
+            elapsed += _primal(clock.dt)
+        end
         if io_on
-            savefields!(sim)
+            _write_output_if_due!(sim)
             printdiags(sim)
             saverestart!(sim)
         end
@@ -289,7 +403,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
         # and stop when its relative change falls below the tolerance.  No-op
         # for FixedSimulationEnd (next_steady = Inf).
         if elapsed + clock.dt / 2 >= next_steady
-            _, mean_melt, _ = meltstats(m)
+            _, mean_melt, _ = _meltstats(sim.exec, sim)
             if _steady_reached(until, mean_melt, prev_mean)
                 _print2log(
                     sim,
@@ -309,12 +423,11 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
             _check_blowup(sim, step, nt)
             # Adjust dt for the upcoming steps (no-op under FixedDt); after I/O
             # and the blow-up check, so both see the clean stepped state.
-            cfl = (verbose || _adapts(sim.tstep)) ? _cfl_number(sim) : 0.0
+            cfl = (verbose || _adapts(sim.tstep)) ? _sync_cfl_number(sim.exec, sim) : 0.0
             _maybe_adapt_dt!(sim, sim.tstep, cfl)
             if verbose
-                mx, mn, sp, gt = meltstats(m)
-                @. m.diag = ifelse(m.tmask > 0, m.D.present, FT(-Inf))
-                Dmax = maximum(m.diag)
+                mx, mn, sp, gt = _meltstats(sim.exec, sim)
+                Dmax = _max_active_D(sim.exec, sim)
                 showvals = [
                     ("simulated days", _r(_t_days(sim), 2)),
                     ("melt mean/max [m/yr]", string(_r(mn, 2), " / ", _r(mx, 2))),

@@ -8,10 +8,15 @@
 # the collocated cross-velocities of `NonlinearLateralViscosity` (a u-point at
 # index 1 is a real face), the second-neighbour reads of the upstream momentum
 # advection, and the host-side diagnostics and output averages.
-@inline _xp1(i, N) = ifelse(i == N, 1, i + 1)
-@inline _xm1(i, N) = ifelse(i == 1, N, i - 1)
-@inline _yp1(j, N) = ifelse(j == N, 1, j + 1)
-@inline _ym1(j, N) = ifelse(j == 1, N, j - 1)
+# Written as a comparison of the shifted index, not `i == N ? 1 : i + 1`: Reactant
+# raises this form of a wrapped read to a rotation, which shards as a halo exchange,
+# and the equality form to a gather, which shards as an all-gather of the whole
+# field.  So does a read wrapped along both axes at once (see `_v_half_kernel!`),
+# and one inside a branch (see `_face_mass_x`).
+@inline _xp1(i, N) = ifelse(i + 1 > N, i + 1 - N, i + 1)
+@inline _xm1(i, N) = ifelse(i - 1 < 1, i - 1 + N, i - 1)
+@inline _yp1(j, N) = ifelse(j + 1 > N, j + 1 - N, j + 1)
+@inline _ym1(j, N) = ifelse(j - 1 < 1, j - 1 + N, j - 1)
 # Zero where `b` is zero.  The divisor of the unused branch is swapped for one as well:
 # reverse-mode AD (Enzyme) still differentiates that branch, and its zero adjoint
 # times 1/0 would give NaN.
@@ -338,7 +343,10 @@ end
 # its own coefficient visc_? * |Δu| in place of a single constant A_h, where |Δu|
 # is the magnitude of the full velocity-difference *vector* across that face
 # (the reference's dUabs), not just the component being diffused — hence `other`,
-# the cross-component collocated onto this component's points.  Where
+# the cross-component collocated onto this component's points.  The kernels get it
+# half-collocated (averaged along the other axis only, `_v_half_kernel!`) and finish
+# the average on the fly (`_other_x`, `_other_y`): stored whole, it takes a read
+# wrapped along both axes at once, which Reactant raises to a gather.  Where
 # visc_x/visc_y = C_visc * dx/100 and C_visc * dy/100 carry the reference's
 # dUabs * triCw / 100 scaling (laddie_velocity.f90:260).  The grounding-line/land
 # wall-drag terms keep the plain, unscaled A_h_wall — mirroring the reference,
@@ -346,7 +354,7 @@ end
 @kernel function _nonlinear_laplace_U_kernel!(
     out,
     @Const(var),
-    @Const(other),
+    @Const(half),
     @Const(D0),
     @Const(tmask),
     @Const(ocn),
@@ -356,6 +364,7 @@ end
     visc_y,
     dx2,
     dy2,
+    Nx,
 )
     walls, A_h_wall, visc_x, visc_y, dx2, dy2 =
         _val(walls), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
@@ -378,17 +387,17 @@ end
         dragS = A_h_wall * _slip(walls, walls.glS, walls.lndS, i, j) * DU * v / dy2
         jpD = _safe_div(DU + DU_jp, tmask[i, j] + tmask[i, jp1])
         jmD = _safe_div(DU + DU_jm, tmask[i, j] + tmask[i, jm1])
-        ov = other[i, j]
+        ov = _other_x(half, i, j, Nx)
         dN = var[i, jp1] - v
         dS = var[i, jm1] - v
         dE = var[ip1, j] - v
         dW = var[im1, j] - v
         # |Δu| across each face: this component's difference combined with the
         # cross-component's difference over the same displacement.
-        aN = _safe_sqrt(dN * dN + (other[i, jp1] - ov)^2)
-        aS = _safe_sqrt(dS * dS + (other[i, jm1] - ov)^2)
-        aE = _safe_sqrt(dE * dE + (other[ip1, j] - ov)^2)
-        aW = _safe_sqrt(dW * dW + (other[im1, j] - ov)^2)
+        aN = _safe_sqrt(dN * dN + (_other_x(half, i, jp1, Nx) - ov)^2)
+        aS = _safe_sqrt(dS * dS + (_other_x(half, i, jm1, Nx) - ov)^2)
+        aE = _safe_sqrt(dE * dE + (_other_x(half, ip1, j, Nx) - ov)^2)
+        aW = _safe_sqrt(dW * dW + (_other_x(half, im1, j, Nx) - ov)^2)
         flux_N = visc_y * aN * jpD * dN / dy2 * (o - ocn[i, jp1]) - dragN
         flux_S = visc_y * aS * jmD * dS / dy2 * (o - ocn[i, jm1]) - dragS
         flux_E = visc_x * aE * D0[ip1, j] * dE / dx2 * (o - ocn[ip1, j])
@@ -400,7 +409,7 @@ end
 @kernel function _nonlinear_laplace_V_kernel!(
     out,
     @Const(var),
-    @Const(other),
+    @Const(half),
     @Const(D0),
     @Const(tmask),
     @Const(ocn),
@@ -410,6 +419,7 @@ end
     visc_y,
     dx2,
     dy2,
+    Ny,
 )
     walls, A_h_wall, visc_x, visc_y, dx2, dy2 =
         _val(walls), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
@@ -431,16 +441,16 @@ end
         dragW = A_h_wall * _slip(walls, walls.glW, walls.lndW, i, j) * DV * v / dx2
         ipD = _safe_div(DV + DV_ip, tmask[i, j] + tmask[ip1, j])
         imD = _safe_div(DV + DV_im, tmask[i, j] + tmask[im1, j])
-        ov = other[i, j]
+        ov = _other_y(half, i, j, Ny)
         dN = var[i, jp1] - v
         dS = var[i, jm1] - v
         dE = var[ip1, j] - v
         dW = var[im1, j] - v
         # See _nonlinear_laplace_U_kernel! for the |Δu| composition.
-        aN = _safe_sqrt(dN * dN + (other[i, jp1] - ov)^2)
-        aS = _safe_sqrt(dS * dS + (other[i, jm1] - ov)^2)
-        aE = _safe_sqrt(dE * dE + (other[ip1, j] - ov)^2)
-        aW = _safe_sqrt(dW * dW + (other[im1, j] - ov)^2)
+        aN = _safe_sqrt(dN * dN + (_other_y(half, i, jp1, Ny) - ov)^2)
+        aS = _safe_sqrt(dS * dS + (_other_y(half, i, jm1, Ny) - ov)^2)
+        aE = _safe_sqrt(dE * dE + (_other_y(half, ip1, j, Ny) - ov)^2)
+        aW = _safe_sqrt(dW * dW + (_other_y(half, im1, j, Ny) - ov)^2)
         flux_N = visc_y * aN * D0[i, jp1] * dN / dy2 * (o - ocn[i, jp1])
         flux_S = visc_y * aS * D0[i, j] * dS / dy2 * (o - ocn[i, j])
         flux_E = visc_x * aE * ipD * dE / dx2 * (o - ocn[ip1, j]) - dragE
@@ -481,14 +491,18 @@ end
 # ---------------------------------------------------------------------------
 
 # Mass flux through the x-face at u-point (i, j), i.e. between T(i, j) and
-# T(i+1, j).  Zero-gradient thickness when the donor side is open ocean.
+# T(i+1, j).  Zero-gradient thickness when the donor side is open ocean.  `ifelse`,
+# not a branch: the read at `ip1` wraps on the last column, and Reactant raises a
+# wrapped read inside a branch to a gather (an all-gather when sharded).
 @inline function _face_mass_x(U, D, tmask, ocn, umask, i, j, Nx)
     @inbounds begin
         ip1 = _xp1(i, Nx)
         u = U[i, j]
-        Dd =
-            u > zero(u) ? D[i, j] * tmask[i, j] + D[ip1, j] * ocn[i, j] :
-            D[ip1, j] * tmask[ip1, j] + D[i, j] * ocn[ip1, j]
+        Dd = ifelse(
+            u > zero(u),
+            D[i, j] * tmask[i, j] + D[ip1, j] * ocn[i, j],
+            D[ip1, j] * tmask[ip1, j] + D[i, j] * ocn[ip1, j],
+        )
         return umask[i, j] * u * Dd
     end
 end
@@ -498,9 +512,11 @@ end
     @inbounds begin
         jp1 = _yp1(j, Ny)
         v = V[i, j]
-        Dd =
-            v > zero(v) ? D[i, j] * tmask[i, j] + D[i, jp1] * ocn[i, j] :
-            D[i, jp1] * tmask[i, jp1] + D[i, j] * ocn[i, jp1]
+        Dd = ifelse(
+            v > zero(v),
+            D[i, j] * tmask[i, j] + D[i, jp1] * ocn[i, j],
+            D[i, jp1] * tmask[i, jp1] + D[i, j] * ocn[i, jp1],
+        )
         return vmask[i, j] * v * Dd
     end
 end
@@ -750,15 +766,15 @@ end
 function laplace_U(m, lv::NonlinearLateralViscosity)
     nx, ny = size(m.V.past)
     # V collocated onto the U points, so the kernel can form |Δu| across a face.
-    # Same 4-point average the drag term uses for the speed magnitude.  Stored in
-    # the `Dq` work buffer, which only the tracer steps use.
-    VatU = m.Dq
-    launch!(_v_at_u_kernel!, VatU, m.V.past, nx, ny)
+    # Same 4-point average the drag term uses for the speed magnitude; its y half
+    # is stored in the `Dq` work buffer, which only the tracer steps use.
+    Vy = m.Dq
+    launch!(_v_half_kernel!, Vy, m.V.past, ny)
     launch_interior!(
         _nonlinear_laplace_U_kernel!,
         m.lap,
         m.U.past,
-        VatU,
+        Vy,
         laplacian_thickness(m),
         m.tmask,
         m.ocn,
@@ -768,19 +784,20 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
         lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
+        nx,
     )
     return m.lap
 end
 function laplace_V(m, lv::NonlinearLateralViscosity)
     nx, ny = size(m.U.past)
-    # U collocated onto the V points (in `Dq`); mirrors laplace_U above.
-    UatV = m.Dq
-    launch!(_u_at_v_kernel!, UatV, m.U.past, nx, ny)
+    # U collocated onto the V points (x half in `Dq`); mirrors laplace_U above.
+    Ux = m.Dq
+    launch!(_u_half_kernel!, Ux, m.U.past, nx)
     launch_interior!(
         _nonlinear_laplace_V_kernel!,
         m.lap,
         m.V.past,
-        UatV,
+        Ux,
         laplacian_thickness(m),
         m.tmask,
         m.ocn,
@@ -790,25 +807,22 @@ function laplace_V(m, lv::NonlinearLateralViscosity)
         lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
+        ny,
     )
     return m.lap
 end
 
 # 4-point collocation of the cross-velocity component, as `ip_half(jm_half(V))`
-# and `jp_half(im_half(U))` without the intermediate arrays.
-@kernel function _v_at_u_kernel!(out, @Const(V), Nx, Ny)
+# and `jp_half(im_half(U))` without the intermediate arrays, in two halves: the
+# kernels below store the average along the one axis, and the Laplacian kernels
+# take the average of that along the other (`_other_x`, `_other_y`).
+@kernel function _v_half_kernel!(out, @Const(V), Ny)
     i, j = @index(Global, NTuple)
-    @inbounds begin
-        ip1 = _xp1(i, Nx)
-        jm1 = _ym1(j, Ny)
-        out[i, j] = ((V[i, j] + V[i, jm1]) / 2 + (V[ip1, j] + V[ip1, jm1]) / 2) / 2
-    end
+    @inbounds out[i, j] = (V[i, j] + V[i, _ym1(j, Ny)]) / 2
 end
-@kernel function _u_at_v_kernel!(out, @Const(U), Nx, Ny)
+@kernel function _u_half_kernel!(out, @Const(U), Nx)
     i, j = @index(Global, NTuple)
-    @inbounds begin
-        im1 = _xm1(i, Nx)
-        jp1 = _yp1(j, Ny)
-        out[i, j] = ((U[i, j] + U[im1, j]) / 2 + (U[i, jp1] + U[im1, jp1]) / 2) / 2
-    end
+    @inbounds out[i, j] = (U[i, j] + U[_xm1(i, Nx), j]) / 2
 end
+@inline _other_x(half, i, j, Nx) = @inbounds (half[i, j] + half[_xp1(i, Nx), j]) / 2
+@inline _other_y(half, i, j, Ny) = @inbounds (half[i, j] + half[i, _yp1(j, Ny)]) / 2

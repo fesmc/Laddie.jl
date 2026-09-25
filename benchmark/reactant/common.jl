@@ -52,7 +52,8 @@ end
 
 # Since 2026-09-24 `launch!(kernel!, out, args...)` passes `out` to the kernel too;
 # before, the caller repeated it (`launch!(kernel!, out, out, args...)`).
-_kernel_args(A, args) = isdefined(Laddie, :_launch!) ? (A, args...) : args
+_kernel_args(A, args) =
+    isdefined(Laddie, :_launch!) || isdefined(Laddie, :launch_range!) ? (A, args...) : args
 
 if get(ENV, "WG", "0") != "1"
     function Laddie.launch!(kernel!, A::Reactant.AnyTracedRArray, args...)

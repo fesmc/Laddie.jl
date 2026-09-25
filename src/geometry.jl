@@ -600,12 +600,19 @@ The result is clipped to the input array, so a `margin` larger than the availabl
 padding simply keeps what is there.  If the domain is already minimal, the arrays
 are returned unchanged.
 
+`multiple` rounds the size of the cropped grid up to a multiple of it (one integer
+for both axes, or one per axis as a tuple), by keeping more cells at the end of the
+axis, then at its start: a grid sharded over a device mesh
+([`ReactantBackend`](@ref)) must split evenly.  It must fit in the input array.
+
 # Fields
 $(TYPEDFIELDS)
 """
-@kwdef struct MinRectangleDomainCropping{I} <: AbstractDomainCropping
+@kwdef struct MinRectangleDomainCropping{I,M} <: AbstractDomainCropping
     "cells of padding kept around the active region (minimum 2)"
     margin::I = 4
+    "the grid size is rounded up to a multiple of this, per axis (default `1`: no rounding)"
+    multiple::M = 1
 end
 
 # Index ranges of the kept sub-rectangle.  Returned rather than applied so every
@@ -630,8 +637,10 @@ function _crop_ranges(mask, cropping::MinRectangleDomainCropping)
     cols = getindex.(shelf_inds, 2)
     rmin, rmax = extrema(rows)
     cmin, cmax = extrema(cols)
-    r = max(1, rmin-margin):min(size(mask, 1), rmax+margin)
-    c = max(1, cmin-margin):min(size(mask, 2), cmax+margin)
+    kr, kc = cropping.multiple isa Integer ? (cropping.multiple, cropping.multiple) :
+             cropping.multiple
+    r = _round_up(max(1, rmin-margin):min(size(mask, 1), rmax+margin), kr, size(mask, 1))
+    c = _round_up(max(1, cmin-margin):min(size(mask, 2), cmax+margin), kc, size(mask, 2))
     if length(r) < size(mask, 1) || length(c) < size(mask, 2)
         # Report the margin actually achieved on each side, not just the requested
         # one: the active region is rarely centred, so `margin` is clipped by the
@@ -646,4 +655,16 @@ function _crop_ranges(mask, cropping::MinRectangleDomainCropping)
               note
     end
     return r, c
+end
+
+# `rng` grown to a multiple of `k` cells within `1:n`: at its end first, then at its start.
+function _round_up(rng, k, n)
+    k >= 1 || throw(ArgumentError("MinRectangleDomainCropping multiple must be ≥ 1, got $k"))
+    extra = mod(-length(rng), k)
+    hi = min(n, last(rng) + extra)
+    lo = first(rng) - (extra - (hi - last(rng)))
+    lo >= 1 || throw(ArgumentError(
+        "cannot round the cropped axis of $(length(rng)) cells up to a multiple of $k: " *
+        "the input has only $n cells along it"))
+    return lo:hi
 end

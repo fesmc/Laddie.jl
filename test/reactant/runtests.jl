@@ -245,4 +245,10 @@ const SCHEME_SCENARIOS = [
         @test sum(Array(g.forcing.ocean.Tz) .* vTz) ≈
               Reactant.to_number(only(fprog(mk(), tz, dt, n))) rtol = 1e-10
     end
+
+    # Sharded runs need fake CPU devices, whose count is fixed when Reactant loads.
+    @testset "sharding (own process: sharding.jl)" begin
+        cmd = `$(Base.julia_cmd()) --project=$(Base.active_project()) $(joinpath(@__DIR__, "sharding.jl"))`
+        @test success(pipeline(cmd; stdout, stderr))
+    end
 end

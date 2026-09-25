@@ -114,28 +114,50 @@ rsim = to_backend(sim, ReactantBackend())        # move to Reactant
 run!(rsim; days = 30)                            # compiled on the first call
 ```
 
+With a `mesh` (a `Reactant.Sharding.Mesh`), the grid is split over several devices:
+every field is sharded along `partition`, one mesh axis name (or `nothing`) per grid
+axis, and XLA exchanges the halos between the devices.  The default `partition`
+splits the second grid axis (contiguous slabs) over a one-axis mesh, and both grid
+axes over a two-axis mesh.  Each split grid axis must be divisible by its number of
+devices: crop with `MinRectangleDomainCropping(; multiple)` to round the grid up.
+The native kernels of the GPU default cannot be split, so on a mesh `fusion = :auto`
+raises them: `:kernel` over one mesh axis, `:xla` over two.
+
+```julia
+mesh = Reactant.Sharding.Mesh(collect(0:3), (:y,))          # 4 devices
+crop = MinRectangleDomainCropping(; multiple = (1, 4))
+grid = Grid(mask, z_draft, dx, dy; domain_cropping = crop)
+rsim = to_backend(Simulation(Model(grid; forcing)), ReactantBackend(; mesh))
+```
+
 Results agree with the KernelAbstractions backends to round-off, not bit for bit:
 XLA reorders floating-point operations.
 
 # Fields
 $(TYPEDFIELDS)
 """
-struct ReactantBackend{F}
+struct ReactantBackend{F,M,P}
     "how XLA may fuse the kernels of a step (see the Reactant docs page); `:auto` picks the measured best"
     fusion::F
+    "device mesh to shard the grid over, a `Reactant.Sharding.Mesh`; `nothing` for one device"
+    mesh::M
+    "mesh axis name (or `nothing`) each grid axis is split along; `nothing` for the default"
+    partition::P
 end
-ReactantBackend(; fusion = :auto) = ReactantBackend(fusion)
+ReactantBackend(; fusion = :auto, mesh = nothing, partition = nothing) =
+    ReactantBackend(fusion, mesh, partition)
 
-# Implemented by the Reactant extension: the KernelAbstractions backend that
-# Reactant arrays report, and the batched execution.
-function _reactant_ka_backend end
+# Implemented by the Reactant extension: what `to_backend` moves the arrays with (the
+# KernelAbstractions backend that Reactant arrays report, or a sharded placement over
+# the mesh), and the batched execution.
+function _reactant_device end
 function _reactant_execution end
-_reactant_ka_backend(::Any) = error(
+_reactant_device(::Any) = error(
     "ReactantBackend requires the Reactant extension: run `using Reactant, CUDA` first",
 )
-_reactant_execution(b) = _reactant_ka_backend(b)
+_reactant_execution(b) = _reactant_device(b)
 
-to_backend(m::Model, b::ReactantBackend) = to_backend(m, _reactant_ka_backend(b))
+to_backend(m::Model, b::ReactantBackend) = to_backend(m, _reactant_device(b))
 _iostate_to_backend(io::IOState, b::ReactantBackend) =
-    _iostate_to_backend(io, _reactant_ka_backend(b))
+    _iostate_to_backend(io, _reactant_device(b))
 _execution(b::ReactantBackend) = _reactant_execution(b)

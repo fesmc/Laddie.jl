@@ -44,7 +44,8 @@ operations, which XLA then fuses. `ReactantBackend(; fusion)` picks the form:
 | `:kernel` | raised, with an optimisation barrier after every kernel | GPU, CPU | no |
 | `:xla` | raised, fused by XLA's heuristics | GPU, CPU | **yes** |
 
-`:auto`, the default, picks `:native` on the GPU and `:kernel` on the CPU.
+`:auto`, the default, picks `:native` on the GPU and `:kernel` on the CPU, and a raised
+strategy on a mesh (see [Several devices](#Several-devices)).
 
 Without barriers, XLA fuses a whole step into a few giant fusions. These recompute
 intermediate fields for every output cell and use up to 255 registers at 17 %
@@ -78,6 +79,45 @@ in `benchmark/reactant/results-2026-09-23.csv`):
   at 640×320, the largest raised stencil fusions did the same work as their KA kernels
   and took up to 3× as long. XLA's `fast_min_max`, `ftz`, unroll-tuning and
   fusion-autotuner options changed nothing measurable.
+
+## Several devices
+
+With a `mesh`, a `Reactant.Sharding.Mesh`, the grid is split over several devices. Each
+device steps its own block of every field, and XLA inserts the halo exchanges between
+neighbouring blocks:
+
+```julia
+using Laddie, Reactant, CUDA
+
+mesh = Reactant.Sharding.Mesh(collect(0:3), (:y,))        # 4 devices, one mesh axis
+crop = MinRectangleDomainCropping(; multiple = (1, 4))    # a grid that splits evenly
+grid = Grid(mask, z_draft, dx, dy; domain_cropping = crop)
+sim = Simulation(Model(grid; forcing = ISOMIPForcing(:warm)))
+rsim = to_backend(sim, ReactantBackend(; mesh))
+run!(rsim; days = 30)
+```
+
+- **Every field is split and everything else is replicated.** The replicated arrays
+  are the ambient profiles, coordinates and scalars. By default a one-axis mesh splits
+  the second grid axis, so each device holds contiguous columns. A two-axis mesh splits
+  both grid axes. `partition` overrides this with one mesh axis name, or `nothing`, per
+  grid axis, e.g. `partition = (:y, nothing)` to split the first grid axis instead.
+- **Each split axis must divide evenly by its number of devices.** Otherwise
+  `to_backend` throws an error. Without that check, Reactant would silently keep a
+  full copy of the field on every device. `MinRectangleDomainCropping(; multiple)`
+  rounds the cropped grid up by keeping more of the surrounding domain.
+- **The kernels are raised.** A native CUDA kernel is opaque to XLA and cannot be
+  split. On a mesh, `fusion = :auto` therefore picks `:kernel` for a one-axis mesh and
+  `:xla` for a two-axis mesh. With `:kernel`'s barriers, XLA's partitioner crashes on
+  a two-axis mesh (Reactant 0.2.286). The raised strategies are slower than
+  `:native` on one device (see above), so the split has to win that back.
+- **Verified on a mesh of fake CPU devices, not yet on real GPUs.** Results agree
+  with the CPU to under 1e-8 relative in Float64 after half a day, for one-axis and
+  two-axis meshes, including the output. With every scheme in use, the compiled step
+  needs only halo exchanges (`collective-permute`) and a few reductions, never a
+  whole-field gather. To check that on a new configuration, run
+  `benchmark/reactant/sharding.jl`. Speed on several GPUs, and differentiation on a
+  mesh, are untested.
 
 ## Automatic differentiation
 

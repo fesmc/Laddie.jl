@@ -47,6 +47,18 @@ function _fusion(f::Symbol)
     return platform == "cuda" ? :native : :kernel
 end
 
+# On a mesh the native kernels cannot be split (XLA sees an opaque call), so `:auto`
+# takes the raised kernels: `:kernel` over one mesh axis, `:xla` over two, where the
+# barriers of `:kernel` crash XLA's partitioner (Reactant 0.2.286, upstream
+# momentum advection).
+_fusion(b::ReactantBackend{<:Any,Nothing}) = _fusion(b.fusion)
+function _fusion(b::ReactantBackend)
+    b.fusion === :native && throw(ArgumentError(
+        "fusion = :native cannot run on a mesh; use :kernel or :xla"))
+    b.fusion === :auto || return _fusion(b.fusion)
+    return count(!isnothing, _partition(b)) > 1 ? :xla : :kernel
+end
+
 function _barrier!(args...)
     arrs = [a for a in args if a isa Reactant.TracedRArray]
     isempty(arrs) && return nothing
@@ -68,10 +80,8 @@ function _launch_traced!(kernel!, ndrange, args)
     f === :kernel && _barrier!(args...)
     return nothing
 end
-Laddie.launch!(kernel!, out::Reactant.AnyTracedRArray, args...) =
-    _launch_traced!(kernel!, size(out), (out, args...))
-Laddie.launch_interior!(kernel!, out::Reactant.AnyTracedRArray, args...) =
-    _launch_traced!(kernel!, size(out) .- 2, (out, args...))
+Laddie.launch_range!(kernel!, ndrange, out::Reactant.AnyTracedRArray, args...) =
+    _launch_traced!(kernel!, ndrange, (out, args...))
 
 # Reactant 0.2.286: `ReactantCUDAExt.Const{T,N,AS}` stores a `CuTracedArray`
 # without its `Size` parameter, so the field is abstract and every `@Const` read
@@ -92,8 +102,51 @@ end
 # Backend and execution
 # ============================================================================
 
-Laddie._reactant_ka_backend(::ReactantBackend) =
-    Base.get_extension(Reactant, :ReactantKernelAbstractionsExt).ReactantBackend()
+_ka_backend() = Base.get_extension(Reactant, :ReactantKernelAbstractionsExt).ReactantBackend()
+
+Laddie._reactant_device(b::ReactantBackend{<:Any,Nothing}) = _ka_backend()
+Laddie._reactant_device(b::ReactantBackend) = ShardedPlacement(b.mesh, _partition(b))
+
+# One mesh axis: split the second grid axis, whose slabs are contiguous in memory.
+# Two: the first mesh axis splits the first grid axis, the second the second.
+function _partition(b::ReactantBackend)
+    b.partition === nothing || return Tuple(b.partition)
+    names = b.mesh.axis_names
+    length(names) == 1 && return (nothing, names[1])
+    length(names) == 2 && return names
+    throw(ArgumentError("give `partition` for a mesh with $(length(names)) axes"))
+end
+
+"""
+Where `to_backend` puts the arrays of a model on a `ReactantBackend` with a mesh:
+every matrix (all grid-sized) split over the mesh, every other array replicated.
+"""
+struct ShardedPlacement{M,P}
+    "the device mesh"
+    mesh::M
+    "mesh axis name (or `nothing`) each grid axis is split along"
+    partition::P
+end
+
+function Laddie._to_device(p::ShardedPlacement, a::AbstractMatrix)
+    for (d, name) in enumerate(p.partition)
+        name === nothing && continue
+        k = p.mesh.axis_sizes[findfirst(==(name), p.mesh.axis_names)]
+        # Reactant (0.2.286, PJRT) replicates an array silently when a split axis is
+        # not divisible.
+        size(a, d) % k == 0 || throw(ArgumentError(
+            "the grid is $(size(a)) cells, and its axis $d does not split evenly over " *
+            "the $k devices of mesh axis :$name; round the grid up with " *
+            "`Grid(...; domain_cropping = MinRectangleDomainCropping(; multiple = " *
+            "$(ntuple(i -> i == d ? k : 1, 2))))`"))
+    end
+    return Reactant.to_rarray(a; sharding = Reactant.Sharding.NamedSharding(p.mesh, p.partition))
+end
+Laddie._to_device(p::ShardedPlacement, a::AbstractArray) =
+    Reactant.to_rarray(a; sharding = Reactant.Sharding.Replicated(p.mesh))
+# Sharded and replicated matrices share one type: one buffer per device.
+Laddie._matrix_type(p::ShardedPlacement, FT) =
+    typeof(Reactant.to_rarray(zeros(FT, 2, 2); sharding = Reactant.Sharding.Replicated(p.mesh)))
 
 """
 Batched execution through Reactant: the compiled programs of one simulation, and a
@@ -111,7 +164,7 @@ mutable struct ReactantExecution <: Laddie.AbstractExecution
 end
 
 Laddie._reactant_execution(b::ReactantBackend) =
-    ReactantExecution(_fusion(b.fusion), Dict{Symbol,Any}(), nothing, nothing)
+    ReactantExecution(_fusion(b), Dict{Symbol,Any}(), nothing, nothing)
 
 # Extra keyword arguments for `Reactant.compile` (e.g. `xla_debug_options`), for
 # experiments with XLA's code generation; see `benchmark/reactant/fusion.jl`.

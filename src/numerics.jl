@@ -21,18 +21,21 @@ end
 _workgroup(::CPU) = (128, 32)
 _workgroup(::Any) = (32, 8)   # GPU: 256 threads, warp-aligned x-dimension
 
-launch!(kernel!, out, args...) = _launch!(kernel!, size(out), out, args...)
+launch!(kernel!, out, args...) = launch_range!(kernel!, size(out), out, args...)
 
 # Launch a stencil kernel over the interior cells only, the full array minus its
 # one-cell border ring.  The kernel offsets its index by one past the ring, so
 # `i ± 1`, `j ± 1` always stay inside the array and need no periodic wrap: the
 # border ring is never active, and a stencil output there was only ever multiplied
 # by a zero mask.  Plain `i ± 1` also keeps the indices affine, which lets Reactant
-# raise the neighbour reads to slices; a wrapped read along x (the contiguous axis)
-# becomes a gather, and a wrapped diagonal read a gather plus a transpose.
-launch_interior!(kernel!, out, args...) = _launch!(kernel!, size(out) .- 2, out, args...)
+# raise the neighbour reads to slices; for the wrapped reads that remain, see the
+# forms Reactant handles at `_xp1`.
+launch_interior!(kernel!, out, args...) = launch_range!(kernel!, size(out) .- 2, out, args...)
 
-function _launch!(kernel!, ndrange, out, args...)
+# Launch over `ndrange`, a block of `out` that the kernel places itself.  `launch!`
+# and `launch_interior!` go through here, and so does every backend method (the
+# Reactant extension's).
+function launch_range!(kernel!, ndrange, out, args...)
     backend = _launch_backend(KA.get_backend(out))
     kernel!(backend, _workgroup(backend))(out, args...; ndrange)
     return nothing

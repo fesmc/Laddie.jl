@@ -44,6 +44,20 @@
                                         domain_cropping = MinRectangleDomainCropping(; margin))
     end
     @test MinRectangleDomainCropping().margin == 4
+
+    # `multiple` rounds the cropped size up (for a device mesh), within the input:
+    # the 7 rows of margin 2 become the whole 8; 9 do not fit.
+    crop(multiple) = MinRectangleDomainCropping(; margin = 2, multiple)
+    m4 = Model(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT, domain_cropping = crop((4, 1)));
+               forcing, params)
+    @test size(m4.tmask) == (8, ny_i + 2)
+    @test sum(m4.tmask) == sum(m.model.tmask)
+    @test size(Grid(mask, z_draft_raw, 2000.0, 2000.0; FT, domain_cropping = crop(1)).mask) ==
+          size(m2.tmask)
+    @test_throws ArgumentError Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
+                                    domain_cropping = crop((3, 1)))
+    @test_throws ArgumentError Grid(mask, z_draft_raw, 2000.0, 2000.0; FT,
+                                    domain_cropping = crop(0))
 end
 
 @testset "Model: input validation errors" begin

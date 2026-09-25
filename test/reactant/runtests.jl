@@ -5,7 +5,7 @@
 #     julia --project=test/reactant test/reactant/runtests.jl
 #
 # Uses the GPU when CUDA is functional (native kernels), else Reactant's CPU target.
-using Laddie, Reactant, CUDA, KernelAbstractions, Test
+using Laddie, Reactant, CUDA, KernelAbstractions, Random, Test
 using Reactant: Enzyme
 
 const GPU = CUDA.functional()
@@ -14,6 +14,18 @@ const KW = (; nx = 40, ny = 20, isomipcond = :warm)
 
 prognostics(m) = [Array(getfield(getproperty(m, v), :present)) for v in (:D, :U, :V, :T, :S)]
 maxrel(a, b) = maximum(maximum(abs, x .- y) / max(maximum(abs, y), eps()) for (x, y) in zip(a, b))
+
+# Paths of the non-finite numbers and arrays in a (shadow) model.
+function nonfinite_leaves(x, path = "", out = String[])
+    if x isa Number || x isa Reactant.ConcreteRNumber
+        isfinite(Reactant.to_number(x)) || push!(out, path)
+    elseif x isa AbstractArray{<:AbstractFloat} || x isa Reactant.ConcretePJRTArray
+        all(isfinite, Array(x)) || push!(out, path)
+    elseif !(x isa AbstractArray) && !(x isa AbstractString) && fieldcount(typeof(x)) > 0
+        foreach(f -> nonfinite_leaves(getfield(x, f), "$path.$f", out), fieldnames(typeof(x)))
+    end
+    return out
+end
 
 # A 40×20 cavity with a melt-through gap (mask 4) under ConnectedGapsBC, and a bed for
 # the relative thickness cap: neither fits `build_isomip`.
@@ -178,8 +190,26 @@ const SCHEME_SCENARIOS = [
         f(h) = Reactant.to_number(primal(mk(; C_d = C_d * (1 + h)), dt, n))
         fd = (f(1e-4) - f(-1e-4)) / (2e-4 * C_d)
         # The zero tangent goes through validating constructors (TurbulentGamTMelting).
-        tangent = trace_parameters(Enzyme.make_zero(model); C_d = 1)
-        d = Reactant.to_number(only(reactant_compile(fwd, model, tangent, dt, n)(mk(), tangent, dt, n)))
+        tangent() = trace_parameters(Enzyme.make_zero(model); C_d = 1)
+        fprog = reactant_compile(fwd, model, tangent(), dt, n)
+        # A fresh tangent per call: the program advances the tangent model in place.
+        d = Reactant.to_number(only(fprog(mk(), tangent(), dt, n)))
         @test d ≈ fd rtol = 1e-4
+
+        # Reverse mode (checkpointed traced loop): the gradient with respect to every
+        # input, finite everywhere (NaN from unused branches shows up here first), and
+        # equal to forward mode along C_d and along a random ocean profile.
+        rev(m, dm, dt, n) = (Enzyme.autodiff(Enzyme.Reverse, loss, Enzyme.Active,
+                                             Enzyme.Duplicated(m, dm), Enzyme.Const(dt),
+                                             Enzyme.Const(n)); dm)
+        g = reactant_compile(rev, model, Enzyme.make_zero(model), dt, n)(
+            mk(), Enzyme.make_zero(model), dt, n)
+        @test isempty(nonfinite_leaves(g))
+        @test Reactant.to_number(g.params.C_d) ≈ d rtol = 1e-10
+        vTz = randn(Random.Xoshiro(1), length(model.forcing.ocean.Tz))
+        tz = Enzyme.make_zero(model)
+        tz.forcing.ocean.Tz .= Reactant.to_rarray(vTz)
+        @test sum(Array(g.forcing.ocean.Tz) .* vTz) ≈
+              Reactant.to_number(only(fprog(mk(), tz, dt, n))) rtol = 1e-10
     end
 end

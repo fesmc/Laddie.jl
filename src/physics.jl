@@ -63,11 +63,14 @@ end
         # solution for Tb collapses to Tb = T.
         melt[i, j] = iszero(imask[i, j]) ? zero(FT) : melt_rate
         Tb_denom = cp_over_Leff * gT + cp_over_Leff * ci_over_cp * melt_rate
-        Tb[i, j] =
-            iszero(tmask[i, j]) ? zero(FT) :
-            iszero(imask[i, j]) ? T[i, j] :
-            iszero(Tb_denom) ? zero(FT) :
-            (cp_over_Leff * gT * T[i, j] - melt_rate) / Tb_denom
+        # `ifelse` + `_safe_div`: reverse-mode AD differentiates the unused branches
+        # too, and γ_T is zero outside the domain under the u★-dependent schemes.
+        Tb[i, j] = ifelse(
+            iszero(tmask[i, j]),
+            zero(FT),
+            ifelse(iszero(imask[i, j]), T[i, j],
+                   _safe_div(cp_over_Leff * gT * T[i, j] - melt_rate, Tb_denom)),
+        )
     end
 end
 

@@ -618,6 +618,11 @@ end
 # On the C-grid U and V are not co-located, so the partner component is averaged
 # onto the point being limited — the same four-point stencil the bottom-drag
 # terms use (`u_bottom_drag` / `v_bottom_drag` in physics.jl).
+# min(1, v_cut / spd).  The divisor of the unused branch is swapped too: reverse-mode
+# AD differentiates it, and at rest (spd = 0) its zero adjoint times 1/spd is NaN.
+@inline _cap_factor(spd, v_cut) =
+    ifelse(spd > v_cut, v_cut / ifelse(spd > v_cut, spd, one(spd)), one(spd))
+
 @kernel function _speed_scale_kernel!(sU, sV, @Const(U), @Const(V), v_cut)
     v_cut = _val(v_cut)
     i0, j0 = @index(Global, NTuple)
@@ -632,8 +637,8 @@ end
         Ubar = (U[i, j] + U[im1, j] + U[i, jp1] + U[im1, jp1]) / FT(4)   # U at the V-point
         spdU = _safe_sqrt(U[i, j] * U[i, j] + Vbar * Vbar)
         spdV = _safe_sqrt(V[i, j] * V[i, j] + Ubar * Ubar)
-        sU[i, j] = spdU > v_cut ? v_cut / spdU : one(FT)
-        sV[i, j] = spdV > v_cut ? v_cut / spdV : one(FT)
+        sU[i, j] = _cap_factor(spdU, v_cut)
+        sV[i, j] = _cap_factor(spdV, v_cut)
     end
 end
 

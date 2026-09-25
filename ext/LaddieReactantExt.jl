@@ -147,8 +147,8 @@ end
 Laddie._value_type(::Type{T}) where {T<:Reactant.RNumber} = Reactant.unwrapped_eltype(T)
 
 # Every float in `x` (a parameter or parameterisation object) as a Reactant number
-# of precision FT.  Objects are rebuilt through their constructor, which infers the
-# type parameters from the fields; arrays, integers and field-less singletons stay.
+# of precision FT.  Objects are rebuilt with their float type parameters traced;
+# arrays, integers and field-less singletons stay.
 _traced(x::Reactant.RNumber, FT) = x
 _traced(x::AbstractFloat, FT) = ConcreteRNumber(FT(x))
 _traced(x::Number, FT) = x
@@ -186,9 +186,14 @@ function Laddie.trace_parameters(model::Model; overrides...)
                  Laddie.Params(fields...), model.boundary, model.forcing)
 end
 
-# `integrate!` inside a trace: the steps become a traced loop.
-Laddie.integrate!(model, dt, n::Reactant.TracedRNumber; nu = 0.8) =
-    (_steps!(model, (), dt, n, model.FT(nu), ()); model)
+# `integrate!` inside a trace: the steps become a traced loop.  Reverse mode through a
+# loop whose trip count is only known at run time needs checkpointing (revolve):
+# without it Enzyme stores every step in a buffer of dynamic size, which XLA cannot
+# compile.  The checkpoints cost nothing in the primal and in forward mode.
+Laddie.integrate!(model, dt, n::Reactant.TracedRNumber; nu = 0.8,
+                  checkpoints = Laddie.DEFAULT_CHECKPOINTS) =
+    (_steps!(model, (), dt, n, model.FT(nu), ();
+             checkpointing = Reactant.Binomial(checkpoints)); model)
 
 function _program(build, exec, name)
     get!(exec.programs, name) do
@@ -222,7 +227,8 @@ end
 const NATIVE_UNROLL = Ref(4)
 _unroll(fusion) = fusion === :native ? NATIVE_UNROLL[] : 1
 
-function _steps!(model, accs, dt, n, nu, srcs, unroll = 1)
+# `checkpointing` only shapes the reverse pass of Enzyme; see `integrate!`.
+function _steps!(model, accs, dt, n, nu, srcs, unroll = 1; checkpointing = false)
     rs = Laddie._stepping_view(model, dt, nu)
     if unroll > 1
         @trace track_numbers = false for _ = 1:(n ÷ unroll)
@@ -234,7 +240,7 @@ function _steps!(model, accs, dt, n, nu, srcs, unroll = 1)
             _step!(rs, accs, dt, srcs)
         end
     else
-        @trace track_numbers = false for _ = 1:n
+        @trace track_numbers = false checkpointing = checkpointing for _ = 1:n
             _step!(rs, accs, dt, srcs)
         end
     end

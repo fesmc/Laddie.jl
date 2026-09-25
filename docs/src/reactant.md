@@ -117,16 +117,19 @@ without recompiling, and Enzyme differentiates with respect to a parameter throu
 tangent model seeded with `trace_parameters`:
 
 ```julia
-sim = to_backend(build_isomip(CPU(); FT = Float64), ReactantBackend())
-model = trace_parameters(sim.model)
-dmodel = trace_parameters(Enzyme.make_zero(model); C_d = 1)     # direction: C_d
-prog = reactant_compile(fwd, model, dmodel, dt, n)
-dloss = only(prog(model, dmodel, dt, n))
+fresh(; kw...) = trace_parameters(to_backend(build_isomip(CPU()), ReactantBackend()).model; kw...)
+model = fresh()
+direction() = trace_parameters(Enzyme.make_zero(model); C_d = 1)   # direction: C_d
+prog = reactant_compile(fwd, model, direction(), dt, n)
+dloss = only(prog(fresh(), direction(), dt, n))
 
 # Another drag coefficient, same program:
-model2 = trace_parameters(model; C_d = 3e-3)
-dloss2 = only(prog(model2, dmodel, dt, n))
+dloss2 = only(prog(fresh(; C_d = 3e-3), direction(), dt, n))
 ```
+
+A program advances the model **and the tangent** it is called with in place: call it
+with a fresh pair each time. A tangent reused after a call no longer starts from zero
+state perturbations, and gives a wrong derivative without any error.
 
 The derivatives with respect to `C_d` and `L` match central differences (Float64).
 The traced parameters reach the kernels as device references, which each kernel loads
@@ -144,10 +147,52 @@ a simulation on a model from `trace_parameters`. Parameters that act only when t
 model is built (`coriolis`, `D_init`, `dT_init`, `dS_init`) have no effect on a
 program.
 
+### Reverse mode
+
+Reverse mode gives the gradient with respect to every input at once: all traced
+parameters, the forcing profiles, the initial state. The shadow model returned by
+`Enzyme.autodiff` holds it:
+
+```julia
+rev(m, dm, dt, n) = (Enzyme.autodiff(Enzyme.Reverse, loss, Enzyme.Active,
+                                     Enzyme.Duplicated(m, dm), Enzyme.Const(dt),
+                                     Enzyme.Const(n)); dm)
+prog = reactant_compile(rev, model, Enzyme.make_zero(model), dt, n)
+grad = prog(fresh(), Enzyme.make_zero(model), dt, n)
+grad.params.C_d, grad.params.melting.gamTfix, grad.forcing.ocean.Tz
+```
+
+The reverse pass needs the state of every step, in reverse order. `integrate!` keeps
+at most `checkpoints` states (default 20) and recomputes the steps between them
+(binomial checkpointing, revolve). Measured on the A4000 in Float64, against the
+primal run:
+
+| | reverse / primal | peak memory |
+|---|---|---|
+| 40×20, 2000 steps, 5 / 10 / 20 / 50 checkpoints | 11.5× / 8.5× / 7.4× / 6.8× | 7.5 / 8.1 / 10.8 / 16.9 MB |
+| 40×20, 2000 steps, no checkpointing (static `n`) | 7.4× | 4.6 GB |
+| 480×240, 200 steps, 20 checkpoints | 7.1× | 0.9 GB |
+
+- **Memory does not grow with `n`.** It is about (360 + 28 × `checkpoints`) × 8 bytes
+  per grid cell in Float64: one step's intermediate values plus the checkpointed
+  states. About 7 GB at 1000×1000 with the default, so grid size, not run length, is
+  the limit.
+- **Checkpoints cost nothing** in the primal and in forward mode.
+- A traced loop whose trip count is only known at run time cannot be differentiated in
+  reverse mode without checkpointing (XLA cannot compile Enzyme's buffer of dynamic
+  size).
+
+The extension's tests check the reverse gradient against forward mode (along a
+parameter and along a random profile, to 1e-10) and check that every entry of the
+gradient is finite, for each scheme.
+
 ### Limitations
 
 - **Raised kernels without barriers** (`:xla`) are the slowest strategy, 2–2.5× KA.
-  A derivative in forward mode costs roughly one such run per direction.
+  A derivative in forward mode costs roughly one such run per direction; a gradient in
+  reverse mode about 7 such runs, whatever the number of inputs.
+- **Kinks.** The speed cap, the tracer clamps, the `D_min` floor and the thickness caps
+  have kinks; at one the derivative is that of the active side (a subgradient).
 - The ForwardDiff extension remains the option for gradients on the CPU backends and
   on the KA GPU backends (build the model at `FT = Dual`).
 

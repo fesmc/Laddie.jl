@@ -214,14 +214,21 @@ steps run as a traced loop.
 ```julia
 loss(model, dt, n) = (integrate!(model, dt, n); sum(model.melt .* model.imask) / sum(model.imask))
 ```
+
+`checkpoints` is the memory budget of reverse-mode differentiation with Enzyme: the
+traced loop stores the state at most that many times and recomputes the steps in
+between (binomial checkpointing, revolve).  It is ignored elsewhere.
 """
-function integrate!(model, dt, n; nu = 0.8)
+function integrate!(model, dt, n; nu = 0.8, checkpoints = DEFAULT_CHECKPOINTS)
     s = _stepping_view(model, dt, nu)
     for _ = 1:n
         _step_model!(s)
     end
     return model
 end
+
+# Checkpoints of a reverse pass through `integrate!` (Reactant).
+const DEFAULT_CHECKPOINTS = 20
 
 # What the step functions read from a Simulation (they take `sim` untyped).
 _stepping_view(model, dt, nu) =

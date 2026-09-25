@@ -190,10 +190,138 @@ end
 # loop whose trip count is only known at run time needs checkpointing (revolve):
 # without it Enzyme stores every step in a buffer of dynamic size, which XLA cannot
 # compile.  The checkpoints cost nothing in the primal and in forward mode.
+const DEFAULT_CHECKPOINTS = 20
 Laddie.integrate!(model, dt, n::Reactant.TracedRNumber; nu = 0.8,
-                  checkpoints = Laddie.DEFAULT_CHECKPOINTS) =
+                  checkpoints = DEFAULT_CHECKPOINTS) =
     (_steps!(model, (), dt, n, model.FT(nu), ();
              checkpointing = Reactant.Binomial(checkpoints)); model)
+
+# ============================================================================
+# Adaptive dt, differentiable: record the schedule, then replay it
+# ============================================================================
+
+# AdaptiveDt's rule (`Laddie._controller_dt` with `allow_grow = true`), branch-free on
+# traced numbers.
+function _controller_dt(ts::Laddie.AdaptiveDt, dt, cfl)
+    FT = typeof(dt)
+    target, q = FT(ts.cfl_target), FT(ts.q)
+    ok = (cfl > zero(cfl)) & isfinite(cfl)
+    r = (target / ifelse(ok, cfl, one(cfl)))^q
+    dtn = ifelse(cfl > target, dt * r,
+                 ifelse(cfl < FT(ts.grow_hyst) * target, dt * min(r, FT(ts.max_growth)), dt))
+    return clamp(ifelse(ok, dtn, dt), FT(ts.dtmin), FT(ts.dtmax))
+end
+
+# CFL rate (s⁻¹) on traced fields: `Laddie._cfl_rate` without the host conversions.
+function _cfl_rate(m, ::Laddie.ExactCFL)
+    Laddie._launch_tpoint_diag!(Laddie._cfl_rate_kernel!, m)
+    return maximum(m.diag)
+end
+function _cfl_rate(m, cfl::Laddie.ConservativeCFL)
+    umax, vmax, c = Laddie._cfl_reductions(m, cfl)
+    return (umax + c) / m.dx + (vmax + c) / m.dy
+end
+
+# Re-bootstrap where dt changed.  A traced `if` is fine here (no differentiation).
+function _rebootstrap_if!(model, changed, dt, nu)
+    @trace track_numbers = false if changed
+        Laddie._collapse_and_bootstrap!(Laddie._stepping_view(model, dt, nu))
+    end
+    return nothing
+end
+
+# Pass 1: the adaptive run.  Loop state: time, dt, step count and segment index as
+# floats (exact for integers), and the segments as fixed-capacity arrays.
+function _schedule!(model, dt0, tend, ts, cfl, nu, cap)
+    FT = model.FT
+    idx = FT.(Reactant.Ops.iota(Int, [cap]; iota_dimension = 1) .+ 1)
+    seg_dt = ifelse.(idx .== 1, dt0, zero(dt0))
+    seg_n = zero(seg_dt)
+    t, dt, k, j = zero(dt0), dt0 * one(dt0), zero(dt0), one(dt0)
+    @trace track_numbers = false while t < tend
+        Laddie._step_model!(Laddie._stepping_view(model, dt, nu))
+        t = t + dt
+        k = k + 1
+        seg_n = seg_n .+ ifelse.(idx .== j, one(FT), zero(FT))
+        dtn = _controller_dt(ts, dt, dt * _cfl_rate(model, cfl))
+        dtn = ifelse(rem(k, FT(ts.ncheck)) == 0, dtn, dt)
+        changed = dtn != dt
+        _rebootstrap_if!(model, changed, dtn, nu)
+        j = j + ifelse(changed, one(FT), zero(FT))
+        seg_dt = ifelse.(idx .== j, dtn, seg_dt)
+        dt = dtn
+    end
+    return seg_dt, seg_n, j
+end
+
+# One compiled pass-1 program per model type, size and controller settings.
+const SCHEDULE_PROGRAMS = Dict{Any,Any}()
+
+function Laddie.adaptive_schedule(model::Model, dt; days, stepper = Laddie.AdaptiveDt(),
+                                  cfl = Laddie.ExactCFL(), nu = 0.8, maxsegments = 10_000)
+    FT = model.FT
+    ts = Laddie._promote_param(stepper, FT)
+    nuv = FT(nu)
+    key = (typeof(model), size(model.melt), ts, cfl, nuv, maxsegments)
+    dt0, tend = ConcreteRNumber(FT(dt)), ConcreteRNumber(FT(days * 86400))
+    prog = get!(SCHEDULE_PROGRAMS, key) do
+        _compile_with((m, dt0, tend) -> _schedule!(m, dt0, tend, ts, cfl, nuv, maxsegments),
+                      _fusion(:auto), (model, dt0, tend), (;))
+    end
+    seg_dt, seg_n, j = prog(model, dt0, tend)
+    nseg = round(Int, Reactant.to_number(j))
+    nseg <= maxsegments || throw(ArgumentError(
+        "the run changed dt $(nseg - 1) times, more than `maxsegments` = $maxsegments allows"))
+    steps = round.(Int, Array(seg_n))
+    return Laddie.DtSchedule(seg_dt, Reactant.to_rarray(steps), ConcreteRNumber(nseg))
+end
+
+# Pass 2: replay, differentiable.  The re-bootstrap at each segment start is computed
+# unconditionally and kept with `ifelse` except for the first segment: Enzyme cannot
+# reverse a traced `if` that updates arrays in place.  It writes `past` (collapsed on
+# `present`) and `future` (the Euler step); the next step recomputes the cache.
+function _rebootstrap_blend!(model, keep, dt, nu)
+    vars = (model.D, model.U, model.V, model.T, model.S)
+    old = map(v -> (copy(v.past), copy(v.future)), vars)
+    Laddie._collapse_and_bootstrap!(Laddie._stepping_view(model, dt, nu))
+    for (v, (p, f)) in zip(vars, old)
+        v.past .= ifelse.(keep, v.past, p)
+        v.future .= ifelse.(keep, v.future, f)
+    end
+    return nothing
+end
+
+_field(m, name) = (x = getproperty(m, name); x isa Laddie.Var ? x.present : x)
+
+function _segment!(model, accs, dt, n, nu, names, checkpoints)
+    @trace track_numbers = false checkpointing = Reactant.Binomial(checkpoints) for _ = 1:n
+        Laddie._step_model!(Laddie._stepping_view(model, dt, nu))
+        for (acc, name) in zip(accs, names)
+            acc .+= _field(model, name) .* dt
+        end
+    end
+    return nothing
+end
+
+function Laddie.integrate!(model, sched::Laddie.DtSchedule{<:Reactant.AnyTracedRArray};
+                           means = (), nu = 0.8, checkpoints = DEFAULT_CHECKPOINTS)
+    FT = model.FT
+    nuv = FT(nu)
+    names = Tuple(means)
+    accs = map(name -> zero(_field(model, name)), names)
+    cap = length(sched.dt)
+    idx = Reactant.Ops.iota(Int, [cap]; iota_dimension = 1) .+ 1
+    # Few segments: a small checkpoint budget for the outer loop.
+    @trace track_numbers = false checkpointing = Reactant.Binomial(checkpoints) for j = 1:sched.nseg
+        dt = sum(ifelse.(idx .== j, sched.dt, zero(FT)))
+        n = sum(ifelse.(idx .== j, sched.steps, 0))
+        _rebootstrap_blend!(model, j > 1, dt, nuv)
+        _segment!(model, accs, dt, n, nuv, names, checkpoints)
+    end
+    isempty(names) && return model
+    total = sum(sched.dt .* sched.steps)
+    return NamedTuple{names}(map(acc -> acc ./ total, accs))
+end
 
 function _program(build, exec, name)
     get!(exec.programs, name) do

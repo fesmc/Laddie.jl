@@ -166,6 +166,39 @@ const SCHEME_SCENARIOS = [
         end
     end
 
+    @testset "adaptive dt: schedule, then a differentiable replay" begin
+        mk(; kw...) = trace_parameters(to_backend(build_isomip(CPU(); KW...), ReactantBackend()).model; kw...)
+        ref = mk()
+        sched = adaptive_schedule(ref, 100.0; days = 0.5)
+        nseg = Reactant.to_number(sched.nseg)
+        dts, steps = Array(sched.dt)[1:nseg], Array(sched.steps)[1:nseg]
+        @test nseg > 1 && dts[end] > dts[1]           # dt grows from a small start
+        @test 0.5 * 86400 <= sum(dts .* steps) < 0.5 * 86400 + dts[end]
+        @test_throws ArgumentError integrate!(mk(), sched)   # only inside a compiled program
+        # The replay reaches the state of the adaptive run (native kernels vs raised: round-off).
+        replay(model, sched) = (integrate!(model, sched); nothing)
+        m = mk()
+        reactant_compile(replay, m, sched)(m, sched)
+        @test maxrel(prognostics(m), prognostics(ref)) < 1e-10
+
+        loss(model, sched) = (melt = integrate!(model, sched; means = (:melt,)).melt;
+                              sum(melt .* model.imask) / sum(model.imask))
+        fwd(m, dm, s) = Enzyme.autodiff(Enzyme.Forward, loss, Enzyme.Duplicated(m, dm), Enzyme.Const(s))
+        rev(m, dm, s) = (Enzyme.autodiff(Enzyme.Reverse, loss, Enzyme.Active, Enzyme.Duplicated(m, dm),
+                                         Enzyme.Const(s)); dm)
+        model = mk()
+        tangent() = trace_parameters(Enzyme.make_zero(model); C_d = 1)
+        d = Reactant.to_number(only(reactant_compile(fwd, model, tangent(), sched)(mk(), tangent(), sched)))
+        g = reactant_compile(rev, model, Enzyme.make_zero(model), sched)(mk(), Enzyme.make_zero(model), sched)
+        @test isempty(nonfinite_leaves(g))
+        @test Reactant.to_number(g.params.C_d) ≈ d rtol = 1e-10
+        # The derivative is that of the run with this dt sequence.
+        primal = reactant_compile(loss, model, sched)
+        C_d = build_isomip(CPU(); KW...).model.C_d
+        f(h) = Reactant.to_number(primal(mk(; C_d = C_d * (1 + h)), sched))
+        @test (f(1e-5) - f(-1e-5)) / (2e-5 * C_d) ≈ d rtol = 1e-5
+    end
+
     # Each scheme through `run!` (default strategy) and through the forward derivative
     # of the raised `:xla` program with respect to a traced parameter.  The loss is
     # the mean layer temperature, which depends on C_d under prescribed melting too.

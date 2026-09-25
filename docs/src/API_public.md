@@ -26,6 +26,8 @@ ReactantBackend
 integrate!
 reactant_compile
 trace_parameters
+adaptive_schedule
+DtSchedule
 ```
 
 ## Geometry ingestion

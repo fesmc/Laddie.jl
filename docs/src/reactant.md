@@ -186,6 +186,41 @@ The extension's tests check the reverse gradient against forward mode (along a
 parameter and along a random profile, to 1e-10) and check that every entry of the
 gradient is finite, for each scheme.
 
+### Adaptive time step
+
+Enzyme cannot differentiate through the dt controller: a loop whose length depends on
+the data has no reverse pass, and the controller is not smooth anyway. An adaptive run
+is differentiated in two passes instead, with the gradient of the run *at the dt
+sequence it took* (the ForwardDiff path does the same implicitly):
+
+1. [`adaptive_schedule`](@ref) runs the model with the controller of
+   [`AdaptiveDt`](@ref) in a compiled loop (native kernels, no differentiation) and
+   returns the dt schedule as segments of constant dt.
+2. `integrate!(model, sched)` inside [`reactant_compile`](@ref) replays the schedule,
+   re-bootstrapping the leapfrog at each change of dt, and can be differentiated in
+   both modes. `means = (:melt, …)` returns the time-weighted means over the run.
+
+```julia
+fresh() = trace_parameters(to_backend(build_isomip(CPU()), ReactantBackend()).model)
+sched = adaptive_schedule(fresh(), 100.0; days = 15)
+function loss(model, sched)
+    melt = integrate!(model, sched; means = (:melt,)).melt
+    return sum(melt .* model.imask) / sum(model.imask)
+end
+rev(m, dm, s) = (Enzyme.autodiff(Enzyme.Reverse, loss, Enzyme.Active,
+                                 Enzyme.Duplicated(m, dm), Enzyme.Const(s)); dm)
+grad = reactant_compile(rev, fresh(), Enzyme.make_zero(fresh()), sched)(
+    fresh(), Enzyme.make_zero(fresh()), sched)
+```
+
+The schedule depends on the parameters: in an optimisation loop, recompute it at each
+iteration (one primal run; the program is compiled once per model type and size).
+The replay reproduces the adaptive run to round-off, and its derivative matches
+central differences at a fixed schedule. The re-bootstrap costs one extra Euler step
+per change of dt; the controller changes dt at most every `ncheck` steps. Its CFL
+checks count from the start of the schedule, so a window does not reproduce the dt
+sequence of a longer `run!` exactly.
+
 ### Limitations
 
 - **Raised kernels without barriers** (`:xla`) are the slowest strategy, 2–2.5× KA.

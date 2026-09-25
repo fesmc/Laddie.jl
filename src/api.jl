@@ -215,20 +215,17 @@ steps run as a traced loop.
 loss(model, dt, n) = (integrate!(model, dt, n); sum(model.melt .* model.imask) / sum(model.imask))
 ```
 
-`checkpoints` is the memory budget of reverse-mode differentiation with Enzyme: the
-traced loop stores the state at most that many times and recomputes the steps in
-between (binomial checkpointing, revolve).  It is ignored elsewhere.
+Under Reactant, the traced method also takes `checkpoints`, the memory budget of
+reverse-mode differentiation; and `integrate!(model, sched)` replays an adaptive dt
+schedule (see [`adaptive_schedule`](@ref)).
 """
-function integrate!(model, dt, n; nu = 0.8, checkpoints = DEFAULT_CHECKPOINTS)
+function integrate!(model, dt, n; nu = 0.8)
     s = _stepping_view(model, dt, nu)
     for _ = 1:n
         _step_model!(s)
     end
     return model
 end
-
-# Checkpoints of a reverse pass through `integrate!` (Reactant).
-const DEFAULT_CHECKPOINTS = 20
 
 # What the step functions read from a Simulation (they take `sim` untyped).
 _stepping_view(model, dt, nu) =
@@ -274,6 +271,62 @@ dloss = only(reactant_compile(fwd, sim.model, dmodel, dt, n)(sim.model, dmodel, 
 ```
 """
 function reactant_compile end
+
+"""
+$(TYPEDEF)
+
+The dt schedule of an adaptive run, as segments of constant dt, made by
+[`adaptive_schedule`](@ref) and replayed by `integrate!(model, sched)`.  The arrays have
+a fixed capacity; entries past `nseg` are unused.
+
+# Fields
+$(TYPEDFIELDS)
+"""
+struct DtSchedule{V,W,N}
+    "dt of each segment (s)"
+    dt::V
+    "number of steps in each segment"
+    steps::W
+    "number of segments in use"
+    nseg::N
+end
+
+"""
+    adaptive_schedule(model, dt; days, stepper = AdaptiveDt(), cfl = ExactCFL(), nu = 0.8,
+                      maxsegments = 10_000) -> DtSchedule
+
+Run `model` (on a [`ReactantBackend`](@ref); requires `using Reactant, CUDA`) for `days`
+from the step `dt` (s), adapting dt with `stepper` as `run!` does, and return the dt
+schedule it took.  Advances `model`.
+
+Differentiating through the dt controller is neither possible (Enzyme cannot reverse
+a loop whose length depends on the data) nor wanted (the controller is not smooth), so
+an adaptive run is differentiated in two passes, like the ForwardDiff path does it
+implicitly: this function fixes the schedule, and `integrate!(model, sched)` inside
+[`reactant_compile`](@ref) replays it with dt as data.  The gradient is that of the run
+with this dt sequence.
+
+```julia
+fresh() = trace_parameters(to_backend(build_isomip(CPU()), ReactantBackend()).model)
+sched = adaptive_schedule(fresh(), 120.0; days = 15)                 # pass 1
+function loss(model, sched)                                          # pass 2
+    melt = integrate!(model, sched; means = (:melt,)).melt
+    return sum(melt .* model.imask) / sum(model.imask)
+end
+prog = reactant_compile(loss, fresh(), sched)       # differentiable, as with integrate!
+```
+
+`integrate!(model, sched; means = (), nu = 0.8, checkpoints = 20)` returns the
+time-weighted means over the run of the fields named in `means` (e.g. `:melt`, `:D`),
+as a `NamedTuple`, or `model` when `means` is empty.  The controller checks the CFL
+every `stepper.ncheck` steps counted from the start of the call, and re-bootstraps the
+leapfrog when dt changes, as `run!`; the last step may end past `days`.
+"""
+function adaptive_schedule end
+
+integrate!(model, sched::DtSchedule; kwargs...) = throw(ArgumentError(
+    "integrate!(model, ::DtSchedule) replays a schedule inside a program compiled by " *
+    "`reactant_compile` (requires `using Reactant, CUDA`)"))
 
 """
     trace_parameters(model; overrides...)

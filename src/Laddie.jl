@@ -50,7 +50,9 @@ export build_isomip,
     ReactantBackend,
     integrate!,
     reactant_compile,
-    trace_parameters
+    trace_parameters,
+    adaptive_schedule,
+    DtSchedule
 
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
 export AbstractMelting,

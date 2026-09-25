@@ -17,17 +17,13 @@ meltstats
 to_backend
 ```
 
-## Reactant backend and automatic differentiation
+## Running on Reactant
 
-See [Reactant backend](@ref) for the setup, the fusion strategies and their cost.
+See [Reactant backend](@ref) for the setup, the fusion strategies and their cost, and
+[Automatic differentiation](@ref "Automatic differentiation (API)") for differentiating a run.
 
 ```@docs
 ReactantBackend
-integrate!
-reactant_compile
-trace_parameters
-adaptive_schedule
-DtSchedule
 ```
 
 ## Geometry ingestion

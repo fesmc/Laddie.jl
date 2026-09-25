@@ -41,6 +41,14 @@ if get(ENV, "LADDIE_DOCS_JESSE", "false") == "true"
 end
 Literate.markdown(jesse_script, gendir; documenter = true, codefence = "```julia" => "```")
 
+# The inverse-problems example needs a CUDA GPU for its Reactant half (~6 min), so it is
+# static too. Set LADDIE_DOCS_INVERSE=true to run it.
+inv_script = joinpath(exdir, "inverse-problems.jl")
+if get(ENV, "LADDIE_DOCS_INVERSE", "false") == "true"
+    Base.include(Module(:InverseProblems), inv_script)
+end
+Literate.markdown(inv_script, gendir; documenter = true, codefence = "```julia" => "```")
+
 DocMeta.setdocmeta!(Laddie, :DocTestSetup, :(using Laddie); recursive=true)
 
 makedocs(;
@@ -63,10 +71,12 @@ makedocs(;
             "Crosson–Dotson" => "generated/crosson-dotson.md",
             "Amundsen Sea" => "generated/lambert-ase.md",
             "Ice-shelf gaps" => "generated/jesse-gaps.md",
+            "Inverse problems" => "generated/inverse-problems.md",
         ],
         "API reference" => [
             "Setup and running" => "API_public.md",
             "Parameterizations and boundaries" => "API_physics.md",
+            "Automatic differentiation" => "API_ad.md",
         ],
     ],
     checkdocs = :exports,

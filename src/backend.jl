@@ -18,13 +18,15 @@ _state_to_backend(s::State, backend) =
 _iostate_to_backend(io::IOState, backend) =
     _mapfields(x -> x isa NamedTuple ? map(a -> _to_device(backend, a), x) : x, io)
 
-# Every float array of the forcing, so the kernels can read the ambient profiles and
-# T_ice_base on the device.
+# Every non-integer real array of the forcing (floats, and ForwardDiff `Dual`s, which
+# are `Real` but not `AbstractFloat`), so the kernels can read the ambient profiles
+# and T_ice_base on the device.
 _forcing_to_backend(f::CavityForcing, backend) =
     _mapfields(x -> _forcing_to_backend(x, backend), f)
 _forcing_to_backend(f::Union{AbstractOceanForcing,AbstractIceForcing}, backend) =
     _mapfields(f) do x
-        x isa AbstractArray && eltype(x) <: AbstractFloat ? _to_device(backend, x) : x
+        x isa AbstractArray && eltype(x) <: Real && !(eltype(x) <: Integer) ?
+        _to_device(backend, x) : x
     end
 
 """

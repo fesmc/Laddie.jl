@@ -1,67 +1,31 @@
 _to_device(backend, a::AbstractArray) =
     (b = KA.allocate(backend, eltype(a), size(a)); copyto!(b, a); b)
 
-# Concrete matrix type of `backend` at precision FT.
-_matrix_type(backend, FT) = typeof(KA.allocate(backend, FT, 0, 0))
+# `x` with every field of its float matrix type `A` moved to `backend`.  Integer
+# masks, coordinate vectors, ranges, strings and scalars stay where they are, and so
+# do the scalar slots of the cache (`GamT`, `Conv2`, `PM` under some schemes).
+_matrices_to_backend(x, ::Type{A}, backend) where {A} =
+    _mapfields(y -> y isa A ? _to_device(backend, y) : y, x)
 
-# The fields of `x`, with every matrix of the source type `A0` moved to `backend`.
-# Integer masks, coordinate vectors, ranges, strings and scalars stay where they
-# are, since the dispatch is on the source matrix type.
-function _moved_fields(x, ::Type{A0}, backend) where {A0}
-    mv(a::A0) = _to_device(backend, a)
-    mv(a) = a
-    return map(fn -> mv(getfield(x, fn)), fieldnames(typeof(x)))
-end
-
-# The matrix type on `backend` with the element type of the source matrices `A0`.
-_moved_matrix_type(backend, ::Type{A0}) where {A0} = _matrix_type(backend, eltype(A0))
-
-# Grid and Geometry have every type parameter as a field type, so their default
-# constructors re-infer the parameters from the moved fields.
-_grid_to_backend(g::Grid{FT,A0}, backend) where {FT,A0} =
-    Grid(_moved_fields(g, A0, backend)...)
-
-_geometry_to_backend(g::Geometry{A0}, backend) where {A0} =
-    Geometry(_moved_fields(g, A0, backend)...)
-
-_iostate_to_backend(io::IOState, backend) = IOState(
-    map(fn -> getfield(io, fn), fieldnames(IOState)[1:(end-1)])...,
-    map(a -> _to_device(backend, a), io.acc),
-)
-
-_var_to_backend(v::Var{LX,LY,A0}, backend) where {LX,LY,A0} =
-    Var{LX,LY,_moved_matrix_type(backend, A0)}(_moved_fields(v, A0, backend)...)
+_grid_to_backend(g::Grid{FT,A}, backend) where {FT,A} = _matrices_to_backend(g, A, backend)
+_geometry_to_backend(g::Geometry{A}, backend) where {A} = _matrices_to_backend(g, A, backend)
+_cache_to_backend(c::Cache{A}, backend) where {A} = _matrices_to_backend(c, A, backend)
 
 _state_to_backend(s::State, backend) =
-    State(map(fn -> _var_to_backend(getfield(s, fn), backend), fieldnames(State))...)
+    _mapfields(v -> _mapfields(a -> _to_device(backend, a), v), s)
 
-# The scheme-dependent slots (GamT, Conv2, PM) are scalars or matrices; the
-# matrix ones follow the backend.
-function _cache_to_backend(c::Cache{A0,G,C,P}, backend) where {A0,G,C,P}
-    A = _moved_matrix_type(backend, A0)
-    slot(T) = T <: AbstractArray ? A : T
-    return Cache{A,slot(G),slot(C),slot(P)}(_moved_fields(c, A0, backend)...)
-end
+# The accumulators of the time-averaged output, a NamedTuple of fields.
+_iostate_to_backend(io::IOState, backend) =
+    _mapfields(x -> x isa NamedTuple ? map(a -> _to_device(backend, a), x) : x, io)
 
-# Reconstruct a forcing struct with all float arrays moved to backend, so the
-# kernels can read the ambient profiles and T_ice_base on the device.  The
-# unparameterized constructor (typename wrapper) re-infers the type parameters
-# from the moved arrays.
-_forcing_to_backend(f::CavityForcing, backend) = CavityForcing(
-    _forcing_to_backend(f.ocean, backend),
-    _forcing_to_backend(f.ice, backend),
-)
-
-function _forcing_to_backend(
-    f::F,
-    backend,
-) where {F<:Union{AbstractOceanForcing,AbstractIceForcing}}
-    fields = map(fieldnames(F)) do fn
-        v = getfield(f, fn)
-        v isa AbstractArray && eltype(v) <: AbstractFloat ? _to_device(backend, v) : v
+# Every float array of the forcing, so the kernels can read the ambient profiles and
+# T_ice_base on the device.
+_forcing_to_backend(f::CavityForcing, backend) =
+    _mapfields(x -> _forcing_to_backend(x, backend), f)
+_forcing_to_backend(f::Union{AbstractOceanForcing,AbstractIceForcing}, backend) =
+    _mapfields(f) do x
+        x isa AbstractArray && eltype(x) <: AbstractFloat ? _to_device(backend, x) : x
     end
-    Base.typename(F).wrapper(fields...)
-end
 
 """
 $(TYPEDSIGNATURES)

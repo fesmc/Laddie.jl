@@ -142,11 +142,10 @@ function Laddie._to_device(p::ShardedPlacement, a::AbstractMatrix)
     end
     return Reactant.to_rarray(a; sharding = Reactant.Sharding.NamedSharding(p.mesh, p.partition))
 end
+# Sharded and replicated matrices share one type (one buffer per device), so the
+# rebuilt structs keep one matrix type.
 Laddie._to_device(p::ShardedPlacement, a::AbstractArray) =
     Reactant.to_rarray(a; sharding = Reactant.Sharding.Replicated(p.mesh))
-# Sharded and replicated matrices share one type: one buffer per device.
-Laddie._matrix_type(p::ShardedPlacement, FT) =
-    typeof(Reactant.to_rarray(zeros(FT, 2, 2); sharding = Reactant.Sharding.Replicated(p.mesh)))
 
 """
 Batched execution through Reactant: the compiled programs of one simulation, and a
@@ -157,14 +156,12 @@ mutable struct ReactantExecution <: Laddie.AbstractExecution
     fusion::Symbol
     "compiled programs, by name"
     programs::Dict{Symbol,Any}
-    "sync-point diagnostics of the current state, or `nothing` when stale"
-    diag::Any
     "CPU copy of the model for `printdiags`, created on first use"
     mirror::Any
 end
 
 Laddie._reactant_execution(b::ReactantBackend) =
-    ReactantExecution(_fusion(b), Dict{Symbol,Any}(), nothing, nothing)
+    ReactantExecution(_fusion(b), Dict{Symbol,Any}(), nothing)
 
 # Extra keyword arguments for `Reactant.compile` (e.g. `xla_debug_options`), for
 # experiments with XLA's code generation; see `benchmark/reactant/fusion.jl`.
@@ -200,29 +197,13 @@ end
 Laddie._value_type(::Type{T}) where {T<:Reactant.RNumber} = Reactant.unwrapped_eltype(T)
 
 # Every float in `x` (a parameter or parameterisation object) as a Reactant number
-# of precision FT.  Objects are rebuilt with their float type parameters traced;
-# arrays, integers and field-less singletons stay.
+# of precision FT.  Objects are rebuilt with their floats traced; arrays, integers and
+# field-less singletons stay.
 _traced(x::Reactant.RNumber, FT) = x
 _traced(x::AbstractFloat, FT) = ConcreteRNumber(FT(x))
 _traced(x::Number, FT) = x
-function _traced(x, FT)
-    (x isa AbstractArray || fieldcount(typeof(x)) == 0) && return x
-    fields = map(fn -> _traced(getfield(x, fn), FT), fieldnames(typeof(x)))
-    T = _traced_type(typeof(x), FT)
-    # Built without the constructor, as `Enzyme.make_zero` builds a tangent: a
-    # validating constructor (`TurbulentGamTMelting`) rejects the zero tangent.
-    fieldtypes(T) == map(typeof, fields) ||
-        return Base.typename(typeof(x)).wrapper(fields...)
-    return ccall(:jl_new_structv, Any, (Any, Ptr{Any}, UInt32), T, Any[fields...], length(fields))::T
-end
-# Every field type is a type parameter, so tracing the floats means tracing the
-# float parameters.
-_traced_type(T::DataType, FT) =
-    Base.typename(T).wrapper{map(p -> p isa Type && p <: AbstractFloat ?
-                                      typeof(ConcreteRNumber(FT(0))) : p, T.parameters)...}
-
-_override(v::Number, FT) = FT(v)
-_override(v, FT) = Laddie._promote_param(v, FT)
+_traced(x::AbstractArray, FT) = x
+_traced(x, FT) = Laddie._mapfields(v -> _traced(v, FT), x)
 
 function Laddie.trace_parameters(model::Model; overrides...)
     p = model.params
@@ -232,7 +213,7 @@ function Laddie.trace_parameters(model::Model; overrides...)
         k in names || throw(ArgumentError("Params has no field `$k`"))
     end
     fields = map(names) do fn
-        v = haskey(overrides, fn) ? _override(overrides[fn], FT) : getfield(p, fn)
+        v = haskey(overrides, fn) ? Laddie._param_value(overrides[fn], FT) : getfield(p, fn)
         return _traced(v, FT)
     end
     return Model(model.grid, model.geometry, model.state, model.cache,
@@ -246,24 +227,12 @@ end
 const DEFAULT_CHECKPOINTS = 20
 Laddie.integrate!(model, dt, n::Reactant.TracedRNumber; nu = 0.8,
                   checkpoints = DEFAULT_CHECKPOINTS) =
-    (_steps!(model, (), dt, n, model.FT(nu), ();
+    (_steps!(model, (;), dt, n, model.FT(nu);
              checkpointing = Reactant.Binomial(checkpoints)); model)
 
 # ============================================================================
 # Adaptive dt, differentiable: record the schedule, then replay it
 # ============================================================================
-
-# AdaptiveDt's rule (`Laddie._controller_dt` with `allow_grow = true`), branch-free on
-# traced numbers.
-function _controller_dt(ts::Laddie.AdaptiveDt, dt, cfl)
-    FT = typeof(dt)
-    target, q = FT(ts.cfl_target), FT(ts.q)
-    ok = (cfl > zero(cfl)) & isfinite(cfl)
-    r = (target / ifelse(ok, cfl, one(cfl)))^q
-    dtn = ifelse(cfl > target, dt * r,
-                 ifelse(cfl < FT(ts.grow_hyst) * target, dt * min(r, FT(ts.max_growth)), dt))
-    return clamp(ifelse(ok, dtn, dt), FT(ts.dtmin), FT(ts.dtmax))
-end
 
 # CFL rate (s⁻¹) on traced fields: `Laddie._cfl_rate` without the host conversions.
 function _cfl_rate(m, ::Laddie.ExactCFL)
@@ -276,9 +245,9 @@ function _cfl_rate(m, cfl::Laddie.ConservativeCFL)
 end
 
 # Re-bootstrap where dt changed.  A traced `if` is fine here (no differentiation).
-function _rebootstrap_if!(model, changed, dt, nu)
+function _rebootstrap_if!(model, changed, dt)
     @trace track_numbers = false if changed
-        Laddie._collapse_and_bootstrap!(Laddie._stepping_view(model, dt, nu))
+        Laddie._collapse_and_bootstrap!(model, dt)
     end
     return nothing
 end
@@ -292,14 +261,14 @@ function _schedule!(model, dt0, tend, ts, cfl, nu, cap)
     seg_n = zero(seg_dt)
     t, dt, k, j = zero(dt0), dt0 * one(dt0), zero(dt0), one(dt0)
     @trace track_numbers = false while t < tend
-        Laddie._step_model!(Laddie._stepping_view(model, dt, nu))
+        Laddie._step_model!(model, dt, nu)
         t = t + dt
         k = k + 1
         seg_n = seg_n .+ ifelse.(idx .== j, one(FT), zero(FT))
-        dtn = _controller_dt(ts, dt, dt * _cfl_rate(model, cfl))
+        dtn = Laddie._controller_dt(ts, dt, dt * _cfl_rate(model, cfl); allow_grow = true)
         dtn = ifelse(rem(k, FT(ts.ncheck)) == 0, dtn, dt)
         changed = dtn != dt
-        _rebootstrap_if!(model, changed, dtn, nu)
+        _rebootstrap_if!(model, changed, dtn)
         j = j + ifelse(changed, one(FT), zero(FT))
         seg_dt = ifelse.(idx .== j, dtn, seg_dt)
         dt = dtn
@@ -333,10 +302,10 @@ end
 # unconditionally and kept with `ifelse` except for the first segment: Enzyme cannot
 # reverse a traced `if` that updates arrays in place.  It writes `past` (collapsed on
 # `present`) and `future` (the Euler step); the next step recomputes the cache.
-function _rebootstrap_blend!(model, keep, dt, nu)
+function _rebootstrap_blend!(model, keep, dt)
     vars = (model.D, model.U, model.V, model.T, model.S)
     old = map(v -> (copy(v.past), copy(v.future)), vars)
-    Laddie._collapse_and_bootstrap!(Laddie._stepping_view(model, dt, nu))
+    Laddie._collapse_and_bootstrap!(model, dt)
     for (v, (p, f)) in zip(vars, old)
         v.past .= ifelse.(keep, v.past, p)
         v.future .= ifelse.(keep, v.future, f)
@@ -348,7 +317,7 @@ _field(m, name) = (x = getproperty(m, name); x isa Laddie.Var ? x.present : x)
 
 function _segment!(model, accs, dt, n, nu, names, checkpoints)
     @trace track_numbers = false checkpointing = Reactant.Binomial(checkpoints) for _ = 1:n
-        Laddie._step_model!(Laddie._stepping_view(model, dt, nu))
+        Laddie._step_model!(model, dt, nu)
         for (acc, name) in zip(accs, names)
             acc .+= _field(model, name) .* dt
         end
@@ -368,7 +337,7 @@ function Laddie.integrate!(model, sched::Laddie.DtSchedule{<:Reactant.AnyTracedR
     @trace track_numbers = false checkpointing = Reactant.Binomial(checkpoints) for j = 1:sched.nseg
         dt = sum(ifelse.(idx .== j, sched.dt, zero(FT)))
         n = sum(ifelse.(idx .== j, sched.steps, 0))
-        _rebootstrap_blend!(model, j > 1, dt, nuv)
+        _rebootstrap_blend!(model, j > 1, dt)
         _segment!(model, accs, dt, n, nuv, names, checkpoints)
     end
     isempty(names) && return model
@@ -384,19 +353,12 @@ end
 
 _dt(sim) = ConcreteRNumber(sim.model.FT(Laddie._primal(sim.clock.dt)))
 
-# The output accumulators, and where each reads its field (`_accum_field!`).
-_accumulators(sim) = values(sim.io.acc)
-_sources(sim) = map(name -> Laddie._OUTPUT_FIELDS[name].src, keys(sim.io.acc))
-
-# One leapfrog step, with the output accumulation when `accs` is not empty:
-# `time_step!` without the clock, then `_accum!` without its host counters.  The
-# clock of the step view carries only `dt`, traced so that an adaptive dt change does
-# not recompile; the clock time stays on the host.
-function _step!(rs, accs, dt, srcs)
-    Laddie._step_model!(rs)
-    for (acc, src) in zip(accs, srcs)
-        Laddie._accum_field!(acc, src, rs.model, dt)
-    end
+# One leapfrog step, with the output accumulation when `acc` is not empty:
+# `time_step!` without the clock, then `_accum!` without its host counters.  `dt` is
+# traced, so that an adaptive dt change does not recompile; the clock stays on the host.
+function _step!(model, acc, dt, nu)
+    Laddie._step_model!(model, dt, nu)
+    Laddie._accum_fields!(acc, model, dt)
     return nothing
 end
 
@@ -409,73 +371,58 @@ const NATIVE_UNROLL = Ref(4)
 _unroll(fusion) = fusion === :native ? NATIVE_UNROLL[] : 1
 
 # `checkpointing` only shapes the reverse pass of Enzyme; see `integrate!`.
-function _steps!(model, accs, dt, n, nu, srcs, unroll = 1; checkpointing = false)
-    rs = Laddie._stepping_view(model, dt, nu)
+function _steps!(model, acc, dt, n, nu, unroll = 1; checkpointing = false)
     if unroll > 1
         @trace track_numbers = false for _ = 1:(n ÷ unroll)
             for _ = 1:unroll
-                _step!(rs, accs, dt, srcs)
+                _step!(model, acc, dt, nu)
             end
         end
         @trace track_numbers = false for _ = 1:(n % unroll)
-            _step!(rs, accs, dt, srcs)
+            _step!(model, acc, dt, nu)
         end
     else
         @trace track_numbers = false checkpointing = checkpointing for _ = 1:n
-            _step!(rs, accs, dt, srcs)
+            _step!(model, acc, dt, nu)
         end
     end
     return nothing
 end
 
-function Laddie._batch_length(::ReactantExecution, sim, args...)
-    return Laddie._steps_to_next_event(sim, args...)
-end
+Laddie._batch_length(::ReactantExecution, sim, r) = Laddie._steps_to_next_event(sim, r)
 
 function Laddie._advance_batch!(exec::ReactantExecution, sim, n, io_on)
-    srcs = io_on ? _sources(sim) : ()
-    accs = io_on ? _accumulators(sim) : ()
+    acc = sim.io.acc   # empty without output
     dt = _dt(sim)
     nn = ConcreteRNumber(n)
     nu = sim.nu   # captured by value: Reactant traces a closure's captured variables
     unroll = _unroll(exec.fusion)
-    prog = _program(exec, io_on ? :steps_io : :steps) do
+    prog = _program(exec, :steps) do
         _compile(
-            (model, accs, dt, n) -> _steps!(model, accs, dt, n, nu, srcs, unroll),
+            (model, acc, dt, n) -> _steps!(model, acc, dt, n, nu, unroll),
             exec,
             sim.model,
-            accs,
+            acc,
             dt,
             nn,
         )
     end
-    prog(sim.model, accs, dt, nn)
-    exec.diag = nothing
+    prog(sim.model, acc, dt, nn)
     # The host side of `time_step!` and `_accum!`, step by step as they would run.
-    c = sim.clock
     for _ = 1:n
-        c.time += Laddie._primal(c.dt)
-        c.iteration += 1
-        if io_on
-            sim.io.count += 1
-            sim.io.t_accum += Laddie._primal(c.dt)
-        end
+        Laddie._tick!(sim.clock)
+        io_on && Laddie._count_accum!(sim.io, sim.clock.dt)
     end
     return
 end
 
-# Re-bootstrap after a dt change (`_rebootstrap_leapfrog!` on the native path).
-_rebootstrap!(model, dt, nu) =
-    Laddie._collapse_and_bootstrap!(Laddie._stepping_view(model, dt, nu))
-
+# Re-bootstrap after a dt change, as the native path does.
 function Laddie._rebootstrap_leapfrog!(exec::ReactantExecution, sim)
     dt = _dt(sim)
-    nu = sim.nu
     prog = _program(exec, :rebootstrap) do
-        _compile((model, dt) -> _rebootstrap!(model, dt, nu), exec, sim.model, dt)
+        _compile(Laddie._collapse_and_bootstrap!, exec, sim.model, dt)
     end
     prog(sim.model, dt)
-    exec.diag = nothing
     return
 end
 
@@ -483,37 +430,17 @@ end
 # Sync-point diagnostics, compiled into one program
 # ============================================================================
 
-# The sync-point diagnostics as one flat tuple of numbers: finiteness, the largest
-# δρ·D, the four melt statistics, the largest active D, then the CFL reductions,
-# which the host combines as the native path does (`_cfl_rate`).
-function _diagnostics(m, cfl)
-    stats = Laddie.meltstats(m)
-    return (Laddie._prognostics_finite(m), Laddie._max_Ddrho(m), stats...,
-            Laddie._max_active_D(m), Laddie._cfl_reductions(m, cfl)...)
-end
-
-_host_number(x::Reactant.RNumber) = Reactant.to_number(x)
-_host_number(x) = x
-
-function _diag(exec::ReactantExecution, sim)
-    exec.diag === nothing || return exec.diag
+function Laddie._sync_diagnostics(exec::ReactantExecution, sim)
     cfl = sim.cfl
     prog = _program(exec, :diagnostics) do
-        _compile(m -> _diagnostics(m, cfl), exec, sim.model)
+        _compile(m -> Laddie._diagnostics(m, cfl), exec, sim.model)
     end
-    r = map(_host_number, prog(sim.model))
-    stats = NamedTuple{(:max_meltrate, :mean_meltrate, :max_speed, :total_melt)}(r[3:6])
-    exec.diag = (finite = Bool(r[1]), Ddrho = r[2], stats, Dmax = r[7],
-                 rate = Laddie._cfl_rate(sim.model, cfl, r[8:end]))
-    return exec.diag
+    return Laddie._on_host(sim, _to_host(prog(sim.model)))
 end
 
-Laddie._prognostics_finite(exec::ReactantExecution, sim) = _diag(exec, sim).finite
-Laddie._sync_cfl_number(exec::ReactantExecution, sim) =
-    Laddie._float64(sim.clock.dt) * _diag(exec, sim).rate
-Laddie._meltstats(exec::ReactantExecution, sim) = _diag(exec, sim).stats
-Laddie._max_Ddrho(exec::ReactantExecution, sim) = _diag(exec, sim).Ddrho
-Laddie._max_active_D(exec::ReactantExecution, sim) = _diag(exec, sim).Dmax
+_to_host(x::Union{Tuple,NamedTuple}) = map(_to_host, x)
+_to_host(x::Reactant.RNumber) = Reactant.to_number(x)
+_to_host(x) = x
 
 # ============================================================================
 # Log diagnostics on a CPU mirror

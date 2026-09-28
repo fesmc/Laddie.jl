@@ -77,42 +77,36 @@ end
 # (Float-type promotion of the stepper to the model's FT is handled generically by
 # `_promote_param` in params.jl, called from the `Simulation` constructor.)
 
-# Proposed dt from the predictive CFL controller.  Returns the clamped dt; the
-# input dt unchanged when inside the hysteresis band or when there is no usable
-# CFL signal.  `allow_grow = false` (startup rescue) only ever shrinks, so a
-# small initial CFL (e.g. zero velocity at t = 0) can never inflate dt0.
+# Proposed dt from the predictive CFL controller, clamped to [dtmin, dtmax]: shrunk
+# above the target, grown well below it, and the input dt unchanged inside the
+# hysteresis band or when there is no usable CFL signal.  `allow_grow = false`
+# (startup rescue) only ever shrinks, so a small initial CFL (e.g. zero velocity at
+# t = 0) can never inflate dt0.  Branch-free and computed in the type of `dt`, so
+# that the Reactant extension runs the same rule on traced numbers; `run!` calls it
+# in Float64.
 function _controller_dt(ts::AdaptiveDt, dt, cfl; allow_grow::Bool)
-    target = _float64(ts.cfl_target)
-    dt = _float64(dt)
-    dtmin = _float64(ts.dtmin)
-    dtmax = _float64(ts.dtmax)
-    (cfl > 0 && isfinite(cfl)) || return clamp(dt, dtmin, dtmax)
-    if cfl > target                                            # above target → shrink now
-        dtn = dt * (target / cfl)^_float64(ts.q)
-    elseif allow_grow && cfl < _float64(ts.grow_hyst) * target  # well below → grow slowly
-        dtn = dt * min((target / cfl)^_float64(ts.q), _float64(ts.max_growth))
-    else                                                       # hysteresis band → hold
-        return clamp(dt, dtmin, dtmax)
-    end
-    return clamp(dtn, dtmin, dtmax)
+    FT = typeof(dt)
+    c(x) = FT(_primal(x))
+    target = c(ts.cfl_target)
+    usable = (cfl > zero(cfl)) & isfinite(cfl)
+    factor = (target / ifelse(usable, cfl, one(cfl)))^c(ts.q)
+    grow = allow_grow ? cfl < c(ts.grow_hyst) * target : false
+    dtn = ifelse(cfl > target, dt * factor,                            # above target → shrink now
+                 ifelse(grow, dt * min(factor, c(ts.max_growth)), dt)) # well below → grow slowly
+    return clamp(ifelse(usable, dtn, dt), c(ts.dtmin), c(ts.dtmax))
 end
 
 # Apply a controller decision: when dt actually changes, set it, re-bootstrap
 # the leapfrog at the new dt, and log the change.  Returns whether dt changed.
 function _apply_dt!(sim, ts::AdaptiveDt, cfl; allow_grow::Bool)
     dt_old = sim.clock.dt
-    dt_new = sim.model.FT(_controller_dt(ts, dt_old, cfl; allow_grow))
+    dt_new = sim.model.FT(_controller_dt(ts, _float64(dt_old), cfl; allow_grow))
     dt_new == dt_old && return false
     sim.clock.dt = dt_new
     _rebootstrap_leapfrog!(sim)
     _log_dt_change!(sim, dt_old, dt_new, cfl)
     return true
 end
-
-# Whether the stepper adapts dt (controls whether `run!` computes the CFL on
-# the non-verbose path).
-_adapts(::AbstractTimeStepper) = false
-_adapts(::AdaptiveDt) = true
 
 # Cadence of the shared blow-up/CFL/controller sync point.  FixedDt checks every
 # ~5 % of the run.  AdaptiveDt checks at least every

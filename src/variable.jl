@@ -36,6 +36,10 @@ Var(::Type{LX}, ::Type{LY}, ::Type{FT}, nx, ny) where {LX,LY,FT} =
 
 Var(::Type{LX}, ::Type{LY}, nx, ny) where {LX,LY} = Var(LX, LY, Float64, nx, ny)
 
+# The location is not a field, so `_mapfields` keeps it from the source type.
+_rebuild(::Type{<:Var{LX,LY}}, past, present, future) where {LX,LY} =
+    Var{LX,LY,typeof(past)}(past, present, future)
+
 function rotate!(v::Var)
     v.past, v.present, v.future = v.present, v.future, v.past
     return v

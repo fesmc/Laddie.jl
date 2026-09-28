@@ -41,16 +41,23 @@ _float64(x) = Float64(_primal(x))
 @inline _val(x) = x
 
 # The slip factor of a wall face, from the grounding-line and land indicators `gl`
-# and `lnd` of the face and the slip factors in `walls` (`_u_walls`/`_v_walls`); zero
-# off the walls.  The indicators partition the wall faces (the grounding line takes
-# precedence at mixed corners), so exactly one of the two factors applies on a wall.
-@inline _slip(walls, gl, lnd, i, j) = walls.slip_gl * gl[i, j] + walls.slip_land * lnd[i, j]
+# and `lnd` of the face and the slip factors `slip_gl`, `slip_land` (`_u_walls`/
+# `_v_walls`); zero off the walls.  The indicators partition the wall faces (the
+# grounding line takes precedence at mixed corners), so exactly one of the two
+# factors applies on a wall.
+#
+# The helpers here that read arrays carry their own `@inbounds`, like `_other_x`
+# and `_face_mass_x`: a kernel's `@inbounds` block does not reach into a called
+# function, even an inlined one, and the bounds checks left there stop the CPU
+# kernels from vectorising (3–4x slower).
+@inline _slip(slip_gl, slip_land, gl, lnd, i, j) =
+    @inbounds slip_gl * gl[i, j] + slip_land * lnd[i, j]
 
 # Masked two-point average of `a` over the cells (i, j) and (i2, j2): the mean of the
 # active ones, zero if neither is active.  The kernels form their staggered
 # velocities and thicknesses with it instead of reading pre-computed fields.
 @inline _face_avg(a, mask, i, j, i2, j2) =
-    _safe_div(a[i, j] + a[i2, j2], mask[i, j] + mask[i2, j2])
+    @inbounds _safe_div(a[i, j] + a[i2, j2], mask[i, j] + mask[i2, j2])
 # The same average for the cell (i, j) and its neighbour (i + di, j + dj), but zero on
 # the border ring, where the pre-computed fields were never written.  For a stencil
 # that reads the average at a neighbouring cell, which may be on the ring.  Both reads
@@ -154,11 +161,16 @@ _inflow_weight(::NoInflow, FT) = zero(FT)
     @Const(vmask),
     @Const(U),
     @Const(umask),
-    walls,
+    @Const(glN),
+    @Const(glS),
+    @Const(lndN),
+    @Const(lndS),
+    slip_gl,
+    slip_land,
     dx,
     dy,
 )
-    walls, dx, dy = _val(walls), _val(dx), _val(dy)
+    slip_gl, slip_land, dx, dy = _val(slip_gl), _val(slip_land), _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -192,8 +204,8 @@ _inflow_weight(::NoInflow, FT) = zero(FT)
         D_W = D0 + ocn[i, j] * De
         u = U[i, j]
         sU = sign(u)
-        wallN = _slip(walls, walls.glN, walls.lndN, i, j)
-        wallS = _slip(walls, walls.glS, walls.lndS, i, j)
+        wallN = _slip(slip_gl, slip_land, glN, lndN, i, j)
+        wallS = _slip(slip_gl, slip_land, glS, lndS, i, j)
         flux_N = -D_N * Vip * (Ujp - wallN * u) / dy
         flux_S = D_S * Vip_jm * (Ujm - wallS * u) / dy
         flux_E = -D_E * Uip * (Uip - (one(FT) - sU) * u * ocn_e) / dx
@@ -212,11 +224,16 @@ end
     @Const(vmask),
     @Const(U),
     @Const(umask),
-    walls,
+    @Const(glE),
+    @Const(glW),
+    @Const(lndE),
+    @Const(lndW),
+    slip_gl,
+    slip_land,
     dx,
     dy,
 )
-    walls, dx, dy = _val(walls), _val(dx), _val(dy)
+    slip_gl, slip_land, dx, dy = _val(slip_gl), _val(slip_land), _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -252,8 +269,8 @@ end
         sV = sign(v)
         flux_N = -D_N * Vjp * (Vjp - (one(FT) - sV) * v * ocn_n) / dy
         flux_S = D_S * Vjm * (Vjm - sV * v * ocn[i, j]) / dy
-        wallE = _slip(walls, walls.glE, walls.lndE, i, j)
-        wallW = _slip(walls, walls.glW, walls.lndW, i, j)
+        wallE = _slip(slip_gl, slip_land, glE, lndE, i, j)
+        wallW = _slip(slip_gl, slip_land, glW, lndW, i, j)
         flux_E = -D_E * Ujp * (Vip - wallE * v) / dx
         flux_W = D_W * Ujp_im * (Vim - wallW * v) / dx
         out[i, j] = flux_N + flux_S + flux_E + flux_W
@@ -266,12 +283,17 @@ end
     @Const(D0),
     @Const(tmask),
     @Const(ocn),
-    walls,
+    @Const(glN),
+    @Const(glS),
+    @Const(lndN),
+    @Const(lndS),
+    slip_gl,
+    slip_land,
     A_h,
     dx2,
     dy2,
 )
-    walls, A_h, dx2, dy2 = _val(walls), _val(A_h), _val(dx2), _val(dy2)
+    slip_gl, slip_land, A_h, dx2, dy2 = _val(slip_gl), _val(slip_land), _val(A_h), _val(dx2), _val(dy2)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     FT = typeof(A_h)
@@ -283,13 +305,14 @@ end
         o = one(FT)
         v = var[i, j]
         # D on the u-points (and at the two y-neighbours), masked: the face average
-        # of the Laplacian thickness D0, zero on the border ring.
+        # of the Laplacian thickness D0.  A neighbour on the border ring is masked
+        # out by its `tmask`, so its average needs no ring guard.
         DU = _face_avg(D0, tmask, i, j, ip1, j) * tmask[i, j]
-        DU_jp = _face_avg_ring0(D0, tmask, i, jp1, 1, 0) * tmask[i, jp1]
-        DU_jm = _face_avg_ring0(D0, tmask, i, jm1, 1, 0) * tmask[i, jm1]
+        DU_jp = _face_avg(D0, tmask, i, jp1, ip1, jp1) * tmask[i, jp1]
+        DU_jm = _face_avg(D0, tmask, i, jm1, ip1, jm1) * tmask[i, jm1]
         # Per-face wall drag, zero off the walls.
-        dragN = _slip(walls, walls.glN, walls.lndN, i, j) * DU * v / dy2
-        dragS = _slip(walls, walls.glS, walls.lndS, i, j) * DU * v / dy2
+        dragN = _slip(slip_gl, slip_land, glN, lndN, i, j) * DU * v / dy2
+        dragS = _slip(slip_gl, slip_land, glS, lndS, i, j) * DU * v / dy2
         jpD = _safe_div(DU + DU_jp, tmask[i, j] + tmask[i, jp1])
         jmD = _safe_div(DU + DU_jm, tmask[i, j] + tmask[i, jm1])
         flux_N = jpD * (var[i, jp1] - v) / dy2 * (o - ocn[i, jp1]) - dragN
@@ -306,12 +329,17 @@ end
     @Const(D0),
     @Const(tmask),
     @Const(ocn),
-    walls,
+    @Const(glE),
+    @Const(glW),
+    @Const(lndE),
+    @Const(lndW),
+    slip_gl,
+    slip_land,
     A_h,
     dx2,
     dy2,
 )
-    walls, A_h, dx2, dy2 = _val(walls), _val(A_h), _val(dx2), _val(dy2)
+    slip_gl, slip_land, A_h, dx2, dy2 = _val(slip_gl), _val(slip_land), _val(A_h), _val(dx2), _val(dy2)
     FT = typeof(A_h)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
@@ -324,10 +352,10 @@ end
         v = var[i, j]
         # D on the v-points (and at the two x-neighbours); see _laplace_U_kernel!.
         DV = _face_avg(D0, tmask, i, j, i, jp1) * tmask[i, j]
-        DV_ip = _face_avg_ring0(D0, tmask, ip1, j, 0, 1) * tmask[ip1, j]
-        DV_im = _face_avg_ring0(D0, tmask, im1, j, 0, 1) * tmask[im1, j]
-        dragE = _slip(walls, walls.glE, walls.lndE, i, j) * DV * v / dx2
-        dragW = _slip(walls, walls.glW, walls.lndW, i, j) * DV * v / dx2
+        DV_ip = _face_avg(D0, tmask, ip1, j, ip1, jp1) * tmask[ip1, j]
+        DV_im = _face_avg(D0, tmask, im1, j, im1, jp1) * tmask[im1, j]
+        dragE = _slip(slip_gl, slip_land, glE, lndE, i, j) * DV * v / dx2
+        dragW = _slip(slip_gl, slip_land, glW, lndW, i, j) * DV * v / dx2
         ipD = _safe_div(DV + DV_ip, tmask[i, j] + tmask[ip1, j])
         imD = _safe_div(DV + DV_im, tmask[i, j] + tmask[im1, j])
         flux_N = D0[i, jp1] * (var[i, jp1] - v) / dy2 * (o - ocn[i, jp1])
@@ -343,31 +371,38 @@ end
 # its own coefficient visc_? * |Δu| in place of a single constant A_h, where |Δu|
 # is the magnitude of the full velocity-difference *vector* across that face
 # (the reference's dUabs), not just the component being diffused — hence `other`,
-# the cross-component collocated onto this component's points.  The kernels get it
-# half-collocated (averaged along the other axis only, `_v_half_kernel!`) and finish
-# the average on the fly (`_other_x`, `_other_y`): stored whole, it takes a read
-# wrapped along both axes at once, which Reactant raises to a gather.  Where
+# the cross-component collocated onto this component's points.  Where
 # visc_x/visc_y = C_visc * dx/100 and C_visc * dy/100 carry the reference's
 # dUabs * triCw / 100 scaling (laddie_velocity.f90:260).  The grounding-line/land
 # wall-drag terms keep the plain, unscaled A_h_wall — mirroring the reference,
 # which never scales its border term by dUabs (laddie_velocity.f90:249-254).
+#
+# `other` and `Dface` (D on this component's points, masked) are read from fields
+# that `laplace_U`/`laplace_V` fill first, since each is needed at several stencil
+# points: forming them inline triples the kernels' CPU cost.  On the GPU the extra
+# passes cost about as much as they save.
 @kernel function _nonlinear_laplace_U_kernel!(
     out,
     @Const(var),
-    @Const(half),
+    @Const(other),
+    @Const(Dface),
     @Const(D0),
     @Const(tmask),
     @Const(ocn),
-    walls,
+    @Const(glN),
+    @Const(glS),
+    @Const(lndN),
+    @Const(lndS),
+    slip_gl,
+    slip_land,
     A_h_wall,
     visc_x,
     visc_y,
     dx2,
     dy2,
-    Nx,
 )
-    walls, A_h_wall, visc_x, visc_y, dx2, dy2 =
-        _val(walls), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
+    slip_gl, slip_land, A_h_wall, visc_x, visc_y, dx2, dy2 = _val(slip_gl),
+    _val(slip_land), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     FT = typeof(A_h_wall)
@@ -378,26 +413,22 @@ end
         im1 = i - 1
         o = one(FT)
         v = var[i, j]
-        # D on the u-points (and at the two y-neighbours), masked: the face average
-        # of the Laplacian thickness D0, zero on the border ring.
-        DU = _face_avg(D0, tmask, i, j, ip1, j) * tmask[i, j]
-        DU_jp = _face_avg_ring0(D0, tmask, i, jp1, 1, 0) * tmask[i, jp1]
-        DU_jm = _face_avg_ring0(D0, tmask, i, jm1, 1, 0) * tmask[i, jm1]
-        dragN = A_h_wall * _slip(walls, walls.glN, walls.lndN, i, j) * DU * v / dy2
-        dragS = A_h_wall * _slip(walls, walls.glS, walls.lndS, i, j) * DU * v / dy2
-        jpD = _safe_div(DU + DU_jp, tmask[i, j] + tmask[i, jp1])
-        jmD = _safe_div(DU + DU_jm, tmask[i, j] + tmask[i, jm1])
-        ov = _other_x(half, i, j, Nx)
+        DU = Dface[i, j]
+        dragN = A_h_wall * _slip(slip_gl, slip_land, glN, lndN, i, j) * DU * v / dy2
+        dragS = A_h_wall * _slip(slip_gl, slip_land, glS, lndS, i, j) * DU * v / dy2
+        jpD = _safe_div(DU + Dface[i, jp1], tmask[i, j] + tmask[i, jp1])
+        jmD = _safe_div(DU + Dface[i, jm1], tmask[i, j] + tmask[i, jm1])
+        ov = other[i, j]
         dN = var[i, jp1] - v
         dS = var[i, jm1] - v
         dE = var[ip1, j] - v
         dW = var[im1, j] - v
         # |Δu| across each face: this component's difference combined with the
         # cross-component's difference over the same displacement.
-        aN = _safe_sqrt(dN * dN + (_other_x(half, i, jp1, Nx) - ov)^2)
-        aS = _safe_sqrt(dS * dS + (_other_x(half, i, jm1, Nx) - ov)^2)
-        aE = _safe_sqrt(dE * dE + (_other_x(half, ip1, j, Nx) - ov)^2)
-        aW = _safe_sqrt(dW * dW + (_other_x(half, im1, j, Nx) - ov)^2)
+        aN = _safe_sqrt(dN * dN + (other[i, jp1] - ov)^2)
+        aS = _safe_sqrt(dS * dS + (other[i, jm1] - ov)^2)
+        aE = _safe_sqrt(dE * dE + (other[ip1, j] - ov)^2)
+        aW = _safe_sqrt(dW * dW + (other[im1, j] - ov)^2)
         flux_N = visc_y * aN * jpD * dN / dy2 * (o - ocn[i, jp1]) - dragN
         flux_S = visc_y * aS * jmD * dS / dy2 * (o - ocn[i, jm1]) - dragS
         flux_E = visc_x * aE * D0[ip1, j] * dE / dx2 * (o - ocn[ip1, j])
@@ -409,20 +440,25 @@ end
 @kernel function _nonlinear_laplace_V_kernel!(
     out,
     @Const(var),
-    @Const(half),
+    @Const(other),
+    @Const(Dface),
     @Const(D0),
     @Const(tmask),
     @Const(ocn),
-    walls,
+    @Const(glE),
+    @Const(glW),
+    @Const(lndE),
+    @Const(lndW),
+    slip_gl,
+    slip_land,
     A_h_wall,
     visc_x,
     visc_y,
     dx2,
     dy2,
-    Ny,
 )
-    walls, A_h_wall, visc_x, visc_y, dx2, dy2 =
-        _val(walls), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
+    slip_gl, slip_land, A_h_wall, visc_x, visc_y, dx2, dy2 = _val(slip_gl),
+    _val(slip_land), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
     FT = typeof(A_h_wall)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
@@ -433,24 +469,21 @@ end
         im1 = i - 1
         o = one(FT)
         v = var[i, j]
-        # D on the v-points (and at the two x-neighbours); see _laplace_U_kernel!.
-        DV = _face_avg(D0, tmask, i, j, i, jp1) * tmask[i, j]
-        DV_ip = _face_avg_ring0(D0, tmask, ip1, j, 0, 1) * tmask[ip1, j]
-        DV_im = _face_avg_ring0(D0, tmask, im1, j, 0, 1) * tmask[im1, j]
-        dragE = A_h_wall * _slip(walls, walls.glE, walls.lndE, i, j) * DV * v / dx2
-        dragW = A_h_wall * _slip(walls, walls.glW, walls.lndW, i, j) * DV * v / dx2
-        ipD = _safe_div(DV + DV_ip, tmask[i, j] + tmask[ip1, j])
-        imD = _safe_div(DV + DV_im, tmask[i, j] + tmask[im1, j])
-        ov = _other_y(half, i, j, Ny)
+        DV = Dface[i, j]
+        dragE = A_h_wall * _slip(slip_gl, slip_land, glE, lndE, i, j) * DV * v / dx2
+        dragW = A_h_wall * _slip(slip_gl, slip_land, glW, lndW, i, j) * DV * v / dx2
+        ipD = _safe_div(DV + Dface[ip1, j], tmask[i, j] + tmask[ip1, j])
+        imD = _safe_div(DV + Dface[im1, j], tmask[i, j] + tmask[im1, j])
+        ov = other[i, j]
         dN = var[i, jp1] - v
         dS = var[i, jm1] - v
         dE = var[ip1, j] - v
         dW = var[im1, j] - v
         # See _nonlinear_laplace_U_kernel! for the |Δu| composition.
-        aN = _safe_sqrt(dN * dN + (_other_y(half, i, jp1, Ny) - ov)^2)
-        aS = _safe_sqrt(dS * dS + (_other_y(half, i, jm1, Ny) - ov)^2)
-        aE = _safe_sqrt(dE * dE + (_other_y(half, ip1, j, Ny) - ov)^2)
-        aW = _safe_sqrt(dW * dW + (_other_y(half, im1, j, Ny) - ov)^2)
+        aN = _safe_sqrt(dN * dN + (other[i, jp1] - ov)^2)
+        aS = _safe_sqrt(dS * dS + (other[i, jm1] - ov)^2)
+        aE = _safe_sqrt(dE * dE + (other[ip1, j] - ov)^2)
+        aW = _safe_sqrt(dW * dW + (other[im1, j] - ov)^2)
         flux_N = visc_y * aN * D0[i, jp1] * dN / dy2 * (o - ocn[i, jp1])
         flux_S = visc_y * aS * D0[i, j] * dS / dy2 * (o - ocn[i, j])
         flux_E = visc_x * aE * ipD * dE / dx2 * (o - ocn[ip1, j]) - dragE
@@ -689,7 +722,7 @@ function _advect_U(m, ::CentredMomentumAdvection)
         m.vmask,
         m.U.present,
         m.umask,
-        _u_walls(m, _advection_slips(m)),
+        _u_walls(m, _advection_slips(m))...,
         m.dx,
         m.dy,
     )
@@ -706,7 +739,7 @@ function _advect_V(m, ::CentredMomentumAdvection)
         m.vmask,
         m.U.present,
         m.umask,
-        _v_walls(m, _advection_slips(m)),
+        _v_walls(m, _advection_slips(m))...,
         m.dx,
         m.dy,
     )
@@ -737,7 +770,7 @@ function laplace_U(m, ::PrescribedLateralViscosity)
         laplacian_thickness(m),
         m.tmask,
         m.ocn,
-        _u_walls(m, _wall_slips(m)),
+        _u_walls(m, _wall_slips(m))...,
         m.A_h,
         m.dx^2,
         m.dy^2,
@@ -752,7 +785,7 @@ function laplace_V(m, ::PrescribedLateralViscosity)
         laplacian_thickness(m),
         m.tmask,
         m.ocn,
-        _v_walls(m, _wall_slips(m)),
+        _v_walls(m, _wall_slips(m))...,
         m.A_h,
         m.dx^2,
         m.dy^2,
@@ -763,59 +796,70 @@ end
 # NonlinearLateralViscosity: the shear-scaled coefficient is per-face, so it must
 # be applied inside the kernel rather than as a post-hoc scalar multiply; wall
 # drag keeps using the plain, unscaled m.A_h (see _nonlinear_laplace_U_kernel!).
+#
+# The kernel reads the cross-velocity collocated onto the U points (`Dq`) and D on
+# the U points (`adv`), filled here in three passes over the grid.  `adv` is free
+# because `step_u_momentum!` forms this term before the advection one; `Dq` is only
+# used by the tracer steps.
 function laplace_U(m, lv::NonlinearLateralViscosity)
     nx, ny = size(m.V.past)
-    # V collocated onto the U points, so the kernel can form |Δu| across a face.
-    # Same 4-point average the drag term uses for the speed magnitude; its y half
-    # is stored in the `Dq` work buffer, which only the tracer steps use.
-    Vy = m.Dq
-    launch!(_v_half_kernel!, Vy, m.V.past, ny)
+    D0 = laplacian_thickness(m)
+    other, Dface = m.Dq, m.adv
+    # V collocated onto the U points, so the kernel can form |Δu| across a face:
+    # the same 4-point average the drag term uses for the speed magnitude, formed
+    # in two halves (y into `adv`, then x into `Dq`).
+    launch!(_v_half_kernel!, m.adv, m.V.past, ny)
+    launch!(_other_x_kernel!, other, m.adv, nx)
+    launch!(_D_on_u_kernel!, Dface, D0, m.tmask, nx)
     launch_interior!(
         _nonlinear_laplace_U_kernel!,
         m.lap,
         m.U.past,
-        Vy,
-        laplacian_thickness(m),
+        other,
+        Dface,
+        D0,
         m.tmask,
         m.ocn,
-        _u_walls(m, _wall_slips(m)),
+        _u_walls(m, _wall_slips(m))...,
         m.A_h,
         lv.C_visc * m.dx / 100,
         lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
-        nx,
     )
     return m.lap
 end
 function laplace_V(m, lv::NonlinearLateralViscosity)
     nx, ny = size(m.U.past)
-    # U collocated onto the V points (x half in `Dq`); mirrors laplace_U above.
-    Ux = m.Dq
-    launch!(_u_half_kernel!, Ux, m.U.past, nx)
+    D0 = laplacian_thickness(m)
+    other, Dface = m.Dq, m.adv
+    # U collocated onto the V points (x half, then y); mirrors laplace_U above.
+    launch!(_u_half_kernel!, m.adv, m.U.past, nx)
+    launch!(_other_y_kernel!, other, m.adv, ny)
+    launch!(_D_on_v_kernel!, Dface, D0, m.tmask, ny)
     launch_interior!(
         _nonlinear_laplace_V_kernel!,
         m.lap,
         m.V.past,
-        Ux,
-        laplacian_thickness(m),
+        other,
+        Dface,
+        D0,
         m.tmask,
         m.ocn,
-        _v_walls(m, _wall_slips(m)),
+        _v_walls(m, _wall_slips(m))...,
         m.A_h,
         lv.C_visc * m.dx / 100,
         lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
-        ny,
     )
     return m.lap
 end
 
 # 4-point collocation of the cross-velocity component, as `ip_half(jm_half(V))`
-# and `jp_half(im_half(U))` without the intermediate arrays, in two halves: the
-# kernels below store the average along the one axis, and the Laplacian kernels
-# take the average of that along the other (`_other_x`, `_other_y`).
+# and `jp_half(im_half(U))` without the intermediate arrays, in two passes that
+# each average along one axis: in one pass the read would be wrapped along both
+# axes at once, which Reactant raises to a gather.
 @kernel function _v_half_kernel!(out, @Const(V), Ny)
     i, j = @index(Global, NTuple)
     @inbounds out[i, j] = (V[i, j] + V[i, _ym1(j, Ny)]) / 2
@@ -826,3 +870,22 @@ end
 end
 @inline _other_x(half, i, j, Nx) = @inbounds (half[i, j] + half[_xp1(i, Nx), j]) / 2
 @inline _other_y(half, i, j, Ny) = @inbounds (half[i, j] + half[i, _yp1(j, Ny)]) / 2
+@kernel function _other_x_kernel!(out, @Const(half), Nx)
+    i, j = @index(Global, NTuple)
+    @inbounds out[i, j] = _other_x(half, i, j, Nx)
+end
+@kernel function _other_y_kernel!(out, @Const(half), Ny)
+    i, j = @index(Global, NTuple)
+    @inbounds out[i, j] = _other_y(half, i, j, Ny)
+end
+
+# D on the u- (v-) points, masked by the cell the point belongs to.  Zero on the
+# far border ring, where the wrapped neighbour is masked out by `tmask`.
+@kernel function _D_on_u_kernel!(out, @Const(D0), @Const(tmask), Nx)
+    i, j = @index(Global, NTuple)
+    @inbounds out[i, j] = _face_avg(D0, tmask, i, j, _xp1(i, Nx), j) * tmask[i, j]
+end
+@kernel function _D_on_v_kernel!(out, @Const(D0), @Const(tmask), Ny)
+    i, j = @index(Global, NTuple)
+    @inbounds out[i, j] = _face_avg(D0, tmask, i, j, i, _yp1(j, Ny)) * tmask[i, j]
+end

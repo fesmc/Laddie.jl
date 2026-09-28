@@ -153,7 +153,7 @@ function Simulation(
     )
     output.saveday > 0 && create_rundir!(sim)
     if restart === nothing
-        _bootstrap_leapfrog!(sim)
+        _bootstrap_leapfrog!(model, sim.clock.dt; _nan_check(sim)...)
     else
         init_from_restart!(sim, restart)
     end
@@ -164,7 +164,11 @@ end
 
 # Absolute simulation time in days, including the restart offset, so output and
 # restart files of a continuation run never collide with those it restarted from.
-_t_days(sim::Simulation) = sim.clock.time / _primal(sim.model.seconds_per_day)
+_t_days(sim::Simulation) = _t_days(sim.clock, sim.model)
+_t_days(clock::Clock, m) = clock.time / _primal(m.seconds_per_day)
+
+# The NaN-check keywords of the step functions (`leapfrog_step!`) for `sim`.
+_nan_check(sim::Simulation) = (; check_nans = sim.debug.check_nans, sim.clock)
 
 """
 $(TYPEDSIGNATURES)

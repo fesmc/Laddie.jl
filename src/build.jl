@@ -260,7 +260,7 @@ function Model(
     gradient = JlGradient(),
 ) where {FT}
     forcing = _as_cavity_forcing(forcing)
-    boundary = BoundaryConditions(map(bc -> _promote_param(bc, FT), _bc_tuple(boundary))...)
+    boundary = _mapfields(bc -> _promote_param(bc, FT), boundary)
     backend = KA.get_backend(grid.z_draft)
     # The model is assembled on the CPU and moved in one go, so its derived fields
     # are computed exactly as on a CPU run whatever the grid's backend.

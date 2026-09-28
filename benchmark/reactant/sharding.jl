@@ -61,10 +61,10 @@ const FUNCS = Dict(
     "lapU" => m -> Laddie.laplace_U(m, m.lateral_viscosity),
     "lapV" => m -> Laddie.laplace_V(m, m.lateral_viscosity),
 )
-step!(m, dt) = (FUNC == "step" ? Laddie._step_model!(Laddie._stepping_view(m, dt, NU)) :
+step!(m, dt) = (FUNC == "step" ? Laddie._step_model!(m, dt, NU) :
                 FUNCS[FUNC](m); nothing)
 nsteps!(m, dt, n) = (@trace track_numbers = false for _ = 1:n
-    Laddie._step_model!(Laddie._stepping_view(m, dt, NU))
+    Laddie._step_model!(m, dt, NU)
 end; nothing)
 
 dt = ConcreteRNumber(Float32(Laddie._primal(sim.clock.dt)))

@@ -81,9 +81,7 @@ const TRACK_NUMBERS = get(ENV, "TRACK_NUMBERS", "0") == "1"
 # Physics of one leapfrog step: `time_step!` without the clock update (the
 # Clock's fields are plain numbers, so a traced step would bake them in).
 function rstep!(sim)
-    Laddie.advance_leapfrog!(sim)
-    Laddie.leapfrog_step!(sim, 2)
-    Laddie.apply_robert_asselin_filter!(sim)
+    Laddie._step_model!(sim.model, sim.clock.dt, sim.nu)
     return nothing
 end
 

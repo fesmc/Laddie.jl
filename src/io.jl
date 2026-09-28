@@ -366,14 +366,26 @@ end
     end
 end
 
+# Add the current fields to the averages: on the device, the dt-weighted fields
+# (`_accum_fields!`, which the Reactant extension traces into its step loop); on the
+# host, the counters of the averaging window (`_count_accum!`).
 function _accum!(sim)
-    m, io = sim.model, sim.io
-    dt = sim.clock.dt
-    io.count += 1
-    io.t_accum += _primal(dt)
-    for (name, acc) in pairs(io.acc)
+    _accum_fields!(sim.io.acc, sim.model, sim.clock.dt)
+    _count_accum!(sim.io, sim.clock.dt)
+    return
+end
+
+function _accum_fields!(accs, m, dt)
+    for (name, acc) in pairs(accs)
         _accum_field!(acc, _OUTPUT_FIELDS[name].src, m, dt)
     end
+    return
+end
+
+function _count_accum!(io, dt)
+    io.count += 1
+    io.t_accum += _primal(dt)
+    return
 end
 
 _accum_field!(av, src, m, dt) = (av .+= src(m) .* dt)
@@ -532,7 +544,8 @@ end
 # A periodic event is due once the clock reaches the next event time.  The
 # half-step tolerance mirrors the run! stopping rule (round-half-up), so a fixed
 # dt fires at the same steps an integer `t % interval == 0` test would.
-_event_due(sim, next) = sim.clock.time + sim.clock.dt / 2 >= next
+_event_due(sim, next) = _event_due(sim.clock.time, _primal(sim.clock.dt) / 2, next)
+_event_due(t, half, next) = t + half >= next
 
 """
 $(TYPEDSIGNATURES)
@@ -625,7 +638,7 @@ function init_from_restart!(sim, path::AbstractString)
             var.future .= data.future
         end
     end
-    _bootstrap_leapfrog!(sim)
+    _bootstrap_leapfrog!(m, sim.clock.dt; _nan_check(sim)...)
     _print2log(sim, "Restarted from $(path) at $(_t_days(sim)) days")
     return sim
 end

@@ -164,3 +164,22 @@ function gradient_y(a, dy)
     @views g[:, n] .= (a[:, n] .- a[:, n-1]) ./ dy
     return g
 end
+
+# ============================================================================
+# Rebuilding structs field by field
+# ============================================================================
+
+# `x` rebuilt with `f` applied to each of its fields: how a struct is moved to another
+# backend, promoted to another precision or traced.  Every field type of a Laddie
+# struct is a type parameter, so the constructor re-infers the parameters from the new
+# fields.  Field-less singletons are returned as they are.
+function _mapfields(f, x)
+    T = typeof(x)
+    fieldcount(T) == 0 && return x
+    return _rebuild(T, ntuple(i -> f(getfield(x, i)), fieldcount(T))...)
+end
+
+# A struct of type `T` from its fields, unchecked: the type's own name, unless the type
+# has a method of its own (when a type parameter does not show in the fields, or the
+# constructor validates what a rebuild must let through, such as a zero AD tangent).
+_rebuild(::Type{T}, fields...) where {T} = Base.typename(T).wrapper(fields...)

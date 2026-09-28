@@ -12,9 +12,11 @@ slots are scalars or fields: `GamT` (`gamT`, `gamS`) is a field for
 
 `adv`, `lap` and `Dq` are shared by the four stepped equations: U, V, T and S are
 stepped one after another, and each consumes its terms before the next one writes
-them.  In between, `adv` and `lap` hold the speed limiter's per-point scale factors,
-and `Dq` the collocated cross-velocity of `NonlinearLateralViscosity`.  `diag` is never read by the time step, so any host-side diagnostic may
-overwrite it.
+them.  In between, `adv` and `lap` hold the speed limiter's per-point scale factors.
+`NonlinearLateralViscosity` fills `Dq` with the collocated cross-velocity and `adv`
+with the thickness on the velocity points before its Laplacian kernel, which is
+why the momentum steps form the Laplacian before the advection term.  `diag` is
+never read by the time step, so any host-side diagnostic may overwrite it.
 
 # Fields
 $(TYPEDFIELDS)

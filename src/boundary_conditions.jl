@@ -200,14 +200,14 @@ _advection_slips(m) = _advection_slips(m, m.boundary.wall_advection)
 _advection_slips(m, ::SlipScaledWallAdvection) = _wall_slips(m)
 _advection_slips(m, ::NoWallAdvection) = (zero(m.FT), zero(m.FT))
 
-# The walls of the u- and v-points as the momentum kernels take them: the
-# grounding-line and land indicators of the two wall faces (north and south of a
-# u-point, east and west of a v-point), and the slip factors `(slip_gl, slip_land)`
-# of `_wall_slips` or `_advection_slips`.
-_u_walls(m, (slip_gl, slip_land)) =
-    (; glN = m.glNu, glS = m.glSu, lndN = m.lndNu, lndS = m.lndSu, slip_gl, slip_land)
-_v_walls(m, (slip_gl, slip_land)) =
-    (; glE = m.glEv, glW = m.glWv, lndE = m.lndEv, lndW = m.lndWv, slip_gl, slip_land)
+# The walls of the u- and v-points as the momentum kernels take them, splatted into
+# their arguments: the grounding-line and land indicators of the two wall faces
+# (north and south of a u-point, east and west of a v-point), then the slip factors
+# `(slip_gl, slip_land)` of `_wall_slips` or `_advection_slips`.  Separate arguments,
+# not one NamedTuple: a NamedTuple of arrays unpacked inside a kernel costs the CPU
+# kernels up to a third of their time.
+_u_walls(m, (slip_gl, slip_land)) = (m.glNu, m.glSu, m.lndNu, m.lndSu, slip_gl, slip_land)
+_v_walls(m, (slip_gl, slip_land)) = (m.glEv, m.glWv, m.lndEv, m.lndWv, slip_gl, slip_land)
 
 #############################
 # Open BC
@@ -424,6 +424,3 @@ BoundaryConditions(;
     gaps = SinkGapsBC(),
     wall_advection = SlipScaledWallAdvection(),
 ) = BoundaryConditions(open_ocean, grounding_line, land, gaps, wall_advection)
-
-_bc_tuple(b::BoundaryConditions) =
-    (b.open_ocean, b.grounding_line, b.land, b.gaps, b.wall_advection)

@@ -17,7 +17,7 @@
     for params in configs
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
         run!(m; days = 0.2, verbose = false)   # develop a non-trivial flow
-        Laddie.advance_leapfrog!(m)
+        Laddie.advance_leapfrog!(m.model, m.clock.dt)
         dt = 2 * m.clock.dt
         Laddie.step_thickness!(m.model, dt)
         Laddie.precompute_integration_terms!(m.model, m.clock.dt)
@@ -67,10 +67,10 @@ end
 
 @testset "Conservation: D equation exact over one step" begin
     m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
-    Laddie.advance_leapfrog!(m)
+    Laddie.advance_leapfrog!(m.model, m.clock.dt)
     D_past = copy(m.model.D.past)
     src    = copy((m.model.convD .+ m.model.melt .+ m.model.nentr) .* m.model.tmask)
-    Laddie.leapfrog_step!(m, 2)
+    Laddie.leapfrog_step!(m.model, m.clock.dt, 2)
     @test m.model.D.future ≈ D_past .+ src .* (2 * m.clock.dt)
 end
 

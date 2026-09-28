@@ -148,20 +148,26 @@ $(TYPEDFIELDS)
     Sc::FT = 2432.0
     "molecular kinematic viscosity (m² s⁻¹, default `1.95e-6`); must be positive"
     nu0::FT = 1.95e-6
-    function TurbulentGamTMelting(Pr::FT, Sc::FT, nu0::FT) where {FT}
-        for (name, x) in (("Pr", Pr), ("Sc", Sc))
-            _log_layer_offset(x) > 0 || throw(
-                ArgumentError(
-                    "TurbulentGamTMelting: $name = $x makes the transfer-coefficient " *
-                    "denominator non-positive; it must exceed (8.68/12.5)^1.5 ≈ 0.58",
-                ),
-            )
-        end
-        nu0 > 0 ||
-            throw(ArgumentError("TurbulentGamTMelting: nu0 must be positive, got $nu0"))
-        return new{FT}(Pr, Sc, nu0)
-    end
+    TurbulentGamTMelting{FT}(Pr, Sc, nu0) where {FT} = new{FT}(Pr, Sc, nu0)
 end
+
+function TurbulentGamTMelting(Pr::FT, Sc::FT, nu0::FT) where {FT}
+    for (name, x) in (("Pr", Pr), ("Sc", Sc))
+        _log_layer_offset(x) > 0 || throw(
+            ArgumentError(
+                "TurbulentGamTMelting: $name = $x makes the transfer-coefficient " *
+                "denominator non-positive; it must exceed (8.68/12.5)^1.5 ≈ 0.58",
+            ),
+        )
+    end
+    nu0 > 0 ||
+        throw(ArgumentError("TurbulentGamTMelting: nu0 must be positive, got $nu0"))
+    return TurbulentGamTMelting{FT}(Pr, Sc, nu0)
+end
+
+# Rebuilt unchecked: a zero AD tangent (`Enzyme.make_zero`) must pass.
+_rebuild(::Type{<:TurbulentGamTMelting}, Pr, Sc, nu0) =
+    TurbulentGamTMelting{typeof(Pr)}(Pr, Sc, nu0)
 
 # Constant part of the γ_T/γ_S denominator, 12.5·x^(2/3) − 8.68 for x = Pr or Sc.
 function _log_layer_offset(x)

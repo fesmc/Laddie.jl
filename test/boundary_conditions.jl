@@ -225,7 +225,7 @@ end
     @test all(mc.model.Tb[gap_ix] .== mc.model.T.present[gap_ix])
     # Tb = T makes  melt*Tb - gamT*(T - Tb)  vanish identically in gap cells,
     # which is what keeps heat flowing across the gap instead of draining out.
-    exch = Laddie.T_ice_ocean_exchange(mc.model)
+    exch = T_ice_ocean_exchange(mc.model)
     @test all(exch[gap_ix] .== 0)
     @test any(exch[shelf] .!= 0)               # still active under the ice
 
@@ -366,17 +366,17 @@ end
     g = getfield(m.model, :geometry)
     # Under the default the interior term is live and the gate is exactly 1.0,
     # so nothing is altered anywhere.
-    up = Laddie.u_pressure_depth(m.model)
+    up = u_pressure_depth(m.model)
     @test any(!iszero, up[Laddie.ip_count(g.tmask).==2])
-    @test all(Laddie._pgf_gate(m.model, Laddie.ip_count(g.tmask)) .== 1)
+    @test all(_pgf_gate(m.model, Laddie.ip_count(g.tmask)) .== 1)
 
     # Selecting the truncation is bit-identical in the interior and exactly
     # zero on one-sided faces.
     m_t = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p_trunc)
     run!(m_t; days = 0.5, verbose = false)
     g_t = getfield(m_t.model, :geometry)
-    up_t = Laddie.u_pressure_depth(m_t.model)
-    vp_t = Laddie.v_pressure_depth(m_t.model)
+    up_t = u_pressure_depth(m_t.model)
+    vp_t = v_pressure_depth(m_t.model)
     @test all(iszero, up_t[Laddie.ip_count(g_t.tmask).!=2])
     @test all(iszero, vp_t[Laddie.jp_count(g_t.tmask).!=2])
 
@@ -397,8 +397,8 @@ end
     m_gap = Simulation(Model(gap_grid; forcing, params = p_trunc))
     run!(m_gap; days = 0.5, verbose = false)
     g_gap = getfield(m_gap.model, :geometry)
-    up_gap = Laddie.u_pressure_depth(m_gap.model)
-    vp_gap = Laddie.v_pressure_depth(m_gap.model)
+    up_gap = u_pressure_depth(m_gap.model)
+    vp_gap = v_pressure_depth(m_gap.model)
     @test all(iszero, up_gap[Laddie.ip_count(g_gap.tmask).!=2])
     @test all(iszero, vp_gap[Laddie.jp_count(g_gap.tmask).!=2])
 

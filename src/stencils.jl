@@ -668,8 +668,8 @@ end
 end
 
 # Dispatch on `Params.momentum_advection`; the centred path is v1.x's.
-upwind_advection_U(m) = _advect_U(m, m.momentum_advection)
-upwind_advection_V(m) = _advect_V(m, m.momentum_advection)
+momentum_advection_U(m) = _advect_U(m, m.momentum_advection)
+momentum_advection_V(m) = _advect_V(m, m.momentum_advection)
 
 function _advect_U(m, ::UpstreamMomentumAdvection)
     nx, ny = size(m.U.present)

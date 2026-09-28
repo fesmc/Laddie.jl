@@ -523,7 +523,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     if days !== nothing && until !== nothing
         throw(ArgumentError("pass either `days` or `until`, not both"))
     end
-    _float_type(m.params) === _scalar_type(m.params) || throw(
+    _is_traced(m.params) && throw(
         ArgumentError(
             "run! needs plain scalar parameters; a model from `trace_parameters` is " *
             "for programs compiled with `reactant_compile`",

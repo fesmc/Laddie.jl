@@ -166,6 +166,26 @@ function Base.getproperty(m::Model, k::Symbol)
     error("Model has no property `$k`")
 end
 
+# Everything `getproperty` answers to, in its lookup order, so that REPL completion
+# shows the forwarded names too.
+function Base.propertynames(m::Model, ::Bool = false)
+    names(x) = fieldnames(typeof(x))
+    f = getfield(m, :forcing)
+    return (
+        fieldnames(Model)...,
+        :FT,
+        :nx,
+        :ny,
+        names(getfield(m, :grid))...,
+        names(getfield(m, :geometry))...,
+        names(getfield(m, :state))...,
+        names(getfield(m, :cache))...,
+        names(getfield(m, :params))...,
+        names(getfield(f, :ocean))...,
+        names(getfield(f, :ice))...,
+    )
+end
+
 function Base.setproperty!(m::Model, k::Symbol, v)
     # Cache is mutable — all physics scratch arrays live here
     c = getfield(m, :cache)

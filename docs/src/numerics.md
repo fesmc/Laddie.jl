@@ -21,7 +21,7 @@ five-point **Laplacian** weighted by the layer thickness (`laplace_T`,
 as fused KernelAbstractions kernels, one pass per term, with the masks applied
 inside.
 
-**Momentum** advection (`upwind_advection_U`, `upwind_advection_V`) is a choice,
+**Momentum** advection (`momentum_advection_U`, `momentum_advection_V`) is a choice,
 `Params(; momentum_advection)`:
 
 - [`CentredMomentumAdvection`](@ref), the default, evaluates the advected

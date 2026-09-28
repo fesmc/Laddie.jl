@@ -328,8 +328,8 @@ end
         m.U.present .= 1.0
         m.V.present .= 0.0
         m.D.present .= 10.0
-        au = Array(copy(Laddie.upwind_advection_U(m)))
-        av = Array(copy(Laddie.upwind_advection_V(m)))
+        au = Array(copy(Laddie.momentum_advection_U(m)))
+        av = Array(copy(Laddie.momentum_advection_V(m)))
         um = Array(m.umask)
         interior = [
             2 <= i <= size(um, 1) - 1 && 2 <= j <= size(um, 2) - 1 &&

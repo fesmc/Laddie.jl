@@ -57,8 +57,8 @@ _launch_backend(backend::CPU) =
 # Time integration (Lambert et al. 2023)
 # ==================================================================
 
-_update_conv2!(::Any, ::ClampDensity) = nothing
-_update_conv2!(::Any, ::ResetToAmbient) = nothing
+# Only `RelaxToAmbient` relaxes through `conv2`; the other schemes leave it alone.
+_update_conv2!(::Any, ::AbstractConvectionScheme) = nothing
 function _update_conv2!(m, cs::RelaxToAmbient)
     # `imask`, not `tmask`: gap cells are never relaxed towards ambient.  See
     # `update_convection!(m, ::RelaxToAmbient)`.
@@ -171,7 +171,7 @@ end
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
         FT = typeof(g)
-        half = FT(1/2)
+        half = FT(0.5)
         ip1 = i + 1
         jm1 = j - 1
         tmip = tmask[i, j] + tmask[ip1, j]
@@ -346,7 +346,7 @@ end
 function step_u_momentum!(m, dt)
     # Laplacian first: NonlinearLateralViscosity uses `adv` as scratch.
     laplace_U(m)
-    upwind_advection_U(m)
+    momentum_advection_U(m)
     launch_interior!(
         _step_u_momentum_kernel!,
         m.U.future,
@@ -376,7 +376,7 @@ end
 function step_v_momentum!(m, dt)
     # Laplacian first, as in step_u_momentum!.
     laplace_V(m)
-    upwind_advection_V(m)
+    momentum_advection_V(m)
     launch_interior!(
         _step_v_momentum_kernel!,
         m.V.future,
@@ -571,7 +571,7 @@ _rebootstrap_leapfrog!(sim) = _rebootstrap_leapfrog!(sim.exec, sim)
 _rebootstrap_leapfrog!(::NativeExecution, sim) =
     _collapse_and_bootstrap!(sim.model, sim.clock.dt; _nan_check(sim)...)
 function _collapse_and_bootstrap!(m, dt; kwargs...)
-    for var in (m.D, m.U, m.V, m.T, m.S)
+    for var in _prognostics(m)
         var.past .= var.present
     end
     _bootstrap_leapfrog!(m, dt; kwargs...)
@@ -614,7 +614,7 @@ function apply_robert_asselin_filter!(m, nu)
 end
 
 function advance_leapfrog!(m, dt)
-    for var in (m.D, m.U, m.V, m.T, m.S)
+    for var in _prognostics(m)
         rotate!(var)
     end
     update_secondary_fields!(m, dt)
@@ -627,7 +627,7 @@ end
 #
 # On the C-grid U and V are not co-located, so the partner component is averaged
 # onto the point being limited — the same four-point stencil the bottom-drag
-# terms use (`u_bottom_drag` / `v_bottom_drag` in physics.jl).
+# terms use (`u_bottom_drag` / `v_bottom_drag` in test/equation_terms.jl).
 # min(1, v_cut / spd).  The divisor of the unused branch is swapped too: reverse-mode
 # AD differentiates it, and at rest (spd = 0) its zero adjoint times 1/spd is NaN.
 @inline _cap_factor(spd, v_cut) =

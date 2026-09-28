@@ -24,7 +24,7 @@ work buffers serves all four equations:
 | `lap` | `lU`, `lV`, `lT`, `lS` |
 | `Dq`  | `DT`, `DS` (the advected tracer content D·q) |
 
-The reference equation terms in `physics.jl` (`u_advection`, `u_diffusion`, …)
+The reference equation terms in `test/equation_terms.jl` (`u_advection`, `u_diffusion`, …)
 return copies of these buffers, because the next term to be evaluated would
 overwrite them.
 

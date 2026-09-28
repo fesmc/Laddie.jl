@@ -1,3 +1,19 @@
+# Point-wise equation-of-state and freezing-point pieces shared by several kernels.
+# Each spells out one formula in one operation order, so every caller rounds alike.
+
+# Buoyancy contrast (ρ_a − ρ)/ρ₀ of water (S, T) against (Sa, Ta), linear equation
+# of state.
+@inline _drho(Sa, S, Ta, T, beta, alpha) = beta * (Sa - S) - alpha * (Ta - T)
+
+# Liquidus: freezing temperature at salinity `S` and depth `z`, and its inverse, the
+# salinity whose freezing temperature at `z` is `Tf`.  `_three_eq_melt_kernel!`
+# groups `l2 + l3*z` separately and so keeps its own copy.
+@inline _freezing_point(S, z, l1, l2, l3) = l1 * S + l2 + l3 * z
+@inline _freezing_salinity(Tf, z, l1, l2, l3) = (Tf - l2 - l3 * z) / l1
+
+# γ_T / γ_S, the fixed ratio of the heat and salt exchange velocities.
+const _GAMMA_T_OVER_S = 35
+
 @kernel function _density_kernel!(
     drho,
     @Const(Sa),
@@ -10,8 +26,7 @@
 )
     beta, alpha = _val(beta), _val(alpha)
     i, j = @index(Global, NTuple)
-    @inbounds drho[i, j] =
-        (beta * (Sa[i, j] - S[i, j]) - alpha * (Ta[i, j] - T[i, j])) * tmask[i, j]
+    @inbounds drho[i, j] = _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], beta, alpha) * tmask[i, j]
 end
 
 # Three-equation melt parameterisation (Jenkins 1991) + ice-base temperature.
@@ -236,8 +251,7 @@ end
         if (d < thr) & ice
             T[i, j] = Ta[i, j]
             S[i, j] = Sa[i, j] - S_adj
-            drho[i, j] =
-                (beta * (Sa[i, j] - S[i, j]) - alpha * (Ta[i, j] - T[i, j])) * tmask[i, j]
+            drho[i, j] = _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], beta, alpha) * tmask[i, j]
         end
     end
 end
@@ -325,7 +339,7 @@ end
 _exchange_velocities(m) = _exchange_velocities(m, m.params.melting)
 _exchange_velocities(m, mp::FixedGamTMelting) = _fixed_exchange_velocities(mp, m.FT)
 _exchange_velocities(m, ::AbstractMelting) = (m.gamT, m.gamS)
-_fixed_exchange_velocities(mp, FT) = (mp.gamTfix, mp.gamTfix / FT(35))
+_fixed_exchange_velocities(mp, FT) = (mp.gamTfix, mp.gamTfix / FT(_GAMMA_T_OVER_S))
 
 function _launch_three_eq_melt!(m)
     gamT, gamS = _exchange_velocities(m)
@@ -421,7 +435,7 @@ end
             gamT[i, j] = z
         else
             mdot = melt_prescribed[i, j]
-            tb = l1 * S[i, j] + l2 + l3 * z_draft[i, j]
+            tb = _freezing_point(S[i, j], z_draft[i, j], l1, l2, l3)
             heat = mdot * (L - c_i * (T_ice_base[i, j] - tb)) / c_p
             melt[i, j] = mdot
             Tb[i, j] = tb
@@ -464,7 +478,7 @@ end
     @inbounds begin
         g = Gamma_T * ustar[i, j] * tmask[i, j]
         gamT[i, j] = g
-        gamS[i, j] = g / FT(35)
+        gamS[i, j] = g / FT(_GAMMA_T_OVER_S)
     end
 end
 
@@ -663,8 +677,8 @@ end
     @inbounds begin
         FT = typeof(prefactor)
         drho_pos = max(drho_floor, drho[i, j])
-        sb = (Tb[i, j] - l2 - l3 * z_draft[i, j]) / l1
-        db_ij = (beta * (S[i, j] - sb) - alpha * (T[i, j] - Tb[i, j])) * tmask[i, j]
+        sb = _freezing_salinity(Tb[i, j], z_draft[i, j], l1, l2, l3)
+        db_ij = _drho(S[i, j], sb, T[i, j], Tb[i, j], beta, alpha) * tmask[i, j]
         us3 = ustar[i, j]^3
         Dij = D[i, j]
         Dpow = D_squared ? Dij * Dij : Dij
@@ -715,114 +729,3 @@ function update_secondary_fields!(m, dt)
     update_entrainment!(m, dt)
     return
 end
-
-# ============================================================================
-# Equation-term functions — one named function per term in each prognostic
-# equation. Functions return the term value; the caller applies the sign,
-# making the step functions read like the written equations.
-#
-# These are the readable REFERENCE implementation of the governing equations.
-# The momentum advection and diffusion terms are copied out of the shared work
-# buffers (`Cache.adv`, `Cache.lap`), which the next term would overwrite.
-# The time loop runs the fused kernels in numerics.jl instead (one pass per
-# prognostic, no intermediate allocations); the test suite asserts that the
-# kernels reproduce these terms exactly (testset "Fused kernels match
-# reference equation terms"), so the two cannot drift apart silently.
-# All equation references are to Lambert et al. (2023), The Cryosphere,
-# https://doi.org/10.5194/tc-17-3203-2023.
-#
-# Notation shared across all five governing equations:
-#   D       plume layer thickness [m]
-#   U, V    depth-averaged x- and y-velocity components [m s⁻¹]
-#   T, S    depth-averaged plume temperature [°C] and salinity [PSU]
-#   ṁ       basal melt rate [m s⁻¹]; positive = melting
-#   ė       net entrainment rate, ė = entr − detr [m s⁻¹]
-#   Tₐ, Sₐ  ambient temperature and salinity interpolated to plume depth
-#   Tb      ice–ocean boundary (basal) temperature [°C]
-#   δρ      reduced density contrast with ambient, (ρₐ − ρ)/ρ₀ [–]
-#   D̄       layer thickness face-interpolated to the velocity node
-#   f       Coriolis parameter [s⁻¹]; `fu`/`fv` are its u- and v-face averages
-#   g       gravitational acceleration [m s⁻²]
-#   ρ₀      reference seawater density [kg m⁻³]
-#   z_draft      ice-base depth, negative below sea level [m]
-#   C_d     quadratic drag coefficient at the ice base [–]
-#   |u|     current speed, √(U² + V²) [m s⁻¹]
-#   A_h      horizontal viscosity [m² s⁻¹]
-#   K_h      horizontal diffusivity [m² s⁻¹]
-#   γT      turbulent heat transfer coefficient [m s⁻¹]
-# ============================================================================
-# -- U-momentum terms (Eq. 2) -----------------------------------------------
-
-# U·∂D/∂t  (thickness-tendency coupling)
-@inline u_thickness_tendency(m) = m.U.present .* ip_t(m, m.dDdt)
-# ∇·(DUu)  (momentum advection)
-@inline u_advection(m) = copy(upwind_advection_U(m))
-# Per-face weight on the depth-gradient PGF term: always 1 on a fully-interior
-# face; at a one-sided face (ice front, SinkGapsBC gap-sink edge) 1 under
-# FullDepthGradient and 0 under TruncatedDepthGradient.  See AbstractFrontPressure.
-@inline _pgf_gate(m, tmask_stag) =
-    one(m.FT) .+ _front_pgf_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
-
-# g·D̄·ρ̄·∂D/∂x  (pressure gradient from plume-thickness depth)
-@inline u_pressure_depth(m) =
-    m.g .* ip_t(m, m.Ddrho) .* (xm1(m.D.present .* m.tmask) .- m.D.present) ./ m.dx .*
-    _pgf_gate(m, ip_count(m.tmask))
-# g·D̄·ρ̄·∂z_draft/∂x  (baroclinic pressure via ice-base slope)
-@inline u_pressure_slope(m) = m.g .* ip_t(m, m.Ddrho .* m.dzdx)
-# ½g·D̄²·∂δρ/∂x  (internal pressure gradient)
-@inline u_pressure_density(m) =
-    (m.g / 2) .* ip_t(m, m.D.present) .^ 2 .* (xm1(m.drho) .- m.drho) ./ m.dx
-# f·D̄·V  (Coriolis)
-@inline u_coriolis(m) = m.fu .* ip_t(m, m.D.present .* jm_v(m, m.V.present))
-# Cd·U·|u|  (quadratic bottom drag)
-@inline u_bottom_drag(m) =
-    m.C_d .* m.U.present .*
-    _safe_sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
-# Ah·∇²(DU)  (lateral diffusion; the A_h/shear scaling is applied inside
-# laplace_U, since it dispatches on `Params.lateral_viscosity`)
-@inline u_diffusion(m) = copy(laplace_U(m))
-# e·U  (detrainment momentum loss)
-@inline u_detrainment(m) = m.detr .* m.U.present
-
-# -- V-momentum terms (Eq. 3) -----------------------------------------------
-
-# V·∂D/∂t  (thickness-tendency coupling)
-@inline v_thickness_tendency(m) = m.V.present .* jp_t(m, m.dDdt)
-# ∇·(DVv)  (momentum advection)
-@inline v_advection(m) = copy(upwind_advection_V(m))
-# g·D̄·ρ̄·∂D/∂y  (pressure gradient from plume-thickness depth; see u_pressure_depth)
-@inline v_pressure_depth(m) =
-    m.g .* jp_t(m, m.Ddrho) .* (ym1(m.D.present .* m.tmask) .- m.D.present) ./ m.dy .*
-    _pgf_gate(m, jp_count(m.tmask))
-# g·D̄·ρ̄·∂z_draft/∂y  (baroclinic pressure via ice-base slope)
-@inline v_pressure_slope(m) = m.g .* jp_t(m, m.Ddrho .* m.dzdy)
-# ½g·D̄²·∂δρ/∂y  (internal pressure gradient)
-@inline v_pressure_density(m) =
-    (m.g / 2) .* jp_t(m, m.D.present) .^ 2 .* (ym1(m.drho) .- m.drho) ./ m.dy
-# f·D̄·U  (Coriolis)
-@inline v_coriolis(m) = m.fv .* jp_t(m, m.D.present .* im_u(m, m.U.present))
-# Cd·V·|u|  (quadratic bottom drag)
-@inline v_bottom_drag(m) =
-    m.C_d .* m.V.present .*
-    _safe_sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)
-# Ah·∇²(DV)  (lateral diffusion; the A_h/shear scaling is applied inside
-# laplace_V, since it dispatches on `Params.lateral_viscosity`)
-@inline v_diffusion(m) = copy(laplace_V(m))
-# ė·V  (detrainment momentum loss)
-@inline v_detrainment(m) = m.detr .* m.V.present
-
-# -- Tracer terms (Eqs. 4–5) -------------------------------------------------
-
-# q·∂D/∂t  (thickness-tendency coupling)
-@inline tracer_thickness_tendency(m, q) = q .* m.dDdt
-# ∇·(D·u·q)  (horizontal tracer advection)
-@inline tracer_advection(m, q) =
-    upwind_advection_T(similar(m.D.present), m, m.D.present .* q)
-# e_net·qa  (entrainment of ambient water)
-@inline tracer_entrainment(m, qa) = m.nentr .* qa
-# Kh·∇²q  (horizontal diffusion)
-@inline tracer_diffusion(m, q_past) = m.K_h .* laplace_T(similar(q_past), m, q_past)
-# (q_past − qa)·conv2  (convective relaxation, RelaxToAmbient only)
-@inline tracer_convection(m, q_past, qa) = (q_past .- qa) .* m.conv2
-# ṁ·Tb − γT·(T − Tb)  (ice-ocean heat exchange; temperature equation only)
-@inline T_ice_ocean_exchange(m) = m.melt .* m.Tb .- m.gamT .* (m.T.present .- m.Tb)

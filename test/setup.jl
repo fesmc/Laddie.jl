@@ -56,3 +56,6 @@ function wall_faces(g)
      grdEv = o .- xm1((o .- grd) .* (o .- ym1(grd))),
      grdWv = o .- xp1((o .- grd) .* (o .- ym1(grd))))
 end
+
+# The readable reference equation terms the fused kernels are checked against.
+include("equation_terms.jl")

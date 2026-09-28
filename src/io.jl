@@ -588,11 +588,7 @@ function _write_restart!(sim, t_days)
         filename;
         t_days,
         dt = _float64(sim.clock.dt),
-        D = _v(m.D),
-        U = _v(m.U),
-        V = _v(m.V),
-        T = _v(m.T),
-        S = _v(m.S),
+        map(_v, _prognostics(m))...,
     )
 
     cp(filename, joinpath(sim.io.rundir, "restart_latest.jld2"); force = true)
@@ -631,8 +627,8 @@ function init_from_restart!(sim, path::AbstractString)
         # Resume at the saved dt when present (adaptive runs); older files
         # without it keep the dt the simulation was constructed with.
         haskey(f, "dt") && (sim.clock.dt = m.FT(f["dt"]))
-        for (name, var) in (("D", m.D), ("U", m.U), ("V", m.V), ("T", m.T), ("S", m.S))
-            data = f[name]
+        for (name, var) in pairs(_prognostics(m))
+            data = f[String(name)]
             var.past .= data.past
             var.present .= data.present
             var.future .= data.future

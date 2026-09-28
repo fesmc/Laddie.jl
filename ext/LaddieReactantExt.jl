@@ -303,7 +303,7 @@ end
 # reverse a traced `if` that updates arrays in place.  It writes `past` (collapsed on
 # `present`) and `future` (the Euler step); the next step recomputes the cache.
 function _rebootstrap_blend!(model, keep, dt)
-    vars = (model.D, model.U, model.V, model.T, model.S)
+    vars = Laddie._prognostics(model)
     old = map(v -> (copy(v.past), copy(v.future)), vars)
     Laddie._collapse_and_bootstrap!(model, dt)
     for (v, (p, f)) in zip(vars, old)

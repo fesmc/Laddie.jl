@@ -9,27 +9,34 @@ _float_type(::Params{FT}) where {FT} = _value_type(FT)
 _value_type(::Type{T}) where {T} = T
 # The type the parameters are stored as (the Reactant number type once traced).
 _scalar_type(::Params{FT}) where {FT} = FT
+# Whether `trace_parameters` has turned the scalar parameters into traced numbers.
+_is_traced(p::Params) = _float_type(p) !== _scalar_type(p)
 _float_type(f::OceanForcing1D) = eltype(f.Tz)
 _float_type(f::CavityForcing) = _float_type(f.ocean)
+
+# A user input given as a scalar or a field: a matrix must cover the grid's input
+# arrays (`sz`, the full domain including the border ring), before cropping, and
+# anything else must be a real scalar.  `name` and `desc` word the errors.
+function _check_scalar_or_field(x, sz, name, desc)
+    if x isa AbstractMatrix
+        size(x) == sz || throw(
+            ArgumentError(
+                "$name is $(size(x)) but the mask is $sz; a 2D $desc must cover the " *
+                "full domain including the border ring",
+            ),
+        )
+    elseif !(x isa Real)
+        throw(ArgumentError("$name must be a real scalar or a matrix, got $(typeof(x))"))
+    end
+    return x
+end
 
 # Bring a user-supplied basal ice temperature onto the full domain: a scalar is
 # broadcast, a matrix is checked against the grid's input size and converted to FT,
 # so `_crop_ice_forcing` can then slice it with the grid's crop ranges.  Materialising once at build keeps
 # the melt kernel to a single indexed path instead of a scalar and a field variant.
 function _expand_ice_forcing(ice::PrescribedIceForcing, sz, FT)
-    T = ice.T_ice_base
-    if T isa AbstractMatrix
-        size(T) == sz || throw(
-            ArgumentError(
-                "T_ice_base is $(size(T)) but the mask is $sz; a 2D basal ice " *
-                "temperature must cover the full domain including the border ring",
-            ),
-        )
-    elseif !(T isa Real)
-        throw(
-            ArgumentError("T_ice_base must be a real scalar or a matrix, got $(typeof(T))"),
-        )
-    end
+    T = _check_scalar_or_field(ice.T_ice_base, sz, "T_ice_base", "basal ice temperature")
     Tb = T isa AbstractMatrix ? FT.(T) : fill(FT(T), sz)
     any(isnan, Tb) && throw(ArgumentError("T_ice_base contains NaN"))
     all(<=(0), Tb) || throw(
@@ -62,22 +69,7 @@ end
 # melt schemes carry no such field.
 _init_prescribed_melt!(cache, ::AbstractMelting, grid, params) = nothing
 function _init_prescribed_melt!(cache, mp::PrescribedMelting, grid, params)
-    M = mp.melt
-    sz = grid.input_size
-    if M isa AbstractMatrix
-        size(M) == sz || throw(
-            ArgumentError(
-                "PrescribedMelting melt is $(size(M)) but the mask is $sz; a 2D melt " *
-                "rate must cover the full domain including the border ring",
-            ),
-        )
-    elseif !(M isa Real)
-        throw(
-            ArgumentError(
-                "PrescribedMelting melt must be a real scalar or a matrix, got $(typeof(M))",
-            ),
-        )
-    end
+    M = _check_scalar_or_field(mp.melt, grid.input_size, "PrescribedMelting melt", "melt rate")
     all(isfinite, M) || throw(ArgumentError("PrescribedMelting melt must be finite"))
     r, c = grid.crop
     rate = M isa AbstractMatrix ? M[r, c] : M

@@ -7,6 +7,7 @@ const KA = KernelAbstractions
 include("entrainment.jl")
 include("melting.jl")
 include("convection.jl")
+include("max_layer_thickness.jl")
 include("coriolis.jl")
 include("boundary_conditions.jl")
 include("viscosity.jl")

@@ -2,7 +2,7 @@
 
 @testset "Fused kernels match reference equation terms" begin
     # The fused step kernels in numerics.jl and the equation-term
-    # functions in physics.jl implement the same governing equations.
+    # functions in equation_terms.jl implement the same governing equations.
     # Reconstruct one leapfrog step from the term functions and require
     # the kernels to reproduce it, for both the scalar-coefficient
     # (FixedGamTMelting/ResetToAmbient) and matrix-coefficient
@@ -22,35 +22,35 @@
         Laddie.step_thickness!(m.model, dt)
         Laddie.precompute_integration_terms!(m.model, m.clock.dt)
 
-        rhs_U = .- Laddie.u_thickness_tendency(m.model) .+ Laddie.u_advection(m.model) .-
-                   Laddie.u_pressure_depth(m.model)     .+ Laddie.u_pressure_slope(m.model) .-
-                   Laddie.u_pressure_density(m.model)   .+ Laddie.u_coriolis(m.model) .-
-                   Laddie.u_bottom_drag(m.model)        .+ Laddie.u_diffusion(m.model) .-
-                   Laddie.u_detrainment(m.model)
+        rhs_U = .- u_thickness_tendency(m.model) .+ u_advection(m.model) .-
+                   u_pressure_depth(m.model)     .+ u_pressure_slope(m.model) .-
+                   u_pressure_density(m.model)   .+ u_coriolis(m.model) .-
+                   u_bottom_drag(m.model)        .+ u_diffusion(m.model) .-
+                   u_detrainment(m.model)
         U_ref = m.model.U.past .+
             Laddie.div0(rhs_U, Laddie.ip_t(m.model, m.model.D.present)) .* m.model.umask .* dt
 
-        rhs_V = .- Laddie.v_thickness_tendency(m.model) .+ Laddie.v_advection(m.model) .-
-                   Laddie.v_pressure_depth(m.model)     .+ Laddie.v_pressure_slope(m.model) .-
-                   Laddie.v_pressure_density(m.model)   .- Laddie.v_coriolis(m.model) .-
-                   Laddie.v_bottom_drag(m.model)        .+ Laddie.v_diffusion(m.model) .-
-                   Laddie.v_detrainment(m.model)
+        rhs_V = .- v_thickness_tendency(m.model) .+ v_advection(m.model) .-
+                   v_pressure_depth(m.model)     .+ v_pressure_slope(m.model) .-
+                   v_pressure_density(m.model)   .- v_coriolis(m.model) .-
+                   v_bottom_drag(m.model)        .+ v_diffusion(m.model) .-
+                   v_detrainment(m.model)
         V_ref = m.model.V.past .+
             Laddie.div0(rhs_V, Laddie.jp_t(m.model, m.model.D.present)) .* m.model.vmask .* dt
 
-        rhs_T = .- Laddie.tracer_thickness_tendency(m.model, m.model.T.present) .+
-                   Laddie.tracer_advection(m.model, m.model.T.present) .+
-                   Laddie.tracer_entrainment(m.model, m.model.Ta) .+
-                   Laddie.T_ice_ocean_exchange(m.model) .+
-                   Laddie.tracer_diffusion(m.model, m.model.T.past) .-
-                   Laddie.tracer_convection(m.model, m.model.T.past, m.model.Ta)
+        rhs_T = .- tracer_thickness_tendency(m.model, m.model.T.present) .+
+                   tracer_advection(m.model, m.model.T.present) .+
+                   tracer_entrainment(m.model, m.model.Ta) .+
+                   T_ice_ocean_exchange(m.model) .+
+                   tracer_diffusion(m.model, m.model.T.past) .-
+                   tracer_convection(m.model, m.model.T.past, m.model.Ta)
         T_ref = m.model.T.past .+ Laddie.div0(rhs_T, m.model.D.present) .* m.model.tmask .* dt
 
-        rhs_S = .- Laddie.tracer_thickness_tendency(m.model, m.model.S.present) .+
-                   Laddie.tracer_advection(m.model, m.model.S.present) .+
-                   Laddie.tracer_entrainment(m.model, m.model.Sa) .+
-                   Laddie.tracer_diffusion(m.model, m.model.S.past) .-
-                   Laddie.tracer_convection(m.model, m.model.S.past, m.model.Sa)
+        rhs_S = .- tracer_thickness_tendency(m.model, m.model.S.present) .+
+                   tracer_advection(m.model, m.model.S.present) .+
+                   tracer_entrainment(m.model, m.model.Sa) .+
+                   tracer_diffusion(m.model, m.model.S.past) .-
+                   tracer_convection(m.model, m.model.S.past, m.model.Sa)
         S_ref = m.model.S.past .+ Laddie.div0(rhs_S, m.model.D.present) .* m.model.tmask .* dt
 
         Laddie.step_u_momentum!(m.model, dt)

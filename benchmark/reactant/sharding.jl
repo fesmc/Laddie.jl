@@ -56,8 +56,8 @@ println("D.present shards: ", unique(rmodel.D.present.sharding.device_to_array_s
 const FUNC = get(ENV, "FUNC", "step")
 const NU = 0.8f0
 const FUNCS = Dict(
-    "advU" => m -> Laddie.upwind_advection_U(m),
-    "advV" => m -> Laddie.upwind_advection_V(m),
+    "advU" => m -> Laddie.momentum_advection_U(m),
+    "advV" => m -> Laddie.momentum_advection_V(m),
     "lapU" => m -> Laddie.laplace_U(m, m.lateral_viscosity),
     "lapV" => m -> Laddie.laplace_V(m, m.lateral_viscosity),
 )

@@ -27,6 +27,11 @@ mutable struct State{
     S::S
 end
 
+# The five prognostic variables of a model (or anything forwarding them), keyed by
+# their `State` field names, so that loops over them and the restart save and load
+# all use one list.
+_prognostics(m) = (; D = m.D, U = m.U, V = m.V, T = m.T, S = m.S)
+
 State(FT::Type, nx::Int, ny::Int) = State(
     Var(Center, Center, FT, nx, ny),
     Var(Face, Center, FT, nx, ny),

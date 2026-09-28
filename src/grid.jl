@@ -95,7 +95,7 @@ ice-base slope and the Coriolis field.  Read through the model, e.g. `model.tmas
 
 Neighbour values of the masks and the stagger counts (active cells in a two-point
 average) are not stored: the kernels read them from the neighbouring cell, and the
-reference equation terms use `ip_count` & co. (utils.jl).
+reference equation terms (test/equation_terms.jl) use `ip_count` & co. (utils.jl).
 
 `A` is the float matrix type (`Matrix{FT}` on CPU, `CuArray{FT,2}` on GPU) and `M`
 the integer mask's, with no separate element-type parameter, so traced or dual
@@ -207,20 +207,13 @@ function Geometry(
 
     # Boundary geometry
     o = one(FT)
-    # Wall-face indicators, one per face orientation: a u-face (N/S walls) or a
-    # v-face (E/W walls) is a wall face when its two-cell stencil touches a wall.
-    # Grounding-line indicators come from grounded ice (mask == 2) only, so the
-    # momentum kernels can apply the grounding-line slip factor there
-    # (AbstractGroundingLineBC).
-    gl = FT.(mask .== 2)
-    glNu = o .- ym1((o .- gl) .* (o .- xm1(gl)))
-    glSu = o .- yp1((o .- gl) .* (o .- xm1(gl)))
-    glEv = o .- xm1((o .- gl) .* (o .- ym1(gl)))
-    glWv = o .- xp1((o .- gl) .* (o .- ym1(gl)))
-    # Land-only wall indicators: the exact same construction as gl??, but from
-    # `lnd` (mask == 1) instead of `gl` (mask == 2), so AbstractLandBC can apply
-    # its own slip factor at walls bordering exposed bedrock/border, independent
-    # of AbstractGroundingLineBC.
+    # Wall-face indicators, one per face orientation (`_wall_faces`), from grounded
+    # ice (mask == 2) only, so the momentum kernels can apply the grounding-line
+    # slip factor there (AbstractGroundingLineBC).
+    gl = _wall_faces(FT.(mask .== 2), o)
+    # Land-only wall indicators: the same construction from `lnd` (mask == 1), so
+    # AbstractLandBC can apply its own slip factor at walls bordering exposed
+    # bedrock/border, independent of AbstractGroundingLineBC.
     #
     # The momentum kernels compose the two additively, as
     # `slip_gl*gl?? + slip_land*lnd??`, so the indicators must *partition* the wall
@@ -229,10 +222,7 @@ function Geometry(
     # geometry) would otherwise receive both factors and end up at slip 4 under
     # NoSlipGL + NoSlipLand.  Grounding line takes precedence there, so that
     # gl?? + lnd?? is exactly the wall-face indicator of the whole wall `grd`.
-    lndNu = (o .- ym1((o .- lnd) .* (o .- xm1(lnd)))) .* (o .- glNu)
-    lndSu = (o .- yp1((o .- lnd) .* (o .- xm1(lnd)))) .* (o .- glSu)
-    lndEv = (o .- xm1((o .- lnd) .* (o .- ym1(lnd)))) .* (o .- glEv)
-    lndWv = (o .- xp1((o .- lnd) .* (o .- ym1(lnd)))) .* (o .- glWv)
+    lw = map((l, g) -> l .* (o .- g), _wall_faces(lnd, o), gl)
     # Ice-front cells: ocean cells with an active neighbour, and the count of
     # such neighbours.
     isfW = ocn .* tmaskxm1
@@ -244,10 +234,45 @@ function Geometry(
     umask = (tmask .+ isfW) .* (o .- xm1(grd .* tmaskxp1))
     vmask = (tmask .+ isfS) .* (o .- ym1(grd .* tmaskyp1))
 
-    resolved_mask = Matrix{Int}(mask)
-    # Every field is a local of the same name (not every local is a field).
-    vars = Base.@locals
-    return Geometry((vars[fn] for fn in fieldnames(Geometry))...)
+    return Geometry(
+        Matrix{Int}(mask),
+        dzdx,
+        dzdy,
+        f,
+        fu,
+        fv,
+        tmask,
+        imask,
+        grd,
+        lnd,
+        ocn,
+        gl.Nu,
+        gl.Su,
+        gl.Ev,
+        gl.Wv,
+        lw.Nu,
+        lw.Su,
+        lw.Ev,
+        lw.Wv,
+        isf,
+        umask,
+        vmask,
+    )
+end
+
+# Wall-face indicators of the wall cells `w` (1 on a wall, 0 elsewhere), one per face
+# orientation: a u-face (N/S walls) or a v-face (E/W walls) is a wall face when its
+# two-cell stencil touches a wall.  `Nu`/`Su` are the u-faces on the +y/−y side,
+# `Ev`/`Wv` the v-faces on the +x/−x side.
+function _wall_faces(w, o)
+    open_u = (o .- w) .* (o .- xm1(w))   # both cells of the u-face stencil open
+    open_v = (o .- w) .* (o .- ym1(w))   # both cells of the v-face stencil open
+    return (;
+        Nu = o .- ym1(open_u),
+        Su = o .- yp1(open_u),
+        Ev = o .- xm1(open_v),
+        Wv = o .- xp1(open_v),
+    )
 end
 
 # ============================================================================

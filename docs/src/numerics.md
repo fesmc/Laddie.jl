@@ -62,6 +62,65 @@ The filter and the explicit Laplacian terms (``A_h``, ``K_h``) are what keep the
 leapfrog computational mode in check alongside the upwind advection; weakening
 either makes long runs prone to divergence.
 
+### Adaptive time stepping
+
+By default the step is constant ([`FixedDt`](@ref)). With
+`Simulation(model; tstep = AdaptiveDt())` it is set by a CFL controller instead.
+There are two CFL numbers to keep apart.
+
+The **diagnosed CFL** is a measurement of the current state at the current step,
+
+```math
+C = \Delta t\,\max_{\text{active cells}}\left(\frac{|u| + c}{\Delta x} + \frac{|v| + c}{\Delta y}\right),
+\qquad c = \sqrt{g\,\delta\rho\,D},
+```
+
+covering advection and internal gravity waves only (there is no viscous term).
+[`ExactCFL`](@ref), the default, takes the maximum cell by cell.
+[`ConservativeCFL`](@ref) adds up the separate domain maxima of ``|U|``, ``|V|`` and
+``c``, so it reads higher. `run!` measures ``C`` at its check points: every `ncheck`
+steps, or more often on short runs. It is measured with or without the controller,
+and appears in the progress display as `dt [s] / CFL` and in each dt-change log line.
+
+The **target CFL** (`AdaptiveDt(; cfl_target)`, default 0.3) is the setpoint the
+controller steers ``C`` towards. ``C`` is linear in ``\Delta t``, so at each check it
+compares the two and rescales the step by ``(C_\text{target}/C)^q``:
+
+- ``C > C_\text{target}``: the step shrinks at once. With ``q = 1`` the new step
+  would give exactly the target, if the flow stayed the same.
+- ``C < \text{grow\_hyst}\cdot C_\text{target}``: the step grows, by no more than
+  `max_growth` per check.
+- In between, the step stays the same.
+
+So in practice the diagnosed CFL does not sit *on* the target. It moves within the
+band ``[\text{grow\_hyst}\cdot C_\text{target},\, C_\text{target}]``, which is
+``[0.24, 0.3]`` by default. The band is there because every change of step
+restarts the leapfrog with a forward step (see above), so changes should be rare.
+The diagnosed CFL can also leave the band:
+
+- **Above the target, briefly.** The controller predicts; it never rejects a step.
+  A flow that speeds up between checks takes ``C`` past the target for up to
+  `ncheck` steps before the next check catches it. This is why the target needs to
+  be well below 1 and not treated as a hard limit. On the
+[Amundsen Sea example](generated/lambert-ase.md),
+  `cfl_target = 0.4` blows up at about day 8, while 0.3 holds.
+- **Below the band, for good**, when the step is pinned at `dtmax` (or held up at
+  `dtmin`, which can take ``C`` past the target).
+- **Right after a change.** The CFL that is printed and logged was measured
+  *before* the adjustment, i.e. at the old step. A log line
+  `dt 120.0 → 100.0 s (CFL 0.36)` means the step was cut *because* ``C`` was 0.36;
+  the new step should give about 0.3.
+
+The two diagnostics feed the same target. Since [`ConservativeCFL`](@ref) reads
+higher, the same `cfl_target` gives a smaller, safer step with it than with
+[`ExactCFL`](@ref).
+
+Before the first step, the controller also checks the initial `dt` against a
+**worst-case CFL**, which uses the speed cap ``v_\text{cut}`` in place of the
+velocity: a flow starting from rest has ``C \approx 0``, which says nothing about
+the flow it will develop. This check can only shrink the step. `run!` also warns
+when this worst-case CFL exceeds 1, whatever the time stepper.
+
 ## Domain, boundaries, and masks
 
 The domain is padded with a **one-cell border** of land on all sides. This lets

@@ -20,7 +20,7 @@ Laddie.jl is a from-scratch port of the
   (`CUDABackend`, `ROCBackend`, `MetalBackend`),
 - **`Float64` or `Float32`** precision throughout,
 - a **verification test** against the Python LADDIE end state on the warm
-  ISOMIP+ configuration,
+  ISOMIP+ configuration, and a reproduction of the published Crosson–Dotson run,
 - NetCDF output, JLD2 restarts, and a TOML provenance record for every run.
 
 **We'd like to acknowledge** that Laddie.jl would not have been possible
@@ -34,7 +34,10 @@ The authors of LADDIE (not us!) have worked hard on v2.0, including another [gre
 4. modified boundary conditions at the grounding line (better match with observation)
 5. running pan-Antarctic domains with evolving geometry
 
-Laddie.jl is currently a port of the original LADDIE.py v1.0. As of now, the improvements of v2.0 are not a target for the Julia version, which will focus on developping other capacities.
+Laddie.jl is a port of the original LADDIE.py v1. A few v2.0 options are available
+(no-slip walls, a shear-scaled lateral viscosity, the truncated ice-front pressure
+gradient), but a full port of v2.0 is not a target: the Julia version focuses on
+developing other capabilities, such as GPU execution and connected ice-shelf gaps.
 
 ## Installation
 
@@ -50,10 +53,13 @@ Pkg.add(url = "https://github.com/fesmc/Laddie.jl")
 ```julia
 using Laddie
 
-m = build_isomip(; isomipcond = :warm)   # 240×40 idealised channel, 2 km cells
-run!(m; days = 30)
-max_melt, mean_melt, max_speed = meltstats(m)   # m/yr, m/yr, m/s
+sim = build_isomip(; isomipcond = :warm)   # 240×40 idealised channel, 2 km cells
+run!(sim; days = 30)
+stats = meltstats(sim)   # max/mean melt (m/yr), max speed (m/s), total melt (Gt/yr)
 ```
+
+`build_isomip` returns a `Simulation`: a `Model` (geometry, physics, state —
+`sim.model`) plus its time integration (`sim.clock`, the time stepper, output).
 
 ## Realistic geometry
 
@@ -66,45 +72,80 @@ using Laddie, NCDatasets
 ds  = NCDataset("BedMachineAntarctica-v3.nc")
 bed = Float64.(Array(ds["bed"][i1:i2, j1:j2]))
 h   = Float64.(Array(ds["thickness"][i1:i2, j1:j2]))
+x, y = ds["x"][i1-1:i2+1], ds["y"][j1-1:j2+1]   # cell centres, border ring included
 close(ds)
 
 mask    = build_laddie_mask(bed, h)         # 0 ocean / 1 land / 2 grounded / 3 shelf
 zb      = ice_base_depth(bed, h)            # ice-base depth (m, negative)
-forcing = ProfileForcing(Tz, Sz, z)         # T (°C), S (psu), z (m) vectors
+ocean   = OceanForcing1D(Tz, Sz, z)         # T (°C), S (psu), z (m) vectors
 
-m = Model(mask, zb, 500.0, 500.0, forcing, Params())
-run!(m; days = 90)
+grid  = Grid(mask, zb; x, y)                # geometry: where the cells are (dx, dy from x, y)
+model = Model(grid; forcing = ocean)        # physics on that grid
+sim   = Simulation(model; dt = 120.0)       # time integration and output
+run!(sim; days = 90)
+```
+
+All 2D fields — mask, draft, bed, and every diagnostic — are stored `[x, y]`: the
+first index runs along x, the second along y, matching what NCDatasets hands back
+when reading a NetCDF file and what `heatmap` expects. Output files are written in
+the CF layout (`melt(time, y, x)` in `ncdump`), so ncview renders them the usual way
+round. Note that x and y are grid axes, not compass directions: a projected polar
+domain rotates them relative to true east/north.
+
+This is the grid → model → simulation → `run!` split shared by Oceananigans,
+SpeedyWeather and FastIsostasy. The `Grid` holds only what is independent of any
+modelling choice (mask, draft, bed, spacing); the `Model` derives the active-cell
+masks, ice-base slope and Coriolis field from it, so one grid can drive several
+models — e.g. both gap treatments.
+
+A model is driven by a `CavityForcing` — an ocean forcing plus an ice forcing.
+Passing the ocean forcing alone, as above, pairs it with a uniform basal ice
+temperature of −25 °C. Supply the ice explicitly to vary it in space:
+
+```julia
+forcing = CavityForcing(ocean, PrescribedIceForcing(T_ice_base))  # same size as mask
 ```
 
 Physical parameters and parameterization choices live in a single typed
-`Params` object:
+`Params` object, boundary conditions in a `BoundaryConditions`, and everything
+about time integration is a `Simulation` option:
 
 ```julia
-params = Params(; dt = 120.0, A_h = 25.0,
-                melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
-                convection_scheme = RelaxToAmbient(10000.0))
+params   = Params(; A_h = 25.0,
+                  melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
+                  convection_scheme = RelaxToAmbient(10000.0))
+boundary = BoundaryConditions(; land = FreeSlipLand(), gaps = ConnectedGapsBC())
+model    = Model(grid; forcing = ocean, params, boundary)
+sim      = Simulation(model; dt = 120.0, tstep = AdaptiveDt(),
+                      stop = FixedSimulationEnd(t_end = 90.0))
+run!(sim)
 ```
+
+The defaults follow Python LADDIE v1 except at the walls, which are no-slip; its
+single partial-slip factor is
+`BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))`.
 
 ## GPU
 
 ```julia
 using CUDA
-m = build_isomip(CUDABackend(); FT = Float32, isomipcond = :warm)
-run!(m; days = 30)
+sim = build_isomip(CUDABackend(); FT = Float32, isomipcond = :warm)
+run!(sim; days = 30)
 ```
 
 ## Output and restarts
 
 ```julia
-config = RunConfig(name = "warm0", saveday = 1.0, restday = 30.0)
-m  = build_isomip(; isomipcond = :warm, config)
-run!(m)
+output = OutputConfig(name = "warm0", saveday = 1.0, restday = 30.0)
+sim = build_isomip(; isomipcond = :warm, output)
+run!(sim)
 ```
 
 This writes time-averaged NetCDF fields, JLD2 restart files, a log, and a
-`run_metadata.toml` provenance record (parameters, forcing, grid, versions)
-to `./output/warm0/`. Continue a run by passing
-`RunConfig(fromrestart = true, restartfile = ".../restart_latest.jld2", ...)`.
+`run_metadata.toml` provenance record (parameters, time integration, forcing,
+grid, versions) to `./output/warm0/`. Successive `run!` calls continue the same
+clock. Continue from a restart file with
+`Simulation(model; restart = ".../restart_latest.jld2", ...)`.
 
 ## Citing
 

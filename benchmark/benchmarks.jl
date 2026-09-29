@@ -2,12 +2,8 @@ using BenchmarkTools
 using Laddie
 using KernelAbstractions
 
-function timestep!(m)
-    Laddie.advance_leapfrog!(m)
-    Laddie.leapfrog_step!(m, 2)
-    Laddie.clamp_velocities!(m)
-    Laddie.apply_robert_asselin_filter!(m)
-end
+# One leapfrog step of a simulation, no I/O (what run! does per iteration).
+timestep!(sim) = time_step!(sim)
 
 const GRIDS = [
     (80,  40,  "small_80x40"),

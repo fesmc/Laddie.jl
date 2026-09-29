@@ -1,7 +1,18 @@
-@kernel function _freezing_point_kernel!(Tf, @Const(S), @Const(z_draft), l1, l2, l3)
-    i, j = @index(Global, NTuple)
-    @inbounds Tf[i, j] = l1 * S[i, j] + l2 + l3 * z_draft[i, j]
-end
+# Point-wise equation-of-state and freezing-point pieces shared by several kernels.
+# Each spells out one formula in one operation order, so every caller rounds alike.
+
+# Buoyancy contrast (ρ_a − ρ)/ρ₀ of water (S, T) against (Sa, Ta), linear equation
+# of state.
+@inline _drho(Sa, S, Ta, T, beta, alpha) = beta * (Sa - S) - alpha * (Ta - T)
+
+# Liquidus: freezing temperature at salinity `S` and depth `z`, and its inverse, the
+# salinity whose freezing temperature at `z` is `Tf`.  `_three_eq_melt_kernel!`
+# groups `l2 + l3*z` separately and so keeps its own copy.
+@inline _freezing_point(S, z, l1, l2, l3) = l1 * S + l2 + l3 * z
+@inline _freezing_salinity(Tf, z, l1, l2, l3) = (Tf - l2 - l3 * z) / l1
+
+# γ_T / γ_S, the fixed ratio of the heat and salt exchange velocities.
+const _GAMMA_T_OVER_S = 35
 
 @kernel function _density_kernel!(
     drho,
@@ -13,14 +24,14 @@ end
     beta,
     alpha,
 )
+    beta, alpha = _val(beta), _val(alpha)
     i, j = @index(Global, NTuple)
-    @inbounds drho[i, j] =
-        (beta * (Sa[i, j] - S[i, j]) - alpha * (Ta[i, j] - T[i, j])) * tmask[i, j]
+    @inbounds drho[i, j] = _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], beta, alpha) * tmask[i, j]
 end
 
 # Three-equation melt parameterisation (Jenkins 1991) + ice-base temperature.
-# Fixed-transfer-coefficient (gamT scalar) case only; variable-gamT falls back
-# to the broadcast path.
+# `gamT`/`gamS` are scalars (FixedGamTMelting) or per-cell fields
+# (TurbulentGamTMelting); `_at` reads either.
 @kernel function _three_eq_melt_kernel!(
     melt,
     Tb,
@@ -28,54 +39,29 @@ end
     @Const(S),
     @Const(z_draft),
     @Const(tmask),
+    @Const(imask),
+    @Const(T_ice_base),
     gamT,
     gamS,
-    cp_over_Leff,
-    ci_over_cp,
+    c_p,
+    c_i,
+    L,
     l1,
     l2,
     l3,
 )
+    gamT, gamS, c_p, c_i, L, l1, l2, l3 =
+        _val(gamT), _val(gamS), _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3)
     i, j = @index(Global, NTuple)
-    FT = typeof(gamT)
+    FT = typeof(c_p)
     @inbounds begin
-        Tf_depth = l2 + l3 * z_draft[i, j]
-        quad_b =
-            cp_over_Leff * gamT * (Tf_depth - T[i, j]) +
-            gamS * (1 + cp_over_Leff * ci_over_cp * (Tf_depth + l1 * S[i, j]))
-        quad_c = cp_over_Leff * gamT * gamS * (Tf_depth - T[i, j] + l1 * S[i, j])
-        disc = quad_b * quad_b - FT(4) * quad_c
-        disc = ifelse(disc < zero(FT), zero(FT), disc)
-        melt_rate = (-quad_b + sqrt(disc)) / FT(2)
-        melt[i, j] = iszero(tmask[i, j]) ? zero(FT) : melt_rate
-        Tb_denom = cp_over_Leff * gamT + cp_over_Leff * ci_over_cp * melt_rate
-        Tb[i, j] =
-            (iszero(tmask[i, j]) || iszero(Tb_denom)) ? zero(FT) :
-            (cp_over_Leff * gamT * T[i, j] - melt_rate) / Tb_denom
-    end
-end
-
-# Matrix-gamT variant for TurbulentGamTMelting: reads per-element gamT[i,j] / gamS[i,j].
-@kernel function _three_eq_melt_mat_gamT_kernel!(
-    melt,
-    Tb,
-    @Const(T),
-    @Const(S),
-    @Const(z_draft),
-    @Const(tmask),
-    @Const(gamT),
-    @Const(gamS),
-    cp_over_Leff,
-    ci_over_cp,
-    l1,
-    l2,
-    l3,
-)
-    i, j = @index(Global, NTuple)
-    FT = typeof(cp_over_Leff)
-    @inbounds begin
-        gT = gamT[i, j]
-        gS = gamS[i, j]
+        # Effective latent heat, per cell: L_eff = L - c_i*T_i.  Colder ice soaks up
+        # more heat per unit melt, and the ice base need not be equally cold across
+        # the domain, so this is read from the ice forcing rather than a constant.
+        cp_over_Leff = c_p / (L - c_i * T_ice_base[i, j])
+        ci_over_cp = c_i / c_p
+        gT = _at(gamT, i, j)
+        gS = _at(gamS, i, j)
         Tf_depth = l2 + l3 * z_draft[i, j]
         quad_b =
             cp_over_Leff * gT * (Tf_depth - T[i, j]) +
@@ -83,12 +69,23 @@ end
         quad_c = cp_over_Leff * gT * gS * (Tf_depth - T[i, j] + l1 * S[i, j])
         disc = quad_b * quad_b - FT(4) * quad_c
         disc = ifelse(disc < zero(FT), zero(FT), disc)
-        melt_rate = (-quad_b + sqrt(disc)) / FT(2)
-        melt[i, j] = iszero(tmask[i, j]) ? zero(FT) : melt_rate
+        melt_rate = (-quad_b + _safe_sqrt(disc)) / FT(2)
+        # Only ice-covered cells melt.  Gap cells (in tmask, not in imask) are ice-free,
+        # so they add no meltwater volume and no buoyancy — and their Tb is set to T,
+        # which makes the ice-ocean heat exchange -gamT*(T - Tb) in the temperature
+        # equation vanish identically.  That is exactly what the reference gets from
+        # its melt = min(melt, Hi/dt) limiter: with melt = 0 the three-equation
+        # solution for Tb collapses to Tb = T.
+        melt[i, j] = iszero(imask[i, j]) ? zero(FT) : melt_rate
         Tb_denom = cp_over_Leff * gT + cp_over_Leff * ci_over_cp * melt_rate
-        Tb[i, j] =
-            (iszero(tmask[i, j]) || iszero(Tb_denom)) ? zero(FT) :
-            (cp_over_Leff * gT * T[i, j] - melt_rate) / Tb_denom
+        # `ifelse` + `_safe_div`: reverse-mode AD differentiates the unused branches
+        # too, and γ_T is zero outside the domain under the u★-dependent schemes.
+        Tb[i, j] = ifelse(
+            iszero(tmask[i, j]),
+            zero(FT),
+            ifelse(iszero(imask[i, j]), T[i, j],
+                   _safe_div(cp_over_Leff * gT * T[i, j] - melt_rate, Tb_denom)),
+        )
     end
 end
 
@@ -103,19 +100,27 @@ end
     dz,
     nz,
 )
+    z0, dz = _val(z0), _val(dz)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(z0)
-        depth_idx = -z0 + (z_draft[i, j] - D[i, j]) / dz
+        depth_idx = (z_draft[i, j] - D[i, j] - z0) / dz
         # Guard against non-finite or out-of-range depth_idx before the integer
         # conversion: trunc(Int, x) throws InexactError on CPU and is UB on GPU
         # when x overflows Int64 (~9.2e18).  Clamp to [0, nz-1] in float first
         # so trunc always receives a representable value.
         depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
         depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
-        idx_lo = trunc(Int, depth_idx)
+        # unsafe_trunc: the value is in range after the clamp, and the checked
+        # `trunc` leaves an InexactError branch (a trap) that Reactant cannot raise.
+        # The weight subtracts `floor` (= trunc, depth_idx ≥ 0), not the index
+        # converted back: Enzyme on raised kernels (Reactant 0.2.286) passes the
+        # derivative through the int round trip, so `depth_idx - FT(idx_lo)` gets
+        # a zero tangent.
+        lo = floor(_primal(depth_idx))
+        idx_lo = unsafe_trunc(Int, lo)
         idx_hi = clamp(idx_lo + 1, 0, nz - 1)
-        weight = depth_idx - FT(idx_lo)
+        weight = depth_idx - lo
         Ta[i, j] = weight * Tz[idx_hi+1] + (one(FT) - weight) * Tz[idx_lo+1]
         Sa[i, j] = weight * Sz[idx_hi+1] + (one(FT) - weight) * Sz[idx_lo+1]
     end
@@ -134,7 +139,6 @@ function update_ambient_fields!(m)
     launch!(
         _ambient_interp_kernel!,
         m.Ta,
-        m.Ta,
         m.Sa,
         m.z_draft,
         m.D.present,
@@ -147,14 +151,9 @@ function update_ambient_fields!(m)
     return
 end
 
-"Linear liquidus: ``T_f = l_1 S + l_2 + l_3 z_b``  (Lambert et al. 2023, Eq. 10)."
-update_freezing_temperature!(m) =
-    launch!(_freezing_point_kernel!, m.Tf, m.Tf, m.S.present, m.z_draft, m.l1, m.l2, m.l3)
-
 "Reduced (dimensionless) density ``\\delta\\rho = \\Delta\\rho_a/\\rho_0 = \\beta(S_a - S) - \\alpha(T_a - T)``  (Lambert et al. 2023, Eqs. 6–7)."
 update_density!(m) = launch!(
     _density_kernel!,
-    m.drho,
     m.drho,
     m.Sa,
     m.S.present,
@@ -170,11 +169,28 @@ $(TYPEDSIGNATURES)
 
 Flag convectively unstable cells and clamp ``\\delta\\rho`` to a minimum positive value
 so the plume remains denser than ambient.
+
+Applies in gap cells too (`tmask` but not `imask`): the buoyancy floor is the one
+convection treatment LADDIE v2 also has, and it applies there over its whole active
+domain, gaps included.
 """
-function update_convection!(m, c_p::ClampDensity)
-    thr = c_p.d_rho_min / m.rho0_seawater
-    @. m.convection = m.drho < 0
-    @. m.drho = max(m.drho, thr)
+function update_convection!(m, cs::ClampDensity)
+    thr = cs.d_rho_min / m.rho0_seawater
+    launch!(_clamp_density_kernel!, m.convection, m.drho, thr)
+end
+
+# The convection schemes are pointwise, and run as kernels rather than broadcasts so
+# that they are threaded on the CPU: they run twice per step (see
+# `apply_robert_asselin_filter!`).  Each reads the `drho` of the current T/S.
+@kernel function _clamp_density_kernel!(convection, drho, thr)
+    thr = _val(thr)
+    i, j = @index(Global, NTuple)
+    FT = typeof(thr)
+    @inbounds begin
+        d = drho[i, j]
+        convection[i, j] = ifelse(d < 0, one(FT), zero(FT))
+        drho[i, j] = max(d, thr)
+    end
 end
 
 """
@@ -182,14 +198,62 @@ $(TYPEDSIGNATURES)
 
 Flag convectively unstable cells, then instantly reset their T/S to ambient
 values so the density remains stable.
+
+Restricted to ice-covered cells (`imask`).  In a gap the ambient profile is sampled at
+the sea surface, where it is cold and fresh, so `drho < 0` is close to unconditional
+there; resetting would overwrite the T/S anomaly the layer is carrying across the gap
+and rebuild the meltwater sink that [`ConnectedGapsBC`](@ref) exists to remove.  LADDIE
+v2 has no reset scheme to copy here, so this is a Laddie.jl-only decision.
 """
-function update_convection!(m, c_p::ResetToAmbient)
-    thr = c_p.d_rho_min / m.rho0_seawater
-    S_adj = c_p.d_rho_min / (m.rho0_seawater * m.beta)
-    @. m.convection = m.drho < 0
-    @. m.T.present = ifelse(m.drho < thr, m.Ta, m.T.present)
-    @. m.S.present = ifelse(m.drho < thr, m.Sa - S_adj, m.S.present)
-    update_density!(m)
+function update_convection!(m, cs::ResetToAmbient)
+    thr = cs.d_rho_min / m.rho0_seawater
+    S_adj = cs.d_rho_min / (m.rho0_seawater * m.beta)
+    launch!(
+        _reset_to_ambient_kernel!,
+        m.convection,
+        m.T.present,
+        m.S.present,
+        m.drho,
+        m.Ta,
+        m.Sa,
+        m.tmask,
+        m.imask,
+        thr,
+        S_adj,
+        m.beta,
+        m.alpha,
+    )
+end
+
+# Reset T/S of unstable ice-covered cells to ambient, and refresh `drho` there with
+# the expression of `_density_kernel!` (elsewhere T/S are unchanged, so is `drho`).
+@kernel function _reset_to_ambient_kernel!(
+    convection,
+    T,
+    S,
+    drho,
+    @Const(Ta),
+    @Const(Sa),
+    @Const(tmask),
+    @Const(imask),
+    thr,
+    S_adj,
+    beta,
+    alpha,
+)
+    thr, S_adj, beta, alpha = _val(thr), _val(S_adj), _val(beta), _val(alpha)
+    i, j = @index(Global, NTuple)
+    FT = typeof(thr)
+    @inbounds begin
+        d = drho[i, j]
+        ice = imask[i, j] > 0
+        convection[i, j] = ifelse((d < 0) & ice, one(FT), zero(FT))
+        if (d < thr) & ice
+            T[i, j] = Ta[i, j]
+            S[i, j] = Sa[i, j] - S_adj
+            drho[i, j] = _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], beta, alpha) * tmask[i, j]
+        end
+    end
 end
 
 """
@@ -197,29 +261,61 @@ $(TYPEDSIGNATURES)
 
 Flag convectively unstable cells; relaxation is applied implicitly during the
 tracer time step via `conv2`.
+
+Restricted to ice-covered cells (`imask`) for the same reason as
+[`ResetToAmbient`](@ref) — relaxing a gap cell towards surface ambient is a slower
+version of the same sink.
 """
 function update_convection!(m, ::RelaxToAmbient)
-    m.convection .= m.drho .< 0
+    launch!(_flag_unstable_ice_kernel!, m.convection, m.drho, m.imask)
+end
+
+@kernel function _flag_unstable_ice_kernel!(convection, @Const(drho), @Const(imask))
+    i, j = @index(Global, NTuple)
+    FT = eltype(convection)
+    @inbounds convection[i, j] =
+        ifelse((drho[i, j] < 0) & (imask[i, j] > 0), one(FT), zero(FT))
 end
 
 update_convection!(m) = update_convection!(m, m.convection_scheme)
 
+# Log-layer transfer coefficients (Lambert et al. 2023, Eqs. 11–12).  The log term
+# is floored at 0 (u★D/ν₀ ≥ 1): without the floor the denominator crosses zero on a
+# thin, slow layer.  The floor is a no-op wherever u★D/ν₀ ≥ 1, so the result is
+# unchanged there; the constructor guarantees the offsets are positive.
+@kernel function _turbulent_gamma_kernel!(
+    gamT,
+    gamS,
+    @Const(ustar),
+    @Const(D),
+    @Const(tmask),
+    PrCorr,
+    ScCorr,
+    nu0,
+)
+    PrCorr, ScCorr, nu0 = _val(PrCorr), _val(ScCorr), _val(nu0)
+    i, j = @index(Global, NTuple)
+    FT = typeof(nu0)
+    @inbounds begin
+        us = ustar[i, j]
+        logterm = FT(2.12) * max(log(us * D[i, j] / nu0 + FT(1e-12)), zero(FT))
+        active = tmask[i, j] > 0
+        gamT[i, j] = ifelse(active, us / (logterm + PrCorr), zero(FT))
+        gamS[i, j] = ifelse(active, us / (logterm + ScCorr), zero(FT))
+    end
+end
+
 function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamTMelting)
-    FT = typeof(mp.Pr)
-    PrCorr = FT(12.5) * mp.Pr^(FT(2)/FT(3)) - FT(8.68)
-    ScCorr = FT(12.5) * mp.Sc^(FT(2)/FT(3)) - FT(8.68)
-    nu0 = mp.nu0
-    # @show extrema(m.ustar), extrema(m.D.present)
-    # @show nu0, PrCorr, ScCorr
-    @. m.gamT = ifelse(
-        m.tmask > 0,
-        m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + PrCorr),
-        zero(FT),
-    )
-    @. m.gamS = ifelse(
-        m.tmask > 0,
-        m.ustar / (FT(2.12) * log(m.ustar * m.D.present / nu0 + FT(1e-12)) + ScCorr),
-        zero(FT),
+    launch!(
+        _turbulent_gamma_kernel!,
+        m.gamT,
+        m.gamS,
+        m.ustar,
+        m.D.present,
+        m.tmask,
+        _log_layer_offset(mp.Pr),
+        _log_layer_offset(mp.Sc),
+        mp.nu0,
     )
 end
 
@@ -228,47 +324,124 @@ $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with a fixed heat transfer
 coefficient ``\\gamma_T`` (Jenkins 1991; Lambert et al. 2023, Eqs. 8–10 and 13).
-Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
+Sets `m.ustar`, `m.melt`, `m.Tb`; `m.gamT` and `m.gamS` hold the constant
+exchange velocities from the start.
 """
-function update_melt!(m, mp::FixedGamTMelting)
-    FT = m.FT
-    ny, nx = size(m.ustar)
-    launch!(
-        _ustar_kernel!,
-        m.ustar,
-        m.ustar,
-        m.U.present,
-        m.V.present,
-        m.tmask,
-        m.C_d_top,
-        m.u_tide,
-        ny,
-        nx,
-    )
-    cp_over_Leff, ci_over_cp = _melt_ratios(m)
-    m.gamT = mp.gamTfix
-    m.gamS = m.gamT / FT(35)    # TODO could be 35
+function update_melt!(m, ::FixedGamTMelting)
+    update_ustar!(m)
+    _launch_three_eq_melt!(m)
+end
+
+# γ_T and γ_S as the kernels take them.  FixedGamTMelting's constants come straight
+# from the parameter, so that a parameter traced by Reactant reaches the kernels
+# (the cache holds a copy for reporting, set at build: a traced time step cannot
+# reassign a scalar field).  The other schemes compute fields into the cache.
+_exchange_velocities(m) = _exchange_velocities(m, m.params.melting)
+_exchange_velocities(m, mp::FixedGamTMelting) = _fixed_exchange_velocities(mp, m.FT)
+_exchange_velocities(m, ::AbstractMelting) = (m.gamT, m.gamS)
+_fixed_exchange_velocities(mp, FT) = (mp.gamTfix, mp.gamTfix / FT(_GAMMA_T_OVER_S))
+
+function _launch_three_eq_melt!(m)
+    gamT, gamS = _exchange_velocities(m)
     launch!(
         _three_eq_melt_kernel!,
-        m.melt,
         m.melt,
         m.Tb,
         m.T.present,
         m.S.present,
         m.z_draft,
         m.tmask,
-        m.gamT,
-        m.gamS,
-        cp_over_Leff,
-        ci_over_cp,
+        m.imask,
+        m.T_ice_base,
+        gamT,
+        gamS,
+        m.c_p,
+        m.c_i,
+        m.L,
         m.l1,
         m.l2,
         m.l3,
     )
 end
 
-function update_melt!(m, mp::PrescribedMelting)
-    @. m.melt = 0
+"""
+$(TYPEDSIGNATURES)
+
+Prescribed melt rate (see [`PrescribedMelting`](@ref)): sets `m.melt` from the
+prescribed field, `m.Tb` to the local freezing point, and `m.gamT` to the transfer
+coefficient that makes the ice–ocean heat flux match the prescribed melt.  Also
+sets `m.ustar`, which entrainment needs.
+"""
+function update_melt!(m, ::PrescribedMelting)
+    update_ustar!(m)
+    launch!(
+        _prescribed_melt_kernel!,
+        m.melt,
+        m.Tb,
+        m.gamT,
+        m.T.present,
+        m.S.present,
+        m.z_draft,
+        m.tmask,
+        m.imask,
+        m.T_ice_base,
+        m.melt_prescribed,
+        m.c_p,
+        m.c_i,
+        m.L,
+        m.l1,
+        m.l2,
+        m.l3,
+    )
+end
+
+# Prescribed melt with a consistent heat sink.  The interface sits at the local
+# freezing point, and the layer gives up the heat the prescribed melt requires,
+# c_p·γT·(T − Tb) = ṁ·(L − c_i·(T_i − Tb)) — the heat balance of the three-equation
+# model with ṁ given.  The temperature equation carries that flux as −γT·(T − Tb),
+# so γT is reported as the flux divided by (T − Tb); where T == Tb exactly the flux
+# has no representation in that form and is dropped.  Gap cells follow the
+# three-equation kernels: no melt, and Tb = T so the exchange term vanishes.
+@kernel function _prescribed_melt_kernel!(
+    melt,
+    Tb,
+    gamT,
+    @Const(T),
+    @Const(S),
+    @Const(z_draft),
+    @Const(tmask),
+    @Const(imask),
+    @Const(T_ice_base),
+    @Const(melt_prescribed),
+    c_p,
+    c_i,
+    L,
+    l1,
+    l2,
+    l3,
+)
+    c_p, c_i, L, l1, l2, l3 = _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3)
+    i, j = @index(Global, NTuple)
+    FT = typeof(c_p)
+    @inbounds begin
+        z = zero(FT)
+        if iszero(tmask[i, j])
+            melt[i, j] = z
+            Tb[i, j] = z
+            gamT[i, j] = z
+        elseif iszero(imask[i, j])
+            melt[i, j] = z
+            Tb[i, j] = T[i, j]
+            gamT[i, j] = z
+        else
+            mdot = melt_prescribed[i, j]
+            tb = _freezing_point(S[i, j], z_draft[i, j], l1, l2, l3)
+            heat = mdot * (L - c_i * (T_ice_base[i, j] - tb)) / c_p
+            melt[i, j] = mdot
+            Tb[i, j] = tb
+            gamT[i, j] = _safe_div(heat, T[i, j] - tb)
+        end
+    end
 end
 
 """
@@ -280,58 +453,48 @@ transfer coefficients ``\\gamma_T``, ``\\gamma_S`` via the log-layer formulation
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::TurbulentGamTMelting)
-    ny, nx = size(m.ustar)
-    launch!(
-        _ustar_kernel!,
-        m.ustar,
-        m.ustar,
-        m.U.present,
-        m.V.present,
-        m.tmask,
-        m.C_d_top,
-        m.u_tide,
-        ny,
-        nx,
-    )
-    cp_over_Leff, ci_over_cp = _melt_ratios(m)
+    update_ustar!(m)
     _compute_turbulent_transfer_coefficients!(m, mp)
-    launch!(
-        _three_eq_melt_mat_gamT_kernel!,
-        m.melt,
-        m.melt,
-        m.Tb,
-        m.T.present,
-        m.S.present,
-        m.z_draft,
-        m.tmask,
-        m.gamT,
-        m.gamS,
-        cp_over_Leff,
-        ci_over_cp,
-        m.l1,
-        m.l2,
-        m.l3,
-    )
+    _launch_three_eq_melt!(m)
 end
 
-_melt_ratios(m) = m.c_p / (m.L - m.c_i * m.T_i), m.c_i / m.c_p
+"""
+$(TYPEDSIGNATURES)
+
+Three-equation melt with transfer coefficients proportional to the friction velocity,
+``\\gamma_T = \\Gamma_T u_\\star`` and ``\\gamma_S = \\gamma_T/35``.
+Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
+"""
+function update_melt!(m, mp::UStarGamTMelting)
+    update_ustar!(m)
+    launch!(_ustar_gamma_kernel!, m.gamT, m.gamS, m.ustar, m.tmask, mp.Gamma_T)
+    _launch_three_eq_melt!(m)
+end
+
+@kernel function _ustar_gamma_kernel!(gamT, gamS, @Const(ustar), @Const(tmask), Gamma_T)
+    Gamma_T = _val(Gamma_T)
+    i, j = @index(Global, NTuple)
+    FT = typeof(Gamma_T)
+    @inbounds begin
+        g = Gamma_T * ustar[i, j] * tmask[i, j]
+        gamT[i, j] = g
+        gamS[i, j] = g / FT(_GAMMA_T_OVER_S)
+    end
+end
 
 update_melt!(m) = update_melt!(m, m.melting)
 
 """
 $(TYPEDSIGNATURES)
 
-Holland–Jenkins shear entrainment: ``e \\propto \\sqrt{\\max(0,\\,|u|^2 - g_a' K_h / A_h \\cdot D)}``
-(Holland & Jenkins 1999). This is an alternative to the Gaspar scheme of
-Lambert et al. (2023, Eq. 14); see `docs/src/equations.md`.
+Holland–Jenkins shear entrainment (see [`HollandEntrainment`](@ref)), an
+alternative to the buoyancy-flux form of Lambert et al. (2023, Eq. 14).
 """
 function _compute_entrainment!(m, ep::HollandEntrainment)
     coeff = ep.cl * m.K_h / m.A_h^2
     drho_coeff = m.g * m.K_h / m.A_h
-    ny, nx = size(m.entr)
-    launch!(
+    launch_interior!(
         _holland_entrainment_kernel!,
-        m.entr,
         m.entr,
         m.detr,
         m.U.present,
@@ -341,8 +504,6 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
         m.tmask,
         coeff,
         drho_coeff,
-        ny,
-        nx,
     )
 end
 
@@ -352,35 +513,10 @@ $(TYPEDSIGNATURES)
 Reference-LADDIE mechanical-energy entrainment: ``e = 2\\mu u_\\star^3 / (g D \\delta\\rho)`` minus a melt
 detrainment correction. This is the form verified against the Python reference
 (Lambert et al. 2023; see `docs/src/equations.md`). Contrast
-[`_compute_entrainment!`](@ref)`(m, ::GasparEntrainment)`, the literal Eq. 14.
+`_compute_entrainment!(m, ::GasparEntrainment)`, the literal Eq. 14.
 """
 function _compute_entrainment!(m, ep::LambertEntrainment)
-    mu2_over_g = (ep.mu + ep.mu) / m.g
-    launch!(
-        _lambert_entrainment_kernel!,
-        m.entr,
-        m.Sb,
-        m.drhob,
-        m.ent,
-        m.entr,
-        m.detr,
-        m.T.present,
-        m.S.present,
-        m.Tb,
-        m.z_draft,
-        m.ustar,
-        m.D.present,
-        m.drho,
-        m.melt,
-        m.tmask,
-        mu2_over_g,
-        m.max_detrainment,
-        m.alpha,
-        m.beta,
-        m.l1,
-        m.l2,
-        m.l3,
-    )
+    _launch_buoyancy_entrainment!(m, (ep.mu + ep.mu) / m.g, false)
 end
 
 """
@@ -392,13 +528,14 @@ from the reference [`LambertEntrainment`](@ref) by the ``D^2`` denominator and t
 ``\\mu`` (not ``2\\mu``) prefactor.
 """
 function _compute_entrainment!(m, ep::GasparEntrainment)
-    mu_over_g = ep.mu / m.g
+    _launch_buoyancy_entrainment!(m, ep.mu / m.g, true)
+end
+
+# Shared by Lambert and Gaspar: they differ only in the production prefactor and
+# in whether the production term divides by D or by D².
+function _launch_buoyancy_entrainment!(m, prefactor, D_squared)
     launch!(
-        _gaspar_entrainment_kernel!,
-        m.entr,
-        m.Sb,
-        m.drhob,
-        m.ent,
+        _buoyancy_entrainment_kernel!,
         m.entr,
         m.detr,
         m.T.present,
@@ -410,8 +547,10 @@ function _compute_entrainment!(m, ep::GasparEntrainment)
         m.drho,
         m.melt,
         m.tmask,
-        mu_over_g,
+        prefactor,
+        D_squared,
         m.max_detrainment,
+        m.drho_floor,
         m.alpha,
         m.beta,
         m.l1,
@@ -429,50 +568,88 @@ Compute entrainment/detrainment rates and assemble the net entrainment
 below `D_min` after the upcoming thickness step; it is computed here (before
 stepping) from `D.past`, matching the reference Python LADDIE implementation.
 """
-function update_entrainment!(m)
+function update_entrainment!(m, dt)
     _compute_entrainment!(m, m.entrainment)
     upwind_advection_T(m.convD, m, m.D.present)
     FT = m.FT
-    dt2 = FT(2) * m.dt
-    @. m.ent2 = max(zero(FT), (m.D_min - m.D.past) / dt2 - (m.convD + m.melt + m.entr - m.detr)) * m.tmask
-    @. m.nentr = m.entr + m.ent2 - m.detr
+    launch!(
+        _net_entrainment_kernel!,
+        m.ent2,
+        m.nentr,
+        m.D.past,
+        m.convD,
+        m.melt,
+        m.entr,
+        m.detr,
+        m.tmask,
+        m.D_min,
+        FT(2) * dt,
+    )
     return
 end
 
-# Friction velocity at the T-point: |u|_T = √(C_d_top · (im_half(U)² + jm_half(V)² + u_tide²))
-# im_half(U)[i,j] = (U[i,j] + U[i,j−1]) / 2,  jm_half(V)[i,j] = (V[i,j] + V[i−1,j]) / 2
-@kernel function _ustar_kernel!(
-    ustar,
-    @Const(U),
-    @Const(V),
+@kernel function _net_entrainment_kernel!(
+    ent2,
+    nentr,
+    @Const(D_past),
+    @Const(convD),
+    @Const(melt),
+    @Const(entr),
+    @Const(detr),
     @Const(tmask),
-    C_d_top,
-    u_tide,
-    Ny,
-    Nx,
+    D_min,
+    dt2,
 )
+    D_min, dt2 = _val(D_min), _val(dt2)
     i, j = @index(Global, NTuple)
+    @inbounds begin
+        ent2[i, j] =
+            max(
+                zero(D_min),
+                (D_min - D_past[i, j]) / dt2 -
+                (convD[i, j] + melt[i, j] + entr[i, j] - detr[i, j]),
+            ) * tmask[i, j]
+        nentr[i, j] = entr[i, j] + ent2[i, j] - detr[i, j]
+    end
+end
+
+# Friction velocity at the T-point: u★ = √(C_d_top · (im_half(U)² + jm_half(V)² + u_tide²))
+# im_half(U)[i,j] = (U[i,j] + U[i−1,j]) / 2,  jm_half(V)[i,j] = (V[i,j] + V[i,j−1]) / 2
+function update_ustar!(m)
+    launch_interior!(
+        _ustar_kernel!,
+        m.ustar,
+        m.U.present,
+        m.V.present,
+        m.tmask,
+        m.C_d_top,
+        m.u_tide,
+    )
+end
+
+@kernel function _ustar_kernel!(ustar, @Const(U), @Const(V), @Const(tmask), C_d_top, u_tide)
+    C_d_top, u_tide = _val(C_d_top), _val(u_tide)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
         FT = typeof(C_d_top)
         half = FT(0.5)
-        w = _west(j, Nx)
-        s = _south(i, Ny)
-        u_im = (U[i, j] + U[i, w]) * half
-        v_jm = (V[i, j] + V[s, j]) * half
+        im1 = i - 1
+        jm1 = j - 1
+        u_im = (U[i, j] + U[im1, j]) * half
+        v_jm = (V[i, j] + V[i, jm1]) * half
         ustar[i, j] =
             sqrt(C_d_top * (u_im * u_im + v_jm * v_jm + u_tide * u_tide)) * tmask[i, j]
     end
 end
 
-# Reference-LADDIE entrainment (Lambert et al. 2023): fuses Sb, drhob, drho_pos,
-# ent, entr, detr into one pass. Production term = 2μ·u★³/(g·D·δρ).
-# drho_pos = max(0.0001, drho) is computed inline — never zero — so the drhob/drho_pos
-# division is safe. D*drho_pos can be zero where D=0 (outside domain), so _safe_div is
-# used for the ustar³/(D·δρ) term.
-@kernel function _lambert_entrainment_kernel!(
-    Sb,
-    drhob,
-    ent,
+# Buoyancy-flux entrainment, fusing S_b, δρ_b, drho_pos, the signed rate, entr and
+# detr into one pass; only entr and detr are stored.  Production term = prefactor·u★³/(D·δρ) for the reference form
+# (LambertEntrainment, prefactor = 2μ/g) and prefactor·u★³/(D²·δρ) for the literal
+# Eq. 14 (GasparEntrainment, prefactor = μ/g, `D_squared = true`).
+# drho_pos = max(drho_floor, drho) is never zero, so the δρ_b/drho_pos division is
+# safe; D can be zero outside the domain, hence _safe_div for the production term.
+@kernel function _buoyancy_entrainment_kernel!(
     entr,
     detr,
     @Const(T),
@@ -484,72 +661,30 @@ end
     @Const(drho),
     @Const(melt),
     @Const(tmask),
-    mu2_over_g,
+    prefactor,
+    D_squared,
     max_detrainment,
+    drho_floor,
     alpha,
     beta,
     l1,
     l2,
     l3,
 )
+    prefactor, max_detrainment, drho_floor, alpha, beta, l1, l2, l3 =
+        _val(prefactor), _val(max_detrainment), _val(drho_floor), _val(alpha), _val(beta), _val(l1), _val(l2), _val(l3)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        FT = typeof(mu2_over_g)
-        drho_pos = max(FT(0.0001), drho[i, j])
-        sb = (Tb[i, j] - l2 - l3 * z_draft[i, j]) / l1
-        Sb[i, j] = sb
-        db_ij = (beta * (S[i, j] - sb) - alpha * (T[i, j] - Tb[i, j])) * tmask[i, j]
-        drhob[i, j] = db_ij
+        FT = typeof(prefactor)
+        drho_pos = max(drho_floor, drho[i, j])
+        sb = _freezing_salinity(Tb[i, j], z_draft[i, j], l1, l2, l3)
+        db_ij = _drho(S[i, j], sb, T[i, j], Tb[i, j], beta, alpha) * tmask[i, j]
         us3 = ustar[i, j]^3
+        Dij = D[i, j]
+        Dpow = D_squared ? Dij * Dij : Dij
         e_ij =
-            mu2_over_g * _safe_div(us3, D[i, j] * drho_pos) -
+            prefactor * _safe_div(us3, Dpow * drho_pos) -
             db_ij / drho_pos * melt[i, j] * tmask[i, j]
-        ent[i, j] = e_ij
-        z = zero(FT)
-        entr[i, j] = max(e_ij, z)
-        detr[i, j] = min(max_detrainment, max(-e_ij, z))
-    end
-end
-
-# Literal Eq. 14 entrainment: identical to _lambert_entrainment_kernel! except
-# the production term is μ·u★³/(g·D²·δρ) — a D² denominator and a μ (not 2μ)
-# prefactor. _safe_div guards D²·δρ = 0 outside the domain.
-@kernel function _gaspar_entrainment_kernel!(
-    Sb,
-    drhob,
-    ent,
-    entr,
-    detr,
-    @Const(T),
-    @Const(S),
-    @Const(Tb),
-    @Const(z_draft),
-    @Const(ustar),
-    @Const(D),
-    @Const(drho),
-    @Const(melt),
-    @Const(tmask),
-    mu_over_g,
-    max_detrainment,
-    alpha,
-    beta,
-    l1,
-    l2,
-    l3,
-)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = typeof(mu_over_g)
-        drho_pos = max(FT(0.0001), drho[i, j])
-        sb = (Tb[i, j] - l2 - l3 * z_draft[i, j]) / l1
-        Sb[i, j] = sb
-        db_ij = (beta * (S[i, j] - sb) - alpha * (T[i, j] - Tb[i, j])) * tmask[i, j]
-        drhob[i, j] = db_ij
-        us3 = ustar[i, j]^3
-        e_ij =
-            mu_over_g * _safe_div(us3, D[i, j] * D[i, j] * drho_pos) -
-            db_ij / drho_pos * melt[i, j] * tmask[i, j]
-        ent[i, j] = e_ij
         z = zero(FT)
         entr[i, j] = max(e_ij, z)
         detr[i, j] = min(max_detrainment, max(-e_ij, z))
@@ -567,159 +702,30 @@ end
     @Const(tmask),
     coeff,
     drho_coeff,
-    Ny,
-    Nx,
 )
-    i, j = @index(Global, NTuple)
+    coeff, drho_coeff = _val(coeff), _val(drho_coeff)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
         FT = typeof(coeff)
         half = FT(0.5)
-        w = _west(j, Nx)
-        s = _south(i, Ny)
-        u_im = (U[i, j] + U[i, w]) * half
-        v_jm = (V[i, j] + V[s, j]) * half
+        im1 = i - 1
+        jm1 = j - 1
+        u_im = (U[i, j] + U[im1, j]) * half
+        v_jm = (V[i, j] + V[i, jm1]) * half
         speed_sq =
             max(zero(FT), u_im * u_im + v_jm * v_jm - drho_coeff * drho[i, j] * D[i, j])
-        entr[i, j] = coeff * sqrt(speed_sq) * tmask[i, j]
+        entr[i, j] = coeff * _safe_sqrt(speed_sq) * tmask[i, j]
         detr[i, j] = zero(FT)
     end
 end
 
-@kernel function _upwind_split_kernel!(
-    Upos,
-    Uneg,
-    Vpos,
-    Vneg,
-    Vyp1pos,
-    Vyp1neg,
-    Uxp1pos,
-    Uxp1neg,
-    @Const(U),
-    @Const(V),
-    @Const(Vyp1),
-    @Const(Uxp1),
-)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        z = zero(eltype(U))
-        u = U[i, j]
-        v = V[i, j]
-        vy1 = Vyp1[i, j]
-        ux1 = Uxp1[i, j]
-        Upos[i, j] = max(u, z)
-        Uneg[i, j] = min(u, z)
-        Vpos[i, j] = max(v, z)
-        Vneg[i, j] = min(v, z)
-        Vyp1pos[i, j] = max(vy1, z)
-        Vyp1neg[i, j] = min(vy1, z)
-        Uxp1pos[i, j] = max(ux1, z)
-        Uxp1neg[i, j] = min(ux1, z)
-    end
-end
-
-function update_secondary_fields!(m)
+# `dt` is the base time step; only the `ent2` top-up in `update_entrainment!` needs it.
+function update_secondary_fields!(m, dt)
     update_ambient_fields!(m)
-    update_freezing_temperature!(m)
     update_density!(m)
     update_convection!(m)
     update_melt!(m)
-    precompute_advection_stencils!(m)
-    precompute_laplacian_stencils!(m)
-    update_entrainment!(m)
+    update_entrainment!(m, dt)
     return
 end
-
-# ============================================================================
-# Equation-term functions — one named function per term in each prognostic
-# equation. Functions return the term value; the caller applies the sign,
-# making the step functions read like the written equations.
-#
-# These are the readable REFERENCE implementation of the governing equations.
-# The time loop runs the fused kernels in numerics.jl instead (one pass per
-# prognostic, no intermediate allocations); the test suite asserts that the
-# kernels reproduce these terms exactly (testset "Fused kernels match
-# reference equation terms"), so the two cannot drift apart silently.
-# All equation references are to Lambert et al. (2023), The Cryosphere,
-# https://doi.org/10.5194/tc-17-3203-2023.
-#
-# Notation shared across all five governing equations:
-#   D       plume layer thickness [m]
-#   U, V    depth-averaged x- and y-velocity components [m s⁻¹]
-#   T, S    depth-averaged plume temperature [°C] and salinity [PSU]
-#   ṁ       basal melt rate [m s⁻¹]; positive = melting
-#   ė       net entrainment rate, ė = entr − detr [m s⁻¹]
-#   Tₐ, Sₐ  ambient temperature and salinity interpolated to plume depth
-#   Tb      ice–ocean boundary (basal) temperature [°C]
-#   δρ      plume–ambient density difference, ρ − ρₐ [kg m⁻³]
-#   ρ̄       δρ / ρ₀, reduced density contrast
-#   D̄       layer thickness face-interpolated to the velocity node
-#   f       Coriolis parameter [s⁻¹]
-#   g       gravitational acceleration [m s⁻²]
-#   ρ₀      reference seawater density [kg m⁻³]
-#   z_draft      ice-base depth, negative below sea level [m]
-#   C_d      quadratic bottom drag coefficient [–]
-#   |u|     current speed, √(U² + V²) [m s⁻¹]
-#   A_h      horizontal viscosity [m² s⁻¹]
-#   K_h      horizontal diffusivity [m² s⁻¹]
-#   γT      turbulent heat transfer coefficient [m s⁻¹]
-# ============================================================================
-# -- U-momentum terms (Eq. 2) -----------------------------------------------
-
-# U·∂D/∂t  (thickness-tendency coupling)
-@inline u_thickness_tendency(m) = m.U.present .* ip_t(m, m.dDdt)
-# ∇·(DUu)  (momentum advection)
-@inline u_advection(m) = upwind_advection_U(m)
-# g·D̄·ρ̄·∂D/∂x  (pressure gradient from plume-thickness depth)
-@inline u_pressure_depth(m) = m.g .* ip_t(m, m.Ddrho) .* (m.Dxm1 .- m.D.present) ./ m.dx
-# g·D̄·ρ̄·∂z_draft/∂x  (baroclinic pressure via ice-base slope)
-@inline u_pressure_slope(m) = m.g .* ip_t(m, m.Ddrho .* m.dzdx)
-# ½g·D̄²·∂δρ/∂x  (internal pressure gradient)
-@inline u_pressure_density(m) =
-    (m.g / 2) .* ip_t(m, m.D.present) .^ 2 .* (xm1(m.drho) .- m.drho) ./ m.dx
-# f·D̄·V  (Coriolis)
-@inline u_coriolis(m) = m.f .* ip_t(m, m.D.present .* m.Vjm)
-# Cd·U·|u|  (quadratic bottom drag)
-@inline u_bottom_drag(m) =
-    m.C_d .* m.U.present .* sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
-# Ah·∇²(DU)  (lateral diffusion)
-@inline u_diffusion(m) = m.A_h .* laplace_U(m)
-# e·U  (detrainment momentum loss)
-@inline u_detrainment(m) = m.detr .* m.U.present
-
-# -- V-momentum terms (Eq. 3) -----------------------------------------------
-
-# V·∂D/∂t  (thickness-tendency coupling)
-@inline v_thickness_tendency(m) = m.V.present .* jp_t(m, m.dDdt)
-# ∇·(DVv)  (momentum advection)
-@inline v_advection(m) = upwind_advection_V(m)
-# g·D̄·ρ̄·∂D/∂y  (pressure gradient from plume-thickness depth)
-@inline v_pressure_depth(m) = m.g .* jp_t(m, m.Ddrho) .* (m.Dym1 .- m.D.present) ./ m.dy
-# g·D̄·ρ̄·∂z_draft/∂y  (baroclinic pressure via ice-base slope)
-@inline v_pressure_slope(m) = m.g .* jp_t(m, m.Ddrho .* m.dzdy)
-# ½g·D̄²·∂δρ/∂y  (internal pressure gradient)
-@inline v_pressure_density(m) =
-    (m.g / 2) .* jp_t(m, m.D.present) .^ 2 .* (ym1(m.drho) .- m.drho) ./ m.dy
-# f·D̄·U  (Coriolis)
-@inline v_coriolis(m) = m.f .* jp_t(m, m.D.present .* m.Uim)
-# Cd·V·|u|  (quadratic bottom drag)
-@inline v_bottom_drag(m) =
-    m.C_d .* m.V.present .* sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)
-# Ah·∇²(DV)  (lateral diffusion)
-@inline v_diffusion(m) = m.A_h .* laplace_V(m)
-# ė·V  (detrainment momentum loss)
-@inline v_detrainment(m) = m.detr .* m.V.present
-
-# -- Tracer terms (Eqs. 4–5) -------------------------------------------------
-
-# q·∂D/∂t  (thickness-tendency coupling)
-@inline tracer_thickness_tendency(m, q) = q .* m.dDdt
-# ∇·(D·u·q)  (horizontal tracer advection)
-@inline tracer_advection(m, q) = upwind_advection_T(similar(m.D.present), m, m.D.present .* q)
-# e_net·qa  (entrainment of ambient water)
-@inline tracer_entrainment(m, qa) = m.nentr .* qa
-# Kh·∇²q  (horizontal diffusion)
-@inline tracer_diffusion(m, q_past) = m.K_h .* laplace_T(similar(q_past), m, q_past)
-# (q_past − qa)·conv2  (convective relaxation, RelaxToAmbient only)
-@inline tracer_convection(m, q_past, qa) = (q_past .- qa) .* m.conv2
-# ṁ·Tb − γT·(T − Tb)  (ice-ocean heat exchange; temperature equation only)
-@inline T_ice_ocean_exchange(m) = m.melt .* m.Tb .- m.gamT .* (m.T.present .- m.Tb)

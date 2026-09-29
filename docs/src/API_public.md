@@ -1,90 +1,112 @@
-# Public API
+# Model setup and running
 
 ```@index
+Pages = ["API_public.md"]
 ```
 
-### Entry points
+## Entry points
 
 ```@docs
+Grid
 Model
+Simulation
 build_isomip
 run!
+time_step!
 meltstats
 to_backend
 ```
 
-### Geometry ingestion
+## Running on Reactant
+
+See [Reactant backend](@ref) for the setup, the fusion strategies and their cost, and
+[Automatic differentiation](@ref "Automatic differentiation (API)") for differentiating a run.
+
+```@docs
+ReactantBackend
+```
+
+## Geometry ingestion
 
 ```@docs
 build_laddie_mask
 ice_base_depth
+bed_elevation
+fill_ocean_holes!
+fill_shelf_holes!
+fill_small_shelf_patches!
+fill_small_grounded_patches!
 ```
 
-### Model container
+### Mask preprocessing
 
 ```@docs
-Model
+AbstractPreprocess
+FillOceanHolesPreprocess
+FillShelfHolesPreprocess
+FillSmallShelfPatchesPreprocess
+FillSmallGroundedPatchesPreprocess
+MarkGapsPreprocess
+```
+
+### Domain cropping
+
+```@docs
+AbstractDomainCropping
+MinRectangleDomainCropping
+NoDomainCropping
+```
+
+### Ice-base slope
+
+```@docs
+AbstractIceSlopeGradient
+JlGradient
+PyGradient
+```
+
+## Model container
+
+```@docs
 Params
-RunConfig
+Params()
+BoundaryConditions
+State
+Cache
+Laddie.Var
+```
+
+## Simulation
+
+```@docs
+Clock
+OutputConfig
+DebugConfig
 ```
 
 
-### Parameterizations
+## Forcing
 
-#### Entrainment
+A model is driven by a [`CavityForcing`](@ref): an ocean forcing supplying the
+ambient T/S, and an ice forcing supplying the basal ice temperature. Passing an
+ocean forcing on its own to `Model` is shorthand for pairing it with a uniform
+`PrescribedIceForcing(-25.0)`.
 
 ```@docs
-LambertEntrainment
-GasparEntrainment
-HollandEntrainment
+CavityForcing
 ```
 
-#### Melt
+### Ocean
 
 ```@docs
-FixedGamTMelting
-TurbulentGamTMelting
-```
-
-#### Convection
-
-```@docs
-ClampDensity
-ResetToAmbient
-RelaxToAmbient
-```
-
-#### Open boundary
-
-```@docs
-ZeroGradientInflow
-NoInflow
-```
-
-#### Grounding line
-
-```@docs
-FreeSlipGL
-NoSlipGL
-```
-
-#### Time stepping
-
-```@docs
-FixedDt
-AdaptiveDt
-```
-
-#### Simulation end
-
-```@docs
-FixedSimulationEnd
-SteadyStateEnd
-```
-
-### Ambient forcing
-
-```@docs
+AbstractOceanForcing
+OceanForcing1D
 ISOMIPForcing
-ProfileForcing
+```
+
+### Ice
+
+```@docs
+AbstractIceForcing
+PrescribedIceForcing
 ```

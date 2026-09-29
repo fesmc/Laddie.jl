@@ -1,9 +1,8 @@
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
 Ambient T/S profiles from pre-loaded vectors — use this when the profile data
-comes from a CSV file, an in-memory dataset, or any source other than the
-NetCDF layout that `FileForcing` expects.
+comes from a CSV file, an in-memory dataset, or any other source.
 
 `z` is depth in metres (negative below sea level) and need not be sorted or
 uniformly spaced: the profiles are sorted by depth and resampled to the 1-m
@@ -13,10 +12,10 @@ data range.
 # Example
 ```julia
 data = readdlm("profile-T.csv", ',', skipstart = 1)
-forcing = ProfileForcing(data[:, 1], S_values, data[:, 2] .* 1e3)
+forcing = OceanForcing1D(data[:, 1], S_values, data[:, 2] .* 1e3)
 ```
 """
-function ProfileForcing(
+function OceanForcing1D(
     Tz::AbstractVector,
     Sz::AbstractVector,
     z::AbstractVector;
@@ -49,7 +48,7 @@ function ProfileForcing(
         T_new = _interp1d(z_s, T_s, z_new)
         S_new = _interp1d(z_s, S_s, z_new)
     end
-    ProfileForcing(FT.(T_new), FT.(S_new), FT.(z_new), FT(1.0), FT(z_new[1]))
+    OceanForcing1D(FT.(T_new), FT.(S_new), FT.(z_new), FT(1.0), FT(z_new[1]))
 end
 
 function _interp1d(x, y, xi)
@@ -75,20 +74,25 @@ end
 
 # Adjust z_draft before Grid construction.  z_draft is defined by mask category:
 #   ocean  (0): 0        (no ice above, sea-surface reference)
-#   border (1): 0        (not physically active)
+#   land   (1): 0        (bedrock at/above sea level, or the border ring; inactive)
 #   grounded (2): z_bed  (ice base coincides with bed; keep z_draft_raw)
 #   shelf  (3): z_draft_raw   (actual ice-base depth, clamped to ≤ -1 m)
-# Any NaN fill values from the raw data are stripped before the mask logic.
+#   gap    (4): 0        (ice-free, so the layer's upper boundary is the sea surface)
+# The gap draft is deliberately not clamped to -1 m: the layer sits directly beneath
+# the surface there, matching LADDIE v2 where `Hib = Hs - Hi` is exactly 0 for ice-free
+# cells.  Any NaN fill values from the raw data are stripped before the mask logic.
 function _adjust_z_draft(mask::AbstractMatrix{Int}, z_draft_raw::AbstractMatrix, FT)
-    tmask = FT.(mask .== 3)
+    ice = FT.(mask .== 3)
     z_draft = FT.(z_draft_raw)
     z_draft = ifelse.(isnan.(z_draft), zero(FT), z_draft)              # strip NaN fill values
-    z_draft = ifelse.((mask .== 0) .| (mask .== 1), zero(FT), z_draft)  # ocean + border → 0
-    z_draft = ifelse.((tmask .> 0) .& (z_draft .> FT(-1)), FT(-1), z_draft)  # clamp shallow shelf
+    z_draft = ifelse.((mask .== 0) .| (mask .== 1) .| (mask .== 4), zero(FT), z_draft)  # ocean + border + gap → 0
+    z_draft = ifelse.((ice .> 0) .& (z_draft .> FT(-1)), FT(-1), z_draft)  # clamp shallow shelf
     return z_draft
 end
 
-# Initialise prognostic fields from scratch (no restart file).
+# Initialise prognostic fields from scratch: all three time levels identical.  The
+# secondary fields and the leapfrog bootstrap step depend on dt, so they are left
+# to the `Simulation` constructor.
 function _initialize_prognostics!(m)
     update_ambient_fields!(m)
     for level in (:past, :present, :future)
@@ -96,8 +100,6 @@ function _initialize_prognostics!(m)
         setfield!(m.T, level, (m.Ta .+ m.dT_init) .* m.tmask)
         setfield!(m.S, level, (m.Sa .+ m.dS_init) .* m.tmask)
     end
-    update_secondary_fields!(m)
-    leapfrog_step!(m, 1)
     return
 end
 
@@ -105,24 +107,78 @@ end
 # Geometry ingestion utilities
 # ============================================================================
 
-const _cardinal_dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
+_neighbours(c::CartesianIndex{2}) = (
+    c + CartesianIndex(-1, 0),
+    c + CartesianIndex(1, 0),
+    c + CartesianIndex(0, -1),
+    c + CartesianIndex(0, 1),
+)
+
+# A cell on the outermost ring of the array or directly inside it.
+function _near_border(mask, c)
+    nx, ny = size(mask)
+    i, j = Tuple(c)
+    return i <= 2 || j <= 2 || i >= nx - 1 || j >= ny - 1
+end
+
+# Flood fill: marks in `reached` every cell reachable from `seeds` through
+# 4-connected cells whose mask value satisfies `passable`, and returns the cells
+# reached from these seeds.
+function _flood!(reached, mask, seeds, passable)
+    queue = collect(CartesianIndex{2}, seeds)
+    reached[queue] .= true
+    k = 1
+    while k <= length(queue)
+        for n in _neighbours(queue[k])
+            if checkbounds(Bool, mask, n) && !reached[n] && passable(mask[n])
+                reached[n] = true
+                push!(queue, n)
+            end
+        end
+        k += 1
+    end
+    return queue
+end
+
+# The 4-connected components of the cells whose mask value satisfies `member`.
+function _components(mask, member)
+    reached = falses(size(mask))
+    return [
+        _flood!(reached, mask, (c,), member) for
+        c in CartesianIndices(mask) if member(mask[c]) && !reached[c]
+    ]
+end
+
+# Dynamically active mask values: floating shelf and ice-shelf gap.  Gaps are ice-free
+# but still carry the plume, so connectivity-based mask cleaning must not treat them as
+# a barrier (that would strand the shelf beyond a gap and silently ground it).
+_is_active(v::Integer) = v == 3 || v == 4
 
 """
 $(TYPEDSIGNATURES)
 
 Derive the 4-class LADDIE domain mask from BedMachine-style bed-elevation and
 ice-thickness arrays.  Both arrays should cover the *interior* domain of size
-`(ny, nx)`; the returned mask has size `(ny+2, nx+2)` with a one-cell border
+`(nx, ny)`; the returned mask has size `(nx+2, ny+2)` with a one-cell border
 ring of `1` (land/boundary).
 
-| Value | Meaning         | Condition                          |
-|-------|-----------------|------------------------------------|
-| `0`   | open ocean      | `thickness ≤ 0`                    |
-| `1`   | land / boundary | border ring                        |
-| `2`   | grounded ice    | `thickness > 0` and `h_af ≥ 0`    |
-| `3`   | floating shelf  | `thickness > 0` and `h_af < 0`    |
+| Value | Meaning         | Condition                             |
+|-------|-----------------|---------------------------------------|
+| `0`   | open ocean      | `thickness ≤ 0` and `bed < 0`         |
+| `1`   | land            | `thickness ≤ 0` and `bed ≥ 0`; border ring |
+| `2`   | grounded ice    | `thickness > 0` and `h_af ≥ 0`        |
+| `3`   | floating shelf  | `thickness > 0` and `h_af < 0`        |
 
-Height above flotation: `h_af = thickness × (rho_ice/rho_sw) + bed`.
+Height above flotation: `h_af = thickness × (rho_ice/rho_sw) + bed`.  Gaps (`4`)
+are not derived here; mark them with [`MarkGapsPreprocess`](@ref).
+
+Ice-free cells are split by bed elevation, which is the `thickness → 0` limit of the
+flotation test: exposed bedrock — nunataks, rock islands inside a shelf, ice-free
+coastline — is **land**, not ocean.  Were it ocean, every such island would act as
+an open-boundary sink in the middle of the cavity.
+
+The default densities are BedMachine's (917 and 1028 kg m⁻³), so the mask agrees
+with the dataset's own; they need not match the model's `Params.rho_ice`.
 
 # Arguments
 - `bed`:      bed elevation (m, positive above sea level).
@@ -140,23 +196,25 @@ mask = build_laddie_mask(z_bed, h_ice)
 ```
 """
 function build_laddie_mask(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
-    ny, nx = size(bed)
+    nx, ny = size(bed)
     size(bed) == size(thickness) || throw(
         ArgumentError(
             "bed and thickness must have the same size, got $(size(bed)) vs $(size(thickness))",
         ),
     )
-    mask = zeros(Int, ny + 2, nx + 2)
+    mask = zeros(Int, nx + 2, ny + 2)
     mask[1, :] .= 1
     mask[end, :] .= 1
     mask[:, 1] .= 1
     mask[:, end] .= 1
     r = rho_ice / rho_sw
-    for j = 1:nx, i = 1:ny
+    for j = 1:ny, i = 1:nx
         h = Float64(thickness[i, j])
         b = Float64(bed[i, j])
-        if h > 0
-            mask[i+1, j+1] = (h * r + b >= 0) ? 2 : 3
+        mask[i+1, j+1] = if h > 0
+            (h * r + b >= 0) ? 2 : 3     # grounded ice / floating shelf
+        else
+            (b >= 0) ? 1 : 0             # exposed bedrock / open ocean
         end
     end
     return mask
@@ -165,18 +223,18 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Pad a bed-elevation array into the `(ny+2, nx+2)` format expected by `Model`.
+Pad a bed-elevation array into the `(nx+2, ny+2)` format expected by [`Grid`](@ref).
 The one-cell border ring is zeroed; interior values are copied from `bed` unchanged.
-Pass the result as the `z_bed_raw` keyword argument to `Model` to enable the
-water-column upper bound on plume thickness (`D <= z_draft - z_bed`).
+Pass the result as `Grid(...; z_bed)`; only the topographic caps of
+[`AbstractMaxLayerThickness`](@ref) use it.
 
 # Arguments
-- `bed`: bed elevation (m, positive above sea level), size `(ny, nx)`.
+- `bed`: bed elevation (m, positive above sea level), size `(nx, ny)`.
 """
 function bed_elevation(bed; FT = Float64)
-    ny, nx = size(bed)
-    z_bed = zeros(FT, ny + 2, nx + 2)
-    for j = 1:nx, i = 1:ny
+    nx, ny = size(bed)
+    z_bed = zeros(FT, nx + 2, ny + 2)
+    for j = 1:ny, i = 1:nx
         z_bed[i+1, j+1] = FT(bed[i, j])
     end
     return z_bed
@@ -186,14 +244,14 @@ end
 $(TYPEDSIGNATURES)
 
 Compute ice-base depth (m, negative below sea level) from BedMachine-style arrays.
-Returns a `(ny+2, nx+2)` matrix (interior domain with border ring zeroed).
+Returns a `(nx+2, ny+2)` matrix (interior domain with border ring zeroed).
 
 - **Floating cells** (`h_af < 0`): `z_draft = -thickness * rho_ice/rho_sw` (Archimedes).
 - **Grounded cells** (`h_af >= 0`): `z_draft = bed` (ice base rests on the bed).
 - **Ocean / border cells**: `z_draft = 0`.
 
-Pass the result directly as `z_draft_raw` to `Model`; `_adjust_z_draft` will clamp
-very shallow shelf cells and zero the ice-front ocean strip.
+Pass the result directly as the `z_draft` argument of [`Grid`](@ref), which clamps
+very shallow shelf cells and zeroes the draft outside grounded ice and shelf.
 
 # Arguments
 - `bed`:      bed elevation (m, positive above sea level).
@@ -202,15 +260,15 @@ very shallow shelf cells and zero the ice-front ocean strip.
 - `rho_sw`:   seawater density (kg m⁻³, default 1028).
 """
 function ice_base_depth(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
-    ny, nx = size(bed)
+    nx, ny = size(bed)
     size(bed) == size(thickness) || throw(
         ArgumentError(
             "bed and thickness must have the same size, got $(size(bed)) vs $(size(thickness))",
         ),
     )
-    z_draft = zeros(Float64, ny + 2, nx + 2)
+    z_draft = zeros(Float64, nx + 2, ny + 2)
     r = rho_ice / rho_sw
-    for j = 1:nx, i = 1:ny
+    for j = 1:ny, i = 1:nx
         h = Float64(thickness[i, j])
         b = Float64(bed[i, j])
         if h > 0
@@ -225,12 +283,15 @@ $(TYPEDSIGNATURES)
 
 Remove isolated ocean pockets from a LADDIE mask by flood-filling from the main
 ocean.  Ocean cells (`mask == 0`) that are not connected (4-connectivity) to the
-outer ocean are reclassified as grounded ice (`mask == 2`).
+outer ocean are reclassified as land (`mask == 1`).
 
-The outer ocean is identified as all ocean cells reachable from the border ring
-(`mask == 1`).  Noisy topography (e.g. BedMachine) occasionally creates small
+The outer ocean is identified as all ocean cells reachable from the outermost ring
+of the array.  Noisy topography (e.g. BedMachine) occasionally creates small
 enclosed ocean patches fully surrounded by ice; these cause spurious ice-front
 dynamics and numerical instabilities.
+
+An enclosed pocket becomes **land**, not grounded ice: there is no ice there, and
+conflating the two hides which walls are rock and which are the grounding line.
 
 Modifies `mask` in-place and returns the number of cells that were reclassified.
 
@@ -245,45 +306,18 @@ println("Reclassified \$n isolated ocean cells")
 ```
 """
 function fill_ocean_holes!(mask::AbstractMatrix{Int})
-    ny, nx = size(mask)
-    visited = falses(ny, nx)
-    queue = Tuple{Int,Int}[]
-
-    # Seed: ocean cells touching the border ring (mask == 1)
-    for i in 1:ny, j in 1:nx
-        if mask[i, j] == 0 && !visited[i, j]
-            for (di, dj) in _cardinal_dirs
-                ni, nj = i + di, j + dj
-                if 1 <= ni <= ny && 1 <= nj <= nx && mask[ni, nj] == 1
-                    visited[i, j] = true
-                    push!(queue, (i, j))
-                    break
-                end
-            end
-        end
-    end
-
-    # BFS to mark all reachable ocean cells
-    while !isempty(queue)
-        i, j = popfirst!(queue)
-        for (di, dj) in _cardinal_dirs
-            ni, nj = i + di, j + dj
-            if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 0
-                visited[ni, nj] = true
-                push!(queue, (ni, nj))
-            end
-        end
-    end
-
-    # Reclassify unreachable ocean cells as grounded ice
-    n_filled = 0
-    for i in 1:ny, j in 1:nx
-        if mask[i, j] == 0 && !visited[i, j]
-            mask[i, j] = 2
-            n_filled += 1
-        end
-    end
-    return n_filled
+    # Seed: ocean cells on the outermost ring of the array, or directly inside it.
+    # The ring is the domain boundary and is normally land, so the seeds are the
+    # ocean cells of the second ring.  The test is positional because land also
+    # marks interior bedrock (nunataks, rock islands), and seeding off those would
+    # declare every pocket beside an island part of the open ocean.
+    cells = CartesianIndices(mask)
+    seeds = [c for c in cells if mask[c] == 0 && _near_border(mask, c)]
+    reached = falses(size(mask))
+    _flood!(reached, mask, seeds, ==(0))
+    holes = [c for c in cells if mask[c] == 0 && !reached[c]]
+    mask[holes] .= 1
+    return length(holes)
 end
 
 """
@@ -313,45 +347,17 @@ println("Reclassified \$n isolated shelf cells")
 ```
 """
 function fill_shelf_holes!(mask::AbstractMatrix{Int})
-    ny, nx = size(mask)
-    visited = falses(ny, nx)
-    queue = Tuple{Int,Int}[]
-
-    # Seed: shelf cells adjacent to at least one ocean cell
-    for i in 1:ny, j in 1:nx
-        if mask[i, j] == 3 && !visited[i, j]
-            for (di, dj) in _cardinal_dirs
-                ni, nj = i + di, j + dj
-                if 1 <= ni <= ny && 1 <= nj <= nx && mask[ni, nj] == 0
-                    visited[i, j] = true
-                    push!(queue, (i, j))
-                    break
-                end
-            end
-        end
-    end
-
-    # BFS through shelf cells only
-    while !isempty(queue)
-        i, j = popfirst!(queue)
-        for (di, dj) in _cardinal_dirs
-            ni, nj = i + di, j + dj
-            if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 3
-                visited[ni, nj] = true
-                push!(queue, (ni, nj))
-            end
-        end
-    end
-
-    # Reclassify isolated shelf cells as grounded ice
-    n_filled = 0
-    for i in 1:ny, j in 1:nx
-        if mask[i, j] == 3 && !visited[i, j]
-            mask[i, j] = 2
-            n_filled += 1
-        end
-    end
-    return n_filled
+    # Seed: active cells next to the ocean.  The fill runs through active cells only,
+    # and gaps (4) conduct it: a shelf region reachable only through a gap is still
+    # attached to the ocean.
+    cells = CartesianIndices(mask)
+    at_ocean(c) = any(n -> checkbounds(Bool, mask, n) && mask[n] == 0, _neighbours(c))
+    seeds = [c for c in cells if _is_active(mask[c]) && at_ocean(c)]
+    reached = falses(size(mask))
+    _flood!(reached, mask, seeds, _is_active)
+    holes = [c for c in cells if mask[c] == 3 && !reached[c]]
+    mask[holes] .= 2
+    return length(holes)
 end
 
 """
@@ -359,7 +365,7 @@ $(TYPEDSIGNATURES)
 
 Remove undersized isolated grounded-ice patches from a LADDIE mask.  Each
 4-connected component of grounded cells (`mask == 2`) that is *not* connected
-to the domain border ring (`mask == 1`) is identified; any such component with
+to the outermost ring of the array is identified; any such component with
 fewer than `min_cells` cells is reclassified as floating shelf (`mask == 3`).
 
 Components that touch the border ring are part of the main grounded ice sheet
@@ -388,37 +394,14 @@ println("Reclassified \$n cells in undersized isolated grounded patches")
 ```
 """
 function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
-    ny, nx = size(mask)
-    visited = falses(ny, nx)
     n_filled = 0
-
-    for i in 1:ny, j in 1:nx
-        mask[i, j] == 2 && !visited[i, j] || continue
-
-        component = Tuple{Int,Int}[]
-        queue = Tuple{Int,Int}[(i, j)]
-        visited[i, j] = true
-        touches_border = false
-        while !isempty(queue)
-            c_i, cj = popfirst!(queue)
-            push!(component, (c_i, cj))
-            for (di, dj) in _cardinal_dirs
-                ni, nj = c_i + di, cj + dj
-                1 <= ni <= ny && 1 <= nj <= nx || continue
-                mask[ni, nj] == 1 && (touches_border = true)
-                if !visited[ni, nj] && mask[ni, nj] == 2
-                    visited[ni, nj] = true
-                    push!(queue, (ni, nj))
-                end
-            end
-        end
-
-        if !touches_border && length(component) < min_cells
-            for (c_i, cj) in component
-                mask[c_i, cj] = 3
-            end
-            n_filled += length(component)
-        end
+    for component in _components(mask, ==(2))
+        # Positional border test: `mask == 1` also marks interior bedrock, which must
+        # not count as "attached to the ice sheet".
+        any(c -> _near_border(mask, c), component) && continue
+        length(component) < min_cells || continue
+        mask[component] .= 3
+        n_filled += length(component)
     end
     return n_filled
 end
@@ -457,35 +440,17 @@ println("Removed \$n cells in undersized shelf patches")
 ```
 """
 function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
-    ny, nx = size(mask)
-    visited = falses(ny, nx)
     n_filled = 0
-
-    for i in 1:ny, j in 1:nx
-        mask[i, j] == 3 && !visited[i, j] || continue
-
-        # BFS to collect the full connected component
-        component = Tuple{Int,Int}[]
-        queue = Tuple{Int,Int}[(i, j)]
-        visited[i, j] = true
-        while !isempty(queue)
-            c_i, cj = popfirst!(queue)
-            push!(component, (c_i, cj))
-            for (di, dj) in _cardinal_dirs
-                ni, nj = c_i + di, cj + dj
-                if 1 <= ni <= ny && 1 <= nj <= nx && !visited[ni, nj] && mask[ni, nj] == 3
-                    visited[ni, nj] = true
-                    push!(queue, (ni, nj))
-                end
-            end
+    # Gaps (4) belong to the component they sit in, so a gap never splits one shelf
+    # into two.
+    for component in _components(mask, _is_active)
+        length(component) < min_cells || continue
+        for c in component
+            # Shelf becomes grounded; a gap has no ice to ground, so it reverts to
+            # open ocean.
+            mask[c] = mask[c] == 4 ? 0 : 2
         end
-
-        if length(component) < min_cells
-            for (c_i, cj) in component
-                mask[c_i, cj] = 2
-            end
-            n_filled += length(component)
-        end
+        n_filled += length(component)
     end
     return n_filled
 end
@@ -494,57 +459,212 @@ end
 # Mask preprocessing pipeline
 # ============================================================================
 
+"""
+Abstract supertype for a mask-preprocessing step.  Pass a list of concrete
+instances as `Grid(...; preprocess = [...])`; they run in order on a copy of the
+mask, before domain cropping.
+"""
 abstract type AbstractPreprocess end
 
+"""
+$(TYPEDEF)
+
+Preprocessing step that applies [`fill_ocean_holes!`](@ref): enclosed ocean
+pockets become land.
+"""
 struct FillOceanHolesPreprocess <: AbstractPreprocess end
+
+"""
+$(TYPEDEF)
+
+Preprocessing step that applies [`fill_shelf_holes!`](@ref): shelf patches with no
+connection to the open ocean become grounded ice.
+"""
 struct FillShelfHolesPreprocess <: AbstractPreprocess end
 
-@kwdef struct FillSmallShelfPatchesPreprocess <: AbstractPreprocess
-    min_size::Int = 10
+"""
+$(TYPEDEF)
+
+Preprocessing step that applies [`fill_small_shelf_patches!`](@ref) with
+`min_cells = min_size` (default 10).
+
+# Fields
+$(TYPEDFIELDS)
+"""
+@kwdef struct FillSmallShelfPatchesPreprocess{I} <: AbstractPreprocess
+    "patches of fewer cells are filled (default `10`)"
+    min_size::I = 10
 end
 
-@kwdef struct FillSmallGroundedPatchesPreprocess <: AbstractPreprocess
-    min_size::Int = 10
+"""
+$(TYPEDEF)
+
+Preprocessing step that applies [`fill_small_grounded_patches!`](@ref) with
+`min_cells = min_size` (default 10).
+
+# Fields
+$(TYPEDFIELDS)
+"""
+@kwdef struct FillSmallGroundedPatchesPreprocess{I} <: AbstractPreprocess
+    "patches of fewer cells are filled (default `10`)"
+    min_size::I = 10
 end
 
-preprocess!(mask, ::FillOceanHolesPreprocess)       = fill_ocean_holes!(mask)
-preprocess!(mask, ::FillShelfHolesPreprocess)        = fill_shelf_holes!(mask)
-preprocess!(mask, p::FillSmallShelfPatchesPreprocess)    = fill_small_shelf_patches!(mask, p.min_size)
-preprocess!(mask, p::FillSmallGroundedPatchesPreprocess) = fill_small_grounded_patches!(mask, p.min_size)
+"""
+$(TYPEDEF)
+
+Mark ice-shelf gaps from a reference ice footprint: every open-ocean cell (`0`)
+where `refgeo` marks ice becomes a gap (`4`).  This mirrors the `refgeo_Hi > 0`
+test of the reference implementation — a gap is an ice-free cell where the
+reference geometry had ice, not a topological property of the mask.
+
+`refgeo` may be a `Bool` matrix, or any numeric matrix in which positive entries
+mark ice (e.g. a reference ice thickness).  It must match the size of the mask
+passed to `Grid`, since preprocessing runs before domain cropping — which is
+also what keeps a gap at the edge of the footprint from being cropped away before
+it exists.
+
+Identifying gaps is a statement about geometry; what happens *in* a gap is the
+boundary condition, [`SinkGapsBC`](@ref) or [`ConnectedGapsBC`](@ref).  Place this
+step after any hole-filling steps in the `preprocess` list, so the gaps it marks
+are not reclassified afterwards.
+
+```julia
+grid = Grid(mask, z_draft, dx, dy; preprocess = [MarkGapsPreprocess(reference_thickness)])
+Model(grid; forcing, boundary = BoundaryConditions(; gaps = ConnectedGapsBC()))
+```
+
+# Fields
+$(TYPEDFIELDS)
+"""
+struct MarkGapsPreprocess{R<:AbstractMatrix} <: AbstractPreprocess
+    "reference ice footprint (`Bool`, or numeric with positive entries marking ice)"
+    refgeo::R
+end
+
+function preprocess!(mask, p::MarkGapsPreprocess)
+    size(p.refgeo) == size(mask) || throw(
+        ArgumentError(
+            "MarkGapsPreprocess refgeo must have the same size as the mask, got " *
+            "$(size(p.refgeo)) vs $(size(mask)); note the mask is the one passed to " *
+            "`Grid`, before any domain cropping",
+        ),
+    )
+    had_ice = p.refgeo isa AbstractMatrix{Bool} ? p.refgeo : p.refgeo .> 0
+    gaps = (mask .== 0) .& had_ice
+    mask[gaps] .= 4
+    return count(gaps)
+end
+
+preprocess!(mask, ::FillOceanHolesPreprocess) = fill_ocean_holes!(mask)
+preprocess!(mask, ::FillShelfHolesPreprocess) = fill_shelf_holes!(mask)
+preprocess!(mask, p::FillSmallShelfPatchesPreprocess) =
+    fill_small_shelf_patches!(mask, p.min_size)
+preprocess!(mask, p::FillSmallGroundedPatchesPreprocess) =
+    fill_small_grounded_patches!(mask, p.min_size)
 
 # ============================================================================
 # Domain cropping
 # ============================================================================
 
+"""
+Abstract supertype for how [`Grid`](@ref) crops its inputs: pass
+`Grid(...; domain_cropping = ...)` with [`MinRectangleDomainCropping`](@ref) (the
+default) or [`NoDomainCropping`](@ref).
+"""
 abstract type AbstractDomainCropping end
 
+"""
+$(TYPEDEF)
+
+Keep the full input arrays; the grid is exactly the mask that was passed in.
+"""
 struct NoDomainCropping <: AbstractDomainCropping end
 
 """
-$(TYPEDSIGNATURES)
+$(TYPEDEF)
 
-Crop `mask`, `z_draft_raw`, and (optionally) `z_bed_raw` to the smallest rectangle
-that contains all floating-shelf cells (`mask == 3`), expanded by one cell in
-every direction to preserve the required border ring.
+Crop the grid inputs (mask, draft, bed, coordinates, and any full-domain field a
+model is given later) to the smallest rectangle that contains all dynamically
+active cells (floating shelf `mask == 3` and gaps `mask == 4`), expanded by `margin`
+cells in every direction.  Pass as `Grid(...; domain_cropping)`; this is the default.
 
-If the domain is already minimal, the arrays are returned unchanged.
+`margin` must be at least 2.  The stencils skip the outermost ring, so an active
+cell must not border an ocean cell of that ring (see `Model`), and with a margin of
+1 an ice front at the edge of the cropped box would do exactly that.  The default
+of 4 leaves a little context around the cavity, which mostly matters for plotting —
+a tight crop puts the ice front hard against the frame.  Use `margin = 2` for the
+tightest domain the solver accepts.
+
+The result is clipped to the input array, so a `margin` larger than the available
+padding simply keeps what is there.  If the domain is already minimal, the arrays
+are returned unchanged.
+
+`multiple` rounds the size of the cropped grid up to a multiple of it (one integer
+for both axes, or one per axis as a tuple), by keeping more cells at the end of the
+axis, then at its start: a grid sharded over a device mesh
+([`ReactantBackend`](@ref)) must split evenly.  It must fit in the input array.
+
+# Fields
+$(TYPEDFIELDS)
 """
-struct MinRectangleDomainCropping <: AbstractDomainCropping end
+@kwdef struct MinRectangleDomainCropping{I,M} <: AbstractDomainCropping
+    "cells of padding kept around the active region (minimum 2)"
+    margin::I = 4
+    "the grid size is rounded up to a multiple of this, per axis (default `1`: no rounding)"
+    multiple::M = 1
+end
 
-_crop_domain(mask, z_draft_raw, z_bed_raw, ::NoDomainCropping) = mask, z_draft_raw, z_bed_raw
+# Index ranges of the kept sub-rectangle.  Returned rather than applied so every
+# full-domain input — mask, draft, bed, and a 2D basal ice temperature — is sliced
+# with one identical pair of ranges.
+_crop_ranges(mask, ::NoDomainCropping) = axes(mask, 1), axes(mask, 2)
 
-function _crop_domain(mask, z_draft_raw, z_bed_raw, ::MinRectangleDomainCropping)
-    shelf_inds = findall(==(3), mask)
-    isempty(shelf_inds) && return mask, z_draft_raw, z_bed_raw  # let validation catch it
+function _crop_ranges(mask, cropping::MinRectangleDomainCropping)
+    margin = cropping.margin
+    margin >= 2 || throw(
+        ArgumentError(
+            "MinRectangleDomainCropping margin must be at least 2 — an ice front at the " *
+            "edge of the cropped box must not touch the outermost ring — got $margin",
+        ),
+    )
+    # Gaps (4) are active cells too — cropping them away would silently remove the
+    # very region the connected-gaps treatment is about.
+    shelf_inds = findall(m -> m == 3 || m == 4, mask)
+    # Let validation report the empty domain; crop to everything in the meantime.
+    isempty(shelf_inds) && return axes(mask, 1), axes(mask, 2)
     rows = getindex.(shelf_inds, 1)
     cols = getindex.(shelf_inds, 2)
     rmin, rmax = extrema(rows)
     cmin, cmax = extrema(cols)
-    r = max(1, rmin - 1) : min(size(mask, 1), rmax + 1)
-    c = max(1, cmin - 1) : min(size(mask, 2), cmax + 1)
+    kr, kc = cropping.multiple isa Integer ? (cropping.multiple, cropping.multiple) :
+             cropping.multiple
+    r = _round_up(max(1, rmin-margin):min(size(mask, 1), rmax+margin), kr, size(mask, 1))
+    c = _round_up(max(1, cmin-margin):min(size(mask, 2), cmax+margin), kc, size(mask, 2))
     if length(r) < size(mask, 1) || length(c) < size(mask, 2)
-        @info "Domain cropped from $(size(mask)) to ($(length(r)), $(length(c)))"
+        # Report the margin actually achieved on each side, not just the requested
+        # one: the active region is rarely centred, so `margin` is clipped by the
+        # array edge on whichever side runs out of room first and the padding ends
+        # up asymmetric.
+        pad = (rmin - first(r), last(r) - rmax, cmin - first(c), last(c) - cmax)
+        note =
+            all(==(margin), pad) ? "" :
+            "  (clipped by the array edge; kept top/bottom/left/right = $pad)"
+        @info "Domain cropped from $(size(mask)) to ($(length(r)), $(length(c))) " *
+              "with margin = $margin" *
+              note
     end
-    new_zbed = z_bed_raw === nothing ? nothing : z_bed_raw[r, c]
-    return mask[r, c], z_draft_raw[r, c], new_zbed
+    return r, c
+end
+
+# `rng` grown to a multiple of `k` cells within `1:n`: at its end first, then at its start.
+function _round_up(rng, k, n)
+    k >= 1 || throw(ArgumentError("MinRectangleDomainCropping multiple must be ≥ 1, got $k"))
+    extra = mod(-length(rng), k)
+    hi = min(n, last(rng) + extra)
+    lo = first(rng) - (extra - (hi - last(rng)))
+    lo >= 1 || throw(ArgumentError(
+        "cannot round the cropped axis of $(length(rng)) cells up to a multiple of $k: " *
+        "the input has only $n cells along it"))
+    return lo:hi
 end

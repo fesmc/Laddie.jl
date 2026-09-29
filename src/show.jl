@@ -6,238 +6,192 @@
 # `text/plain` adds detail for direct REPL display where useful.
 # ============================================================================
 
-Base.show(io::IO, v::Var{LX,LY,FT}) where {LX,LY,FT} = print(
+_sz(a) = join(size(a), "×")
+_r(x, d) = round(_float64(x); digits = d)
+# A field summarised as its value, or its range when it varies.
+function _range_str(a, d)
+    lo, hi = extrema(a)
+    return lo == hi ? string(_r(lo, d)) : "$(_r(lo, d)) … $(_r(hi, d))"
+end
+
+Base.show(io::IO, v::Var{LX,LY}) where {LX,LY} = print(
     io,
-    "Var{",
-    nameof(LX),
-    ", ",
-    nameof(LY),
-    "}(",
-    FT,
-    ", ",
-    size(v.present, 1),
-    "×",
-    size(v.present, 2),
-    ", levels: past/present/future)",
+    "Var{$(nameof(LX)), $(nameof(LY))}($(eltype(v.present)), $(_sz(v.present)), ",
+    "levels: past/present/future)",
 )
 
-function Base.show(io::IO, s::State{FT}) where {FT}
-    ny, nx = size(s.D.present)
-    print(io, "State{", FT, "}: D, U, V, T, S — 3-level Vars of ", ny, "×", nx)
-end
+Base.show(io::IO, s::State) = print(
+    io,
+    "State{$(eltype(s.D.present))}: D, U, V, T, S — 3-level Vars of $(_sz(s.D.present))",
+)
 
-function Base.show(io::IO, c::Cache{FT}) where {FT}
+function Base.show(io::IO, c::Cache)
     nmat = count(fn -> getfield(c, fn) isa AbstractMatrix, fieldnames(typeof(c)))
-    ny, nx = size(c.melt)
-    print(io, "Cache{", FT, "}: ", nmat, " scratch/diagnostic arrays of ", ny, "×", nx)
+    print(io, "Cache{$(eltype(c.melt))}: $nmat scratch/diagnostic arrays of $(_sz(c.melt))")
 end
 
-function Base.show(io::IO, s::IOState{FT}) where {FT}
-    rd = isempty(s.rundir) ? "I/O disabled" : string("rundir = \"", s.rundir, "\"")
-    print(io, "IOState{", FT, "}: t = ", s.t, ", ", rd)
+function Base.show(io::IO, s::IOState)
+    rd = isempty(s.rundir) ? "I/O disabled" : "rundir = \"$(s.rundir)\""
+    print(io, "IOState: $(length(s.acc)) averaged fields, $(s.time_index) output slices, $rd")
 end
 
-# Generic one-liner for any forcing; relies only on the Tz/Sz/z profile fields
-# that the model requires of every AbstractForcing.  extrema/length are
-# reductions, so this is GPU-safe (no scalar indexing).
-function _show_forcing(io::IO, f::AbstractForcing)
-    zlo, zhi = extrema(f.z)
-    Tlo, Thi = extrema(f.Tz)
-    Slo, Shi = extrema(f.Sz)
+# Generic one-liner for a profile forcing.  extrema/length are reductions, so this
+# is GPU-safe (no scalar indexing).
+function Base.show(io::IO, f::AbstractOceanForcing)
+    bounds(a, d) = join(_r.(extrema(a), d), ", ")
     print(
         io,
-        nameof(typeof(f)),
-        "{",
-        eltype(f.Tz),
-        "}: ",
-        length(f.z),
-        "-point profile, z ∈ [",
-        zlo,
-        ", ",
-        zhi,
-        "] m, T ∈ [",
-        round(Tlo; digits = 3),
-        ", ",
-        round(Thi; digits = 3),
-        "] °C, S ∈ [",
-        round(Slo; digits = 3),
-        ", ",
-        round(Shi; digits = 3),
-        "] psu",
+        "$(nameof(typeof(f))){$(eltype(f.Tz))}: $(length(f.z))-point profile, ",
+        "z ∈ [$(join(extrema(f.z), ", "))] m, T ∈ [$(bounds(f.Tz, 3))] °C, ",
+        "S ∈ [$(bounds(f.Sz, 3))] psu",
     )
 end
 
-Base.show(io::IO, f::AbstractForcing) = _show_forcing(io, f)
-function Base.show(io::IO, f::ISOMIPForcing)
-    _show_forcing(io, f)
-    print(io, " — ISOMIP+ :", f.isomipcond)
-end
+# The ice forcing is one field, so summarise it as a range rather than printing a
+# whole matrix; a uniform field collapses to the single value.
+Base.show(io::IO, f::AbstractIceForcing) =
+    print(io, "$(nameof(typeof(f)))(T_ice_base = $(_range_str(f.T_ice_base, 2)) °C)")
 
-function Base.show(io::IO, g::Grid{FT}) where {FT}
-    print(
-        io,
-        "Grid{",
-        FT,
-        "}: ",
-        g.Ny,
-        "×",
-        g.Nx,
-        " cells (",
-        g.Ny - 2,
-        "×",
-        g.Nx - 2,
-        " interior), dx = ",
-        g.dx,
-        " m, dy = ",
-        g.dy,
-        " m",
-    )
-end
+Base.show(io::IO, f::CavityForcing) = print(io, f.ocean, "\n  ice: ", f.ice)
+
+Base.show(io::IO, g::Grid{FT}) where {FT} = print(
+    io,
+    "Grid{$FT}: $(g.Nx)×$(g.Ny) cells ($(g.Nx - 2)×$(g.Ny - 2) interior), ",
+    "dx = $(g.dx) m, dy = $(g.dy) m",
+)
 
 function Base.show(io::IO, ::MIME"text/plain", g::Grid)
     show(io, g)
-    msk = g.mask
+    n(v) = count(==(v), g.mask)
     print(
         io,
-        "\n  cells: ",
-        count(==(3), msk),
-        " shelf, ",
-        count(==(2), msk),
-        " grounded, ",
-        count(==(0), msk),
-        " ocean, ",
-        count(==(1), msk),
-        " land/border",
+        "\n  cells: $(n(3)) shelf, $(n(4)) gap, $(n(2)) grounded, $(n(0)) ocean, ",
+        "$(n(1)) land/border",
+    )
+    r, c = g.crop
+    (length(r), length(c)) == g.input_size || print(
+        io,
+        "\n  cropped from $(join(g.input_size, "×")) ",
+        "(rows $(first(r)):$(last(r)), columns $(first(c)):$(last(c)))",
     )
 end
 
-function Base.show(io::IO, p::Params{FT}) where {FT}
-    print(
-        io,
-        "Params{",
-        FT,
-        "}(",
-        nameof(typeof(p.entrainment)),
-        " + ",
-        nameof(typeof(p.melting)),
-        " + ",
-        nameof(typeof(p.convection_scheme)),
-        " + ",
-        nameof(typeof(p.open_bc)),
-        " + ",
-        nameof(typeof(p.grline_bc)),
-        " + ",
-        nameof(typeof(p.tstep)),
-        ")",
-    )
-end
-
-Base.show(io::IO, ::ConservativeCFL) = print(io, "ConservativeCFL()")
-Base.show(io::IO, ::ExactCFL) = print(io, "ExactCFL()")
-
-Base.show(io::IO, ::FixedDt) = print(io, "FixedDt()")
-Base.show(io::IO, ts::AdaptiveDt) = print(
+Base.show(io::IO, g::Geometry) = print(
     io,
-    "AdaptiveDt(cfl_target = ",
-    ts.cfl_target,
-    ", q = ",
-    ts.q,
-    ", ncheck = ",
-    ts.ncheck,
-    ", dt ∈ [",
-    ts.dtmin,
-    ", ",
-    ts.dtmax,
-    "])",
+    "Geometry{$(eltype(g.tmask))}: $(count(>(0), g.tmask)) active cells ",
+    "($(count(>(0), g.imask)) under ice)",
 )
 
-function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
-    println(io, "Params{", FT, "}:")
-    scal = [
-        (fn, getfield(p, fn)) for
-        fn in fieldnames(typeof(p)) if getfield(p, fn) isa Number
-    ]
-    for chunk in Iterators.partition(scal, 4)
-        println(
-            io,
-            "  ",
-            join((rpad(string(k, " = ", v), 22) for (k, v) in chunk), " "),
+_schemes(p::Params) = join(
+    (
+        nameof(typeof(x)) for x in (
+            p.entrainment,
+            p.melting,
+            p.convection_scheme,
+            p.lateral_viscosity,
+            p.front_pressure,
         )
+    ),
+    " + ",
+)
+
+Base.show(io::IO, p::Params{FT}) where {FT} = print(io, "Params{$FT}($(_schemes(p)))")
+
+function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
+    println(io, "Params{$FT}:")
+    scal =
+        [(fn, getfield(p, fn)) for fn in fieldnames(Params) if getfield(p, fn) isa Number]
+    for chunk in Iterators.partition(scal, 4)
+        println(io, "  ", join((rpad("$k = $v", 22) for (k, v) in chunk), " "))
     end
     println(io, "  entrainment    = ", p.entrainment)
     println(io, "  melt           = ", p.melting)
     println(io, "  convection     = ", p.convection_scheme)
-    println(io, "  open boundary  = ", p.open_bc)
-    println(io, "  grounding line = ", p.grline_bc)
-    print(io, "  time stepper   = ", p.tstep)
+    println(io, "  max layer D    = ", p.max_layer_thickness)
+    println(io, "  lat. viscosity = ", p.lateral_viscosity)
+    println(io, "  lap. weights   = ", p.laplacian_weights)
+    println(io, "  front pressure = ", p.front_pressure)
+    print(io, "  coriolis       = ", p.coriolis)
 end
+
+Base.show(io::IO, b::BoundaryConditions) = print(
+    io,
+    "BoundaryConditions(open ocean = $(nameof(typeof(b.open_ocean))), ",
+    "grounding line = $(nameof(typeof(b.grounding_line))), ",
+    "land = $(nameof(typeof(b.land))), gaps = $(nameof(typeof(b.gaps))), ",
+    "wall advection = $(nameof(typeof(b.wall_advection))))",
+)
+
+Base.show(io::IO, ts::AdaptiveDt) = print(
+    io,
+    "AdaptiveDt(cfl_target = $(ts.cfl_target), q = $(ts.q), ncheck = $(ts.ncheck), ",
+    "dt ∈ [$(ts.dtmin), $(ts.dtmax)])",
+)
 
 _backend_name(m::Model) = nameof(typeof(KA.get_backend(getfield(m, :grid).z_draft)))
 
-function Base.show(io::IO, m::Model{FT}) where {FT}
+function Base.show(io::IO, m::Model)
     g = getfield(m, :grid)
+    ocean = getfield(m, :forcing).ocean
     print(
         io,
-        "Model{",
-        FT,
-        "} on ",
-        _backend_name(m),
-        ": ",
-        g.Ny - 2,
-        "×",
-        g.Nx - 2,
-        " interior, ",
-        nameof(typeof(getfield(m, :forcing))),
-        " forcing",
+        "Model{$(m.FT)} on $(_backend_name(m)): $(g.Nx - 2)×$(g.Ny - 2) interior, ",
+        "$(nameof(typeof(ocean))) forcing",
     )
 end
 
-function Base.show(io::IO, ::MIME"text/plain", m::Model{FT}) where {FT}
+function Base.show(io::IO, ::MIME"text/plain", m::Model)
     g = getfield(m, :grid)
-    config = getfield(m, :config)
-    p = getfield(m, :params)
-    println(io, "Model{", FT, "} on ", _backend_name(m))
+    println(io, "Model{$(m.FT)} on $(_backend_name(m))")
     println(
         io,
-        "  grid:    ",
-        g.Ny - 2,
-        "×",
-        g.Nx - 2,
-        " interior cells, dx = ",
-        g.dx,
-        " m, dy = ",
-        g.dy,
-        " m, ",
-        count(==(3), g.mask),
-        " shelf cells",
+        "  grid:    $(g.Nx - 2)×$(g.Ny - 2) interior cells, dx = $(g.dx) m, ",
+        "dy = $(g.dy) m, $(count(==(3), g.mask)) shelf cells",
     )
     println(io, "  forcing: ", getfield(m, :forcing))
+    println(io, "  params:  ", _schemes(getfield(m, :params)))
+    print(io, "  boundary: ", getfield(m, :boundary))
+end
+
+_days(seconds, spd) = _r(seconds / _float64(spd), 3)
+
+Base.show(io::IO, c::Clock{FT}) where {FT} = print(
+    io,
+    "Clock{$FT}(time = $(_r(c.time, 1)) s, iteration = $(c.iteration), dt = $(_primal(c.dt)) s)",
+)
+
+Base.show(io::IO, o::OutputConfig) = print(
+    io,
+    o.saveday > 0 ?
+    "OutputConfig: every $(o.saveday) d → $(joinpath(o.resultdir, o.name))" :
+    "OutputConfig: disabled (saveday = 0)",
+)
+
+Base.show(io::IO, sim::Simulation) = print(
+    io,
+    "Simulation{$(sim.model.FT)} on $(_backend_name(sim.model)) at day ",
+    "$(_days(sim.clock.time, sim.model.seconds_per_day)), dt = $(_primal(sim.clock.dt)) s",
+)
+
+function Base.show(io::IO, ::MIME"text/plain", sim::Simulation)
+    m = sim.model
+    c = sim.clock
+    println(io, "Simulation{$(m.FT)} on $(_backend_name(m))")
+    println(io, "  model:   ", m)
     println(
         io,
-        "  params:  dt0 = ",
-        p.dt0,
-        " s, ",
-        nameof(typeof(p.entrainment)),
-        " + ",
-        nameof(typeof(p.melting)),
-        " + ",
-        nameof(typeof(p.convection_scheme)),
-        " + ",
-        nameof(typeof(p.open_bc)),
-        " + ",
-        nameof(typeof(p.grline_bc)),
-        " + ",
-        nameof(typeof(p.tstep)),
+        "  clock:   day $(_days(c.time, m.seconds_per_day)), iteration $(c.iteration), ",
+        "dt = $(_primal(c.dt)) s",
     )
-    if config.saveday > 0
-        print(
-            io,
-            "  output:  every ",
-            config.saveday,
-            " d → ",
-            joinpath(config.resultdir, config.name),
-        )
-    else
-        print(io, "  output:  disabled (saveday = 0)")
-    end
+    println(
+        io,
+        "  stepper: ",
+        sim.tstep,
+        ", ",
+        sim.cfl,
+        ", Robert–Asselin ν = ",
+        _primal(sim.nu),
+    )
+    println(io, "  stop:    ", sim.stop)
+    print(io, "  output:  ", sim.output)
 end

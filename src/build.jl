@@ -2,26 +2,113 @@
 # General model builder
 # ============================================================================
 
-_float_type(::Params{FT}) where {FT} = FT
-_float_type(f::AbstractForcing) = eltype(f.Tz)
+_float_type(::Params{FT}) where {FT} = _value_type(FT)
+# The number type a scalar parameter holds: the type itself, except for a scalar
+# traced by Reactant (see `trace_parameters`), whose extension returns the float
+# type it wraps.
+_value_type(::Type{T}) where {T} = T
+# The type the parameters are stored as (the Reactant number type once traced).
+_scalar_type(::Params{FT}) where {FT} = FT
+# Whether `trace_parameters` has turned the scalar parameters into traced numbers.
+_is_traced(p::Params) = _float_type(p) !== _scalar_type(p)
+_float_type(f::OceanForcing1D) = eltype(f.Tz)
+_float_type(f::CavityForcing) = _float_type(f.ocean)
 
-function _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
+# A user input given as a scalar or a field: a matrix must cover the grid's input
+# arrays (`sz`, the full domain including the border ring), before cropping, and
+# anything else must be a real scalar.  `name` and `desc` word the errors.
+function _check_scalar_or_field(x, sz, name, desc)
+    if x isa AbstractMatrix
+        size(x) == sz || throw(
+            ArgumentError(
+                "$name is $(size(x)) but the mask is $sz; a 2D $desc must cover the " *
+                "full domain including the border ring",
+            ),
+        )
+    elseif !(x isa Real)
+        throw(ArgumentError("$name must be a real scalar or a matrix, got $(typeof(x))"))
+    end
+    return x
+end
+
+# Bring a user-supplied basal ice temperature onto the full domain: a scalar is
+# broadcast, a matrix is checked against the grid's input size and converted to FT,
+# so `_crop_ice_forcing` can then slice it with the grid's crop ranges.  Materialising once at build keeps
+# the melt kernel to a single indexed path instead of a scalar and a field variant.
+function _expand_ice_forcing(ice::PrescribedIceForcing, sz, FT)
+    T = _check_scalar_or_field(ice.T_ice_base, sz, "T_ice_base", "basal ice temperature")
+    Tb = T isa AbstractMatrix ? FT.(T) : fill(FT(T), sz)
+    any(isnan, Tb) && throw(ArgumentError("T_ice_base contains NaN"))
+    all(<=(0), Tb) || throw(
+        ArgumentError(
+            "T_ice_base must be at or below 0 °C (it is ice); found a maximum of " *
+            "$(maximum(Tb)) °C",
+        ),
+    )
+    return PrescribedIceForcing(Tb)
+end
+
+_crop_ice_forcing(ice::PrescribedIceForcing, r, c) =
+    PrescribedIceForcing(ice.T_ice_base[r, c])
+
+# Unknown ice forcings pass through untouched; they are responsible for supplying
+# their own grid-shaped `T_ice_base`.
+_expand_ice_forcing(ice::AbstractIceForcing, sz, FT) = ice
+_crop_ice_forcing(ice::AbstractIceForcing, r, c) = ice
+
+# FixedGamTMelting: the cache reports the constant exchange velocities, which the
+# kernels read from the parameter (`_exchange_velocities`).
+_init_exchange_velocities!(cache, ::AbstractMelting) = nothing
+function _init_exchange_velocities!(cache, mp::FixedGamTMelting)
+    cache.gamT, cache.gamS = _fixed_exchange_velocities(mp, typeof(cache.gamT))
+    return
+end
+
+# Fill the Cache's prescribed melt field (m s⁻¹, grid-shaped) from a
+# `PrescribedMelting` given in m yr⁻¹ as a scalar or a full-domain matrix.  Other
+# melt schemes carry no such field.
+_init_prescribed_melt!(cache, ::AbstractMelting, grid, params) = nothing
+function _init_prescribed_melt!(cache, mp::PrescribedMelting, grid, params)
+    M = _check_scalar_or_field(mp.melt, grid.input_size, "PrescribedMelting melt", "melt rate")
+    all(isfinite, M) || throw(ArgumentError("PrescribedMelting melt must be finite"))
+    r, c = grid.crop
+    rate = M isa AbstractMatrix ? M[r, c] : M
+    cache.melt_prescribed .= rate ./ params.seconds_per_year
+    return
+end
+
+# Shape checks.  These run *before* preprocessing and cropping, because the
+# cropping slices every input with index ranges derived from the mask: a size
+# mismatch there would surface as an opaque BoundsError instead of an ArgumentError.
+function _validate_input_shapes(mask, z_draft, z_bed)
     (size(mask, 1) >= 3 && size(mask, 2) >= 3) || throw(
         ArgumentError(
-            "mask must be at least 3×3 — interior cells plus the one-cell border ring — got $(size(mask))",
+            "mask must be at least 3×3 — interior cells plus the one-cell border " *
+            "ring — got $(size(mask))",
         ),
     )
-    size(z_draft_raw) == size(mask) || throw(
+    size(z_draft) == size(mask) || throw(
         ArgumentError(
-            "z_draft_raw and mask must have the same size, got $(size(z_draft_raw)) vs $(size(mask))",
+            "z_draft and mask must have the same size, got $(size(z_draft)) vs $(size(mask))",
         ),
     )
-    (dx > 0 && dy > 0) ||
-        throw(ArgumentError("dx and dy must be positive, got dx = $dx, dy = $dy"))
-    bad = setdiff(unique(mask), 0:3)
+    z_bed === nothing ||
+        size(z_bed) == size(mask) ||
+        throw(
+            ArgumentError(
+                "z_bed and mask must have the same size, got $(size(z_bed)) vs $(size(mask))",
+            ),
+        )
+    return
+end
+
+# Mask semantics.  These run on the grid's cropped mask, before any modelling
+# choice: a shelf cell on the border ring is invalid whatever the gaps treatment.
+function _validate_grid_mask(mask)
+    bad = setdiff(unique(mask), 0:4)
     isempty(bad) || throw(
         ArgumentError(
-            "mask may only contain 0 (ocean), 1 (land), 2 (grounded), 3 (shelf); found $(sort(bad))",
+            "mask may only contain 0 (ocean), 1 (land), 2 (grounded), 3 (shelf), 4 (gap); found $(sort(bad))",
         ),
     )
     any(==(3), mask) || throw(
@@ -29,27 +116,75 @@ function _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
             "mask contains no floating-shelf cells (value 3) — nothing to simulate",
         ),
     )
-    border_shelf =
-        any(==(3), @view mask[1, :]) ||
-        any(==(3), @view mask[end, :]) ||
-        any(==(3), @view mask[:, 1]) ||
-        any(==(3), @view mask[:, end])
-    border_shelf && throw(
+    _validate_border(mask, ==(3))
+    return
+end
+
+# Active cells (shelf, and gaps the boundary condition keeps) on the border ring.
+function _validate_border(mask, active)
+    on_border =
+        any(active, @view mask[1, :]) ||
+        any(active, @view mask[end, :]) ||
+        any(active, @view mask[:, 1]) ||
+        any(active, @view mask[:, end])
+    on_border && throw(
         ArgumentError(
-            "floating-shelf cells (3) on the domain border: the stencils wrap periodically, " *
-            "so the outermost ring must be ocean/land/grounded (0–2)",
+            "active cells (3 = shelf, 4 = gap) on the domain border: the stencils skip " *
+            "the outermost ring, so it must be ocean/land/grounded (0–2)",
         ),
     )
+    return
+end
+
+# The stencils are launched over the interior only (`launch_interior!`), so nothing
+# is computed on the border ring.  That is exact when every ring cell next to an
+# active cell is a wall (land or grounded ice), but not at an ice front: the
+# velocity faces between an active cell and an ocean ring cell would never be
+# updated.  Diagonal neighbours count, since the momentum stencils read them.
+function _validate_front_margin(mask, active)
+    nx, ny = size(mask)
+    on_ring(i, j) = i == 1 || i == nx || j == 1 || j == ny
+    for j = 2:(ny-1), i = 2:(nx-1)
+        (i in (2, nx - 1) || j in (2, ny - 1)) && active(mask[i, j]) || continue
+        for dj = -1:1, di = -1:1
+            ii, jj = i + di, j + dj
+            if on_ring(ii, jj) && mask[ii, jj] == 0
+                throw(
+                    ArgumentError(
+                        "active cell ($i, $j) borders the ocean cell ($ii, $jj) of the " *
+                        "domain border: an ice front must keep at least one ocean cell " *
+                        "between it and the outermost ring. Pad the mask with ocean, or " *
+                        "crop with MinRectangleDomainCropping(margin ≥ 2)",
+                    ),
+                )
+            end
+        end
+    end
+    return
+end
+
+# Checks that need the model's choices: the gap-resolved mask (a gap on the border
+# is legal under SinkGapsBC, which demotes it to ocean) and precision agreement.
+function _validate_model_inputs(resolved_mask, forcing, params, FT)
+    _validate_border(resolved_mask, v -> v == 3 || v == 4)
+    _validate_front_margin(resolved_mask, v -> v == 3 || v == 4)
     _float_type(params) === FT || throw(
         ArgumentError(
-            "params is Params{$(_float_type(params))} but Model was called with FT = $FT; " *
-            "construct the parameters with Params(; FT = $FT, ...) or pass the matching FT",
+            "params is Params{$(_float_type(params))} but the grid is Grid{$FT}; " *
+            "construct the parameters with Params(; FT = $FT, ...) or build the grid with the matching FT",
+        ),
+    )
+    forcing.ocean isa OceanForcing1D || throw(
+        ArgumentError(
+            "Model needs an OceanForcing1D (one ambient profile for the whole " *
+            "domain); got $(typeof(forcing.ocean)). A laterally varying ambient field " *
+            "is not implemented.",
         ),
     )
     _float_type(forcing) === FT || throw(
         ArgumentError(
-            "forcing holds $(_float_type(forcing)) profiles but Model was called with FT = $FT; " *
-            "construct the forcing with FT = $FT or pass the matching FT",
+            "forcing holds $(_float_type(forcing)) profiles but the grid is Grid{$FT}; " *
+            "construct the forcing with FT = $FT or build the grid with the matching FT",
         ),
     )
     return
@@ -58,100 +193,96 @@ end
 """
 $(TYPEDSIGNATURES)
 
-General model constructor.  Assembles and initialises a `Model` from an
-arbitrary domain mask and ice-draft, a forcing profile, and a parameter set.
+Assemble a `Model` on `grid` from a forcing, a parameter set and boundary
+conditions, and set its initial prognostic fields.  Wrap the result in a
+[`Simulation`](@ref) to run it.
 
-# Mask convention
-| Value | Meaning |
-|-------|---------|
-| `0`   | open ocean (outside domain, passive) |
-| `1`   | land / boundary (one-cell border ring) |
-| `2`   | grounded ice (sets inflow boundary for the plume) |
-| `3`   | floating ice shelf (active plume cells) |
+The model derives everything that depends on its choices from the grid and keeps
+it in its `Geometry`: the gap-resolved mask (`boundary.gaps` decides whether gap
+cells `4` are active or demoted to open ocean, so the same grid can drive both
+treatments), the active-cell and velocity masks, the wall indicators, the
+ice-base slope (`gradient`) and the Coriolis field (`params.coriolis`).
 
-The `mask` and `z_draft_raw` arrays must include the full domain with the one-cell
-border ring, i.e. size `(ny+2, nx+2)` where `ny × nx` are the interior cells.
+Land (`1`) and grounded ice (`2`) are both walls to the plume and are unioned into
+`grd`, but they stay distinct throughout: only `2` is a grounding line (`gl`, and
+the `boundary.grounding_line` slip condition), while `1` is rock (`lnd`, and
+`boundary.land`).  Both default to no slip and can be set independently.
 
-`z_draft_raw` gives the ice-base depth in metres (negative downward) at each cell;
-values at non-shelf cells (mask ≠ 3) are ignored and zeroed internally.
+# Keywords
+- `forcing` (required): a `CavityForcing`, or an ocean forcing alone (e.g.
+  `ISOMIPForcing`, `OceanForcing1D`), which is paired with a uniform
+  `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`.  A 2D basal ice temperature must
+  cover the grid's input arrays (`grid.input_size`); it is cropped with the grid.
+- `params`: a `Params` object with all physical constants and parameterizations
+  (default `Params(; FT)` at the grid's precision).  A 2D latitude in
+  `params.coriolis` is cropped with the grid, like the ice temperature.
+- `boundary`: a [`BoundaryConditions`](@ref) (default `BoundaryConditions()`: no-slip
+  walls, otherwise the LADDIE v1.x conditions).
+- `gradient`: ice-base slope stencil, [`JlGradient`](@ref) (default) or
+  [`PyGradient`](@ref).
 
-# Arguments
-- `mask`:    integer mask matrix, size `(ny+2, nx+2)`.
-- `z_draft_raw`:  raw ice-draft matrix (same size); need not be pre-processed.
-- `dx`, `dy`: cell spacing in metres.
-- `forcing`: an `AbstractForcing` (e.g. `ISOMIPForcing`, `ProfileForcing`).
-- `params`:  a `Params` object with all physical constants and parameterizations.
-- `backend`: KernelAbstractions backend (default `CPU()`).
-- `FT`:      floating-point precision type (default `Float64`); must match the
-  precision of `params` and `forcing` (an `ArgumentError` is thrown otherwise).
-- `config`:      `RunConfig` (default: `RunConfig()`, I/O disabled).
+The model lives on the grid's backend and precision; `params` and `forcing` must
+match that precision (an `ArgumentError` is thrown otherwise).  It holds its
+initial fields only; secondary fields (melt, entrainment, …) are computed when a
+`Simulation` is constructed from it, because they depend on the time step.
 
-The returned model is fully initialised and ready for `run!`.
+The outermost ring of the grid is never computed by the stencils.  It must hold no
+active cell (3 or 4), and no active cell may border one of its ocean cells: an ice
+front needs at least one ocean cell between it and the ring.  Walls (land or
+grounded ice) may sit on the ring right next to the shelf.  An `ArgumentError` is
+thrown otherwise; [`MinRectangleDomainCropping`](@ref) with its minimum margin of 2
+always satisfies this.
 
 # Example
 ```julia
-mask   = build_laddie_mask(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
-z_draft_raw = ice_base_depth(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
-forcing = ISOMIPForcing(Float64, :warm)
-params  = Params()
-m = Model(mask, z_draft_raw, 2000.0, 2000.0, forcing, params)
-run!(m; days=30)
+mask    = build_laddie_mask(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
+z_draft = ice_base_depth(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
+grid    = Grid(mask, z_draft, 2000.0, 2000.0)
+model   = Model(grid; forcing = ISOMIPForcing(:warm),
+                boundary = BoundaryConditions(; land = FreeSlipLand()))
+sim     = Simulation(model; dt = 210.0)
+run!(sim; days = 30)
 ```
 """
 function Model(
-    mask::AbstractMatrix{Int},
-    z_draft_raw::AbstractMatrix,
-    dx::Real,
-    dy::Real,
-    forcing::AbstractForcing,
-    params::Params;
-    backend = CPU(),
-    FT = Float64,
-    config = RunConfig(),
+    grid::Grid{FT};
+    forcing,
+    params::Params = Params(; FT),
+    boundary::BoundaryConditions = BoundaryConditions(),
     gradient = JlGradient(),
-    z_bed_raw = nothing,
-    domain_cropping = MinRectangleDomainCropping(),
-    preprocess = AbstractPreprocess[],
-)
-    for p in preprocess
-        preprocess!(mask, p)
-    end
-    mask, z_draft_raw, z_bed_raw = _crop_domain(mask, z_draft_raw, z_bed_raw, domain_cropping)
-    _validate_build_inputs(mask, z_draft_raw, dx, dy, forcing, params, FT)
-    ny_total, nx_total = size(mask)
-    nx, ny = nx_total - 2, ny_total - 2
-
-    z_draft = _adjust_z_draft(mask, z_draft_raw, FT)
-    z_bed = if z_bed_raw === nothing
-        fill(FT(-Inf), ny_total, nx_total)  # no upper cap on D
-    else
-        FT.(z_bed_raw)
-    end
-    grid = Grid(mask, z_draft, z_bed, FT(dx), FT(dy); FT, gradient)
-    state = State(FT, ny_total, nx_total)
-    cache =
-        Cache(FT, typeof(params.melting), typeof(params.convection_scheme), ny_total, nx_total)
-
-    io = IOState(FT, collect(FT(dx) .* (1:nx)), collect(FT(dy) .* (1:ny)))
-    m = Model(io, config, grid, state, cache, params, forcing)
-    m.dt = params.dt0   # runtime dt starts at the configured initial step
-
-    if config.saveday > 0
-        create_rundir!(m)
-    end
-    if config.fromrestart
-        m.drho = zero(grid.tmask)
-        m.Tf = zero(grid.tmask)
-        m.melt = zero(grid.tmask)
-        m.Tb = zero(grid.tmask)
-        init_from_restart!(m)
-    else
-        _initialize_prognostics!(m)
-    end
-    backend === CPU() || (m = to_backend(m, backend))
-    if config.saveday > 0
-        prepare_output!(m)
-    end
+) where {FT}
+    forcing = _as_cavity_forcing(forcing)
+    boundary = _mapfields(bc -> _promote_param(bc, FT), boundary)
+    backend = KA.get_backend(grid.z_draft)
+    # The model is assembled on the CPU and moved in one go, so its derived fields
+    # are computed exactly as on a CPU run whatever the grid's backend.
+    grid = backend isa CPU ? grid : _grid_to_backend(grid, CPU())
+    r, c = grid.crop
+    # Full-domain fields are validated against the grid's input size, then cropped
+    # with the grid's own ranges.  Materialising the ice temperature once keeps the
+    # melt kernel to a single indexed path instead of a scalar and a field variant.
+    ice = _crop_ice_forcing(_expand_ice_forcing(forcing.ice, grid.input_size, FT), r, c)
+    f_t = _coriolis_field(params.coriolis, grid.input_size, FT)[r, c]
+    mask = _apply_gaps_bc(grid.mask, boundary.gaps)
+    _validate_model_inputs(mask, forcing, params, FT)
+    # The ice forcing is grid-shaped from here on, so `m.T_ice_base` lines up with
+    # `m.z_draft` and the melt kernel can index it directly.
+    forcing = CavityForcing(forcing.ocean, ice)
+    geometry = Geometry(mask, grid.z_draft, f_t, grid.dx, grid.dy; FT, gradient)
+    nx_total, ny_total = size(mask)
+    state = State(FT, nx_total, ny_total)
+    cache = Cache(
+        FT,
+        typeof(params.melting),
+        typeof(params.convection_scheme),
+        nx_total,
+        ny_total,
+    )
+    _init_prescribed_melt!(cache, params.melting, grid, params)
+    _init_exchange_velocities!(cache, params.melting)
+    m = Model(grid, geometry, state, cache, params, boundary, forcing)
+    _initialize_prognostics!(m)
+    backend isa CPU || (m = to_backend(m, backend))
     return m
 end
 
@@ -163,8 +294,8 @@ end
 $(TYPEDSIGNATURES)
 
 Convenience constructor for the idealised ISOMIP+ channel geometry
-(Asay-Davis et al. 2016).  Builds the mask and ice draft analytically, then
-delegates to `Model`.
+(Asay-Davis et al. 2016).  Builds the mask and ice draft analytically, then the
+`Grid`, `Model` and a ready-to-run [`Simulation`](@ref) of it.
 
 # Arguments
 - `backend`: KernelAbstractions backend.  Default `CPU()`; use `CUDABackend()`
@@ -176,9 +307,20 @@ delegates to `Model`.
 - `z_draft_gl`, `z_draft_front`: ice-draft depth at grounding line and ice front in
   metres (default −720 m and −200 m).
 - `isomipcond`: `:warm` (1 °C at depth) or `:cold` (nearly freezing).
+- `ice_forcing`: an `AbstractIceForcing` supplying the basal ice temperature
+  (default: uniform `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`).
 - `FT`: floating-point precision type (default `Float64`; use `Float32` for GPU).
-- `params`: `Params` object (default: ISOMIP+-canonical values).
-- `config`: `RunConfig` object (default: `RunConfig()`, I/O disabled).
+- `params`: `Params` object (default `Params(; FT)`, the ISOMIP+-canonical values).
+- `domain_cropping`, `preprocess`: forwarded to `Grid`.
+- `boundary`, `gradient`: forwarded to `Model`.
+- any other keyword (`dt`, `tstep`, `cfl`, `nu`, `stop`, `output`, `restart`,
+  `debug`) is forwarded to [`Simulation`](@ref).
+
+```julia
+sim = build_isomip(; isomipcond = :cold, tstep = AdaptiveDt())
+run!(sim; days = 30)
+sim.model.melt
+```
 """
 function build_isomip(
     backend = CPU();
@@ -192,46 +334,36 @@ function build_isomip(
     z_draft_gl = -720.0,
     z_draft_front = -200.0,
     isomipcond = :warm,
-    params = nothing,
-    config = RunConfig(),
+    ice_forcing = PrescribedIceForcing(),
+    params = Params(; FT),
+    boundary = BoundaryConditions(),
     gradient = JlGradient(),
     domain_cropping = NoDomainCropping(),
     preprocess = AbstractPreprocess[],
+    simulation_kwargs...,
 )
-    ny_total, nx_total = ny + 2, nx + 2
-    mask = zeros(Int, ny_total, nx_total)
-    z_draft_raw = zeros(FT, ny_total, nx_total)
-    xgl_ft = FT(xgl);
-    xfront_ft = FT(xfront)
-    zgl_ft = FT(z_draft_gl);
-    zfr_ft = FT(z_draft_front)
+    nx_total, ny_total = nx + 2, ny + 2
+    mask = zeros(Int, nx_total, ny_total)
+    z_draft_raw = zeros(FT, nx_total, ny_total)
+    xgl_ft, xfront_ft = FT(xgl), FT(xfront)
+    zgl_ft, zfr_ft = FT(z_draft_gl), FT(z_draft_front)
     for j = 1:ny, i = 1:nx
         x = FT((i - 1) * dx)
-        jp, ip = j + 1, i + 1
+        ip, jp = i + 1, j + 1
         if x < xgl_ft
-            mask[jp, ip] = 2
+            mask[ip, jp] = 2
         elseif x <= xfront_ft
-            mask[jp, ip] = 3
-            z_draft_raw[jp, ip] =
+            mask[ip, jp] = 3
+            z_draft_raw[ip, jp] =
                 zgl_ft + (zfr_ft - zgl_ft) * (x - xgl_ft) / (xfront_ft - xgl_ft)
         end
     end
-    mask[1, :] .= 1;
-    mask[end, :] .= 1
-    mask[:, 1] .= 1;
-    mask[:, end] .= 1
+    mask[[1, end], :] .= 1
+    mask[:, [1, end]] .= 1
 
-    forcing = ISOMIPForcing(FT, isomipcond)
-    _params =
-        isnothing(params) ?
-        Params(;
-            FT,
-            entrainment = LambertEntrainment(FT(2.5)),
-            melting = FixedGamTMelting(FT(0.00018)),
-            convection_scheme = ResetToAmbient(FT(0.005)),
-            open_bc = ZeroGradientInflow(),
-            max_layer_thickness = TopographicMaxLayerThickness(),
-        ) : params
+    forcing = CavityForcing(ISOMIPForcing(isomipcond; FT), ice_forcing)
 
-    return Model(mask, z_draft_raw, dx, dy, forcing, _params; backend, FT, config, gradient, domain_cropping, preprocess)
+    grid = Grid(mask, z_draft_raw, dx, dy; preprocess, domain_cropping, backend, FT)
+    model = Model(grid; forcing, params, boundary, gradient)
+    return Simulation(model; simulation_kwargs...)
 end

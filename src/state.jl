@@ -1,20 +1,41 @@
+"""
+$(TYPEDEF)
 
-# ============================================================================
-# State{FT, A} — five prognostic leapfrog variables.
-# ============================================================================
+The prognostic state of a [`Model`](@ref): layer thickness `D`, velocities `U`, `V`,
+temperature `T` and salinity `S`, each a three-level leapfrog [`Laddie.Var`](@ref)
+on its C-grid location.  Read through the model, e.g. `model.D.present`.
 
-mutable struct State{FT,A<:AbstractMatrix{FT}}
-    D::Var{Center,Center,FT,A}
-    U::Var{Face,Center,FT,A}
-    V::Var{Center,Face,FT,A}
-    T::Var{Center,Center,FT,A}
-    S::Var{Center,Center,FT,A}
+# Fields
+$(TYPEDFIELDS)
+"""
+mutable struct State{
+    D<:Var{Center,Center},
+    U<:Var{Face,Center},
+    V<:Var{Center,Face},
+    T<:Var{Center,Center},
+    S<:Var{Center,Center},
+}
+    "layer thickness (m), on T-points"
+    D::D
+    "depth-averaged velocity along x (m s⁻¹), on u-points"
+    U::U
+    "depth-averaged velocity along y (m s⁻¹), on v-points"
+    V::V
+    "layer temperature (°C), on T-points"
+    T::T
+    "layer salinity (psu), on T-points"
+    S::S
 end
 
-State(FT::Type, ny::Int, nx::Int) = State{FT,Matrix{FT}}(
-    Var(Center, Center, FT, ny, nx),
-    Var(Face, Center, FT, ny, nx),
-    Var(Center, Face, FT, ny, nx),
-    Var(Center, Center, FT, ny, nx),
-    Var(Center, Center, FT, ny, nx),
+# The five prognostic variables of a model (or anything forwarding them), keyed by
+# their `State` field names, so that loops over them and the restart save and load
+# all use one list.
+_prognostics(m) = (; D = m.D, U = m.U, V = m.V, T = m.T, S = m.S)
+
+State(FT::Type, nx::Int, ny::Int) = State(
+    Var(Center, Center, FT, nx, ny),
+    Var(Face, Center, FT, nx, ny),
+    Var(Center, Face, FT, nx, ny),
+    Var(Center, Center, FT, nx, ny),
+    Var(Center, Center, FT, nx, ny),
 )

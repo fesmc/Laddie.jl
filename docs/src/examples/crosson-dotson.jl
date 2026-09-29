@@ -1,208 +1,165 @@
-using Pkg
-Pkg.activate(".")
+#=
+# Crosson–Dotson: reproducing LADDIE v1 (Lambert et al., 2023)
+
+This script reproduces the Crosson–Dotson run of
+[Lambert et al. (2023)](https://doi.org/10.5194/tc-17-3203-2023) (their Figs. 3–4) and compares
+it cell by cell with the reference output. The settings are the reference's, not Laddie.jl's
+defaults, and make a good starting point for a realistic cavity. Four of them matter:
+
+  * `nu = 0.8`: `nu = 0.1` is unstable at `dt = 120 s` and inflates the mean melt sevenfold.
+  * No cap on the layer thickness ([`NoMaxLayerThickness`](@ref), the default): capping `D`
+    at the water column cuts melt by ~90 % (see [`AbstractMaxLayerThickness`](@ref)).
+  * `ClampDensity` convection, as in the reference (the default `ResetToAmbient`: −0.07 %).
+  * `PyGradient`, the reference's ice-base slope (the default `JlGradient`: −0.8 %).
+
+The code is **not executed** by the documentation build, as it needs BedMachine v2 and the
+reference file on disk.
+=#
+
 using Laddie
-using NCDatasets
-using CairoMakie
-using DelimitedFiles
 using KernelAbstractions
-using CUDA
+using NCDatasets
+using Printf
 using Statistics
+using CairoMakie
 
-FT = Float32
+FT = Float64
+backend = CPU()     # or `CUDABackend()` after `using CUDA`
 
-# =============================================================================
-# Ocean forcing profile
-# =============================================================================
-# CSV layout: column 1 = T or S value, column 2 = depth in km (negative down).
-# The T and S profiles were digitised separately, so they sample different
-# depths — interpolate S onto the temperature depths before building the
-# forcing.
+const BEDMACHINE =
+    "/home/jan/Documents/projects/esm-datasets/data/topography/src/BedMachineAntarctica-v2.nc"
+const REFERENCE = joinpath(pkgdir(Laddie), "papers", "lambert-2023", "data",
+                           "CrossDots_0.5_tanh_Tdeep0.4_ztcl-500_050.nc")
+isfile(REFERENCE) || error("reference output not found at $REFERENCE")
 
-fn_T = "assets/crosson-dotson-T.csv"
-fn_S = "assets/crosson-dotson-S.csv"
+# ## Geometry
+#
+# The reference cuts the domain out of BedMachine v2 at its native 500 m spacing, with
+# `isel(x=3445:3705, y=7730:8065)` (0-based, end-exclusive) and no smoothing. The domain
+# contains no ice-free land, so the reference relabelling land as grounded ice is inert.
 
-T_data = readdlm(fn_T, ',', skipstart = 1)
-S_data = readdlm(fn_S, ',', skipstart = 1)
-
-z_forc = T_data[:, 2] .* 1e3    # km → m
-T_forc = T_data[:, 1]
-S_forc = Laddie._interp1d(reverse(S_data[:, 2] .* 1e3), reverse(S_data[:, 1]), z_forc)
-
-# ProfileForcing sorts by depth and resamples to the 1-m grid the model needs,
-# with flat extrapolation beyond the data range.
-forcing = ProfileForcing(T_forc, S_forc, z_forc, FT = FT)
-
-fig = Figure()
-ax1 = Axis(fig[1, 1], xlabel = "Temperature (°C)", ylabel = "Depth (m)")
-ax2 = Axis(fig[1, 2], xlabel = "Salinity (PSU)",   ylabel = "Depth (m)")
-lines!(ax1, forcing.Tz, forcing.z)
-lines!(ax2, forcing.Sz, forcing.z)
-fig
-
-# =============================================================================
-# BedMachine geometry
-# =============================================================================
-i1, i2 = 3445, 3720
-j1, j2 = 7732, 8070
-fn_topo = "/home/jan/Documents/projects/esm-datasets/data/topography/src/BedMachineAntarctica-v4.nc"
-ds    = Dataset(fn_topo)
-z_bed = Float64.(Array(ds["bed"][i1:i2, j2:-1:j1]))
-h_ice = Float64.(Array(ds["thickness"][i1:i2, j2:-1:j1]))
+xs, ys = 3446:3705, 7731:8065
+ds = Dataset(BEDMACHINE)
+xy(v) = Float64.(coalesce.(Array(ds[v][xs, ys]), NaN))[:, end:-1:1]   # BedMachine y is descending
+surface, thickness, mask = xy("surface"), xy("thickness"), Int.(xy("mask"))
 close(ds)
 
-dx = 500.0   # BedMachine v3 resolution: 500 m
-dy = 500.0
+## The reference clamps shallow drafts at −10 m. The domain already ends in ocean and
+## grounded ice on all sides, so no border ring is needed.
+z_draft = surface .- thickness
+z_draft[(mask .== 3) .& (z_draft .> -10.0)] .= -10.0
+dx = dy = 500.0
+grid = Grid(mask, z_draft, dx, dy; domain_cropping = NoDomainCropping(), backend, FT)
 
-# Derive the 4-class LADDIE mask and ice-base draft from BedMachine arrays.
-# build_laddie_mask classifies each interior cell as:
-#   0 = open ocean, 1 = border, 2 = grounded ice, 3 = floating shelf
-# ice_base_depth returns the ice-draft elevation in metres (negative below sea level).
-mask = build_laddie_mask(z_bed, h_ice)
-fig_map = Figure()
-ax1 = Axis(fig_map[1, 1], aspect = DataAspect())
-hm = heatmap!(
-    ax1,
-    mask,
-    colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
-    colorrange = (0, 3))
-Colorbar(fig_map[2, 1], hm, vertical = false, flipaxis = false, label = "LADDIE mask class",
-    ticks = ([0, 1, 2, 3], ["ocean", "border", "grounded", "shelf"]))
-fig_map
+# ## Forcing
+#
+# The paper's analytic profile: a `tanh` thermocline at 500 m depth (250 m scale) from the
+# surface freezing point to +0.4 °C, with salinity set so the density profile is stable.
 
-# n = fill_ocean_holes!(mask)
-# n > 0 && @info "fill_ocean_holes!: reclassified $n isolated ocean cells as grounded"
-# hm = heatmap!(
-#     ax1,
-#     mask,
-#     colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
-#     colorrange = (0, 3))
-# fig_map
+l1, l2 = -5.73e-2, 8.32e-2              # liquidus coefficients, as in Params()
+alpha, beta, rho0 = 3.733e-5, 7.843e-4, 1028.0
+S0, T_deep, z_tcl, z_scale, drho0 = 34.0, 0.4, -500.0, 250.0, 0.01
 
-# n = fill_shelf_holes!(mask)
-# n > 0 && @info "fill_shelf_holes!: reclassified $n isolated shelf cells as grounded"
-# hm = heatmap!(
-#     ax1,
-#     mask,
-#     colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
-#     colorrange = (0, 3))
-# fig_map
+z = collect(-5000.0:1.0:-1.0)
+T0 = l1 * S0 + l2                       # surface freezing temperature
+Tz = @. T_deep + (T0 - T_deep) * (1 + tanh((z - z_tcl) / z_scale)) / 2
+Sz = @. S0 + alpha * (Tz - T0) / beta + drho0 * sqrt(abs(z)) / (beta * rho0)
+forcing = CavityForcing(OceanForcing1D(Tz, Sz, z; FT), PrescribedIceForcing(-25.0))
 
-hm = heatmap!(
-    ax1,
-    mask,
-    colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
-    colorrange = (0, 3))
-fig_map
+# ## Parameters and run
+#
+# `A_h`, `K_h`, `D_min` and `C_d_top` are the paper's values for 500 m (Table 2).
 
-# n = fill_small_grounded_patches!(mask, 8)
-# n > 0 && @info "fill_small_grounded_patches!: reclassified $n cells in undersized isolated grounded patches"
-# hm = heatmap!(
-#     ax1,
-#     mask,
-#     colormap = cgrad(:viridis, range(0, stop = 1, length = 5), categorical = true),
-#     colorrange = (0, 3))
-# fig_map
-
-
-z_draft       = ice_base_depth(z_bed, h_ice)
-z_bed_m  = bed_elevation(z_bed)
-
-z_bed_ocean = copy(z_bed)
-z_bed_ocean[h_ice .> 0] .= NaN
-cmap_ocean = cgrad([:midnightblue, :cornflowerblue])
-z_bed_grounded = copy(z_bed)
-z_bed_grounded[h_ice .<= 0] .= NaN
-cmap_grounded = cgrad([:gray20, :gray80])
-z_draft_plot = copy(z_draft)
-z_draft_plot[mask .< 3] .= NaN
-cmap_shelfbase = cgrad(:tempo, rev = true)
-
-ax2 = Axis(fig_map[1, 2], aspect = DataAspect())
-heatmap!(ax2, z_bed_ocean ./ 1f3, colormap = cmap_ocean, colorrange = (-1, 1))
-heatmap!(ax2, z_bed_grounded ./ 1f3, colormap = cmap_grounded, colorrange = (-1, 1))
-heatmap!(ax2, z_draft_plot ./ 1f3, colormap = cmap_shelfbase, colorrange = (-2, 0))
-fig_map
-
-# =============================================================================
-# Build and run model — snapshot all fields + masks every 5th step
-# =============================================================================
-params = Params(; dt = 120, A_h = 25, K_h = 25, D_min = 2.8, nu = 0.1, D_init = 2.8,
-    FT = FT,
-    tstep = AdaptiveDt(cfl_target = 0.2, q = 0.5),
-    melting = TurbulentGamTMelting(),
-    grline_bc = FreeSlipGL(),
-    # grline_bc = NoSlipGL(),
-    entrainment = LambertEntrainment(),
-    # entrainment = GasparEntrainment(),
-    max_layer_thickness = RelativeMaxLayerThickness(),
+params = Params(; FT,
+    A_h = 25.0, K_h = 25.0,
+    C_d = 2.5e-3, C_d_top = 1.1e-3,
+    D_min = 2.8, u_tide = 0.01,
+    max_detrainment = 0.5, v_cut = 1.414,
+    D_init = 10.0, dT_init = -0.1, dS_init = -0.1,
+    coriolis = CoriolisParameter0D(-1.37e-4),
+    entrainment = LambertEntrainment(2.5),
+    melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
+    convection_scheme = ClampDensity(0.005),
 )
+## The reference applies one partial-slip factor of 1 to every wall.
+boundary = BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
+model = Model(grid; forcing, params, boundary, gradient = PyGradient())
+sim = Simulation(model; dt = 120.0, nu = 0.8)
 
-m = Model(mask, z_draft, dx, dy, forcing, params;
-    z_bed_raw = z_bed_m,
-    config = RunConfig(; saveday = 0.5, dbg = DebugConfig(check_nans = true)),
-    backend = CUDABackend(),
-    FT = FT,
-    domain_cropping = MinRectangleDomainCropping(),
-    preprocess = [FillSmallShelfPatchesPreprocess()],
-)
-run!(m; days = 30, verbose = true)
+## Like the reference: 50 days, averaged over the last 5.
+run!(sim; days = 45.0)
+m = sim.model
+acc = Dict(k => zero(m.tmask) for k in ("melt", "D", "T", "S"))
+nsteps = round(Int, 5 * 86400 / sim.clock.dt)
+for _ in 1:nsteps
+    time_step!(sim)
+    acc["melt"] .+= m.melt
+    acc["D"] .+= m.D.present
+    acc["T"] .+= m.T.present
+    acc["S"] .+= m.S.present
+end
+avg = Dict(k => Array(v) ./ nsteps for (k, v) in acc)
+avg["melt"] .*= 86400 * 365.25          # m s⁻¹ → m yr⁻¹
 
-# fn = "output/run/output.nc"
-# ds_out = Dataset(fn)
-# D = ds_out["D"][:, :, :]
-# U = ds_out["Ut"][:, :, :]
-# V = ds_out["Vt"][:, :, :]
-# T = ds_out["T"][:, :, :]
-# S = ds_out["S"][:, :, :]
-# melt = ds_out["melt"][:, :, :]
-# close(ds_out)
+# ## Comparison with the reference
+#
+# The reference file holds the same 5-day average on the same grid. The check fails if
+# mean or max melt is 2 % off, or `D` 2 m off on average; an unstable `nu` or a thickness
+# cap misses these by orders of magnitude.
 
-# i_mean = 10
-# D_mean = mean(D[:, :, end-i_mean:end], dims = 3)[:, :, 1]
-# U_mean = mean(U[:, :, end-i_mean:end], dims = 3)[:, :, 1]
-# V_mean = mean(V[:, :, end-i_mean:end], dims = 3)[:, :, 1]
-# T_mean = mean(T[:, :, end-i_mean:end], dims = 3)[:, :, 1]
-# S_mean = mean(S[:, :, end-i_mean:end], dims = 3)[:, :, 1]
-# melt_mean = mean(melt[:, :, end-i_mean:end], dims = 3)[:, :, 1]
+ds = Dataset(REFERENCE)
+ref = Dict(v => coalesce.(Array(ds[v]), NaN) for v in ("melt", "D", "T", "S"))
+shelf = Array(ds["tmask"]) .== 1
+close(ds)
 
-# # Colors sampled directly from the source figure (pale cyan -> blue -> dark navy
-# # -> magenta -> orange -> pale yellow), 40 stops, light->dark->light diverging map
-# colors = [
-#     colorant"#ebfcfc", colorant"#d8f2f3", colorant"#bce4e4", colorant"#9dd4d7",
-#     colorant"#83c5d3", colorant"#6fb5ce", colorant"#5fa4c5", colorant"#5194c1",
-#     colorant"#4783bb", colorant"#4071b3", colorant"#3e61ab", colorant"#3e509a",
-#     colorant"#3c3f84", colorant"#323267", colorant"#2a2850", colorant"#1b1a37",
-#     colorant"#210b4b", colorant"#350960", colorant"#450a68", colorant"#560f6d",
-#     colorant"#64156e", colorant"#741b6d", colorant"#842069", colorant"#932669",
-#     colorant"#a32d61", colorant"#b33259", colorant"#c23a50", colorant"#d04447",
-#     colorant"#db503b", colorant"#e55c30", colorant"#ee6923", colorant"#f47d15",
-#     colorant"#f98c09", colorant"#fc9f06", colorant"#feb117", colorant"#fbc42b",
-#     colorant"#f3d848", colorant"#f4ea6e", colorant"#f4f992", colorant"#fbffa2",
-# ]
-# cmap = cgrad(colors)
+for (name, r) in (("Laddie.jl", avg), ("reference", ref))
+    @printf "%-9s  mean melt %.3f m/yr, max %.1f m/yr, D in [%.1f, %.0f] m\n" name mean(r["melt"][shelf]) maximum(r["melt"][shelf]) extrema(r["D"][shelf])...
+end
+for v in ("melt", "D", "T", "S")
+    d = abs.(avg[v][shelf] .- ref[v][shelf])
+    @printf "  %-4s mean |Δ| %8.4f   max |Δ| %8.3f\n" v mean(d) maximum(d)
+end
 
-# set_theme!(theme_latexfonts())
-# fig_melt = Figure()
-# ax = Axis(fig_melt[1, 1], aspect = DataAspect())
-# hidedecorations!(ax)
-# hm = heatmap!(
-#     ax,
-#     melt_mean,
-#     colormap = cmap,
-#     colorrange = (-10, 100),
-#     colorscale = Makie.Symlog10(1),
-#     lowclip    = colors[1],
-#     highclip   = colors[end],
-# )
-# Colorbar(fig_melt[2, 1], hm;
-#     vertical   = false,
-#     flipaxis   = false,
-#     ticks      = ([-10, -3, -1, -0.3, 0, 0.3, 1, 3, 10, 30, 100], ["-10", "-3", "-1", "-0.3", "0", "0.3", "1", "3", "10", "30", "100"]),
-#     label      = L"Melt rate $\dot{m} \: \mathrm{(m\ yr^{-1})}$",
-#     width = Relative(0.8),
-#     height = 20,
-# )
-# fig_melt
+rel(f) = abs(f(avg["melt"][shelf]) / f(ref["melt"][shelf]) - 1)
+@assert rel(mean) < 0.02 "mean melt off by $(round(100rel(mean); digits = 2)) %"
+@assert rel(maximum) < 0.02 "max melt off by $(round(100rel(maximum); digits = 2)) %"
+@assert mean(abs.(avg["D"][shelf] .- ref["D"][shelf])) < 2.0 "mean |ΔD| ≥ 2 m"
 
-# mx, mn, sp = meltstats(m)
-# println("max melt = $(round(mx, digits=2)) m/yr,  mean = $(round(mn, digits=2)) m/yr")
+# ## Figure
+
+x_km = (0:size(mask, 1)-1) .* dx ./ 1e3
+y_km = (0:size(mask, 2)-1) .* dy ./ 1e3
+fig = Figure(size = (1100, 900))
+
+function panel!(i, j, A, title, colorrange, colormap)
+    ax = Axis(fig[i, 2j-1]; title, aspect = DataAspect(),
+              xlabel = i == 2 ? "x (km)" : "", ylabel = j == 1 ? "y (km)" : "")
+    hm = heatmap!(ax, x_km, y_km, ifelse.(shelf, A, NaN); colormap, colorrange)
+    Colorbar(fig[i, 2j], hm)
+end
+panel!(1, 1, avg["melt"], "melt (m/yr): Laddie.jl", (0, 60), :inferno)
+panel!(1, 2, ref["melt"], "melt (m/yr): reference", (0, 60), :inferno)
+panel!(1, 3, avg["melt"] .- ref["melt"], "melt (m/yr): Laddie.jl − reference", (-5, 5), :RdBu)
+panel!(2, 1, avg["D"], "D (m): Laddie.jl", (0, 200), :viridis)
+panel!(2, 2, ref["D"], "D (m): reference", (0, 200), :viridis)
+panel!(2, 3, avg["D"] .- ref["D"], "D (m): Laddie.jl − reference", (-5, 5), :RdBu)
+save(joinpath(pkgdir(Laddie), "docs", "src", "assets", "crosson-dotson.png"), fig)
+
+# ## Results
+#
+# Output of the script above (CPU, Float64; 10 min on 16 threads), over the reference's
+# shelf mask:
+#
+# |                      | Laddie.jl | reference |
+# |:---------------------|----------:|----------:|
+# | mean melt (m yr⁻¹)   | 9.839     | 9.818     |
+# | max melt (m yr⁻¹)    | 114.2     | 114.3     |
+# | `D` range (m)        | 2.8–509   | 2.7–510   |
+#
+# Mean melt agrees to +0.21 %. Mean absolute differences per cell are 0.13 m yr⁻¹ in melt,
+# 0.62 m in `D`, 0.006 °C in `T` and 0.0015 in `S`.
+#
+# ![Crosson–Dotson: Laddie.jl vs reference](../assets/crosson-dotson.png)
+#
+# To rerun the check and refresh this figure as part of the documentation build:
+# `LADDIE_DOCS_CROSSON_DOTSON=true julia -t 16 --project=docs docs/make.jl`.

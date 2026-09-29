@@ -1,0 +1,473 @@
+module LaddieReactantExt
+
+# Runs a Laddie simulation through Reactant.jl: `to_backend(sim, ReactantBackend())`
+# moves the arrays to Reactant, and `run!` then advances the simulation in compiled
+# batches of steps (a traced `@trace for` loop), with the dt control, blow-up check
+# and diagnostics compiled as small programs of their own.  See
+# `laddie-roadmap/reactant.md` for the background and the measurements.
+
+using Laddie
+using Laddie: ReactantBackend, Model, Simulation
+using Reactant
+using Reactant: @compile, @trace, ConcreteRNumber
+using CUDA
+using KernelAbstractions
+const KA = KernelAbstractions
+const Adapt = KA.Adapt
+
+# ============================================================================
+# Kernel launches while tracing
+# ============================================================================
+
+# How the kernels of a step become GPU code (measurements: docs/src/reactant.md).
+#   :native   the kernels stay CUDA code, compiled by CUDA.jl and called from the XLA
+#             program (not raised).  As fast as the KernelAbstractions kernels, with
+#             the step loop inside one compiled program.  GPU only; Enzyme cannot
+#             differentiate it.
+# The other strategies raise the kernels to XLA operations, which XLA then fuses.
+# Without guidance it fuses a whole step into a few giant fusions that recompute
+# intermediate fields per output cell; an `optimization_barrier` on a kernel's arrays
+# forces them to memory and splits the fusions there.
+#   :kernel   a barrier on every kernel's arrays after it runs (≈ one fusion per kernel)
+#   :xla      no barriers: XLA's heuristics decide.  The only strategy Enzyme can
+#             differentiate (barriers have no derivative rule).
+# A barrier before each stencil kernel instead (`:stencil`, removed 2026-09-24) was
+# slower than `:kernel` on every grid: 2.2× at 2000×2000.
+const FUSION_STRATEGIES = (:native, :kernel, :xla)
+# The strategy of the program being traced; set by `_compile` around each trace.
+const TRACING_FUSION = Ref(:kernel)
+
+# `:auto`: native kernels on the GPU; on the CPU, where XLA must run raised code,
+# a barrier per kernel.
+function _fusion(f::Symbol)
+    f === :auto || f in FUSION_STRATEGIES || throw(ArgumentError(
+        "unknown fusion strategy :$f; use :auto or one of $FUSION_STRATEGIES"))
+    f === :auto || return f
+    platform = Reactant.XLA.platform_name(Reactant.XLA.default_backend())
+    return platform == "cuda" ? :native : :kernel
+end
+
+# On a mesh the native kernels cannot be split (XLA sees an opaque call), so `:auto`
+# takes the raised kernels: `:kernel` over one mesh axis, `:xla` over two, where the
+# barriers of `:kernel` crash XLA's partitioner (Reactant 0.2.286, upstream
+# momentum advection).
+_fusion(b::ReactantBackend{<:Any,Nothing}) = _fusion(b.fusion)
+function _fusion(b::ReactantBackend)
+    b.fusion === :native && throw(ArgumentError(
+        "fusion = :native cannot run on a mesh; use :kernel or :xla"))
+    b.fusion === :auto || return _fusion(b.fusion)
+    return count(!isnothing, _partition(b)) > 1 ? :xla : :kernel
+end
+
+function _barrier!(args...)
+    arrs = [a for a in args if a isa Reactant.TracedRArray]
+    isempty(arrs) && return nothing
+    for (a, b) in zip(arrs, Reactant.Ops.optimization_barrier(arrs...))
+        a.mlir_data = b.mlir_data
+    end
+    return nothing
+end
+
+# Raised kernels are launched with no workgroup, so Reactant takes the whole ndrange
+# as one block: with Laddie's (32, 8) GPU workgroup the tiling leaks into the raised
+# program as gathers and transposes, and the step runs about 2× slower.  Native
+# kernels keep that workgroup, as on the CUDA backend.
+function _launch_traced!(kernel!, ndrange, args)
+    f = TRACING_FUSION[]
+    backend = KA.get_backend(first(args))
+    k = f === :native ? kernel!(backend, Laddie._workgroup(backend)) : kernel!(backend)
+    k(args...; ndrange)
+    f === :kernel && _barrier!(args...)
+    return nothing
+end
+Laddie.launch_range!(kernel!, ndrange, out::Reactant.AnyTracedRArray, args...) =
+    _launch_traced!(kernel!, ndrange, (out, args...))
+
+# Reactant 0.2.286: `ReactantCUDAExt.Const{T,N,AS}` stores a `CuTracedArray`
+# without its `Size` parameter, so the field is abstract and every `@Const` read
+# becomes a dynamic call that fails to compile.  `@Const` is only a read-only hint:
+# pass the array through unwrapped.  Defined before the first compile rather than in
+# `__init__`, since Reactant's CUDA extension may load after this one.
+const CONST_WORKAROUND = Ref(false)
+function _const_workaround!()
+    CONST_WORKAROUND[] && return
+    cuext = Base.get_extension(Reactant, :ReactantCUDAExt)
+    cuext === nothing && error("Reactant's CUDA extension is not loaded; run `using CUDA`")
+    @eval Adapt.adapt_storage(::KA.ConstAdaptor, a::$(cuext.CuTracedArray)) = a
+    CONST_WORKAROUND[] = true
+    return
+end
+
+# ============================================================================
+# Backend and execution
+# ============================================================================
+
+_ka_backend() = Base.get_extension(Reactant, :ReactantKernelAbstractionsExt).ReactantBackend()
+
+Laddie._reactant_device(b::ReactantBackend{<:Any,Nothing}) = _ka_backend()
+Laddie._reactant_device(b::ReactantBackend) = ShardedPlacement(b.mesh, _partition(b))
+
+# One mesh axis: split the second grid axis, whose slabs are contiguous in memory.
+# Two: the first mesh axis splits the first grid axis, the second the second.
+function _partition(b::ReactantBackend)
+    b.partition === nothing || return Tuple(b.partition)
+    names = b.mesh.axis_names
+    length(names) == 1 && return (nothing, names[1])
+    length(names) == 2 && return names
+    throw(ArgumentError("give `partition` for a mesh with $(length(names)) axes"))
+end
+
+"""
+Where `to_backend` puts the arrays of a model on a `ReactantBackend` with a mesh:
+every matrix (all grid-sized) split over the mesh, every other array replicated.
+"""
+struct ShardedPlacement{M,P}
+    "the device mesh"
+    mesh::M
+    "mesh axis name (or `nothing`) each grid axis is split along"
+    partition::P
+end
+
+function Laddie._to_device(p::ShardedPlacement, a::AbstractMatrix)
+    for (d, name) in enumerate(p.partition)
+        name === nothing && continue
+        k = p.mesh.axis_sizes[findfirst(==(name), p.mesh.axis_names)]
+        # Reactant (0.2.286, PJRT) replicates an array silently when a split axis is
+        # not divisible.
+        size(a, d) % k == 0 || throw(ArgumentError(
+            "the grid is $(size(a)) cells, and its axis $d does not split evenly over " *
+            "the $k devices of mesh axis :$name; round the grid up with " *
+            "`Grid(...; domain_cropping = MinRectangleDomainCropping(; multiple = " *
+            "$(ntuple(i -> i == d ? k : 1, 2))))`"))
+    end
+    return Reactant.to_rarray(a; sharding = Reactant.Sharding.NamedSharding(p.mesh, p.partition))
+end
+# Sharded and replicated matrices share one type (one buffer per device), so the
+# rebuilt structs keep one matrix type.
+Laddie._to_device(p::ShardedPlacement, a::AbstractArray) =
+    Reactant.to_rarray(a; sharding = Reactant.Sharding.Replicated(p.mesh))
+
+"""
+Batched execution through Reactant: the compiled programs of one simulation, and a
+CPU mirror of its model for the log diagnostics.
+"""
+mutable struct ReactantExecution <: Laddie.AbstractExecution
+    "fusion strategy of the compiled programs (one of `FUSION_STRATEGIES`)"
+    fusion::Symbol
+    "compiled programs, by name"
+    programs::Dict{Symbol,Any}
+    "CPU copy of the model for `printdiags`, created on first use"
+    mirror::Any
+end
+
+Laddie._reactant_execution(b::ReactantBackend) =
+    ReactantExecution(_fusion(b), Dict{Symbol,Any}(), nothing)
+
+# Extra keyword arguments for `Reactant.compile` (e.g. `xla_debug_options`), for
+# experiments with XLA's code generation; see `benchmark/reactant/fusion.jl`.
+const EXTRA_COMPILE_OPTIONS = Ref{Any}((;))
+
+_compile(f, exec, args...) = _compile_with(f, exec.fusion, args, EXTRA_COMPILE_OPTIONS[])
+
+function _compile_with(f, fusion, args, kwargs)
+    _const_workaround!()
+    TRACING_FUSION[] = fusion
+    try
+        # `invokelatest`: the `@Const` workaround may have just been `@eval`ed.
+        kw = merge((; raise = fusion !== :native), kwargs)
+        return Base.invokelatest(Reactant.compile, f, args; kw...)
+    finally
+        TRACING_FUSION[] = :kernel
+    end
+end
+
+# Raised before differentiation (`raise_first`), so Enzyme sees XLA operations, not
+# opaque kernel calls.
+function Laddie.reactant_compile(f, args...; fusion = :xla, kwargs...)
+    fusion = _fusion(fusion)
+    fusion === :native || (kwargs = merge((; raise_first = true), kwargs))
+    return _compile_with(f, fusion, args, kwargs)
+end
+
+# ============================================================================
+# Traced parameters
+# ============================================================================
+
+# The float type a traced scalar wraps: `m.FT` of a model from `trace_parameters`.
+Laddie._value_type(::Type{T}) where {T<:Reactant.RNumber} = Reactant.unwrapped_eltype(T)
+
+# Every float in `x` (a parameter or parameterisation object) as a Reactant number
+# of precision FT.  Objects are rebuilt with their floats traced; arrays, integers and
+# field-less singletons stay.
+_traced(x::Reactant.RNumber, FT) = x
+_traced(x::AbstractFloat, FT) = ConcreteRNumber(FT(x))
+_traced(x::Number, FT) = x
+_traced(x::AbstractArray, FT) = x
+_traced(x, FT) = Laddie._mapfields(v -> _traced(v, FT), x)
+
+function Laddie.trace_parameters(model::Model; overrides...)
+    p = model.params
+    FT = model.FT
+    names = fieldnames(typeof(p))
+    for k in keys(overrides)
+        k in names || throw(ArgumentError("Params has no field `$k`"))
+    end
+    fields = map(names) do fn
+        v = haskey(overrides, fn) ? Laddie._param_value(overrides[fn], FT) : getfield(p, fn)
+        return _traced(v, FT)
+    end
+    return Model(model.grid, model.geometry, model.state, model.cache,
+                 Laddie.Params(fields...), model.boundary, model.forcing)
+end
+
+# `integrate!` inside a trace: the steps become a traced loop.  Reverse mode through a
+# loop whose trip count is only known at run time needs checkpointing (revolve):
+# without it Enzyme stores every step in a buffer of dynamic size, which XLA cannot
+# compile.  The checkpoints cost nothing in the primal and in forward mode.
+const DEFAULT_CHECKPOINTS = 20
+Laddie.integrate!(model, dt, n::Reactant.TracedRNumber; nu = 0.8,
+                  checkpoints = DEFAULT_CHECKPOINTS) =
+    (_steps!(model, (;), dt, n, model.FT(nu);
+             checkpointing = Reactant.Binomial(checkpoints)); model)
+
+# ============================================================================
+# Adaptive dt, differentiable: record the schedule, then replay it
+# ============================================================================
+
+# CFL rate (s⁻¹) on traced fields: `Laddie._cfl_rate` without the host conversions.
+function _cfl_rate(m, ::Laddie.ExactCFL)
+    Laddie._launch_tpoint_diag!(Laddie._cfl_rate_kernel!, m)
+    return maximum(m.diag)
+end
+function _cfl_rate(m, cfl::Laddie.ConservativeCFL)
+    umax, vmax, c = Laddie._cfl_reductions(m, cfl)
+    return (umax + c) / m.dx + (vmax + c) / m.dy
+end
+
+# Re-bootstrap where dt changed.  A traced `if` is fine here (no differentiation).
+function _rebootstrap_if!(model, changed, dt)
+    @trace track_numbers = false if changed
+        Laddie._collapse_and_bootstrap!(model, dt)
+    end
+    return nothing
+end
+
+# Pass 1: the adaptive run.  Loop state: time, dt, step count and segment index as
+# floats (exact for integers), and the segments as fixed-capacity arrays.
+function _schedule!(model, dt0, tend, ts, cfl, nu, cap)
+    FT = model.FT
+    idx = FT.(Reactant.Ops.iota(Int, [cap]; iota_dimension = 1) .+ 1)
+    seg_dt = ifelse.(idx .== 1, dt0, zero(dt0))
+    seg_n = zero(seg_dt)
+    t, dt, k, j = zero(dt0), dt0 * one(dt0), zero(dt0), one(dt0)
+    @trace track_numbers = false while t < tend
+        Laddie._step_model!(model, dt, nu)
+        t = t + dt
+        k = k + 1
+        seg_n = seg_n .+ ifelse.(idx .== j, one(FT), zero(FT))
+        dtn = Laddie._controller_dt(ts, dt, dt * _cfl_rate(model, cfl); allow_grow = true)
+        dtn = ifelse(rem(k, FT(ts.ncheck)) == 0, dtn, dt)
+        changed = dtn != dt
+        _rebootstrap_if!(model, changed, dtn)
+        j = j + ifelse(changed, one(FT), zero(FT))
+        seg_dt = ifelse.(idx .== j, dtn, seg_dt)
+        dt = dtn
+    end
+    return seg_dt, seg_n, j
+end
+
+# One compiled pass-1 program per model type, size and controller settings.
+const SCHEDULE_PROGRAMS = Dict{Any,Any}()
+
+function Laddie.adaptive_schedule(model::Model, dt; days, stepper = Laddie.AdaptiveDt(),
+                                  cfl = Laddie.ExactCFL(), nu = 0.8, maxsegments = 10_000)
+    FT = model.FT
+    ts = Laddie._promote_param(stepper, FT)
+    nuv = FT(nu)
+    key = (typeof(model), size(model.melt), ts, cfl, nuv, maxsegments)
+    dt0, tend = ConcreteRNumber(FT(dt)), ConcreteRNumber(FT(days * 86400))
+    prog = get!(SCHEDULE_PROGRAMS, key) do
+        _compile_with((m, dt0, tend) -> _schedule!(m, dt0, tend, ts, cfl, nuv, maxsegments),
+                      _fusion(:auto), (model, dt0, tend), (;))
+    end
+    seg_dt, seg_n, j = prog(model, dt0, tend)
+    nseg = round(Int, Reactant.to_number(j))
+    nseg <= maxsegments || throw(ArgumentError(
+        "the run changed dt $(nseg - 1) times, more than `maxsegments` = $maxsegments allows"))
+    steps = round.(Int, Array(seg_n))
+    return Laddie.DtSchedule(seg_dt, Reactant.to_rarray(steps), ConcreteRNumber(nseg))
+end
+
+# Pass 2: replay, differentiable.  The re-bootstrap at each segment start is computed
+# unconditionally and kept with `ifelse` except for the first segment: Enzyme cannot
+# reverse a traced `if` that updates arrays in place.  It writes `past` (collapsed on
+# `present`) and `future` (the Euler step); the next step recomputes the cache.
+function _rebootstrap_blend!(model, keep, dt)
+    vars = Laddie._prognostics(model)
+    old = map(v -> (copy(v.past), copy(v.future)), vars)
+    Laddie._collapse_and_bootstrap!(model, dt)
+    for (v, (p, f)) in zip(vars, old)
+        v.past .= ifelse.(keep, v.past, p)
+        v.future .= ifelse.(keep, v.future, f)
+    end
+    return nothing
+end
+
+_field(m, name) = (x = getproperty(m, name); x isa Laddie.Var ? x.present : x)
+
+function _segment!(model, accs, dt, n, nu, names, checkpoints)
+    @trace track_numbers = false checkpointing = Reactant.Binomial(checkpoints) for _ = 1:n
+        Laddie._step_model!(model, dt, nu)
+        for (acc, name) in zip(accs, names)
+            acc .+= _field(model, name) .* dt
+        end
+    end
+    return nothing
+end
+
+function Laddie.integrate!(model, sched::Laddie.DtSchedule{<:Reactant.AnyTracedRArray};
+                           means = (), nu = 0.8, checkpoints = DEFAULT_CHECKPOINTS)
+    FT = model.FT
+    nuv = FT(nu)
+    names = Tuple(means)
+    accs = map(name -> zero(_field(model, name)), names)
+    cap = length(sched.dt)
+    idx = Reactant.Ops.iota(Int, [cap]; iota_dimension = 1) .+ 1
+    # Few segments: a small checkpoint budget for the outer loop.
+    @trace track_numbers = false checkpointing = Reactant.Binomial(checkpoints) for j = 1:sched.nseg
+        dt = sum(ifelse.(idx .== j, sched.dt, zero(FT)))
+        n = sum(ifelse.(idx .== j, sched.steps, 0))
+        _rebootstrap_blend!(model, j > 1, dt)
+        _segment!(model, accs, dt, n, nuv, names, checkpoints)
+    end
+    isempty(names) && return model
+    total = sum(sched.dt .* sched.steps)
+    return NamedTuple{names}(map(acc -> acc ./ total, accs))
+end
+
+function _program(build, exec, name)
+    get!(exec.programs, name) do
+        build()
+    end
+end
+
+_dt(sim) = ConcreteRNumber(sim.model.FT(Laddie._primal(sim.clock.dt)))
+
+# One leapfrog step, with the output accumulation when `acc` is not empty:
+# `time_step!` without the clock, then `_accum!` without its host counters.  `dt` is
+# traced, so that an adaptive dt change does not recompile; the clock stays on the host.
+function _step!(model, acc, dt, nu)
+    Laddie._step_model!(model, dt, nu)
+    Laddie._accum_fields!(acc, model, dt)
+    return nothing
+end
+
+# Steps per iteration of the traced loop.  On the GPU, XLA evaluates a while loop's
+# condition on the device and reads it back each iteration, which leaves the GPU idle
+# between steps; unrolling amortises that over several steps (4: 10 % faster than 1
+# for native kernels, and 10 is no better).  Raised kernels are not unrolled, since
+# every copy of the step is raised and optimised again (compile time).
+const NATIVE_UNROLL = Ref(4)
+_unroll(fusion) = fusion === :native ? NATIVE_UNROLL[] : 1
+
+# `checkpointing` only shapes the reverse pass of Enzyme; see `integrate!`.
+function _steps!(model, acc, dt, n, nu, unroll = 1; checkpointing = false)
+    if unroll > 1
+        @trace track_numbers = false for _ = 1:(n ÷ unroll)
+            for _ = 1:unroll
+                _step!(model, acc, dt, nu)
+            end
+        end
+        @trace track_numbers = false for _ = 1:(n % unroll)
+            _step!(model, acc, dt, nu)
+        end
+    else
+        @trace track_numbers = false checkpointing = checkpointing for _ = 1:n
+            _step!(model, acc, dt, nu)
+        end
+    end
+    return nothing
+end
+
+Laddie._batch_length(::ReactantExecution, sim, r) = Laddie._steps_to_next_event(sim, r)
+
+function Laddie._advance_batch!(exec::ReactantExecution, sim, n, io_on)
+    acc = sim.io.acc   # empty without output
+    dt = _dt(sim)
+    nn = ConcreteRNumber(n)
+    nu = sim.nu   # captured by value: Reactant traces a closure's captured variables
+    unroll = _unroll(exec.fusion)
+    prog = _program(exec, :steps) do
+        _compile(
+            (model, acc, dt, n) -> _steps!(model, acc, dt, n, nu, unroll),
+            exec,
+            sim.model,
+            acc,
+            dt,
+            nn,
+        )
+    end
+    prog(sim.model, acc, dt, nn)
+    # The host side of `time_step!` and `_accum!`, step by step as they would run.
+    for _ = 1:n
+        Laddie._tick!(sim.clock)
+        io_on && Laddie._count_accum!(sim.io, sim.clock.dt)
+    end
+    return
+end
+
+# Re-bootstrap after a dt change, as the native path does.
+function Laddie._rebootstrap_leapfrog!(exec::ReactantExecution, sim)
+    dt = _dt(sim)
+    prog = _program(exec, :rebootstrap) do
+        _compile(Laddie._collapse_and_bootstrap!, exec, sim.model, dt)
+    end
+    prog(sim.model, dt)
+    return
+end
+
+# ============================================================================
+# Sync-point diagnostics, compiled into one program
+# ============================================================================
+
+function Laddie._sync_diagnostics(exec::ReactantExecution, sim)
+    cfl = sim.cfl
+    prog = _program(exec, :diagnostics) do
+        _compile(m -> Laddie._diagnostics(m, cfl), exec, sim.model)
+    end
+    return Laddie._on_host(sim, _to_host(prog(sim.model)))
+end
+
+_to_host(x::Union{Tuple,NamedTuple}) = map(_to_host, x)
+_to_host(x::Reactant.RNumber) = Reactant.to_number(x)
+_to_host(x) = x
+
+# ============================================================================
+# Log diagnostics on a CPU mirror
+# ============================================================================
+
+# `printdiags` makes about 20 reductions; eager Reactant operations compile on each
+# call, so they run on a CPU copy of the model instead, refreshed from the device.
+function Laddie._diag_model(exec::ReactantExecution, sim)
+    if exec.mirror === nothing
+        exec.mirror = to_backend(sim.model, CPU())
+    else
+        _copy_arrays!(exec.mirror.state, sim.model.state)
+        _copy_arrays!(exec.mirror.cache, sim.model.cache)
+    end
+    return exec.mirror
+end
+
+function _copy_arrays!(dst, src)
+    for f in fieldnames(typeof(src))
+        d, s = getfield(dst, f), getfield(src, f)
+        if d isa AbstractArray
+            copyto!(d, Array(s))
+        elseif fieldcount(typeof(d)) > 0 && !(d isa Number)
+            _copy_arrays!(d, s)
+        end
+    end
+    return
+end
+
+end

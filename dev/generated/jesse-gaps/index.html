@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Ice-shelf gaps · Laddie.jl</title><meta name="title" content="Ice-shelf gaps · Laddie.jl"/><meta property="og:title" content="Ice-shelf gaps · Laddie.jl"/><meta property="twitter:title" content="Ice-shelf gaps · Laddie.jl"/><meta name="description" content="Documentation for Laddie.jl."/><meta property="og:description" content="Documentation for Laddie.jl."/><meta property="twitter:description" content="Documentation for Laddie.jl."/><meta property="og:url" content="https://fesmc.github.io/Laddie.jl/generated/jesse-gaps/"/><meta property="twitter:url" content="https://fesmc.github.io/Laddie.jl/generated/jesse-gaps/"/><link rel="canonical" href="https://fesmc.github.io/Laddie.jl/generated/jesse-gaps/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Laddie.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../physics/">Physics</a></li><li><a class="tocitem" href="../../numerics/">Numerics</a></li><li><a class="tocitem" href="../../reactant/">Reactant backend</a></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../isomip/">ISOMIP+</a></li><li><a class="tocitem" href="../crosson-dotson/">Crosson–Dotson</a></li><li><a class="tocitem" href="../lambert-ase/">Amundsen Sea</a></li><li class="is-active"><a class="tocitem" href>Ice-shelf gaps</a><ul class="internal"><li><a class="tocitem" href="#The-two-geometries"><span>The two geometries</span></a></li><li><a class="tocitem" href="#Forcing"><span>Forcing</span></a></li><li><a class="tocitem" href="#Parameters"><span>Parameters</span></a></li><li><a class="tocitem" href="#Runs"><span>Runs</span></a></li><li><a class="tocitem" href="#Laddie.jl-and-LADDIE-v2-on-the-same-geometry"><span>Laddie.jl and LADDIE v2 on the same geometry</span></a></li></ul></li><li><a class="tocitem" href="../inverse-problems/">Inverse problems</a></li></ul></li><li><span class="tocitem">API reference</span><ul><li><a class="tocitem" href="../../API_public/">Setup and running</a></li><li><a class="tocitem" href="../../API_physics/">Parameterizations and boundaries</a></li><li><a class="tocitem" href="../../API_ad/">Automatic differentiation</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Ice-shelf gaps</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Ice-shelf gaps</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/fesmc/Laddie.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/fesmc/Laddie.jl/blob/main/docs/src/examples/jesse-gaps.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Ice-shelf-gaps:-sink-vs-connected-(Jesse-et-al.,-2026)"><a class="docs-heading-anchor" href="#Ice-shelf-gaps:-sink-vs-connected-(Jesse-et-al.,-2026)">Ice-shelf gaps: sink vs connected (Jesse et al., 2026)</a><a id="Ice-shelf-gaps:-sink-vs-connected-(Jesse-et-al.,-2026)-1"></a><a class="docs-heading-anchor-permalink" href="#Ice-shelf-gaps:-sink-vs-connected-(Jesse-et-al.,-2026)" title="Permalink"></a></h1><p><a href="https://doi.org/10.5194/egusphere-2026-4237">Jesse et al. (2026)</a> couple LADDIE v2 to the ice-sheet model UFEMISM on a MISMIP+ geometry. As the northern shear margin thins, gaps melt through the shelf. The paper compares two treatments of the meltwater layer in such a gap:</p><ul><li><strong>sink</strong> (<a href="../../API_physics/#Laddie.SinkGapsBC"><code>SinkGapsBC</code></a>): the gap acts as a calving front, and the layer&#39;s heat and momentum leave the cavity there;</li><li><strong>connected</strong> (<a href="../../API_physics/#Laddie.ConnectedGapsBC"><code>ConnectedGapsBC</code></a>): the layer flows on across the gap, and melts nothing while it crosses.</li></ul><p>After 200 years the two treatments have produced different shelves: a <strong>small-gap</strong> geometry (from the sink run, an opening of a few km²) and a <strong>large-gap</strong> geometry (from the connected run, an open margin some 300 km long). Laddie.jl has no ice dynamics, so it cannot repeat the coupled runs; it takes both year-200 geometries instead — the last column of the paper&#39;s Fig. 3 — and runs each with the treatment that produced it, which also compares it with LADDIE v2 on the same ice.</p><p>The settings follow the paper (its Table A1, and the MISMIP+ configuration of the v2 code). Two differences remain: v2 integrates with a forward–backward Runge–Kutta scheme on the 1 km triangular mesh of the coupled runs, and Laddie.jl with leapfrog on a 1 km C-grid.</p><p>The code is <strong>not executed</strong> by the documentation build, as it needs the paper&#39;s model output (<code>papers/jesse-2026/data</code>, 7.6 GB) on disk.</p><pre><code class="language-julia hljs">using Laddie
+using CUDA
+using KernelAbstractions
+using NCDatasets
+using Printf
+using Statistics
+using CairoMakie
+
+FT = Float32                                # half the memory traffic of Float64 on a GPU
+backend = CUDA.functional() ? CUDABackend() : CPU()
+
+const DATA = joinpath(pkgdir(Laddie), &quot;papers&quot;, &quot;jesse-2026&quot;, &quot;data&quot;)
+const RUNS = (small = &quot;1km_oc3_EF0&quot;, large = &quot;1km_oc3_EF1&quot;)   # EF0 = sink, EF1 = connected
+const YEAR = 200.0
+const ASSETS = joinpath(pkgdir(Laddie), &quot;docs&quot;, &quot;src&quot;, &quot;assets&quot;)</code></pre><h2 id="The-two-geometries"><a class="docs-heading-anchor" href="#The-two-geometries">The two geometries</a><a id="The-two-geometries-1"></a><a class="docs-heading-anchor-permalink" href="#The-two-geometries" title="Permalink"></a></h2><p><code>docs/src/examples/ufemism_regrid.jl</code> puts a UFEMISM snapshot on a regular grid: the ice draft and the bed by barycentric interpolation, the mask from the nearest mesh vertex, and LADDIE v2&#39;s own melt and layer velocity alongside. It also returns the ice footprint of the reference geometry (year 0), which is what makes an ice-free cell a <em>gap</em> — the reference&#39;s <code>refgeo_Hi &gt; 0</code> test, applied here by <a href="../../API_public/#Laddie.MarkGapsPreprocess"><code>MarkGapsPreprocess</code></a>.</p><pre><code class="language-julia hljs">include(joinpath(@__DIR__, &quot;ufemism_regrid.jl&quot;))
+
+dx = dy = FT(1000)                               # the mesh resolution of the v2 runs
+xc = collect(FT, -dx / 2:dx:800e3 + dx / 2)      # cell centres, border ring included
+yc = collect(FT, -40e3 - dy / 2:dy:40e3 + dy / 2)
+snaps = map(RUNS) do run
+    regrid_snapshot(joinpath(DATA, run, &quot;main_output_ANT_00001_decades.nc&quot;), YEAR, xc, yc)
+end
+
+# The floating area on the grid must match the mesh it came from.
+for (name, s) in pairs(snaps)
+    @printf(&quot;%-5s gaps: floating area %.0f km² on the grid, %.0f km² on the mesh; %d gap cells\n&quot;,
+            name, sum(==(3), s.mask) * dx * dy / 1e6, s.area_float / 1e6,
+            count(s.footprint .&amp; (s.mask .== 0)))
+end</code></pre><p>Plot helpers. Everything is shown on the cavity window of the full grid, with the gaps in grey; the five cells of the small-gap geometry are too small to see, so they are circled.</p><pre><code class="language-julia hljs">xkm, ykm = xc ./ 1e3, yc ./ 1e3
+floating(s) = snaps[s].mask .== 3
+gapcells(s) = snaps[s].footprint .&amp; (snaps[s].mask .== 0)
+masked(s, A) = ifelse.(floating(s), A, NaN)
+
+function panel!(fig, i, j, s, A, title; kw...)
+    ax = Axis(fig[i, j]; title, aspect = DataAspect(), xlabel = &quot;x (km)&quot;, ylabel = &quot;y (km)&quot;)
+    heatmap!(ax, xkm, ykm, ifelse.(gapcells(s), 1.0, NaN); colormap = [:grey60])
+    hm = heatmap!(ax, xkm, ykm, A; kw...)
+    I = findall(gapcells(s))
+    if length(I) * dx * dy &lt; 20e6                # a gap of a few km², too small to see
+        cx, cy = mean(xkm[k[1]] for k in I), mean(ykm[k[2]] for k in I)
+        poly!(ax, Circle(Point2f(cx, cy), 6f0); color = :transparent,
+              strokecolor = :cyan, strokewidth = 2)
+    end
+    xlims!(ax, 320, 530)
+    return hm
+end
+cols = ((:small, &quot;small-gap&quot;), (:large, &quot;large-gap&quot;))
+
+fig = Figure(size = (1100, 330))
+for (c, (s, label)) in enumerate(cols)
+    run = s === :small ? &quot;v2 sink run&quot; : &quot;v2 connected run&quot;
+    hm = panel!(fig, 1, c, s, masked(s, snaps[s].z_draft), &quot;$label geometry ($run): ice draft (m)&quot;;
+                colormap = Reverse(:deep), colorrange = (-600, 0))
+    c == 2 &amp;&amp; Colorbar(fig[1, 3], hm)
+end
+save(joinpath(ASSETS, &quot;jesse-geometry.png&quot;), fig)</code></pre><p><img src="../../assets/jesse-geometry.png" alt="ice draft after 200 years"/></p><p>Under the sink treatment only a few km² have melted through, at the north-western grounding line (circled — five cells at this resolution), where the boundary current starts. Under the connected treatment the northern margin is open over 300 km (grey), the ice behind it is thinner, and the grounding line has retreated 30 km further.</p><h2 id="Forcing"><a class="docs-heading-anchor" href="#Forcing">Forcing</a><a id="Forcing-1"></a><a class="docs-heading-anchor-permalink" href="#Forcing" title="Permalink"></a></h2><p>The paper&#39;s <code>ocean3</code> state: UFEMISM&#39;s <code>TANH</code> profile, a thermocline at 450 m depth with a 100 m scale depth, running from the surface freezing point at 34 psu to +1 °C at depth. Salinity follows from a stable quadratic density profile.</p><p>The sampling is part of the forcing. v2 never evaluates the profile continuously: it puts it on UFEMISM&#39;s ocean grid — every 100 m from the surface to 1500 m (<code>ocean_vertical_grid_dz/_max_depth</code>), linear in between and flat below — and that is what <a href="../../API_public/#Laddie.OceanForcing1D"><code>OceanForcing1D</code></a> reproduces when it is handed those sixteen levels, since it sorts, resamples to 1 m and extrapolates flat. Evaluating the analytic profile every metre instead is a different forcing across the thermocline, which sits at the depth of this grounding line.</p><pre><code class="language-julia hljs">l1, l2 = -5.73e-2, 8.32e-2              # liquidus coefficients, as in Params()
+alpha, beta, rho0 = 3.733e-5, 7.843e-4, 1027.0
+S0, T_deep, z_tcl, z_scale, drho0 = 34.0, 1.0, 450.0, 100.0, 0.01
+
+z = collect(-1500.0:100.0:0.0)          # UFEMISM&#39;s ocean grid, which v2 samples on
+depth = -z                              # positive downward
+T0 = l1 * S0 + l2                       # surface freezing temperature
+Tz = @. T0 + (T_deep - T0) * (1 + tanh((depth - z_tcl) / z_scale)) / 2
+Sz = @. S0 + alpha * (Tz - T0) / beta + drho0 * sqrt(depth) / (beta * rho0)
+forcing = CavityForcing(OceanForcing1D(Tz, Sz, z; FT), PrescribedIceForcing(0.0))
+
+fig = Figure(size = (720, 340))
+sel = z .&gt;= -1000
+axT = Axis(fig[1, 1]; xlabel = &quot;temperature (°C)&quot;, ylabel = &quot;depth (m)&quot;, title = &quot;ocean3&quot;)
+axS = Axis(fig[1, 2]; xlabel = &quot;salinity (psu)&quot;)
+scatterlines!(axT, Tz[sel], z[sel]; color = :firebrick)
+scatterlines!(axS, Sz[sel], z[sel]; color = :firebrick)
+save(joinpath(ASSETS, &quot;jesse-forcing.png&quot;), fig)</code></pre><p><img src="../../assets/jesse-forcing.png" alt="ocean3 profile"/></p><h2 id="Parameters"><a class="docs-heading-anchor" href="#Parameters">Parameters</a><a id="Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Parameters" title="Permalink"></a></h2><p>From the paper&#39;s Table A1 and the v2 MISMIP+ configuration. These choices make Laddie.jl behave like v2 rather than v1:</p><ul><li><a href="../../API_physics/#Laddie.UStarGamTMelting"><code>UStarGamTMelting</code></a>: the transfer coefficients scale with the friction velocity, <span>$\gamma_T = \Gamma_T u_\star$</span>;</li><li><a href="../../API_physics/#Laddie.LambertEntrainment"><code>LambertEntrainment</code></a>: what v2 calls <code>&#39;Gaspar1988&#39;</code>. Laddie.jl&#39;s <a href="../../API_physics/#Laddie.GasparEntrainment"><code>GasparEntrainment</code></a> is a different form, which gives a thinner layer and about 13 % less melt;</li><li><code>drho_floor</code>: v2 floors the density contrast in the entrainment at the same 0.005 kg m⁻³ as its convection;</li><li>an ice temperature of 0 °C (the <code>PrescribedIceForcing</code> above): v2 without ice thermodynamics uses the latent heat alone. The Laddie.jl default of −25 °C melts about 20 % less;</li><li><a href="../../API_physics/#Laddie.NonlinearLateralViscosity"><code>NonlinearLateralViscosity</code></a>: v2&#39;s shear-scaled viscosity. Its <code>laddie_viscosity</code> (<code>Ah</code> in Table A1, 10) is the coefficient of that closure in the interior — not a viscosity in m² s⁻¹ — but v2&#39;s <em>wall</em> term uses the same number as a plain viscosity, which is <code>A_h</code> here;</li><li><a href="../../API_physics/#Laddie.TruncatedDepthGradient"><code>TruncatedDepthGradient</code></a>: v2&#39;s pressure gradient at the ice front;</li><li><a href="../../API_physics/#Laddie.ClampDensity"><code>ClampDensity</code></a>: v2&#39;s only convection treatment, a buoyancy floor;</li><li><code>max_detrainment</code>: v2 hard-codes a 1e-3 m s⁻¹ cap (<code>laddie_physics.f90</code>), and unlike v1&#39;s 0.5 it binds.</li></ul><p>Walls are no-slip on both the grounding line and land, as in v2 — but v2&#39;s no slip is <em>viscous only</em>: both of its advection schemes skip grounded neighbours, so no momentum crosses a wall. <a href="../../API_physics/#Laddie.NoWallAdvection"><code>NoWallAdvection</code></a> takes the slip factor out of the momentum advection and leaves it in the viscous drag, which is v2&#39;s combination.</p><p>One v2 setting is deliberately left off: its <code>&#39;upstream&#39;</code> momentum advection, which Laddie.jl has as <a href="../../API_physics/#Laddie.UpstreamMomentumAdvection"><code>UpstreamMomentumAdvection</code></a> — the momentum riding on the thickness equation&#39;s donor-cell mass fluxes. It has no wall term of its own, so on this geometry, at v2&#39;s wall viscosity, the layer runs away at the grounding line (mean <code>D</code> 60 m against 10 m, peaks above 2 km, melt eight times v2&#39;s). It needs <code>A_h = 50</code>, five times v2&#39;s <code>Ah</code>, to hold — and then melts 9 % more than v2, against the 3 % below with the centred scheme Laddie.jl inherited from v1. The divergence takes both the ocean-level sampling and the detrainment cap: with either one on its own the run is stable. A C-grid counterpart of v2&#39;s own wall term is what this needs, and it does not exist yet.</p><pre><code class="language-julia hljs">params = Params(; FT,
+    melting = UStarGamTMelting(3.0e-2),
+    entrainment = LambertEntrainment(2.5),
+    drho_floor = 0.005 / rho0,
+    lateral_viscosity = NonlinearLateralViscosity(10.0),
+    front_pressure = TruncatedDepthGradient(),
+    convection_scheme = ClampDensity(0.005),
+    coriolis = CoriolisParameter0D(-1.37e-4),
+    A_h = 10.0,                         # the wall term of v2&#39;s viscosity
+    C_d = 2.5e-3, C_d_top = 2.5e-3,
+    K_h = 10.0,
+    max_detrainment = 1e-3,
+    rho0_seawater = rho0, rho_ice = 917.0,
+    D_min = 1.0, u_tide = 0.01, v_cut = 1.0,
+    D_init = 2.0, dT_init = 0.0, dS_init = -0.1,
+)</code></pre><h2 id="Runs"><a class="docs-heading-anchor" href="#Runs">Runs</a><a id="Runs-1"></a><a class="docs-heading-anchor-permalink" href="#Runs" title="Permalink"></a></h2><p>Each geometry runs from rest with the treatment that produced it, under <a href="../../API_physics/#Laddie.AdaptiveDt"><code>AdaptiveDt</code></a>, which sets the time step from a target CFL number instead of fixing it; it settles near 145 s, against the 100 s of the coupled runs. The total melt levels off after about 20 days, but the flow near the grounding line stays unsteady, so the fields shown are averages over days 20 to 30, sampled twice a day.</p><p>Sample the average in much shorter calls than this and <code>AdaptiveDt</code> will re-bootstrap the leapfrog on nearly every step — each <code>run!</code> is then too short for its own check interval — which inflates the melt rate by tens of percent.</p><pre><code class="language-julia hljs">const SPINUP, AVERAGE, SAMPLES = 20.0, 10.0, 20
+
+function run_snapshot(s, gaps)
+    grid = Grid(s.mask, s.z_draft, dx, dy; x = xc, y = yc, z_bed = s.z_bed, FT, backend,
+                preprocess = [MarkGapsPreprocess(s.footprint)],
+                domain_cropping = MinRectangleDomainCropping(margin = round(Int, 6e3 / dx)))
+    model = Model(grid; forcing, params,
+                  boundary = BoundaryConditions(; gaps, wall_advection = NoWallAdvection()))
+    sim = Simulation(model; dt = 100.0, tstep = AdaptiveDt())
+    run!(sim; days = SPINUP, verbose = false)
+    m = sim.model
+    melt, speed = zero(Array(m.melt)), zero(Array(m.melt))
+    for _ in 1:SAMPLES
+        run!(sim; days = AVERAGE / SAMPLES, verbose = false)
+        melt .+= Array(m.melt) .* m.seconds_per_year ./ SAMPLES
+        speed .+= hypot.(Laddie.im_half(Array(m.U.present)),
+                         Laddie.jm_half(Array(m.V.present))) ./ SAMPLES
+    end
+    return (; sim, melt, speed)
+end
+
+sims = (small = run_snapshot(snaps.small, SinkGapsBC()),
+        large = run_snapshot(snaps.large, ConnectedGapsBC()))
+
+for (name, s) in pairs(sims)
+    @printf(&quot;%-5s gaps: %d x %d cells, adaptive time step settled at %.0f s\n&quot;,
+            name, size(s.sim.model.tmask)..., s.sim.clock.dt)
+end</code></pre><h2 id="Laddie.jl-and-LADDIE-v2-on-the-same-geometry"><a class="docs-heading-anchor" href="#Laddie.jl-and-LADDIE-v2-on-the-same-geometry">Laddie.jl and LADDIE v2 on the same geometry</a><a id="Laddie.jl-and-LADDIE-v2-on-the-same-geometry-1"></a><a class="docs-heading-anchor-permalink" href="#Laddie.jl-and-LADDIE-v2-on-the-same-geometry" title="Permalink"></a></h2><p>Laddie.jl&#39;s fields, averaged over the last ten days, next to v2&#39;s own. Melt is on a symmetric log scale, as in the paper.</p><pre><code class="language-julia hljs">spy = sims.small.sim.model.seconds_per_year
+# Laddie.jl integrates the cropped domain; put its fields back on the full grid.
+function ongrid(s, A)
+    out = fill(NaN, size(snaps[s].mask))
+    out[sims[s].sim.model.grid.crop...] .= A
+    return masked(s, out)
+end
+laddie(s, field) = ongrid(s, getproperty(sims[s], field))
+v2_melt(s) = masked(s, snaps[s].melt .* spy)
+v2_speed(s) = masked(s, snaps[s].speed)
+
+melt_kw = (colormap = :inferno, colorscale = Makie.pseudolog10, colorrange = (-10, 100))
+speed_kw = (colormap = :speed, colorrange = (0, 40))
+fig = Figure(size = (860, 900))
+for (c, (s, label)) in enumerate(cols)
+    i = 2c - 1
+    panel!(fig, i, 1, s, v2_melt(s), &quot;v2, $label: melt&quot;; melt_kw...)
+    panel!(fig, i, 2, s, 100 .* v2_speed(s), &quot;v2, $label: layer speed&quot;; speed_kw...)
+    hm_melt = panel!(fig, i + 1, 1, s, laddie(s, :melt), &quot;Laddie.jl, $label: melt&quot;; melt_kw...)
+    hm_speed = panel!(fig, i + 1, 2, s, 100 .* laddie(s, :speed),
+                      &quot;Laddie.jl, $label: layer speed&quot;; speed_kw...)
+    if c == 2
+        Colorbar(fig[5, 1], hm_melt; vertical = false, label = &quot;melt (m/yr)&quot;)
+        Colorbar(fig[5, 2], hm_speed; vertical = false, label = &quot;layer speed (cm/s)&quot;)
+    end
+end
+save(joinpath(ASSETS, &quot;jesse-v2.png&quot;), fig)
+
+total_melt(melt) = sum(filter(isfinite, melt)) * dx * dy * 1000.0 / 1e12   # m/yr → Gt/yr
+function pattern_corr(a, b)
+    ok = isfinite.(a) .&amp; isfinite.(b)
+    return cor(a[ok], b[ok])
+end
+comparison = map(keys(snaps)) do s
+    lm, vm = laddie(s, :melt), v2_melt(s)
+    (; geom = s, v2 = total_melt(vm), laddie = total_melt(lm), corr = pattern_corr(lm, vm))
+end
+for c in comparison
+    @printf(&quot;%-5s gaps, total melt: v2 %.1f Gt/yr, Laddie.jl %.1f Gt/yr (%+.0f %%); melt pattern correlation %.3f\n&quot;,
+            c.geom, c.v2, c.laddie, 100 * (c.laddie / c.v2 - 1), c.corr)
+end</code></pre><p><img src="../../assets/jesse-v2.png" alt="Laddie.jl vs LADDIE v2 at year 200"/></p><p>The two models agree closely, although they share neither the mesh nor the time stepping. Laddie.jl reproduces the melt at the grounding line and the boundary current along the northern margin: it stops at the gap under the sink treatment and runs on to the front under the connected one, which is the paper&#39;s Fig. 3 (panels l, p, t, x). An opening of a few km² is enough to drain the current, which is the feedback the paper describes — a sink at the margin keeps the ice downstream thick, so no further gaps open there, while a connected layer keeps thinning the margin. The latest run gave:</p><table><tr><th style="text-align: right">geometry</th><th style="text-align: right">v2 melt (Gt/yr)</th><th style="text-align: right">Laddie.jl melt (Gt/yr)</th><th style="text-align: right">melt pattern correlation</th></tr><tr><td style="text-align: right">small-gap (sink)</td><td style="text-align: right">40.1</td><td style="text-align: right">38.9 (−3 %)</td><td style="text-align: right">0.972</td></tr><tr><td style="text-align: right">large-gap (connected)</td><td style="text-align: right">64.3</td><td style="text-align: right">65.0 (+1 %)</td><td style="text-align: right">0.980</td></tr></table><p>No single setting carries this. Sampling the ambient profile every metre instead of on v2&#39;s ocean levels gives 39.8 and 65.5 Gt/yr; without the wall, viscosity and detrainment settings above as well — Laddie.jl&#39;s own defaults, on the 1 m profile — it is 36.5 and 65.3, with correlations 0.966 and 0.978. Each is worth a few percent, and they are here because they are what v2 does, not because they were chosen to agree.</p><p>The page runs in <code>Float32</code>. On this problem it is not an approximation worth worrying about — <code>Float64</code> gives 38.9 and 65.1 Gt/yr, the same correlations and the same mean layer thickness to 0.1 m — and it halves the time on the GPU.</p><p>To regenerate the figures, run <code>LADDIE_DOCS_JESSE=true julia -t 16 --project=docs docs/make.jl</code>; each run takes about 8 seconds on an RTX A4000 (17 in <code>Float64</code>), and far longer on the CPU fallback.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../lambert-ase/">« Amundsen Sea</a><a class="docs-footer-nextpage" href="../inverse-problems/">Inverse problems »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Tuesday 29 September 2026 08:24">Tuesday 29 September 2026</span>. Using Julia version 1.13.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

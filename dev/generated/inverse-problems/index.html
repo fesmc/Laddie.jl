@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Inverse problems · Laddie.jl</title><meta name="title" content="Inverse problems · Laddie.jl"/><meta property="og:title" content="Inverse problems · Laddie.jl"/><meta property="twitter:title" content="Inverse problems · Laddie.jl"/><meta name="description" content="Documentation for Laddie.jl."/><meta property="og:description" content="Documentation for Laddie.jl."/><meta property="twitter:description" content="Documentation for Laddie.jl."/><meta property="og:url" content="https://fesmc.github.io/Laddie.jl/generated/inverse-problems/"/><meta property="twitter:url" content="https://fesmc.github.io/Laddie.jl/generated/inverse-problems/"/><link rel="canonical" href="https://fesmc.github.io/Laddie.jl/generated/inverse-problems/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Laddie.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../physics/">Physics</a></li><li><a class="tocitem" href="../../numerics/">Numerics</a></li><li><a class="tocitem" href="../../reactant/">Reactant backend</a></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../isomip/">ISOMIP+</a></li><li><a class="tocitem" href="../crosson-dotson/">Crosson–Dotson</a></li><li><a class="tocitem" href="../lambert-ase/">Amundsen Sea</a></li><li><a class="tocitem" href="../jesse-gaps/">Ice-shelf gaps</a></li><li class="is-active"><a class="tocitem" href>Inverse problems</a><ul class="internal"><li><a class="tocitem" href="#ForwardDiff.jl:-few-parameters"><span>ForwardDiff.jl: few parameters</span></a></li><li><a class="tocitem" href="#Reactant.jl:-many-parameters"><span>Reactant.jl: many parameters</span></a></li><li><a class="tocitem" href="#Result"><span>Result</span></a></li></ul></li></ul></li><li><span class="tocitem">API reference</span><ul><li><a class="tocitem" href="../../API_public/">Setup and running</a></li><li><a class="tocitem" href="../../API_physics/">Parameterizations and boundaries</a></li><li><a class="tocitem" href="../../API_ad/">Automatic differentiation</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Inverse problems</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Inverse problems</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/fesmc/Laddie.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/fesmc/Laddie.jl/blob/main/docs/src/examples/inverse-problems.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Inverse-problems"><a class="docs-heading-anchor" href="#Inverse-problems">Inverse problems</a><a id="Inverse-problems-1"></a><a class="docs-heading-anchor-permalink" href="#Inverse-problems" title="Permalink"></a></h1><p>Laddie.jl can be differentiated, so its parameters can be estimated from data by gradient-based optimisation. Two tools do the differentiation, and the number of parameters decides which one to use:</p><ul><li><strong><a href="https://github.com/JuliaDiff/ForwardDiff.jl">ForwardDiff.jl</a></strong>, for a <strong>small number of parameters</strong>. Forward mode carries one derivative direction per parameter through the run, so it costs about one run per parameter. It works on the plain CPU and CUDA backends, needs no compilation step, and gives the whole Jacobian of a field at once.</li><li><strong><a href="https://github.com/EnzymeAD/Reactant.jl">Reactant.jl</a></strong> (with Enzyme), for a <strong>large number of parameters</strong>. Reverse mode gives the gradient of a scalar misfit with respect to every input at once for a fixed cost of about ten runs, whether the inputs are two coefficients or a field (see <a href="../../reactant/#Reactant-backend">Reactant backend</a>).</li></ul><p>Both are shown on the same twin experiment. A run with known parameters produces the &quot;observations&quot;; the estimation starts from a wrong guess and has to recover them.</p><ul><li><strong>Model:</strong> ISOMIP+ warm on an 80 × 20 grid, 10 days from rest at <code>dt = 210 s</code>.</li><li><strong>Observations:</strong> the melt-rate field: the melt rate of every ice-covered cell, averaged over the 10 days (1400 values).</li><li><strong>Misfit:</strong> <code>J = ½ Σᵢ (mᵢ − mᵢᵒᵇˢ)²</code> over the cells, which is <code>N · RMSE² / 2</code>: minimising it minimises the root-mean-square error of the melt field. The optimisers work on <code>J</code> rather than on the RMSE, whose square root has a kink at a perfect fit, which a twin experiment converges to; the progress is reported as RMSE.</li><li><strong>Unknowns:</strong> the top drag coefficient <code>C_d_top</code>, which sets the friction velocity that drives melt, and the minimum layer thickness <code>D_min</code>. The truth is <code>C_d_top = 1.1e-3</code> and <code>D_min = 1 m</code>; the first guess is <code>2.2e-3</code> and <code>3 m</code>.</li><li><strong>Parametrisation:</strong> both are estimated as <code>θ = log(p / p_guess)</code>, so they are positive, of similar size, and start at <code>θ = 0</code>.</li></ul><p>The two parameters are well identified by the melt field: at the truth, the Jacobian columns have similar norms (117 and 129 m/yr per e-fold) and are nearly orthogonal (cosine −0.01).</p><p>The code is <strong>not executed</strong> by the documentation build, as its second half needs a GPU; the figure was made by running this script.</p><pre><code class="language-julia hljs">using Laddie
+using LinearAlgebra
+using Printf
+using CairoMakie
+
+const DAYS = 10.0
+const NX, NY = 80, 20
+const GUESS = (C_d_top = 2.2e-3, D_min = 3.0)
+const TRUTH = (C_d_top = 1.1e-3, D_min = 1.0)
+const SPY = 365.25 * 86400                  # seconds per year
+
+params_of(θ) = (C_d_top = GUESS.C_d_top * exp(θ[1]), D_min = GUESS.D_min * exp(θ[2]))
+θ_truth = [log(TRUTH.C_d_top / GUESS.C_d_top), log(TRUTH.D_min / GUESS.D_min)]</code></pre><p>The two parts use different optimisers because the two modes of differentiation give different things for the same cost. Forward mode gives the <strong>Jacobian</strong> of the 1400 residuals, one column per parameter: exactly what <strong>Gauss–Newton</strong> needs, and it then converges in a few iterations. Reverse mode gives the <strong>gradient</strong> of the scalar misfit (one row of information, whatever the number of parameters); the Jacobian would take one reverse pass per residual, 1400 of them. A <strong>quasi-Newton</strong> method, BFGS, builds the curvature from successive gradients instead. With many parameters Gauss–Newton is out of reach anyway: its Jacobian would need one forward run per parameter.</p><pre><code class="language-julia hljs">rmse(J, n) = sqrt(2J / n)</code></pre><h2 id="ForwardDiff.jl:-few-parameters"><a class="docs-heading-anchor" href="#ForwardDiff.jl:-few-parameters">ForwardDiff.jl: few parameters</a><a id="ForwardDiff.jl:-few-parameters-1"></a><a class="docs-heading-anchor-permalink" href="#ForwardDiff.jl:-few-parameters" title="Permalink"></a></h2><p>The model is built at the element type of <code>θ</code>, so a <code>Dual</code> input carries its derivatives through the grid, the state and the parameters alike. The run is a plain loop of <a href="../../API_ad/#Laddie.integrate!"><code>integrate!</code></a> steps that accumulates the melt rate of every cell.</p><pre><code class="language-julia hljs">using ForwardDiff
+
+function melt_field(θ)
+    T = eltype(θ)
+    p = params_of(θ)
+    params = Params(; FT = T, C_d_top = p.C_d_top, D_min = p.D_min)
+    sim = build_isomip(CPU(); FT = T, nx = NX, ny = NY, isomipcond = :warm, params)
+    m = sim.model
+    n = round(Int, DAYS * 86400 / Laddie._primal(sim.clock.dt))
+    acc = zero(m.melt)
+    for _ = 1:n
+        integrate!(m, sim.clock.dt, 1)
+        acc .+= m.melt
+    end
+    return vec((acc .* (SPY / n))[m.imask .&gt; 0])    # m/yr, ice-covered cells
+end
+
+obs = melt_field(θ_truth)</code></pre><p>With the Jacobian of the residual field, Gauss–Newton solves the least-squares problem <code>min ½ ‖melt_field(θ) − obs‖²</code> in a few iterations. <code>ForwardDiff.jacobian</code> evaluates the two columns in one run of dual numbers.</p><pre><code class="language-julia hljs">function gauss_newton(θ; iterations = 8, tol = 1e-8)
+    history = [(copy(θ), sum(abs2, melt_field(θ) .- obs) / 2)]
+    for _ = 1:iterations
+        r = melt_field(θ) .- obs
+        J = ForwardDiff.jacobian(melt_field, θ)
+        θ = θ .- (J&#39; * J) \ (J&#39; * r)
+        push!(history, (copy(θ), sum(abs2, melt_field(θ) .- obs) / 2))
+        history[end][2] &lt; tol * history[1][2] &amp;&amp; break
+    end
+    return θ, history
+end
+
+θ_fd, hist_fd = gauss_newton(zeros(2))
+for (k, (θ, cost)) in enumerate(hist_fd)
+    p = params_of(θ)
+    @printf &quot;GN %d: C_d_top = %.4e, D_min = %.4f m, RMSE = %.3e m/yr\n&quot; k - 1 p.C_d_top p.D_min rmse(cost, length(obs))
+end</code></pre><h2 id="Reactant.jl:-many-parameters"><a class="docs-heading-anchor" href="#Reactant.jl:-many-parameters">Reactant.jl: many parameters</a><a id="Reactant.jl:-many-parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Reactant.jl:-many-parameters" title="Permalink"></a></h2><p>Reverse mode needs the run as a compiled program (see <a href="../../reactant/#Reactant-backend">Reactant backend</a>). The parameters become inputs of the program with <a href="../../API_ad/#Laddie.trace_parameters"><code>trace_parameters</code></a>, so one compiled program serves every parameter value. The run is replayed from a schedule with one segment of constant <code>dt</code> (<a href="../../API_ad/#Laddie.DtSchedule"><code>DtSchedule</code></a>); <code>means = (:melt,)</code> returns the time-mean melt field over the run. The same code takes a schedule from <a href="../../API_ad/#Laddie.adaptive_schedule"><code>adaptive_schedule</code></a> for an adaptive time step. This part runs in Float32 on the GPU.</p><pre><code class="language-julia hljs">using Reactant, CUDA
+using Reactant: Enzyme
+Reactant.set_default_backend(&quot;gpu&quot;)
+
+const FT = Float32
+base = build_isomip(CPU(); FT, nx = NX, ny = NY, isomipcond = :warm)
+fresh(θ) = trace_parameters(to_backend(base, ReactantBackend()).model; params_of(θ)...)
+nsteps = round(Int, DAYS * 86400 / base.clock.dt)
+sched = DtSchedule(Reactant.to_rarray(FT[base.clock.dt]), Reactant.to_rarray([nsteps]),
+                   ConcreteRNumber(1))
+
+function misfit(model, sched, obs)
+    melt = integrate!(model, sched; means = (:melt,)).melt
+    return sum(abs2, (melt .* FT(SPY) .- obs) .* model.imask) / 2
+end
+gradient!(m, dm, sched, obs) = (Enzyme.autodiff(Enzyme.Reverse, misfit, Enzyme.Active,
+                                                Enzyme.Duplicated(m, dm), Enzyme.Const(sched),
+                                                Enzyme.Const(obs)); dm)
+melt_field_r(model, sched) = integrate!(model, sched; means = (:melt,)).melt</code></pre><p>The observations come from the same program at the truth. Each call advances the model it is given, so every evaluation starts from a fresh one.</p><pre><code class="language-julia hljs">model0 = fresh(zeros(2))
+obs_r = reactant_compile(melt_field_r, model0, sched)(fresh(θ_truth), sched) .* FT(SPY)
+cost_prog = reactant_compile(misfit, model0, sched, obs_r)
+grad_prog = reactant_compile(gradient!, model0, Enzyme.make_zero(model0), sched, obs_r)
+
+cost(θ) = Float64(Reactant.to_number(cost_prog(fresh(θ), sched, obs_r)))
+function cost_and_gradient(θ)
+    g = grad_prog(fresh(θ), Enzyme.make_zero(model0), sched, obs_r)
+    p = params_of(θ)
+    dθ = [Reactant.to_number(g.params.C_d_top) * p.C_d_top,   # chain rule for log p
+          Reactant.to_number(g.params.D_min) * p.D_min]
+    return cost(θ), Float64.(dθ)
+end</code></pre><p>The gradient of the scalar misfit is all reverse mode gives, so the optimiser is BFGS with a backtracking line search. The first step moves half an e-fold along the steepest descent.</p><pre><code class="language-julia hljs">function bfgs(θ; iterations = 30, tol = 1e-8)
+    c, g = cost_and_gradient(θ)
+    history = [(copy(θ), c)]
+    H = Matrix(0.5 / norm(g) * I, 2, 2)
+    for _ = 1:iterations
+        step = -H * g
+        α = 1.0
+        while cost(θ .+ α .* step) &gt; c + 1e-4 * α * dot(g, step) &amp;&amp; α &gt; 1e-4
+            α /= 2
+        end
+        s = α .* step
+        θ = θ .+ s
+        c_new, g_new = cost_and_gradient(θ)
+        y = g_new .- g
+        if dot(s, y) &gt; 0
+            length(history) == 1 &amp;&amp; (H = dot(s, y) / dot(y, y) * Matrix(I, 2, 2))
+            ρ = 1 / dot(s, y)
+            H = (I - ρ * s * y&#39;) * H * (I - ρ * y * s&#39;) + ρ * s * s&#39;
+        end
+        c, g = c_new, g_new
+        push!(history, (copy(θ), c))
+        c &lt; tol * history[1][2] &amp;&amp; break
+    end
+    return θ, history
+end
+
+θ_r, hist_r = bfgs(zeros(2))
+for (k, (θ, c)) in enumerate(hist_r)
+    p = params_of(θ)
+    @printf &quot;BFGS %2d: C_d_top = %.4e, D_min = %.4f m, RMSE = %.3e m/yr\n&quot; k - 1 p.C_d_top p.D_min rmse(c, length(obs))
+end</code></pre><h2 id="Result"><a class="docs-heading-anchor" href="#Result">Result</a><a id="Result-1"></a><a class="docs-heading-anchor-permalink" href="#Result" title="Permalink"></a></h2><pre><code class="language-julia hljs">fig = Figure(size = (900, 330))
+ax1 = Axis(fig[1, 1]; xlabel = &quot;iteration&quot;, ylabel = &quot;parameter / truth&quot;, title = &quot;Estimates&quot;)
+ax2 = Axis(fig[1, 2]; xlabel = &quot;iteration&quot;, ylabel = &quot;RMSE of the melt field (m/yr)&quot;,
+           yscale = log10, title = &quot;Misfit&quot;)
+for (hist, name, marker) in ((hist_fd, &quot;ForwardDiff, Gauss–Newton&quot;, :circle),
+                             (hist_r, &quot;Reactant, BFGS&quot;, :utriangle))
+    its = 0:(length(hist) - 1)
+    ps = [params_of(θ) for (θ, _) in hist]
+    scatterlines!(ax1, its, [p.C_d_top / TRUTH.C_d_top for p in ps]; marker,
+                  color = :steelblue, label = &quot;C_d_top, $name&quot;)
+    scatterlines!(ax1, its, [p.D_min / TRUTH.D_min for p in ps]; marker,
+                  color = :firebrick, label = &quot;D_min, $name&quot;)
+    scatterlines!(ax2, its, [max(rmse(c, length(obs)), 1e-12) for (_, c) in hist]; marker,
+                  color = :black, label = name)
+end
+hlines!(ax1, [1.0]; color = :gray, linestyle = :dash)
+axislegend(ax1; position = :rt, labelsize = 10)
+axislegend(ax2; position = :rt, labelsize = 10)
+save(joinpath(pkgdir(Laddie), &quot;docs&quot;, &quot;src&quot;, &quot;assets&quot;, &quot;inverse-problems.png&quot;), fig)
+fig</code></pre><p>Both recover the truth from a guess twice and three times too large:</p><table><tr><th style="text-align: left"></th><th style="text-align: right">iterations</th><th style="text-align: right"><code>C_d_top</code></th><th style="text-align: right"><code>D_min</code> (m)</th><th style="text-align: right">RMSE (m/yr)</th></tr><tr><td style="text-align: left">first guess</td><td style="text-align: right"></td><td style="text-align: right">2.2000e-3</td><td style="text-align: right">3.0000</td><td style="text-align: right">6.29</td></tr><tr><td style="text-align: left">ForwardDiff, Gauss–Newton (Float64, CPU, 8 threads)</td><td style="text-align: right">4</td><td style="text-align: right">1.1000e-3</td><td style="text-align: right">1.0000</td><td style="text-align: right">3.3e-7</td></tr><tr><td style="text-align: left">Reactant, BFGS (Float32, GPU)</td><td style="text-align: right">9</td><td style="text-align: right">1.0999e-3</td><td style="text-align: right">0.9999</td><td style="text-align: right">5.1e-4</td></tr></table><p>The whole script takes about 6 minutes on a Xeon W-2245 and an RTX A4000, including the compilation of the three Reactant programs, paid once per session.</p><p><img src="../../assets/inverse-problems.png" alt="Inverse problems: twin experiment"/></p><p>Gauss–Newton converges quadratically: with only two parameters, the full Jacobian of the 1400 residuals costs two derivative directions. BFGS sees only the gradient of the scalar misfit and needs more iterations, and Float32 limits the final RMSE; but each of its gradients costs the same for two parameters as for a field of thousands.</p><p>For a real inverse problem, three things change. The observations carry errors, so the misfit weights each residual by its uncertainty and the optimum no longer fits them exactly. With more than a handful of unknowns, a prior (or regularisation) term keeps the problem well posed. And the geometry must be free of artefacts that make the run&#39;s derivative explode: a one-cell ocean hole inside an ice shelf is enough (see <a href="../../API_public/#Laddie.FillOceanHolesPreprocess"><code>FillOceanHolesPreprocess</code></a>).</p><p>To rerun the example and refresh the figure as part of the documentation build (needs a CUDA GPU): <code>LADDIE_DOCS_INVERSE=true julia -t 8 --project=docs docs/make.jl</code>.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../jesse-gaps/">« Ice-shelf gaps</a><a class="docs-footer-nextpage" href="../../API_public/">Setup and running »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Tuesday 29 September 2026 08:24">Tuesday 29 September 2026</span>. Using Julia version 1.13.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

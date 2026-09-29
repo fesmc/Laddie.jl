@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Crosson–Dotson · Laddie.jl</title><meta name="title" content="Crosson–Dotson · Laddie.jl"/><meta property="og:title" content="Crosson–Dotson · Laddie.jl"/><meta property="twitter:title" content="Crosson–Dotson · Laddie.jl"/><meta name="description" content="Documentation for Laddie.jl."/><meta property="og:description" content="Documentation for Laddie.jl."/><meta property="twitter:description" content="Documentation for Laddie.jl."/><meta property="og:url" content="https://fesmc.github.io/Laddie.jl/generated/crosson-dotson/"/><meta property="twitter:url" content="https://fesmc.github.io/Laddie.jl/generated/crosson-dotson/"/><link rel="canonical" href="https://fesmc.github.io/Laddie.jl/generated/crosson-dotson/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Laddie.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../physics/">Physics</a></li><li><a class="tocitem" href="../../numerics/">Numerics</a></li><li><a class="tocitem" href="../../reactant/">Reactant backend</a></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../isomip/">ISOMIP+</a></li><li class="is-active"><a class="tocitem" href>Crosson–Dotson</a><ul class="internal"><li><a class="tocitem" href="#Geometry"><span>Geometry</span></a></li><li><a class="tocitem" href="#Forcing"><span>Forcing</span></a></li><li><a class="tocitem" href="#Parameters-and-run"><span>Parameters and run</span></a></li><li><a class="tocitem" href="#Comparison-with-the-reference"><span>Comparison with the reference</span></a></li><li><a class="tocitem" href="#Figure"><span>Figure</span></a></li><li><a class="tocitem" href="#Results"><span>Results</span></a></li></ul></li><li><a class="tocitem" href="../lambert-ase/">Amundsen Sea</a></li><li><a class="tocitem" href="../jesse-gaps/">Ice-shelf gaps</a></li><li><a class="tocitem" href="../inverse-problems/">Inverse problems</a></li></ul></li><li><span class="tocitem">API reference</span><ul><li><a class="tocitem" href="../../API_public/">Setup and running</a></li><li><a class="tocitem" href="../../API_physics/">Parameterizations and boundaries</a></li><li><a class="tocitem" href="../../API_ad/">Automatic differentiation</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Crosson–Dotson</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Crosson–Dotson</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/fesmc/Laddie.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/fesmc/Laddie.jl/blob/main/docs/src/examples/crosson-dotson.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Crosson–Dotson:-reproducing-LADDIE-v1-(Lambert-et-al.,-2023)"><a class="docs-heading-anchor" href="#Crosson–Dotson:-reproducing-LADDIE-v1-(Lambert-et-al.,-2023)">Crosson–Dotson: reproducing LADDIE v1 (Lambert et al., 2023)</a><a id="Crosson–Dotson:-reproducing-LADDIE-v1-(Lambert-et-al.,-2023)-1"></a><a class="docs-heading-anchor-permalink" href="#Crosson–Dotson:-reproducing-LADDIE-v1-(Lambert-et-al.,-2023)" title="Permalink"></a></h1><p>This script reproduces the Crosson–Dotson run of <a href="https://doi.org/10.5194/tc-17-3203-2023">Lambert et al. (2023)</a> (their Figs. 3–4) and compares it cell by cell with the reference output. The settings are the reference&#39;s, not Laddie.jl&#39;s defaults, and make a good starting point for a realistic cavity. Four of them matter:</p><ul><li><code>nu = 0.8</code>: <code>nu = 0.1</code> is unstable at <code>dt = 120 s</code> and inflates the mean melt sevenfold.</li><li>No cap on the layer thickness (<a href="../../API_physics/#Laddie.NoMaxLayerThickness"><code>NoMaxLayerThickness</code></a>, the default): capping <code>D</code> at the water column cuts melt by ~90 % (see <a href="../../API_physics/#Laddie.AbstractMaxLayerThickness"><code>AbstractMaxLayerThickness</code></a>).</li><li><code>ClampDensity</code> convection, as in the reference (the default <code>ResetToAmbient</code>: −0.07 %).</li><li><code>PyGradient</code>, the reference&#39;s ice-base slope (the default <code>JlGradient</code>: −0.8 %).</li></ul><p>The code is <strong>not executed</strong> by the documentation build, as it needs BedMachine v2 and the reference file on disk.</p><pre><code class="language-julia hljs">using Laddie
+using KernelAbstractions
+using NCDatasets
+using Printf
+using Statistics
+using CairoMakie
+
+FT = Float64
+backend = CPU()     # or `CUDABackend()` after `using CUDA`
+
+const BEDMACHINE =
+    &quot;/home/jan/Documents/projects/esm-datasets/data/topography/src/BedMachineAntarctica-v2.nc&quot;
+const REFERENCE = joinpath(pkgdir(Laddie), &quot;papers&quot;, &quot;lambert-2023&quot;, &quot;data&quot;,
+                           &quot;CrossDots_0.5_tanh_Tdeep0.4_ztcl-500_050.nc&quot;)
+isfile(REFERENCE) || error(&quot;reference output not found at $REFERENCE&quot;)</code></pre><h2 id="Geometry"><a class="docs-heading-anchor" href="#Geometry">Geometry</a><a id="Geometry-1"></a><a class="docs-heading-anchor-permalink" href="#Geometry" title="Permalink"></a></h2><p>The reference cuts the domain out of BedMachine v2 at its native 500 m spacing, with <code>isel(x=3445:3705, y=7730:8065)</code> (0-based, end-exclusive) and no smoothing. The domain contains no ice-free land, so the reference relabelling land as grounded ice is inert.</p><pre><code class="language-julia hljs">xs, ys = 3446:3705, 7731:8065
+ds = Dataset(BEDMACHINE)
+xy(v) = Float64.(coalesce.(Array(ds[v][xs, ys]), NaN))[:, end:-1:1]   # BedMachine y is descending
+surface, thickness, mask = xy(&quot;surface&quot;), xy(&quot;thickness&quot;), Int.(xy(&quot;mask&quot;))
+close(ds)
+
+# The reference clamps shallow drafts at −10 m. The domain already ends in ocean and
+# grounded ice on all sides, so no border ring is needed.
+z_draft = surface .- thickness
+z_draft[(mask .== 3) .&amp; (z_draft .&gt; -10.0)] .= -10.0
+dx = dy = 500.0
+grid = Grid(mask, z_draft, dx, dy; domain_cropping = NoDomainCropping(), backend, FT)</code></pre><h2 id="Forcing"><a class="docs-heading-anchor" href="#Forcing">Forcing</a><a id="Forcing-1"></a><a class="docs-heading-anchor-permalink" href="#Forcing" title="Permalink"></a></h2><p>The paper&#39;s analytic profile: a <code>tanh</code> thermocline at 500 m depth (250 m scale) from the surface freezing point to +0.4 °C, with salinity set so the density profile is stable.</p><pre><code class="language-julia hljs">l1, l2 = -5.73e-2, 8.32e-2              # liquidus coefficients, as in Params()
+alpha, beta, rho0 = 3.733e-5, 7.843e-4, 1028.0
+S0, T_deep, z_tcl, z_scale, drho0 = 34.0, 0.4, -500.0, 250.0, 0.01
+
+z = collect(-5000.0:1.0:-1.0)
+T0 = l1 * S0 + l2                       # surface freezing temperature
+Tz = @. T_deep + (T0 - T_deep) * (1 + tanh((z - z_tcl) / z_scale)) / 2
+Sz = @. S0 + alpha * (Tz - T0) / beta + drho0 * sqrt(abs(z)) / (beta * rho0)
+forcing = CavityForcing(OceanForcing1D(Tz, Sz, z; FT), PrescribedIceForcing(-25.0))</code></pre><h2 id="Parameters-and-run"><a class="docs-heading-anchor" href="#Parameters-and-run">Parameters and run</a><a id="Parameters-and-run-1"></a><a class="docs-heading-anchor-permalink" href="#Parameters-and-run" title="Permalink"></a></h2><p><code>A_h</code>, <code>K_h</code>, <code>D_min</code> and <code>C_d_top</code> are the paper&#39;s values for 500 m (Table 2).</p><pre><code class="language-julia hljs">params = Params(; FT,
+    A_h = 25.0, K_h = 25.0,
+    C_d = 2.5e-3, C_d_top = 1.1e-3,
+    D_min = 2.8, u_tide = 0.01,
+    max_detrainment = 0.5, v_cut = 1.414,
+    D_init = 10.0, dT_init = -0.1, dS_init = -0.1,
+    coriolis = CoriolisParameter0D(-1.37e-4),
+    entrainment = LambertEntrainment(2.5),
+    melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
+    convection_scheme = ClampDensity(0.005),
+)
+# The reference applies one partial-slip factor of 1 to every wall.
+boundary = BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
+model = Model(grid; forcing, params, boundary, gradient = PyGradient())
+sim = Simulation(model; dt = 120.0, nu = 0.8)
+
+# Like the reference: 50 days, averaged over the last 5.
+run!(sim; days = 45.0)
+m = sim.model
+acc = Dict(k =&gt; zero(m.tmask) for k in (&quot;melt&quot;, &quot;D&quot;, &quot;T&quot;, &quot;S&quot;))
+nsteps = round(Int, 5 * 86400 / sim.clock.dt)
+for _ in 1:nsteps
+    time_step!(sim)
+    acc[&quot;melt&quot;] .+= m.melt
+    acc[&quot;D&quot;] .+= m.D.present
+    acc[&quot;T&quot;] .+= m.T.present
+    acc[&quot;S&quot;] .+= m.S.present
+end
+avg = Dict(k =&gt; Array(v) ./ nsteps for (k, v) in acc)
+avg[&quot;melt&quot;] .*= 86400 * 365.25          # m s⁻¹ → m yr⁻¹</code></pre><h2 id="Comparison-with-the-reference"><a class="docs-heading-anchor" href="#Comparison-with-the-reference">Comparison with the reference</a><a id="Comparison-with-the-reference-1"></a><a class="docs-heading-anchor-permalink" href="#Comparison-with-the-reference" title="Permalink"></a></h2><p>The reference file holds the same 5-day average on the same grid. The check fails if mean or max melt is 2 % off, or <code>D</code> 2 m off on average; an unstable <code>nu</code> or a thickness cap misses these by orders of magnitude.</p><pre><code class="language-julia hljs">ds = Dataset(REFERENCE)
+ref = Dict(v =&gt; coalesce.(Array(ds[v]), NaN) for v in (&quot;melt&quot;, &quot;D&quot;, &quot;T&quot;, &quot;S&quot;))
+shelf = Array(ds[&quot;tmask&quot;]) .== 1
+close(ds)
+
+for (name, r) in ((&quot;Laddie.jl&quot;, avg), (&quot;reference&quot;, ref))
+    @printf &quot;%-9s  mean melt %.3f m/yr, max %.1f m/yr, D in [%.1f, %.0f] m\n&quot; name mean(r[&quot;melt&quot;][shelf]) maximum(r[&quot;melt&quot;][shelf]) extrema(r[&quot;D&quot;][shelf])...
+end
+for v in (&quot;melt&quot;, &quot;D&quot;, &quot;T&quot;, &quot;S&quot;)
+    d = abs.(avg[v][shelf] .- ref[v][shelf])
+    @printf &quot;  %-4s mean |Δ| %8.4f   max |Δ| %8.3f\n&quot; v mean(d) maximum(d)
+end
+
+rel(f) = abs(f(avg[&quot;melt&quot;][shelf]) / f(ref[&quot;melt&quot;][shelf]) - 1)
+@assert rel(mean) &lt; 0.02 &quot;mean melt off by $(round(100rel(mean); digits = 2)) %&quot;
+@assert rel(maximum) &lt; 0.02 &quot;max melt off by $(round(100rel(maximum); digits = 2)) %&quot;
+@assert mean(abs.(avg[&quot;D&quot;][shelf] .- ref[&quot;D&quot;][shelf])) &lt; 2.0 &quot;mean |ΔD| ≥ 2 m&quot;</code></pre><h2 id="Figure"><a class="docs-heading-anchor" href="#Figure">Figure</a><a id="Figure-1"></a><a class="docs-heading-anchor-permalink" href="#Figure" title="Permalink"></a></h2><pre><code class="language-julia hljs">x_km = (0:size(mask, 1)-1) .* dx ./ 1e3
+y_km = (0:size(mask, 2)-1) .* dy ./ 1e3
+fig = Figure(size = (1100, 900))
+
+function panel!(i, j, A, title, colorrange, colormap)
+    ax = Axis(fig[i, 2j-1]; title, aspect = DataAspect(),
+              xlabel = i == 2 ? &quot;x (km)&quot; : &quot;&quot;, ylabel = j == 1 ? &quot;y (km)&quot; : &quot;&quot;)
+    hm = heatmap!(ax, x_km, y_km, ifelse.(shelf, A, NaN); colormap, colorrange)
+    Colorbar(fig[i, 2j], hm)
+end
+panel!(1, 1, avg[&quot;melt&quot;], &quot;melt (m/yr): Laddie.jl&quot;, (0, 60), :inferno)
+panel!(1, 2, ref[&quot;melt&quot;], &quot;melt (m/yr): reference&quot;, (0, 60), :inferno)
+panel!(1, 3, avg[&quot;melt&quot;] .- ref[&quot;melt&quot;], &quot;melt (m/yr): Laddie.jl − reference&quot;, (-5, 5), :RdBu)
+panel!(2, 1, avg[&quot;D&quot;], &quot;D (m): Laddie.jl&quot;, (0, 200), :viridis)
+panel!(2, 2, ref[&quot;D&quot;], &quot;D (m): reference&quot;, (0, 200), :viridis)
+panel!(2, 3, avg[&quot;D&quot;] .- ref[&quot;D&quot;], &quot;D (m): Laddie.jl − reference&quot;, (-5, 5), :RdBu)
+save(joinpath(pkgdir(Laddie), &quot;docs&quot;, &quot;src&quot;, &quot;assets&quot;, &quot;crosson-dotson.png&quot;), fig)</code></pre><h2 id="Results"><a class="docs-heading-anchor" href="#Results">Results</a><a id="Results-1"></a><a class="docs-heading-anchor-permalink" href="#Results" title="Permalink"></a></h2><p>Output of the script above (CPU, Float64; 10 min on 16 threads), over the reference&#39;s shelf mask:</p><table><tr><th style="text-align: left"></th><th style="text-align: right">Laddie.jl</th><th style="text-align: right">reference</th></tr><tr><td style="text-align: left">mean melt (m yr⁻¹)</td><td style="text-align: right">9.839</td><td style="text-align: right">9.818</td></tr><tr><td style="text-align: left">max melt (m yr⁻¹)</td><td style="text-align: right">114.2</td><td style="text-align: right">114.3</td></tr><tr><td style="text-align: left"><code>D</code> range (m)</td><td style="text-align: right">2.8–509</td><td style="text-align: right">2.7–510</td></tr></table><p>Mean melt agrees to +0.21 %. Mean absolute differences per cell are 0.13 m yr⁻¹ in melt, 0.62 m in <code>D</code>, 0.006 °C in <code>T</code> and 0.0015 in <code>S</code>.</p><p><img src="../../assets/crosson-dotson.png" alt="Crosson–Dotson: Laddie.jl vs reference"/></p><p>To rerun the check and refresh this figure as part of the documentation build: <code>LADDIE_DOCS_CROSSON_DOTSON=true julia -t 16 --project=docs docs/make.jl</code>.</p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../isomip/">« ISOMIP+</a><a class="docs-footer-nextpage" href="../lambert-ase/">Amundsen Sea »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Tuesday 29 September 2026 08:24">Tuesday 29 September 2026</span>. Using Julia version 1.13.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

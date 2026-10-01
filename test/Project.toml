@@ -5,3 +5,6 @@ ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+CUDA = "6.4.1"

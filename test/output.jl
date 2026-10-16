@@ -22,7 +22,8 @@ end
     xs = -1.5e6 .+ 2000.0 .* (0:21)
     grid = Grid(mk, zd; x = xs, y = 3.0e5 .- 2000.0 .* (0:11),
                 domain_cropping = NoDomainCropping())
-    fields = (:Ut, :Vt, :H, :T, :S, :melt, :mask, :z_draft, :ustar, :drho, :convection)
+    fields = (:Ut, :Vt, :H, :T, :S, :melt, :mask, :z_draft, :ustar, :drho, :convection,
+              :supercooling)
     output = OutputConfig(; name = "extra", resultdir = tmp, saveday = 0.25, fields)
     @test_throws ArgumentError OutputConfig(; fields = (:H, :nope))
     sim = Simulation(Model(grid; forcing = ISOMIPForcing(:warm)); output)
@@ -36,6 +37,12 @@ end
         end
         @test maximum(ds["ustar"][:, :, end]) > 0
         @test all(0 .<= ds["convection"][:, :, end] .<= 1)
+        # T − Tf(S, z_b) is linear in T and S, so its time mean is that of the means.
+        m = sim.model
+        wet = m.tmask[2:end-1, 2:end-1] .> 0
+        T, S = ds["T"][:, :, end], ds["S"][:, :, end]
+        Tf = m.l1 .* S .+ m.l2 .+ m.l3 .* m.z_draft[2:end-1, 2:end-1]
+        @test ds["supercooling"][:, :, end][wet] ≈ (T .- Tf)[wet]
     end
 end
 

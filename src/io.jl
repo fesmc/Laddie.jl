@@ -60,6 +60,7 @@ calls writes on the same cadence as one advanced by a single call.
 | `:ustar` | friction velocity at the ice base | m s⁻¹ |
 | `:drho` | reduced density contrast with the ambient water | – |
 | `:convection` | fraction of time a cell was convectively unstable | – |
+| `:supercooling` | ``T - T_f(S, z_b)``, the layer temperature above its freezing point at the ice base (negative where supercooled) | °C |
 
 Static fields, written once: `:mask` (the mask and the margin flags `at_isf`,
 `at_grl`, `at_lnd`, `at_gap`) and `:z_draft` (the ice draft, m).
@@ -175,6 +176,11 @@ const _OUTPUT_FIELDS = (
         m -> m.drho,
     ),
     convection = _outfield("1", "fraction of time convectively unstable", m -> m.convection),
+    supercooling = _outfield(
+        "degC",
+        "layer temperature above the freezing point at the ice base, T - Tf(S, z_draft)",
+        Val(:supercooling),
+    ),
 )
 
 # ============================================================================
@@ -393,6 +399,9 @@ _accum_field!(av, ::Val{:t_u}, m, dt) =
     launch!(_accum_ut_kernel!, av, m.U.present, size(av, 1), dt)
 _accum_field!(av, ::Val{:t_v}, m, dt) =
     launch!(_accum_vt_kernel!, av, m.V.present, size(av, 2), dt)
+# T − Tf(S, z_b), with the liquidus of the melt kernel; negative where supercooled.
+_accum_field!(av, ::Val{:supercooling}, m, dt) =
+    (av .+= (m.T.present .- (m.l1 .* m.S.present .+ m.l2 .+ m.l3 .* m.z_draft)) .* dt)
 
 function _reset_accum!(sim)
     io = sim.io

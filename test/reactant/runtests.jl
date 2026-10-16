@@ -12,7 +12,7 @@ const GPU = CUDA.functional()
 Reactant.set_default_backend(GPU ? "gpu" : "cpu")
 const KW = (; nx = 40, ny = 20, isomipcond = :warm)
 
-prognostics(m) = [Array(getfield(getproperty(m, v), :present)) for v in (:D, :U, :V, :T, :S)]
+prognostics(m) = [Array(getfield(getproperty(m, v), :present)) for v in (:H, :U, :V, :T, :S)]
 maxrel(a, b) = maximum(maximum(abs, x .- y) / max(maximum(abs, y), eps()) for (x, y) in zip(a, b))
 
 # Paths of the non-finite numbers and arrays in a (shadow) model.
@@ -48,7 +48,7 @@ end
 
 # Every non-default scheme, in four runs.  Not covered: TopographicMaxLayerThickness
 # (the kernel of RelativeMaxLayerThickness at fraction 1) and OceanForcing2D (not
-# implemented).
+# supported by the Reactant backend yet).
 const SCHEME_SCENARIOS = [
     "mixing" => () -> build_isomip(CPU(); KW..., gradient = PyGradient(),
         cfl = ConservativeCFL(), tstep = AdaptiveDt(),

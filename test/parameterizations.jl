@@ -37,7 +37,7 @@ end
     @test all(isfinite, m.model.melt)
     @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
     run!(m; days=0.5, verbose=false)
-    @test all(isfinite, m.model.D.present)
+    @test all(isfinite, m.model.H.present)
     @test all(isfinite, m.model.melt)
     @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
 end
@@ -49,7 +49,7 @@ end
     @test_throws ArgumentError TurbulentGamTMelting(13.8, 2432.0, 0.0)
     @test_throws ArgumentError Params(; melting = TurbulentGamTMelting(; Pr = 0.5))
 
-    # A thin, slow layer (u★D/ν₀ ≪ 1).  With Pr = 1 the unfloored log term would
+    # A thin, slow layer (u★H/ν₀ ≪ 1).  With Pr = 1 the unfloored log term would
     # make the γT denominator negative; the floor leaves γ = u★/offset.
     mp = TurbulentGamTMelting(FT(1.0), FT(2432.0), FT(1.95e-6))
     m = build_isomip(CPU(); FT, nx = 20, ny = 10, params = Params(; FT, melting = mp)).model
@@ -68,7 +68,7 @@ end
     run!(m; days = 0.5, verbose = false)
     mm = m.model
     act = mm.tmask .> 0
-    @test all(isfinite, mm.D.present) && all(isfinite, mm.melt)
+    @test all(isfinite, mm.H.present) && all(isfinite, mm.melt)
     @test all(mm.melt[act] .>= 0)
     @test mm.gamT[act] == mp.Gamma_T .* mm.ustar[act]
     @test all(iszero, mm.gamT[.!act])
@@ -87,29 +87,27 @@ end
     @test all(isfinite, m.model.melt)
     @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
     run!(m; days=0.5, verbose=false)
-    @test all(isfinite, m.model.D.present)
+    @test all(isfinite, m.model.H.present)
     @test all(isfinite, m.model.melt)
     @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
 end
 
-@testset "Entrainment: Lambert is default, Gaspar (literal Eq. 14) differs" begin
-    # LambertEntrainment reproduces the reference LADDIE production term
-    # (2μ u★³/(g D δρ)) and must be the default so the Python verification
-    # holds; GasparEntrainment is the literal Eq. 14 (μ u★³/(g D² δρ)).
+@testset "Entrainment: Gaspar is default, μ changes the solution" begin
+    # GasparEntrainment reproduces the reference LADDIE production term
+    # (2μ u★³/(g H δρ)) and must be the default so the Python verification holds.
     @test build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold).model.entrainment isa
-          LambertEntrainment
+          GasparEntrainment
     mk(ep) = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm,
         gradient = PyGradient(),
         params = Params(; FT, entrainment = ep, melting = FixedGamTMelting(FT(0.00018)),
                         convection_scheme = ResetToAmbient(FT(0.005))))
-    ml = mk(LambertEntrainment(FT(2.5)))
-    mg = mk(GasparEntrainment(FT(2.5)))
-    run!(ml; days=0.5, verbose=false)
-    run!(mg; days=0.5, verbose=false)
-    @test all(isfinite, ml.model.entr) && all(isfinite, mg.model.entr)
-    @test all(isfinite, ml.model.melt) && all(isfinite, mg.model.melt)
-    # Same μ but different production term ⇒ the entrainment fields diverge.
-    @test !isapprox(ml.model.entr, mg.model.entr)
+    m1 = mk(GasparEntrainment(FT(2.5)))
+    m2 = mk(GasparEntrainment(FT(1.25)))
+    run!(m1; days=0.5, verbose=false)
+    run!(m2; days=0.5, verbose=false)
+    @test all(isfinite, m1.model.entr) && all(isfinite, m2.model.entr)
+    @test all(isfinite, m1.model.melt) && all(isfinite, m2.model.melt)
+    @test !isapprox(m1.model.entr, m2.model.entr)
 end
 
 @testset "Lateral viscosity: PrescribedLateralViscosity bit-identical, NonlinearLateralViscosity differs" begin
@@ -131,7 +129,7 @@ end
     m_nl = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                         params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(10.0))))
     run!(m_nl; days = 1.0, verbose = false)
-    @test all(isfinite, m_nl.model.D.present) && all(isfinite, m_nl.model.melt)
+    @test all(isfinite, m_nl.model.H.present) && all(isfinite, m_nl.model.melt)
     @test all(m_nl.model.melt[m_nl.model.tmask .> 0] .>= 0)
     @test m_nl.model.V.present != m_def.model.V.present
 
@@ -145,7 +143,7 @@ end
                            params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(10.0))),
                            boundary = BoundaryConditions(; grounding_line = FreeSlipGL()))
     run!(m_nl_ns; days = 1.0, verbose = false)
-    @test all(isfinite, m_nl_ns.model.D.present) && all(isfinite, m_nl_ns.model.melt)
+    @test all(isfinite, m_nl_ns.model.H.present) && all(isfinite, m_nl_ns.model.melt)
     @test m_nl_ns.model.V.present != m_nl.model.V.present
 
     # The coefficient uses the full velocity-difference norm √(ΔU² + ΔV²),
@@ -178,7 +176,7 @@ end
     @test meltstats(sim).mean_meltrate ≈ 5.0
     # The flow still develops: u★ and entrainment are computed as usual.
     @test maximum(m.ustar) > 0 && maximum(m.entr) > 0
-    @test all(isfinite, m.T.present) && all(isfinite, m.D.present)
+    @test all(isfinite, m.T.present) && all(isfinite, m.H.present)
     # Tb is the local freezing point, and the temperature equation's
     # exchange term carries exactly the heat the prescribed melt needs.
     Laddie.update_melt!(m)
@@ -206,8 +204,8 @@ end
 end
 
 @testset "AbsoluteMaxLayerThickness ignores bathymetry" begin
-    @test AbsoluteMaxLayerThickness().D_max === 100.0f0
-    @test Params(; max_layer_thickness = AbsoluteMaxLayerThickness()).max_layer_thickness.D_max === 100.0
+    @test AbsoluteMaxLayerThickness().H_max === 100.0f0
+    @test Params(; max_layer_thickness = AbsoluteMaxLayerThickness()).max_layer_thickness.H_max === 100.0
     mk = zeros(Int, 12, 8)
     mk[1, :] .= 1; mk[end, :] .= 1; mk[:, 1] .= 1; mk[:, end] .= 1
     mk[2:3, 2:7] .= 2; mk[4:10, 2:7] .= 3; mk[11, 2:7] .= 0
@@ -216,11 +214,11 @@ end
     grid = Grid(mk, z_draft, 1000.0, 1000.0; z_bed, domain_cropping = NoDomainCropping())
     m = Model(grid; forcing = ISOMIPForcing(:warm; FT),
               params = Params(; FT, max_layer_thickness = AbsoluteMaxLayerThickness(50.0)))
-    m.D.future .= FT(80.0) .* m.tmask
+    m.H.future .= FT(80.0) .* m.tmask
     Laddie._clamp_thickness!(m)
     act = m.tmask .> 0
-    @test all(m.D.future[act] .== 50)           # capped at D_max, not at 10 m
-    @test all(m.D.future[.!act] .== 0)
+    @test all(m.H.future[act] .== 50)           # capped at H_max, not at 10 m
+    @test all(m.H.future[.!act] .== 0)
 end
 
 @testset "ClampDensity convection scheme: build and short run" begin
@@ -228,7 +226,7 @@ end
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
     @test all(isfinite, m.model.melt)
     run!(m; days=0.5, verbose=false)
-    @test all(isfinite, m.model.D.present)
+    @test all(isfinite, m.model.H.present)
     @test all(isfinite, m.model.melt)
 end
 
@@ -237,7 +235,7 @@ end
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
     @test all(isfinite, m.model.melt)
     run!(m; days=0.5, verbose=false)
-    @test all(isfinite, m.model.D.present)
+    @test all(isfinite, m.model.H.present)
     @test all(isfinite, m.model.melt)
 end
 
@@ -327,7 +325,7 @@ end
         m = mk(ma)
         m.U.present .= 1.0
         m.V.present .= 0.0
-        m.D.present .= 10.0
+        m.H.present .= 10.0
         au = Array(copy(Laddie.momentum_advection_U(m)))
         av = Array(copy(Laddie.momentum_advection_V(m)))
         um = Array(m.umask)

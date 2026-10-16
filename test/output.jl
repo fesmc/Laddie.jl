@@ -22,9 +22,9 @@ end
     xs = -1.5e6 .+ 2000.0 .* (0:21)
     grid = Grid(mk, zd; x = xs, y = 3.0e5 .- 2000.0 .* (0:11),
                 domain_cropping = NoDomainCropping())
-    fields = (:Ut, :Vt, :D, :T, :S, :melt, :mask, :z_draft, :ustar, :drho, :convection)
+    fields = (:Ut, :Vt, :H, :T, :S, :melt, :mask, :z_draft, :ustar, :drho, :convection)
     output = OutputConfig(; name = "extra", resultdir = tmp, saveday = 0.25, fields)
-    @test_throws ArgumentError OutputConfig(; fields = (:D, :nope))
+    @test_throws ArgumentError OutputConfig(; fields = (:H, :nope))
     sim = Simulation(Model(grid; forcing = ISOMIPForcing(:warm)); output)
     run!(sim; days = 0.5, verbose = false)
     Laddie.NCDatasets.Dataset(joinpath(tmp, "extra", "output.nc")) do ds
@@ -86,7 +86,7 @@ end
     out_path = joinpath(rundir, "output.nc")
     @test isfile(out_path)
     melt_out = NCD.Dataset(out_path) do ds
-        @test haskey(ds, "melt") && haskey(ds, "D") && haskey(ds, "T")
+        @test haskey(ds, "melt") && haskey(ds, "H") && haskey(ds, "T")
         @test length(ds["time"]) >= 2
         coalesce.(Array(ds["melt"][:, :, end]), NaN)
     end
@@ -101,7 +101,7 @@ end
                       output = OutputConfig(; name = "iotest2", resultdir = tmpdir, saveday = 0.5),
                       restart = restartfile)
     @test m2.clock.time / 86400 ≈ 1.0 atol = 0.01
-    @test m2.model.D.present ≈ m.model.D.present
+    @test m2.model.H.present ≈ m.model.H.present
     @test m2.model.T.present ≈ m.model.T.present
     @test m2.model.S.present ≈ m.model.S.present
 

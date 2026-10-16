@@ -20,7 +20,7 @@
     @test all(isfinite, m.model.melt)
     @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
     run!(m; days=0.5, verbose=false)
-    @test all(isfinite, m.model.D.present)
+    @test all(isfinite, m.model.H.present)
     @test all(isfinite, m.model.melt)
 
     # MinRectangleDomainCropping is the default.  Its `margin` (default 4) is the

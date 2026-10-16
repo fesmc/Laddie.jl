@@ -14,7 +14,7 @@ line (west). [`build_isomip`](@ref) sets it up with these defaults:
 | ``A_h``, ``K_h`` | 6, 1 m² s⁻¹ | viscosity, diffusivity |
 | ``\gamma_T`` | ``1.8\times10^{-4}`` | turbulent heat exchange (fixed) |
 | ``\mu`` | 2.5 | entrainment parameter |
-| ``D_\min`` | 1 m | minimum layer thickness |
+| ``H_\min`` | 1 m | minimum layer thickness |
 | wall slip | 2 (no slip) | grounding line and land |
 
 This page walks through the forcing, a warm run, the validation against the Python
@@ -44,7 +44,7 @@ nothing #hide
 # ## Forcing
 #
 # The cavity is driven by a prescribed ocean profile, which LADDIE samples at the base of
-# the layer (`z_b − D`) to get the ambient temperature and salinity. ISOMIP+ defines two
+# the layer (`z_b − H`) to get the ambient temperature and salinity. ISOMIP+ defines two
 # end-members, both linear in depth down to 720 m: a **warm** cavity reaching about +1 °C at
 # depth, and a **cold** one near the freezing point throughout.
 
@@ -70,7 +70,7 @@ speed = sqrt.(Laddie.im_half(mw.U.present) .^ 2 .+ Laddie.jm_half(mw.V.present) 
 fig = Figure(size = (900, 1150))
 mapplot!(fig, 1, 1, mw, shelf(mw, mw.z_draft), "ice draft (m)"; colormap = :deep)
 mapplot!(fig, 2, 1, mw, shelf(mw, peryr(mw, mw.melt)), "melt rate (m/yr)"; colormap = :thermal)
-mapplot!(fig, 3, 1, mw, shelf(mw, mw.D.present), "layer thickness D (m)"; colormap = :viridis)
+mapplot!(fig, 3, 1, mw, shelf(mw, mw.H.present), "layer thickness H (m)"; colormap = :viridis)
 mapplot!(fig, 4, 1, mw, shelf(mw, mw.T.present), "layer temperature T (°C)"; colormap = :thermal)
 mapplot!(fig, 5, 1, mw, shelf(mw, speed), "flow speed (m/s)"; colormap = :speed)
 fig
@@ -96,7 +96,8 @@ mj = sim_py.model
 ds = Dataset(joinpath(pkgdir(Laddie), "docs", "assets", "restart_000001.nc"))
 py = Dict(v => coalesce.(ds[v][:, :, 2], 0.0) for v in ("D", "T", "S", "U", "V"))   # level 2 = present
 close(ds)
-jl = Dict(v => getproperty(mj, Symbol(v)).present[2:end-1, 2:end-1] for v in keys(py))
+# Python v1 calls the layer thickness `D`; Laddie.jl calls it `H`.
+jl = Dict(v => getproperty(mj, v == "D" ? :H : Symbol(v)).present[2:end-1, 2:end-1] for v in keys(py))
 
 on = mj.tmask[2:end-1, 2:end-1] .> 0
 for v in ("D", "T", "S", "U", "V")
@@ -137,16 +138,16 @@ spinup = Dict(
     "fixed dt" => build_isomip(; isomipcond = :warm, nx = 80, ny = 20),
     "adaptive dt" => build_isomip(; isomipcond = :warm, nx = 80, ny = 20, tstep = AdaptiveDt()),
 )
-series = Dict(k => zeros(ndays, 3) for k in keys(spinup))   # mean melt, max melt, max D
+series = Dict(k => zeros(ndays, 3) for k in keys(spinup))   # mean melt, max melt, max H
 for (k, sim) in spinup, d in 1:ndays
     run!(sim; days = 1.0, verbose = false)
     mx, mn, _ = meltstats(sim)
-    series[k][d, :] .= (mn, mx, maximum(sim.model.D.present .* sim.model.tmask))
+    series[k][d, :] .= (mn, mx, maximum(sim.model.H.present .* sim.model.tmask))
 end
 
 fig = Figure(size = (900, 330))
 ax1 = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "melt rate (m/yr)")
-ax2 = Axis(fig[1, 2]; xlabel = "time (days)", ylabel = "max D (m)")
+ax2 = Axis(fig[1, 2]; xlabel = "time (days)", ylabel = "max H (m)")
 for (k, style) in (("fixed dt", :solid), ("adaptive dt", :dash))
     s = series[k]
     lines!(ax1, 1:ndays, s[:, 2]; color = :firebrick, linestyle = style, label = "max, $k")
@@ -174,14 +175,14 @@ end
 # its initial thickness. Both cavities share the same colour scales.
 
 run!(sim_c; days = 3.0, verbose = false)
-cases = [(name, m, shelf(m, peryr(m, m.melt)), shelf(m, m.D.present)) for (name, m) in (("warm", mw), ("cold", mc))]
+cases = [(name, m, shelf(m, peryr(m, m.melt)), shelf(m, m.H.present)) for (name, m) in (("warm", mw), ("cold", mc))]
 melt_range = (0, maximum(filter(isfinite, cases[1][3])))
-D_range = (0, maximum(c -> maximum(filter(isfinite, c[4])), cases))
+H_range = (0, maximum(c -> maximum(filter(isfinite, c[4])), cases))
 
 fig = Figure(size = (1100, 520))
-for (j, (name, m, melt, D)) in enumerate(cases)
+for (j, (name, m, melt, H)) in enumerate(cases)
     mapplot!(fig, 1, j, m, melt, "$name: melt rate (m/yr)"; colormap = :thermal, colorrange = melt_range)
-    mapplot!(fig, 2, j, m, D, "$name: layer thickness D (m)"; colormap = :viridis, colorrange = D_range)
+    mapplot!(fig, 2, j, m, H, "$name: layer thickness H (m)"; colormap = :viridis, colorrange = H_range)
 end
 fig
 

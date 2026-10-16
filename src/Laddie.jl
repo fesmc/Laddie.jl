@@ -55,7 +55,7 @@ export build_isomip,
     adaptive_schedule,
     DtSchedule
 
-export AbstractEntrainment, HollandEntrainment, GasparEntrainment, LambertEntrainment
+export AbstractEntrainment, HollandEntrainment, GasparEntrainment
 export AbstractMelting,
     FixedGamTMelting, TurbulentGamTMelting, UStarGamTMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient

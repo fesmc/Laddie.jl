@@ -9,7 +9,7 @@
                          tstep = FixedDt())
     run!(m_def; days = 1.0, verbose = false)
     run!(m_fix; days = 1.0, verbose = false)
-    @test m_fix.model.D.present == m_def.model.D.present
+    @test m_fix.model.H.present == m_def.model.H.present
     @test m_fix.model.melt == m_def.model.melt
 
     # AdaptiveDt is a Simulation option, not a Params one; its FT tracks the
@@ -39,11 +39,11 @@ end
 
 @testset "run! advances model state" begin
     m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
-    D0 = copy(m.model.D.present)
+    H0 = copy(m.model.H.present)
     run!(m; days=0.5, verbose=false)
-    # D should have changed
-    @test m.model.D.present != D0
-    @test all(isfinite, m.model.D.present)
+    # H should have changed
+    @test m.model.H.present != H0
+    @test all(isfinite, m.model.H.present)
     @test all(isfinite, m.model.melt)
 end
 
@@ -74,20 +74,20 @@ end
     # Non-finite prognostics abort with an informative error instead of
     # integrating NaNs to the end of the run.
     m2 = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm)
-    m2.model.D.present[5, 5] = NaN
+    m2.model.H.present[5, 5] = NaN
     @test_throws "blew up" run!(m2; days = 0.1, verbose = false)
 end
 
 @testset "CFL number: matches hand-built states" begin
     m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
     g, dt, dx, dy = m.model.g, m.clock.dt, m.model.dx, m.model.dy
-    cfl(u, v, D, dr) = begin
+    cfl(u, v, H, dr) = begin
         m.model.U.present .= u; m.model.V.present .= v
-        m.model.D.present .= D; m.model.drho .= dr
+        m.model.H.present .= H; m.model.drho .= dr
         Laddie._cfl_number(m)
     end
 
-    # Full advective + gravity-wave case: c = √(g·δρ·D).
+    # Full advective + gravity-wave case: c = √(g·δρ·H).
     c = sqrt(g * 1e-3 * 100.0)
     expected = dt * ((0.5 + c) / dx + (0.3 + c) / dy)
     @test cfl(0.5, 0.3, 100.0, 1e-3) ≈ expected
@@ -135,15 +135,15 @@ end
     ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                       tstep = AdaptiveDt())
     run!(ma; days = 1.0, verbose = false)
-    @test all(isfinite, ma.model.D.present) && all(isfinite, ma.model.melt)
+    @test all(isfinite, ma.model.H.present) && all(isfinite, ma.model.melt)
     @test 1.0 <= ma.clock.dt <= 1000.0
 
     # Stability rescue (headline): a dt0 that blows up under FixedDt is made
     # to survive by the controller.
     #
     # Blow-up can no longer be detected with `isfinite`: the state clamps in
-    # `leapfrog_step!` (v_cut on U/V, T ∈ [-5, 5], S ∈ [32, 36], D floored at
-    # D_min and capped by max_layer_thickness) bound every prognostic, so an
+    # `leapfrog_step!` (v_cut on U/V, T ∈ [-5, 5], S ∈ [32, 36], H floored at
+    # H_min and capped by max_layer_thickness) bound every prognostic, so an
     # unstable run stays perfectly finite while producing nonsense — at
     # dt = 5000 s the mean melt rate is ~25x the converged value.  Detect it
     # physically instead, against the small-dt reference solution.
@@ -153,7 +153,7 @@ end
     survives(days; kw...) = try
         mm = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, kw...)
         run!(mm; days, verbose = false)
-        all(isfinite, mm.model.D.present) && all(isfinite, mm.model.melt) &&
+        all(isfinite, mm.model.H.present) && all(isfinite, mm.model.melt) &&
             meltstats(mm)[2] < 3 * mean_ref
     catch
         false
@@ -179,7 +179,7 @@ end
     # NOTE: both models must be built the same way.  This comparison read as a
     # 19.5% peak-melt error for a while because `mf` took build_isomip's
     # implicit defaults while `ma` passed an explicit `params`, and the two
-    # disagreed on max_layer_thickness — so it was measuring an uncapped D
+    # disagreed on max_layer_thickness — so it was measuring an uncapped H
     # against one capped at 100 m, not fixed-dt against adaptive-dt.  The
     # defaults are unified now and the guard test below keeps them that way.
     mf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
@@ -222,9 +222,9 @@ end
                       output = OutputConfig(; name = "ar2", resultdir = tmp, saveday = 0.5),
                       restart = joinpath(tmp, "ar1", "restart_latest.jld2"))
     @test m2.clock.dt ≈ m1.clock.dt
-    @test m2.model.D.present ≈ m1.model.D.present
+    @test m2.model.H.present ≈ m1.model.H.present
     run!(m2; days = 0.5, verbose = false)
-    @test all(isfinite, m2.model.D.present) && all(isfinite, m2.model.melt)
+    @test all(isfinite, m2.model.H.present) && all(isfinite, m2.model.melt)
 end
 
 @testset "Simulation end: FixedSimulationEnd / SteadyStateEnd" begin
@@ -239,7 +239,7 @@ end
     b = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
     run!(a; days = 1.0, verbose = false)
     run!(b; until = FixedSimulationEnd(t_end = 1.0), verbose = false)
-    @test a.model.D.present == b.model.D.present && a.model.melt == b.model.melt &&
+    @test a.model.H.present == b.model.H.present && a.model.melt == b.model.melt &&
           a.clock.iteration == b.clock.iteration
 
     # Passing both `days` and `until` is ambiguous.
@@ -251,7 +251,7 @@ end
     ms = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
     run!(ms; until = SteadyStateEnd(tol = 0.3, t_end = cap), verbose = false)
     @test ms.clock.time < 0.5 * cap * 86400              # stopped well before the cap
-    @test all(isfinite, ms.model.D.present) && all(isfinite, ms.model.melt)
+    @test all(isfinite, ms.model.H.present) && all(isfinite, ms.model.melt)
 
     mc = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
     run!(mc; until = SteadyStateEnd(tol = 1e-12, t_end = cap), verbose = false)
@@ -282,7 +282,7 @@ end
     @test one.clock.iteration == 400
     @test two.clock.time == one.clock.time
     @test two.clock.iteration == one.clock.iteration
-    @test two.model.D.present == one.model.D.present
+    @test two.model.H.present == one.model.H.present
     @test two.model.melt == one.model.melt
 
     # The defect this fixes: successive calls used to restart the day count,
@@ -316,6 +316,6 @@ end
     r = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
     run!(r; days = 10 * 210.0 / 86400, verbose = false)
     @test t.clock.iteration == r.clock.iteration == 10
-    @test t.model.D.present == r.model.D.present
+    @test t.model.H.present == r.model.H.present
     @test_throws ArgumentError build_isomip(CPU(); nx = 20, ny = 10, dt = -1.0)
 end

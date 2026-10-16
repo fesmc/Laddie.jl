@@ -18,7 +18,7 @@ $(TYPEDEF)
 
 Evaluate the advected momentum as the average of the two velocities either side
 of the face (the default), as Python LADDIE v1.x does: the east face of a
-U-control volume carries `D̄·ū·ū` with `ū = (U[i] + U[i+1])/2`, and likewise for
+U-control volume carries `H̄·ū·ū` with `ū = (U[i] + U[i+1])/2`, and likewise for
 the other faces.  Centred differencing adds no numerical viscosity of its own.
 
 Select via `Params(; momentum_advection = CentredMomentumAdvection())` (the default).
@@ -31,7 +31,7 @@ $(TYPEDEF)
 Flux-form donor-cell (first-order upwind) momentum advection, as in LADDIE v2.
 
 Each face of a velocity control volume carries the mass flux of the thickness
-equation — the same donor-cell `D·u` the tracer advection uses, gated by
+equation — the same donor-cell `H·u` the tracer advection uses, gated by
 `umask`/`vmask` — averaged onto that face from the two adjacent T-cell faces.
 The momentum it carries is the velocity on the upstream side of the face.  Both
 the thickness and the velocity are therefore taken from the donor side, as v2

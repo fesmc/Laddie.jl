@@ -96,7 +96,7 @@ end
 function _initialize_prognostics!(m)
     update_ambient_fields!(m)
     for level in (:past, :present, :future)
-        setfield!(m.D, level, m.D_init .* m.tmask)
+        setfield!(m.H, level, m.H_init .* m.tmask)
         setfield!(m.T, level, (m.Ta .+ m.dT_init) .* m.tmask)
         setfield!(m.S, level, (m.Sa .+ m.dS_init) .* m.tmask)
     end

@@ -10,10 +10,10 @@ slots are scalars or fields: `GamT` (`gamT`, `gamS`) is a field for
 `TurbulentGamTMelting`, `UStarGamTMelting` and `PrescribedMelting`, `Conv2` (`conv2`) for
 `RelaxToAmbient`, and `PM` (`melt_prescribed`) for `PrescribedMelting`.
 
-`adv`, `lap` and `Dq` are shared by the four stepped equations: U, V, T and S are
+`adv`, `lap` and `Hq` are shared by the four stepped equations: U, V, T and S are
 stepped one after another, and each consumes its terms before the next one writes
 them.  In between, `adv` and `lap` hold the speed limiter's per-point scale factors.
-`NonlinearLateralViscosity` fills `Dq` with the collocated cross-velocity and `adv`
+`NonlinearLateralViscosity` fills `Hq` with the collocated cross-velocity and `adv`
 with the thickness on the velocity points before its Laplacian kernel, which is
 why the momentum steps form the Laplacian before the advection term.  `diag` is
 never read by the time step, so any host-side diagnostic may overwrite it.
@@ -38,18 +38,18 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,PM}
     entr::A
     "detrainment rate, the capped negative part of ė (m s⁻¹)"
     detr::A
-    "extra entrainment that keeps `D ≥ D_min` after the thickness step (m s⁻¹)"
+    "extra entrainment that keeps `H ≥ H_min` after the thickness step (m s⁻¹)"
     ent2::A
     "net entrainment `entr + ent2 - detr` of the thickness and tracer equations (m s⁻¹)"
     nentr::A
     "convective-instability indicator: `1` where `drho < 0` was corrected"
     convection::A
     "upwind advection term of the thickness equation (m s⁻¹)"
-    convD::A
+    convH::A
     "thickness tendency of the current step (m s⁻¹)"
-    dDdt::A
-    "product `D * drho` read by the momentum equations (m)"
-    Ddrho::A
+    dHdt::A
+    "product `H * drho` read by the momentum equations (m)"
+    Hdrho::A
     "relaxation rate toward ambient under `RelaxToAmbient` (a field), else an unused scalar"
     conv2::Conv2
     "turbulent heat transfer velocity (m s⁻¹): a field, or a scalar under `FixedGamTMelting`"
@@ -62,8 +62,8 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,PM}
     adv::A
     "Laplacian term of the equation being stepped (work buffer)"
     lap::A
-    "advected tracer content `D * q` of the equation being stepped (work buffer)"
-    Dq::A
+    "advected tracer content `H * q` of the equation being stepped (work buffer)"
+    Hq::A
     "scratch for host-side diagnostics (CFL, melt statistics)"
     diag::A
 end

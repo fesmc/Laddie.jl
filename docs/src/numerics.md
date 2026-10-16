@@ -2,7 +2,7 @@
 
 ## Spatial discretisation
 
-LADDIE uses an Arakawa **C-grid**: scalar fields (``D``, ``T``, ``S``) and all
+LADDIE uses an Arakawa **C-grid**: scalar fields (``H``, ``T``, ``S``) and all
 diagnostic quantities live at cell centres, while ``U`` sits on the faces between
 cells ``i`` and ``i+1`` and ``V`` on the faces between ``j`` and ``j+1``. Arrays are
 stored `[x, y]`, and x and y are grid axes, not compass directions. Staggered
@@ -72,7 +72,7 @@ The **diagnosed CFL** is a measurement of the current state at the current step,
 
 ```math
 C = \Delta t\,\max_{\text{active cells}}\left(\frac{|u| + c}{\Delta x} + \frac{|v| + c}{\Delta y}\right),
-\qquad c = \sqrt{g\,\delta\rho\,D},
+\qquad c = \sqrt{g\,\delta\rho\,H},
 ```
 
 covering advection and internal gravity waves only (there is no viscous term).
@@ -176,7 +176,7 @@ wall stress — so treat a large ``A_h`` there as the stability crutch it is.
 
 Several limiters guard against numerical blow-up in extreme conditions:
 
-- A **minimum layer thickness** ``D_\min`` is enforced through extra entrainment:
+- A **minimum layer thickness** ``H_\min`` is enforced through extra entrainment:
   if a cell would thin below the threshold, the entrainment source is increased
   to restore it; a final clamp catches what remains.
 - A **speed cutoff** ``v_\text{cut}`` scales both velocity components by one
@@ -193,7 +193,7 @@ cadence and aborts with an error instead of integrating NaNs.
 
 The ambient profiles ``T_a(z)`` and ``S_a(z)`` are stored on a uniform depth grid
 (1 m for profiles built with `OceanForcing1D`). At each time step the local
-plume-base depth ``z_b - D`` indexes this grid and linear interpolation supplies
+plume-base depth ``z_b - H`` indexes this grid and linear interpolation supplies
 the ``T_a``, ``S_a`` values that enter the density, entrainment and convection
 terms; depths beyond the profile take its end values.
 

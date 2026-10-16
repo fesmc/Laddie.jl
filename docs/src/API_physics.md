@@ -8,7 +8,6 @@ Pages = ["API_physics.md"]
 
 ```@docs
 AbstractEntrainment
-LambertEntrainment
 GasparEntrainment
 HollandEntrainment
 ```

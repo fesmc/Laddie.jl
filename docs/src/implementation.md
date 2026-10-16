@@ -22,7 +22,7 @@ before so correctness never had to be taken on faith.
   conditions and state. The `Simulation` wrapping it owns the clock, `dt`, the time
   stepper, the Robert–Asselin filter, output and restart. This is the split shared
   by Oceananigans, SpeedyWeather and FastIsostasy.
-- **Location-typed prognostics.** ``D, U, V, T, S`` are `Var{LX,LY}` carrying
+- **Location-typed prognostics.** ``H, U, V, T, S`` are `Var{LX,LY}` carrying
   three leapfrog levels; `rotate!` swaps references (≡ `np.roll(...,-1,axis=0)`),
   with the C-grid staggering carried in the type (`Center`/`Face` per axis)
   while staying allocation-free. This design was first validated in a
@@ -95,7 +95,7 @@ After a 1-day warm ISOMIP+ run from identical initial conditions:
 
 | Field | mean \|Δ\| | relative error |
 |:-----:|:----------:|:--------------:|
-| D (m) | 0.019 | 0.13 % |
+| H (m) | 0.019 | 0.13 % |
 | T (°C) | 0.0015 | 0.07 % |
 | S (psu) | 0.00056 | 0.001 % |
 | U (mm s⁻¹) | 0.11 | 0.44 % |

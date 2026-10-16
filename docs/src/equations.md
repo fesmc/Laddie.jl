@@ -23,20 +23,23 @@ kernels in `src/numerics.jl` are asserted equal to it by the test suite.
     ``\delta\rho \equiv \Delta\rho_a/\rho_0 = \beta(S_a-S) - \alpha(T_a-T)``
     (field `m.drho`). The reduced gravity (Eq. 6) is therefore
     ``g_a' = g\,\Delta\rho_a/\rho_0 = g\,\delta\rho``, and the gravity-wave
-    speed used by the CFL monitor is ``c = \sqrt{g\,\delta\rho\,D}``. Whenever a
+    speed used by the CFL monitor is ``c = \sqrt{g\,\delta\rho\,H}``. Whenever a
     paper term has ``\Delta\rho_a/\rho_0`` the code has the single field
     `m.drho`; whenever the paper has ``g_a'`` the code has `m.g * m.drho`.
 
 ## Notation
 
+The layer thickness is ``H``, as in LADDIE v2 (Lambert et al. 2026). Lambert et al.
+(2023) and the Python v1 code call it ``D``; the equations below are written with ``H``.
+
 | symbol | code | meaning | units |
 |--------|------|---------|-------|
-| ``D`` | `m.D` | layer thickness | m |
+| ``H`` | `m.H` | layer thickness (``D`` in Lambert et al. 2023) | m |
 | ``U, V`` | `m.U`, `m.V` | depth-averaged velocity (C-grid faces) | m s⁻¹ |
 | ``T, S`` | `m.T`, `m.S` | depth-averaged temperature / salinity | °C / psu |
 | ``\dot m`` | `m.melt` | basal melt rate (``>0`` = melting) | m s⁻¹ |
 | ``\dot e`` | `m.nentr` | net entrainment ``= \mathrm{entr} + \mathrm{ent2} - \mathrm{detr}`` | m s⁻¹ |
-| ``T_a, S_a`` | `m.Ta`, `m.Sa` | ambient T/S at layer base ``z_b-D`` | °C / psu |
+| ``T_a, S_a`` | `m.Ta`, `m.Sa` | ambient T/S at layer base ``z_b-H`` | °C / psu |
 | ``T_b, S_b`` | `m.Tb` (``S_b`` is not stored) | ice–ocean interface (boundary) T/S | °C / psu |
 | ``\Delta\rho_a`` | ``\rho_0\,```m.drho` | dimensional plume–ambient density anomaly | kg m⁻³ |
 | ``\delta\rho`` | `m.drho` | dimensionless reduced density ``\Delta\rho_a/\rho_0`` | – |
@@ -66,55 +69,55 @@ kernels in `src/numerics.jl` are asserted equal to it by the test suite.
 
 The model evolves five depth-integrated 2-D fields. Each kernel in
 `src/numerics.jl` expands the flux-form left-hand side
-``\partial(D\,q)/\partial t = q\,\partial D/\partial t + D\,\partial q/\partial t``
+``\partial(H\,q)/\partial t = q\,\partial H/\partial t + H\,\partial q/\partial t``
 and divides the momentum/tracer right-hand sides by the (face-interpolated)
-thickness, so the prognostic variable stepped is ``q`` itself, not ``Dq``.
+thickness, so the prognostic variable stepped is ``q`` itself, not ``Hq``.
 
 ### (1) Layer thickness — continuity
 
 ```math
-\frac{\partial D}{\partial t} + \nabla\!\cdot(D\mathbf{U}) = \dot m + \dot e
+\frac{\partial H}{\partial t} + \nabla\!\cdot(H\mathbf{U}) = \dot m + \dot e
 \tag{1}
 ```
 
-Kernel `_step_thickness_kernel!`: ``D^{+} = D^{0} + (\mathrm{convD} + \dot m + \dot e)\,\Delta t``,
-where `convD` ``= -\nabla\!\cdot(D\mathbf{U})`` (advection), `m.melt` ``=\dot m``,
+Kernel `_step_thickness_kernel!`: ``H^{+} = H^{0} + (\mathrm{convH} + \dot m + \dot e)\,\Delta t``,
+where `convH` ``= -\nabla\!\cdot(H\mathbf{U})`` (advection), `m.melt` ``=\dot m``,
 `m.nentr` ``=\dot e``.
 
 ### (2) ``U``-momentum
 
 ```math
-\frac{\partial DU}{\partial t} + \nabla\!\cdot(D\mathbf{U}U) - fDV =
--\frac{gD^2}{2\rho_0}\frac{\partial \Delta\rho_a}{\partial x}
-+ g_a'D\,\frac{\partial (z_b - D)}{\partial x}
+\frac{\partial HU}{\partial t} + \nabla\!\cdot(H\mathbf{U}U) - fHV =
+-\frac{gH^2}{2\rho_0}\frac{\partial \Delta\rho_a}{\partial x}
++ g_a'H\,\frac{\partial (z_b - H)}{\partial x}
 - C_d\,|\mathbf{U}|\,U
-+ \nabla\!\cdot(A_h D\nabla U)
++ \nabla\!\cdot(A_h H\nabla U)
 \tag{2}
 ```
 
 Kernel `_step_u_momentum_kernel!` integrates the **expanded** form (per unit
-``\bar D``); term by term, the right-hand side `rhs` is:
+``\bar H``); term by term, the right-hand side `rhs` is:
 
 ```math
-\underbrace{-U\,\partial_t \bar D}_{\text{thickness coupling}}
-\;+\; \underbrace{\mathrm{cU}}_{-\nabla\cdot(D\mathbf{U}U)}
-\;-\; \underbrace{g\,\overline{D\delta\rho}\,\frac{D_{x-1}-D}{\Delta x}}_{g_a'D\,\partial_x(z_b-D)\ \text{(depth part)}}
-\;+\; \underbrace{g\,\overline{D\delta\rho\,\partial_x z_b}}_{\text{ice-base slope part}}
-\;-\; \underbrace{\tfrac{1}{2}g\,\bar D^2\,\frac{\partial \delta\rho}{\partial x}}_{-\,gD^2/(2\rho_0)\,\partial_x\Delta\rho_a}
-\;+\; \underbrace{f\,\overline{D V}}_{\text{Coriolis}}
+\underbrace{-U\,\partial_t \bar H}_{\text{thickness coupling}}
+\;+\; \underbrace{\mathrm{cU}}_{-\nabla\cdot(H\mathbf{U}U)}
+\;-\; \underbrace{g\,\overline{H\delta\rho}\,\frac{H_{x-1}-H}{\Delta x}}_{g_a'H\,\partial_x(z_b-H)\ \text{(depth part)}}
+\;+\; \underbrace{g\,\overline{H\delta\rho\,\partial_x z_b}}_{\text{ice-base slope part}}
+\;-\; \underbrace{\tfrac{1}{2}g\,\bar H^2\,\frac{\partial \delta\rho}{\partial x}}_{-\,gH^2/(2\rho_0)\,\partial_x\Delta\rho_a}
+\;+\; \underbrace{f\,\overline{H V}}_{\text{Coriolis}}
 \;-\; \underbrace{C_d\,U|\mathbf{U}|}_{\text{drag}}
 \;+\; \underbrace{A_h\nabla^2 U}_{\text{diffusion}}
 \;-\; \underbrace{\mathrm{detr}\cdot U}_{\text{detrainment loss}}
 ```
 
-then ``U^{+} = U^{p} + (\mathrm{rhs}/\bar D)\,\Delta t``. Overbars denote C-grid
+then ``U^{+} = U^{p} + (\mathrm{rhs}/\bar H)\,\Delta t``. Overbars denote C-grid
 face interpolation to the ``U``-node. The detrainment-momentum-loss term is a
 Laddie.jl addition (see [Entrainment](@ref)).
 
 At a **one-sided face** — the ice front, or a `SinkGapsBC` gap-sink edge — the neighbour
-needed for ``D_{x-1}`` is not part of the active domain, and masking pins its stored
-thickness to `0`. The depth-gradient term ``g\,\overline{D\delta\rho}\,(D_{x-1}-D)/\Delta x``
-is then a full one-sided gradient, as if ``D`` collapsed to zero across one grid cell.
+needed for ``H_{x-1}`` is not part of the active domain, and masking pins its stored
+thickness to `0`. The depth-gradient term ``g\,\overline{H\delta\rho}\,(H_{x-1}-H)/\Delta x``
+is then a full one-sided gradient, as if ``H`` collapsed to zero across one grid cell.
 The two reference implementations disagree on what to do about this, so
 [`AbstractFrontPressure`](@ref) makes it a choice:
 
@@ -129,22 +132,22 @@ Neither affects the grounding line, where no momentum equation is solved.
 ### (3) ``V``-momentum
 
 ```math
-\frac{\partial DV}{\partial t} + \nabla\!\cdot(D\mathbf{U}V) + fDU =
--\frac{gD^2}{2\rho_0}\frac{\partial \Delta\rho_a}{\partial y}
-+ g_a'D\,\frac{\partial (z_b - D)}{\partial y}
+\frac{\partial HV}{\partial t} + \nabla\!\cdot(H\mathbf{U}V) + fHU =
+-\frac{gH^2}{2\rho_0}\frac{\partial \Delta\rho_a}{\partial y}
++ g_a'H\,\frac{\partial (z_b - H)}{\partial y}
 - C_d\,|\mathbf{U}|\,V
-+ \nabla\!\cdot(A_h D\nabla V)
++ \nabla\!\cdot(A_h H\nabla V)
 \tag{3}
 ```
 
 Kernel `_step_v_momentum_kernel!`, structurally identical to (2) with
-``x\to y`` and the Coriolis sign flipped (``-f\,\overline{D U}``).
+``x\to y`` and the Coriolis sign flipped (``-f\,\overline{H U}``).
 
 ### (4) Heat
 
 ```math
-\frac{\partial DT}{\partial t} + \nabla\!\cdot(D\mathbf{U}T) =
-\dot e\,T_a + \dot m\,T_b - \gamma_T (T - T_b) + \nabla\!\cdot(K_h D\nabla T)
+\frac{\partial HT}{\partial t} + \nabla\!\cdot(H\mathbf{U}T) =
+\dot e\,T_a + \dot m\,T_b - \gamma_T (T - T_b) + \nabla\!\cdot(K_h H\nabla T)
 \tag{4}
 ```
 
@@ -154,17 +157,17 @@ paper — the convective relaxation ``-(T^{p}-T_a)\,\mathrm{conv2}`` (zero unles
 `convection_scheme = RelaxToAmbient`, see [Convective relaxation](@ref)):
 
 ```math
-\mathrm{rhs} = -T\,\partial_t D + \mathrm{cT} + \dot e\,T_a + \dot m\,T_b
+\mathrm{rhs} = -T\,\partial_t H + \mathrm{cT} + \dot e\,T_a + \dot m\,T_b
 - \gamma_T(T - T_b) + K_h\nabla^2 T - (T^{p}-T_a)\,\mathrm{conv2},
 ```
 
-with `cT` ``=-\nabla\!\cdot(D\mathbf{U}T)``, then ``T^{+} = T^{p} + (\mathrm{rhs}/D)\,\Delta t``.
+with `cT` ``=-\nabla\!\cdot(H\mathbf{U}T)``, then ``T^{+} = T^{p} + (\mathrm{rhs}/H)\,\Delta t``.
 
 ### (5) Salt
 
 ```math
-\frac{\partial DS}{\partial t} + \nabla\!\cdot(D\mathbf{U}S) =
-\dot e\,S_a + \nabla\!\cdot(K_h D\nabla S)
+\frac{\partial HS}{\partial t} + \nabla\!\cdot(H\mathbf{U}S) =
+\dot e\,S_a + \nabla\!\cdot(K_h H\nabla S)
 \tag{5}
 ```
 
@@ -219,15 +222,15 @@ The interface temperature is then
 ### (11–12) Turbulent exchange coefficients
 
 ```math
-\gamma_T = \frac{u_\star}{2.12\,\ln(u_\star D/\nu_0) + 12.5\,\mathrm{Pr}^{2/3} - 8.68} \tag{11}
+\gamma_T = \frac{u_\star}{2.12\,\ln(u_\star H/\nu_0) + 12.5\,\mathrm{Pr}^{2/3} - 8.68} \tag{11}
 ```
 ```math
-\gamma_S = \frac{u_\star}{2.12\,\ln(u_\star D/\nu_0) + 12.5\,\mathrm{Sc}^{2/3} - 8.68} \tag{12}
+\gamma_S = \frac{u_\star}{2.12\,\ln(u_\star H/\nu_0) + 12.5\,\mathrm{Sc}^{2/3} - 8.68} \tag{12}
 ```
 
 Computed by `_compute_turbulent_transfer_coefficients!` for
 `melting = TurbulentGamTMelting` (the log argument carries a `+1e-12` floor for
-``D\to 0``). For `melting = FixedGamTMelting`, ``\gamma_T`` is a prescribed constant
+``H\to 0``). For `melting = FixedGamTMelting`, ``\gamma_T`` is a prescribed constant
 and ``\gamma_S = \gamma_T/35``.
 
 ### (13) Friction velocity
@@ -244,56 +247,34 @@ T-point: ``U \to \tfrac12(U_{i,j}+U_{i,j-1})``, ``V \to \tfrac12(V_{i,j}+V_{i-1,
 The paper's mechanical-energy balance (Gaspar 1988; Gladish et al. 2012) is
 
 ```math
-D^2 g_b'\,\dot m + D^2 g_a'\,\dot e = \mu\,u_\star^3, \tag{14}
+\frac{H}{2}\, g_b'\,\dot m + \frac{H}{2}\, g_a'\,\dot e = \mu\,u_\star^3, \tag{14}
 ```
 
-where ``g_b' = g\,\delta\rho_b`` uses the **plume–interface** density contrast
-``\delta\rho_b = \beta(S - S_b) - \alpha(T - T_b)`` (computed in `_buoyancy_entrainment_kernel!`, not stored). The melt
-and detrainment term is the same in every variant below; with
-``\delta\rho^{+} = \max(10^{-4}, \delta\rho)`` and
-``\mathrm{entr} = \max(\dot e,0)``,
-``\mathrm{detr} = \min(\mathrm{max_detrainment}, \max(-\dot e,0))``.
-
-Laddie.jl exposes **two** buoyancy-flux schemes that differ *only* in the
-production term — pick via `entrainment`:
-
-`LambertEntrainment` **(default)** — `_lambert_entrainment_kernel!`, the form the
-reference Python LADDIE actually integrates and which the verification test
-reproduces bit-for-bit:
+(Eq. 13 in Lambert et al. 2026), where ``g_b' = g\,\delta\rho_b`` uses the **plume–interface** density contrast
+``\delta\rho_b = \beta(S - S_b) - \alpha(T - T_b)`` (computed in `_buoyancy_entrainment_kernel!`, not stored).
+With ``\delta\rho^{+} = \max(\mathrm{drho\_floor}, \delta\rho)`` this is solved for ``\dot e``
+(`GasparEntrainment`, the default — the reference LADDIE v1 `'Gaspar'` and v2 `'Gaspar1988'`):
 
 ```math
 \dot e
-= \frac{2\mu}{g}\,\frac{u_\star^3}{D\,\delta\rho^{+}}
-\;-\; \frac{\delta\rho_b}{\delta\rho^{+}}\,\dot m
-\qquad (\text{single } D,\ \text{prefactor } 2\mu).
+= \frac{2\mu}{g}\,\frac{u_\star^3}{H\,\delta\rho^{+}}
+\;-\; \frac{\delta\rho_b}{\delta\rho^{+}}\,\dot m,
 ```
 
-`GasparEntrainment` — `_gaspar_entrainment_kernel!`, the **literal** solution of
-Eq. (14) for ``\dot e`` (``\dot e = \mu u_\star^3/(D^2 g_a') - (g_b'/g_a')\dot m``,
-with ``g_a' = g\,\delta\rho``):
+and split into ``\mathrm{entr} = \max(\dot e,0)``,
+``\mathrm{detr} = \min(\mathrm{max\_detrainment}, \max(-\dot e,0))``.
 
-```math
-\dot e
-= \frac{\mu}{g}\,\frac{u_\star^3}{D^2\,\delta\rho^{+}}
-\;-\; \frac{\delta\rho_b}{\delta\rho^{+}}\,\dot m
-\qquad (D^2,\ \text{prefactor } \mu).
-```
-
-!!! note "Why two schemes"
-    The melt/detrainment term ``-(\delta\rho_b/\delta\rho)\dot m`` matches Eq. (14)
-    exactly in both (``g_b'/g_a' = \delta\rho_b/\delta\rho``). The **production**
-    terms differ: a literal reading of Eq. (14) gives ``\mu u_\star^3/(D^2 g_a')``
-    (`GasparEntrainment`), whereas the reference LADDIE code integrates
-    ``2\mu u_\star^3/(D\,g_a')`` (`LambertEntrainment`). The default is
-    `LambertEntrainment` so the Python verification stays valid; `GasparEntrainment`
-    is provided for users who want the textbook Eq. (14).
+!!! note "Reading Eq. (14)"
+    The ``H/2`` factors are easy to misread as ``H^2`` in the typeset PDF. The ``2\mu``
+    prefactor and single power of ``H`` above follow from ``H/2``, and match both
+    reference implementations bit-for-bit.
 
 **Alternative (`entrainment = HollandEntrainment`)** — shear entrainment after
 Holland & Jenkins (1999), *not* a Lambert et al. equation:
 
 ```math
 \mathrm{entr} = \frac{c_l K_h}{A_h^2}\,
-\sqrt{\max\!\Big(0,\;|\mathbf{u}|^2 - g_a'\,\frac{K_h}{A_h}\,D\Big)},
+\sqrt{\max\!\Big(0,\;|\mathbf{u}|^2 - g_a'\,\frac{K_h}{A_h}\,H\Big)},
 \qquad \mathrm{detr} = 0,
 ```
 
@@ -306,12 +287,12 @@ the Python-LADDIE verification stays valid.
 
 ### Minimum-thickness correction
 
-`update_entrainment!` adds a non-negative `ent2` so ``D`` cannot fall below
-`D_min`, and assembles the net entrainment used in Eq. (1):
+`update_entrainment!` adds a non-negative `ent2` so ``H`` cannot fall below
+`H_min`, and assembles the net entrainment used in Eq. (1):
 
 ```math
-\mathrm{ent2} = \max\!\Big(0,\;\frac{\mathrm{D_min} - D^{\text{past}}}{2\Delta t}
-- (\mathrm{convD} + \dot m + \mathrm{entr} - \mathrm{detr})\Big),
+\mathrm{ent2} = \max\!\Big(0,\;\frac{\mathrm{H_min} - H^{\text{past}}}{2\Delta t}
+- (\mathrm{convH} + \dot m + \mathrm{entr} - \mathrm{detr})\Big),
 \qquad
 \dot e = \mathrm{entr} + \mathrm{ent2} - \mathrm{detr}.
 ```
@@ -322,7 +303,7 @@ For `convection_scheme = RelaxToAmbient`, unstable cells (``\delta\rho < 0``) re
 toward ambient over `convection_time` via the `conv2` field appearing in (4)–(5):
 
 ```math
-\mathrm{conv2} = \frac{[\delta\rho < 0]\,D}{\mathrm{convection_time}}.
+\mathrm{conv2} = \frac{[\delta\rho < 0]\,H}{\mathrm{convection_time}}.
 ```
 
 `ClampDensity` (clamp ``\delta\rho`` to a positive floor) and `ResetToAmbient`
@@ -342,6 +323,6 @@ fields instead.
 | (8)–(10) | three-eq melt + liquidus | `_three_eq_melt_kernel!` |
 | (11)/(12) | ``\gamma_T,\gamma_S`` | `_compute_turbulent_transfer_coefficients!` |
 | (13) | ``u_\star`` | `_ustar_kernel!` |
-| (14) | entrainment | `LambertEntrainment` → `_lambert_entrainment_kernel!` (default); `GasparEntrainment` → `_gaspar_entrainment_kernel!` (literal Eq. 14); Holland → `_holland_entrainment_kernel!` |
+| (14) | entrainment | `GasparEntrainment` → `_buoyancy_entrainment_kernel!` (default); Holland → `_holland_entrainment_kernel!` |
 | — | min-thickness / net ``\dot e`` | `update_entrainment!` |
 | — | convective relaxation | `update_convection!`, `_update_conv2!` |

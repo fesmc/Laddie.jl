@@ -42,7 +42,7 @@ struct Params{
     "lower bound on δρ in the buoyancy-entrainment production term, which divides by it (–, default `1e-4`)"
     drho_floor::FT
     "minimum layer thickness, kept by extra entrainment and a final clamp (m, default `1`)"
-    D_min::FT
+    H_min::FT
     "speed cap applied to the velocity after each momentum step (m s⁻¹, default `1.414`)"
     v_cut::FT
     # Thermodynamics
@@ -73,7 +73,7 @@ struct Params{
     l3::FT
     # Initialisation scalars
     "initial layer thickness (m, default `10`)"
-    D_init::FT
+    H_init::FT
     "initial temperature offset from the ambient water (K, default `0`)"
     dT_init::FT
     "initial salinity offset from the ambient water (psu, default `-0.1`)"
@@ -93,7 +93,7 @@ struct Params{
     "seconds per year, for rates reported in m yr⁻¹ (default `365.25 × 86400`)"
     seconds_per_year::FT
     # Typed parameterization objects
-    "entrainment scheme, an [`AbstractEntrainment`](@ref) (default `LambertEntrainment(2.5)`)"
+    "entrainment scheme, an [`AbstractEntrainment`](@ref) (default `GasparEntrainment(2.5)`)"
     entrainment::EP
     "melt scheme, an [`AbstractMelting`](@ref) (default `FixedGamTMelting(1.8e-4)`)"
     melting::MP
@@ -139,7 +139,7 @@ _param_defaults() = (
     K_h = 1.0,
     max_detrainment = 1e6,
     drho_floor = 1e-4,
-    D_min = 1.0,
+    H_min = 1.0,
     v_cut = 1.414,
     u_tide = 0.01,
     rho_freshwater = 1000.0,
@@ -153,7 +153,7 @@ _param_defaults() = (
     l1 = -5.73e-2,
     l2 = 8.32e-2,
     l3 = 7.61e-4,
-    D_init = 10.0,
+    H_init = 10.0,
     dT_init = 0.0,
     dS_init = -0.1,
     T_min = -5.0,
@@ -162,7 +162,7 @@ _param_defaults() = (
     S_max = 36.0,
     seconds_per_day = 86400.0,
     seconds_per_year = 365.25 * 24 * 3600,
-    entrainment = LambertEntrainment(2.5),
+    entrainment = GasparEntrainment(2.5),
     melting = FixedGamTMelting(0.00018),
     convection_scheme = ResetToAmbient(0.005),
     max_layer_thickness = NoMaxLayerThickness(),

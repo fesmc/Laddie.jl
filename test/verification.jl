@@ -39,7 +39,7 @@
                     "S" => (0.0015,  0.015),   # 0.0006 / 0.006 psu
                     "U" => (0.0003,  0.04),    # 1.1e-4 / 0.016 m/s
                     "V" => (0.0003,  0.04))    # 0.9e-4 / 0.016 m/s
-        for (v, jl) in (("D", m.model.D.present), ("T", m.model.T.present),
+        for (v, jl) in (("D", m.model.H.present), ("T", m.model.T.present),
                         ("S", m.model.S.present), ("U", m.model.U.present),
                         ("V", m.model.V.present))
             resid = abs.(inner(jl) .- py[v])[tm]

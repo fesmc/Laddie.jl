@@ -4,7 +4,7 @@
     d = string(@doc TurbulentGamTMelting)
     @test !occursin("\\T_b", d) && !occursin("\\\\gamma", d)
     @test occursin("\\\\", d)                     # the line breaks survive
-    @test sprint(show, Laddie.OceanForcing2D()) == "OceanForcing2D() (not implemented)"
+    @test startswith(sprint(show, Laddie.OceanForcing2D(zeros(2, 2, 2), zeros(2, 2, 2), [-2.0, -1.0])), "OceanForcing2D{Float64}: 2×2 profiles")
     @test !(:OceanForcing2D in names(Laddie))
 end
 
@@ -42,7 +42,7 @@ end
     @test occursin("OceanForcing1D", sf) && occursin("5000-point profile", sf)
     @test occursin("PrescribedIceForcing(T_ice_base = -25.0 °C)", sf)
     for x in (getfield(m.model, :state), getfield(m.model, :cache), m.io, m.clock,
-              m.output, m.model.D)
+              m.output, m.model.H)
         @test length(plain(x)) < 400
     end
 end

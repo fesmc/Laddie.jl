@@ -58,7 +58,7 @@ end
                           forcing = prof, params = Params(; FT)))
     @test m2.model.melt ≈ m1.model.melt
     run!(m2; days = 0.5, verbose = false)
-    @test all(isfinite, m2.model.D.present)
+    @test all(isfinite, m2.model.H.present)
     @test all(isfinite, m2.model.melt)
 end
 
@@ -72,11 +72,11 @@ end
                                                         FT.(z), FT(step(z)), FT(first(z))))
     m1 = mk(-5000.0:1.0:-1.0)
     m2 = mk(-5000.0:2.0:-2.0)
-    # Model samples the profile before D is initialised; resample at the layer base.
+    # Model samples the profile before H is initialised; resample at the layer base.
     Laddie.update_ambient_fields!(m1)
     Laddie.update_ambient_fields!(m2)
     act = m1.tmask .> 0
-    zb = (m1.z_draft .- m1.D.present)[act]
+    zb = (m1.z_draft .- m1.H.present)[act]
     @test m1.Ta[act] ≈ Tlin.(zb)
     @test m2.Ta[act] ≈ m1.Ta[act]
     @test m2.Sa[act] ≈ m1.Sa[act]
@@ -97,7 +97,7 @@ end
     grid0 = Grid(mask0, zd0, 2000.0, 2000.0; FT, domain_cropping = NoDomainCropping())
     build(ice) = Simulation(Model(grid0;
         forcing = CavityForcing(ISOMIPForcing(:warm; FT), ice),
-        params = Params(; FT, entrainment = LambertEntrainment(FT(2.5)),
+        params = Params(; FT, entrainment = GasparEntrainment(FT(2.5)),
                         melting = FixedGamTMelting(FT(0.00018))),
         boundary = BoundaryConditions(; open_ocean = ZeroGradientInflow())))
 

@@ -11,7 +11,20 @@ _value_type(::Type{T}) where {T} = T
 _scalar_type(::Params{FT}) where {FT} = FT
 # Whether `trace_parameters` has turned the scalar parameters into traced numbers.
 _is_traced(p::Params) = _float_type(p) !== _scalar_type(p)
-_float_type(f::OceanForcing1D) = eltype(f.Tz)
+_float_type(f::Union{OceanForcing1D,OceanForcing2D}) = eltype(f.Tz)
+
+# Per-cell ambient profiles cover the grid's input arrays and are cropped with them;
+# a single profile is the same everywhere.
+_crop_ocean_forcing(o::AbstractOceanForcing, sz, r, c) = o
+function _crop_ocean_forcing(o::OceanForcing2D, sz, r, c)
+    size(o.Tz)[1:2] == sz || throw(
+        ArgumentError(
+            "the OceanForcing2D profiles are $(size(o.Tz)[1:2]) cells but the mask is $sz; " *
+            "they must cover the full domain including the border ring",
+        ),
+    )
+    return OceanForcing2D(o.Tz[r, c, :], o.Sz[r, c, :], o.z, o.dz, o.z0)
+end
 _float_type(f::CavityForcing) = _float_type(f.ocean)
 
 # A user input given as a scalar or a field: a matrix must cover the grid's input
@@ -174,11 +187,10 @@ function _validate_model_inputs(resolved_mask, forcing, params, FT)
             "construct the parameters with Params(; FT = $FT, ...) or build the grid with the matching FT",
         ),
     )
-    forcing.ocean isa OceanForcing1D || throw(
+    forcing.ocean isa Union{OceanForcing1D,OceanForcing2D} || throw(
         ArgumentError(
             "Model needs an OceanForcing1D (one ambient profile for the whole " *
-            "domain); got $(typeof(forcing.ocean)). A laterally varying ambient field " *
-            "is not implemented.",
+            "domain) or an OceanForcing2D (one per cell); got $(typeof(forcing.ocean)).",
         ),
     )
     _float_type(forcing) === FT || throw(
@@ -266,8 +278,9 @@ function Model(
     mask = _apply_gaps_bc(grid.mask, boundary.gaps)
     _validate_model_inputs(mask, forcing, params, FT)
     # The ice forcing is grid-shaped from here on, so `m.T_ice_base` lines up with
-    # `m.z_draft` and the melt kernel can index it directly.
-    forcing = CavityForcing(forcing.ocean, ice)
+    # `m.z_draft` and the melt kernel can index it directly; so are per-cell ambient
+    # profiles.
+    forcing = CavityForcing(_crop_ocean_forcing(forcing.ocean, grid.input_size, r, c), ice)
     geometry = Geometry(mask, grid.z_draft, f_t, grid.dx, grid.dy; FT, gradient)
     nx_total, ny_total = size(mask)
     state = State(FT, nx_total, ny_total)

@@ -54,7 +54,7 @@ end
     @Const(U),
     @Const(V),
     @Const(drho),
-    @Const(D),
+    @Const(H),
     @Const(tmask),
     g,
     dx,
@@ -72,13 +72,13 @@ end
 end
 
 # The CFL number of a cell per unit time step: advection plus the internal
-# gravity-wave speed c = √(g·max(0, δρ·D)) in both directions.
+# gravity-wave speed c = √(g·max(0, δρ·H)) in both directions.
 @kernel function _cfl_rate_kernel!(
     out,
     @Const(U),
     @Const(V),
     @Const(drho),
-    @Const(D),
+    @Const(H),
     @Const(tmask),
     g,
     dx,
@@ -92,7 +92,7 @@ end
         FT = typeof(g)
         u = (U[i, j] + U[_xm1(i, Nx), j]) / 2
         v = (V[i, j] + V[i, _ym1(j, Ny)]) / 2
-        c = _safe_sqrt(g * max(zero(FT), drho[i, j] * D[i, j]))
+        c = _safe_sqrt(g * max(zero(FT), drho[i, j] * H[i, j]))
         out[i, j] = (abs(u) / dx + abs(v) / dy + c / dx + c / dy) * tmask[i, j]
     end
 end
@@ -105,7 +105,7 @@ function _launch_tpoint_diag!(kernel!, m)
         m.U.present,
         m.V.present,
         m.drho,
-        m.D.present,
+        m.H.present,
         m.tmask,
         m.g,
         m.dx,
@@ -122,9 +122,9 @@ end
 _cfl_number(sim, reductions = _cfl_reductions(sim.model, sim.cfl)) =
     _float64(sim.clock.dt) * _cfl_rate(sim.model, sim.cfl, reductions)
 
-# Largest δρ·D over the active domain, for the gravity-wave speed.
-function _max_Ddrho(m)
-    @. m.diag = m.drho * m.D.present * m.tmask
+# Largest δρ·H over the active domain, for the gravity-wave speed.
+function _max_Hdrho(m)
+    @. m.diag = m.drho * m.H.present * m.tmask
     return maximum(m.diag)
 end
 
@@ -136,7 +136,7 @@ function _cfl_reductions(m, ::ConservativeCFL)
     umax = maximum(d)
     @. d = abs(m.V.present) * m.vmask
     vmax = maximum(d)
-    c = sqrt(m.g * max(zero(m.FT), _max_Ddrho(m)))
+    c = sqrt(m.g * max(zero(m.FT), _max_Hdrho(m)))
     return (umax, vmax, c)
 end
 _cfl_rate(m, ::ConservativeCFL, (umax, vmax, c)) =
@@ -160,7 +160,7 @@ function _cfl_worstcase(sim)
     m = sim.model
     FT = m.FT
     v_cut = _float64(m.v_cut)
-    c = _float64(sqrt(m.g * max(zero(FT), _sync_diagnostics(sim.exec, sim).Ddrho)))
+    c = _float64(sqrt(m.g * max(zero(FT), _sync_diagnostics(sim.exec, sim).Hdrho)))
     return _float64(sim.clock.dt) *
            ((v_cut + c) / _float64(m.dx) + (v_cut + c) / _float64(m.dy))
 end
@@ -172,7 +172,7 @@ function _check_blowup(sim, d, t, nt)
     m = sim.model
     d.finite && return
     error(
-        "Simulation blew up: non-finite values in D/U/V at step $t/$nt " *
+        "Simulation blew up: non-finite values in H/U/V at step $t/$nt " *
         "(≈ day $(round(_t_days(sim), digits = 2))). Common causes: time step too " *
         "large for this grid (dt = $(_primal(sim.clock.dt)) s, dx = $(m.dx) m) or unstable " *
         "forcing. Reduce dt in Simulation, or check the inputs.",
@@ -310,7 +310,7 @@ prog = reactant_compile(loss, fresh(), sched)       # differentiable, as with in
 ```
 
 `integrate!(model, sched; means = (), nu = 0.8, checkpoints = 20)` returns the
-time-weighted means over the run of the fields named in `means` (e.g. `:melt`, `:D`),
+time-weighted means over the run of the fields named in `means` (e.g. `:melt`, `:H`),
 as a `NamedTuple`, or `model` when `means` is empty.  The controller checks the CFL
 every `stepper.ncheck` steps counted from the start of the call, and re-bootstraps the
 leapfrog when dt changes, as `run!`; the last step may end past `days`.
@@ -334,7 +334,7 @@ objects are converted as by `Params`.
 The compiled program then runs for any parameter values without recompiling, and
 Enzyme differentiates it with respect to a parameter through a tangent model seeded
 with `trace_parameters` too.  Parameters that only act when the model is built
-(`coriolis`, `D_init`, `dT_init`, `dS_init`) have no effect on the program.
+(`coriolis`, `H_init`, `dT_init`, `dS_init`) have no effect on the program.
 
 ```julia
 using Laddie, Reactant, CUDA
@@ -373,14 +373,14 @@ function _advance_batch!(::NativeExecution, sim, n, io_on)
 end
 
 # Everything `run!` reads from the device at a sync point, in one call: whether the
-# prognostics are finite, the largest δρ·D (for the worst-case CFL), the melt
-# statistics, the largest active D, and the reductions of the CFL number.  The
+# prognostics are finite, the largest δρ·H (for the worst-case CFL), the melt
+# statistics, the largest active H, and the reductions of the CFL number.  The
 # Reactant extension compiles it into one program.
 _diagnostics(m, cfl) = (
     finite = _prognostics_finite(m),
-    Ddrho = _max_Ddrho(m),
+    Hdrho = _max_Hdrho(m),
     stats = meltstats(m),
-    Dmax = _max_active_D(m),
+    Hmax = _max_active_H(m),
     cfl = _cfl_reductions(m, cfl),
 )
 
@@ -388,13 +388,13 @@ _diagnostics(m, cfl) = (
 # combined into the CFL number of the current dt.
 _sync_diagnostics(::NativeExecution, sim) = _on_host(sim, _diagnostics(sim.model, sim.cfl))
 _on_host(sim, d) =
-    (; finite = Bool(d.finite), d.Ddrho, d.stats, d.Dmax, cfl = _cfl_number(sim, d.cfl))
+    (; finite = Bool(d.finite), d.Hdrho, d.stats, d.Hmax, cfl = _cfl_number(sim, d.cfl))
 
 # `&`, not `&&`: also evaluated on traced values by the Reactant extension.
 _prognostics_finite(m) =
-    all(isfinite, m.D.present) & all(isfinite, m.U.present) & all(isfinite, m.V.present)
-function _max_active_D(m)
-    @. m.diag = ifelse(m.tmask > 0, m.D.present, m.FT(-Inf))
+    all(isfinite, m.H.present) & all(isfinite, m.U.present) & all(isfinite, m.V.present)
+function _max_active_H(m)
+    @. m.diag = ifelse(m.tmask > 0, m.H.present, m.FT(-Inf))
     return maximum(m.diag)
 end
 # The model the log diagnostics (`printdiags`) are computed on.
@@ -478,7 +478,7 @@ function _progress_values(sim, d)
     return Tuple{String,Any}[
         ("simulated days", _r(_t_days(sim), 2)),
         ("melt mean/max [m/yr]", string(_r(mn, 2), " / ", _r(mx, 2))),
-        ("Dmax [m]", _r(d.Dmax, 1)),
+        ("Hmax [m]", _r(d.Hmax, 1)),
         ("total melt [Gt/yr]", _r(gt, 2)),
         ("|u|max [m/s]", _r(sp, 3)),
         ("dt [s] / CFL", string(_r(sim.clock.dt, 1), " / ", _r(d.cfl, 3))),

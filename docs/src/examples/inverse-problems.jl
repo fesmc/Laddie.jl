@@ -26,8 +26,8 @@ Both are shown on the same twin experiment. A run with known parameters produces
     optimisers work on `J` rather than on the RMSE, whose square root has a kink at a
     perfect fit, which a twin experiment converges to; the progress is reported as RMSE.
   * **Unknowns:** the top drag coefficient `C_d_top`, which sets the friction velocity
-    that drives melt, and the minimum layer thickness `D_min`. The truth is
-    `C_d_top = 1.1e-3` and `D_min = 1 m`; the first guess is `2.2e-3` and `3 m`.
+    that drives melt, and the minimum layer thickness `H_min`. The truth is
+    `C_d_top = 1.1e-3` and `H_min = 1 m`; the first guess is `2.2e-3` and `3 m`.
   * **Parametrisation:** both are estimated as `θ = log(p / p_guess)`, so they are
     positive, of similar size, and start at `θ = 0`.
 
@@ -46,12 +46,12 @@ using CairoMakie
 
 const DAYS = 10.0
 const NX, NY = 80, 20
-const GUESS = (C_d_top = 2.2e-3, D_min = 3.0)
-const TRUTH = (C_d_top = 1.1e-3, D_min = 1.0)
+const GUESS = (C_d_top = 2.2e-3, H_min = 3.0)
+const TRUTH = (C_d_top = 1.1e-3, H_min = 1.0)
 const SPY = 365.25 * 86400                  # seconds per year
 
-params_of(θ) = (C_d_top = GUESS.C_d_top * exp(θ[1]), D_min = GUESS.D_min * exp(θ[2]))
-θ_truth = [log(TRUTH.C_d_top / GUESS.C_d_top), log(TRUTH.D_min / GUESS.D_min)]
+params_of(θ) = (C_d_top = GUESS.C_d_top * exp(θ[1]), H_min = GUESS.H_min * exp(θ[2]))
+θ_truth = [log(TRUTH.C_d_top / GUESS.C_d_top), log(TRUTH.H_min / GUESS.H_min)]
 
 # The two parts use different optimisers because the two modes of differentiation give
 # different things for the same cost. Forward mode gives the **Jacobian** of the 1400
@@ -76,7 +76,7 @@ using ForwardDiff
 function melt_field(θ)
     T = eltype(θ)
     p = params_of(θ)
-    params = Params(; FT = T, C_d_top = p.C_d_top, D_min = p.D_min)
+    params = Params(; FT = T, C_d_top = p.C_d_top, H_min = p.H_min)
     sim = build_isomip(CPU(); FT = T, nx = NX, ny = NY, isomipcond = :warm, params)
     m = sim.model
     n = round(Int, DAYS * 86400 / Laddie._primal(sim.clock.dt))
@@ -109,7 +109,7 @@ end
 θ_fd, hist_fd = gauss_newton(zeros(2))
 for (k, (θ, cost)) in enumerate(hist_fd)
     p = params_of(θ)
-    @printf "GN %d: C_d_top = %.4e, D_min = %.4f m, RMSE = %.3e m/yr\n" k - 1 p.C_d_top p.D_min rmse(cost, length(obs))
+    @printf "GN %d: C_d_top = %.4e, H_min = %.4f m, RMSE = %.3e m/yr\n" k - 1 p.C_d_top p.H_min rmse(cost, length(obs))
 end
 
 # ## Reactant.jl: many parameters
@@ -155,7 +155,7 @@ function cost_and_gradient(θ)
     g = grad_prog(fresh(θ), Enzyme.make_zero(model0), sched, obs_r)
     p = params_of(θ)
     dθ = [Reactant.to_number(g.params.C_d_top) * p.C_d_top,   # chain rule for log p
-          Reactant.to_number(g.params.D_min) * p.D_min]
+          Reactant.to_number(g.params.H_min) * p.H_min]
     return cost(θ), Float64.(dθ)
 end
 
@@ -192,7 +192,7 @@ end
 θ_r, hist_r = bfgs(zeros(2))
 for (k, (θ, c)) in enumerate(hist_r)
     p = params_of(θ)
-    @printf "BFGS %2d: C_d_top = %.4e, D_min = %.4f m, RMSE = %.3e m/yr\n" k - 1 p.C_d_top p.D_min rmse(c, length(obs))
+    @printf "BFGS %2d: C_d_top = %.4e, H_min = %.4f m, RMSE = %.3e m/yr\n" k - 1 p.C_d_top p.H_min rmse(c, length(obs))
 end
 
 # ## Result
@@ -207,8 +207,8 @@ for (hist, name, marker) in ((hist_fd, "ForwardDiff, Gauss–Newton", :circle),
     ps = [params_of(θ) for (θ, _) in hist]
     scatterlines!(ax1, its, [p.C_d_top / TRUTH.C_d_top for p in ps]; marker,
                   color = :steelblue, label = "C_d_top, $name")
-    scatterlines!(ax1, its, [p.D_min / TRUTH.D_min for p in ps]; marker,
-                  color = :firebrick, label = "D_min, $name")
+    scatterlines!(ax1, its, [p.H_min / TRUTH.H_min for p in ps]; marker,
+                  color = :firebrick, label = "H_min, $name")
     scatterlines!(ax2, its, [max(rmse(c, length(obs)), 1e-12) for (_, c) in hist]; marker,
                   color = :black, label = name)
 end
@@ -220,7 +220,7 @@ fig
 
 # Both recover the truth from a guess twice and three times too large:
 #
-# |                                                     | iterations | `C_d_top` | `D_min` (m) | RMSE (m/yr)        |
+# |                                                     | iterations | `C_d_top` | `H_min` (m) | RMSE (m/yr)        |
 # |:----------------------------------------------------|-----------:|----------:|------------:|-------------------:|
 # | first guess                                         |            | 2.2000e-3 | 3.0000      | 6.29               |
 # | ForwardDiff, Gauss–Newton (Float64, CPU, 8 threads) | 4          | 1.1000e-3 | 1.0000      | 3.3e-7             |

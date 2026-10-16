@@ -50,11 +50,11 @@ Fields are accessed directly on `m` through a flat forwarding layer:
 
 | Access pattern | Source struct | Examples |
 |----------------|--------------|---------|
-| `m.D`, `m.U`, `m.V`, `m.T`, `m.S` | `State` | `m.D.present`, `m.U.past` |
+| `m.H`, `m.U`, `m.V`, `m.T`, `m.S` | `State` | `m.H.present`, `m.U.past` |
 | `m.melt`, `m.entr`, `m.drho`, `m.Ta`, `m.Sa`, … | `Cache` | `m.melt .* m.seconds_per_year` |
 | `m.mask`, `m.z_draft`, `m.dx`, `m.x`, … | `Grid` | input mask, draft, spacing, coordinates |
 | `m.tmask`, `m.umask`, `m.resolved_mask`, `m.dzdx`, … | `Geometry` | `m.tmask .> 0` |
-| `m.C_d`, `m.A_h`, `m.D_min`, … | `Params` | `m.C_d` |
+| `m.C_d`, `m.A_h`, `m.H_min`, … | `Params` | `m.C_d` |
 | `m.f`, `m.fu`, `m.fv` | `Geometry` | Coriolis at T-, u- and v-points |
 | `m.boundary` | `BoundaryConditions` | `m.boundary.land` (not flattened) |
 | `m.Tz`, `m.Sz`, `m.z` | Forcing (ocean) | ambient profile arrays |
@@ -83,7 +83,7 @@ mutable struct Model{
     grid::G
     "masks, wall indicators, ice-base slope and Coriolis field derived from the grid"
     geometry::GE
-    "the prognostic fields `D`, `U`, `V`, `T`, `S`"
+    "the prognostic fields `H`, `U`, `V`, `T`, `S`"
     state::S
     "diagnostic and scratch fields, updated in place every step"
     cache::C
@@ -193,7 +193,7 @@ function Base.setproperty!(m::Model, k::Symbol, v)
         setfield!(c, k, v)
         return
     end
-    # State is mutable — D/U/V/T/S Var objects can be replaced
+    # State is mutable — H/U/V/T/S Var objects can be replaced
     s = getfield(m, :state)
     if hasfield(typeof(s), k)
         setfield!(s, k, v)

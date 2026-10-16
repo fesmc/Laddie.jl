@@ -22,7 +22,7 @@ Base.show(io::IO, v::Var{LX,LY}) where {LX,LY} = print(
 
 Base.show(io::IO, s::State) = print(
     io,
-    "State{$(eltype(s.D.present))}: D, U, V, T, S — 3-level Vars of $(_sz(s.D.present))",
+    "State{$(eltype(s.H.present))}: H, U, V, T, S — 3-level Vars of $(_sz(s.H.present))",
 )
 
 function Base.show(io::IO, c::Cache)
@@ -107,7 +107,7 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  entrainment    = ", p.entrainment)
     println(io, "  melt           = ", p.melting)
     println(io, "  convection     = ", p.convection_scheme)
-    println(io, "  max layer D    = ", p.max_layer_thickness)
+    println(io, "  max layer H    = ", p.max_layer_thickness)
     println(io, "  lat. viscosity = ", p.lateral_viscosity)
     println(io, "  lap. weights   = ", p.laplacian_weights)
     println(io, "  front pressure = ", p.front_pressure)

@@ -36,7 +36,7 @@
     @test m_free.V.present != m_ns.V.present
     @test m_v1.V.present != m_ns.V.present && m_v1.V.present != m_free.V.present
     for m in (m_def, m_free, m_v1)
-        @test all(isfinite, m.D.present) && all(isfinite, m.melt)
+        @test all(isfinite, m.H.present) && all(isfinite, m.melt)
         @test all(m.melt[m.tmask .> 0] .>= 0)
     end
 
@@ -181,7 +181,7 @@ end
     @test m_sink.model.resolved_mask == m_plain.model.resolved_mask
     run!(m_sink;  days = 1.0, verbose = false)
     run!(m_plain; days = 1.0, verbose = false)
-    @test m_sink.model.D.present == m_plain.model.D.present
+    @test m_sink.model.H.present == m_plain.model.H.present
     @test m_sink.model.T.present == m_plain.model.T.present
     @test m_sink.model.U.present == m_plain.model.U.present
     @test m_sink.model.melt == m_plain.model.melt
@@ -279,7 +279,7 @@ end
 
     # -- Connected differs from sink, and stays physical -------------------
     run!(mc; days = 1.0, verbose = false)
-    @test all(isfinite, mc.model.D.present) && all(isfinite, mc.model.melt)
+    @test all(isfinite, mc.model.H.present) && all(isfinite, mc.model.melt)
     @test all(mc.model.melt[mc.model.imask .> 0] .>= 0)
     @test all(mc.model.melt[gap_ix] .== 0)           # still zero after integrating
     @test mc.model.melt != m_sink.model.melt
@@ -321,7 +321,7 @@ end
     m_none = channel(mask0, SinkGapsBC())    # same draft, no gap: the control
 
     for m in (m_sink, m_conn, m_none)
-        @test all(isfinite, m.model.melt) && all(isfinite, m.model.D.present)
+        @test all(isfinite, m.model.melt) && all(isfinite, m.model.H.present)
         @test all(m.model.melt .>= 0)
     end
     @test all(m_conn.model.melt[xgap, ygap] .== 0)   # a gap has no ice to melt

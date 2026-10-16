@@ -184,7 +184,7 @@ Native kernels cost the same. Raised kernels are 19 % slower, since XLA can no l
 fold the parameters into its fusions; this is the price of differentiating with
 respect to them. `run!` keeps parameters as constants; do not run
 a simulation on a model from `trace_parameters`. Parameters that act only when the
-model is built (`coriolis`, `D_init`, `dT_init`, `dS_init`) have no effect on a
+model is built (`coriolis`, `H_init`, `dT_init`, `dS_init`) have no effect on a
 program.
 
 ### Reverse mode
@@ -266,7 +266,7 @@ sequence of a longer `run!` exactly.
 - **Raised kernels without barriers** (`:xla`) are the slowest strategy, 2–2.5× KA.
   A derivative in forward mode costs roughly one such run per direction; a gradient in
   reverse mode about 7 such runs, whatever the number of inputs.
-- **Kinks.** The speed cap, the tracer clamps, the `D_min` floor and the thickness caps
+- **Kinks.** The speed cap, the tracer clamps, the `H_min` floor and the thickness caps
   have kinks; at one the derivative is that of the active side (a subgradient).
 - The ForwardDiff extension remains the option for gradients on the CPU backends and
   on the KA GPU backends (build the model at `FT = Dual`).

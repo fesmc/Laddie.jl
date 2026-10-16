@@ -93,7 +93,7 @@ end
     Ta,
     Sa,
     @Const(z_draft),
-    @Const(D),
+    @Const(H),
     @Const(Tz),
     @Const(Sz),
     z0,
@@ -104,7 +104,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(z0)
-        depth_idx = (z_draft[i, j] - D[i, j] - z0) / dz
+        depth_idx = (z_draft[i, j] - H[i, j] - z0) / dz
         # Guard against non-finite or out-of-range depth_idx before the integer
         # conversion: trunc(Int, x) throws InexactError on CPU and is UB on GPU
         # when x overflows Int64 (~9.2e18).  Clamp to [0, nz-1] in float first
@@ -121,17 +121,22 @@ end
         idx_lo = unsafe_trunc(Int, lo)
         idx_hi = clamp(idx_lo + 1, 0, nz - 1)
         weight = depth_idx - lo
-        Ta[i, j] = weight * Tz[idx_hi+1] + (one(FT) - weight) * Tz[idx_lo+1]
-        Sa[i, j] = weight * Sz[idx_hi+1] + (one(FT) - weight) * Sz[idx_lo+1]
+        Ta[i, j] = weight * _level(Tz, i, j, idx_hi + 1) + (one(FT) - weight) * _level(Tz, i, j, idx_lo + 1)
+        Sa[i, j] = weight * _level(Sz, i, j, idx_hi + 1) + (one(FT) - weight) * _level(Sz, i, j, idx_lo + 1)
     end
 end
+
+# Level `k` of the ambient profile seen by cell (i, j): the one profile of an
+# `OceanForcing1D`, or the cell's own column of an `OceanForcing2D`.
+@inline _level(P::AbstractVector, i, j, k) = @inbounds P[k]
+@inline _level(P::AbstractArray{<:Any,3}, i, j, k) = @inbounds P[i, j, k]
 
 
 """
 $(TYPEDSIGNATURES)
 
 Vertically interpolate the ambient T/S profiles to the depth of each grid cell's
-plume base (z_draft − D), writing results into `m.Ta` and `m.Sa`. This sampling has
+plume base (z_draft − H), writing results into `m.Ta` and `m.Sa`. This sampling has
 no numbered equation in Lambert et al. (2023); see `docs/src/equations.md`.
 """
 function update_ambient_fields!(m)
@@ -141,7 +146,7 @@ function update_ambient_fields!(m)
         m.Ta,
         m.Sa,
         m.z_draft,
-        m.D.present,
+        m.H.present,
         m.Tz,
         m.Sz,
         m.z0,
@@ -280,14 +285,14 @@ end
 update_convection!(m) = update_convection!(m, m.convection_scheme)
 
 # Log-layer transfer coefficients (Lambert et al. 2023, Eqs. 11–12).  The log term
-# is floored at 0 (u★D/ν₀ ≥ 1): without the floor the denominator crosses zero on a
-# thin, slow layer.  The floor is a no-op wherever u★D/ν₀ ≥ 1, so the result is
+# is floored at 0 (u★H/ν₀ ≥ 1): without the floor the denominator crosses zero on a
+# thin, slow layer.  The floor is a no-op wherever u★H/ν₀ ≥ 1, so the result is
 # unchanged there; the constructor guarantees the offsets are positive.
 @kernel function _turbulent_gamma_kernel!(
     gamT,
     gamS,
     @Const(ustar),
-    @Const(D),
+    @Const(H),
     @Const(tmask),
     PrCorr,
     ScCorr,
@@ -298,7 +303,7 @@ update_convection!(m) = update_convection!(m, m.convection_scheme)
     FT = typeof(nu0)
     @inbounds begin
         us = ustar[i, j]
-        logterm = FT(2.12) * max(log(us * D[i, j] / nu0 + FT(1e-12)), zero(FT))
+        logterm = FT(2.12) * max(log(us * H[i, j] / nu0 + FT(1e-12)), zero(FT))
         active = tmask[i, j] > 0
         gamT[i, j] = ifelse(active, us / (logterm + PrCorr), zero(FT))
         gamS[i, j] = ifelse(active, us / (logterm + ScCorr), zero(FT))
@@ -311,7 +316,7 @@ function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamTMelting)
         m.gamT,
         m.gamS,
         m.ustar,
-        m.D.present,
+        m.H.present,
         m.tmask,
         _log_layer_offset(mp.Pr),
         _log_layer_offset(mp.Sc),
@@ -500,7 +505,7 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
         m.U.present,
         m.V.present,
         m.drho,
-        m.D.present,
+        m.H.present,
         m.tmask,
         coeff,
         drho_coeff,
@@ -510,30 +515,11 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Reference-LADDIE mechanical-energy entrainment: ``e = 2\\mu u_\\star^3 / (g D \\delta\\rho)`` minus a melt
-detrainment correction. This is the form verified against the Python reference
-(Lambert et al. 2023; see `docs/src/equations.md`). Contrast
-`_compute_entrainment!(m, ::GasparEntrainment)`, the literal Eq. 14.
-"""
-function _compute_entrainment!(m, ep::LambertEntrainment)
-    _launch_buoyancy_entrainment!(m, (ep.mu + ep.mu) / m.g, false)
-end
-
-"""
-$(TYPEDSIGNATURES)
-
-Literal Eq. 14 entrainment: ``e = \\mu u_\\star^3 / (g D^2 \\delta\\rho)`` minus the same melt detrainment
-correction (Lambert et al. 2023, Eq. 14; see `docs/src/equations.md`). Differs
-from the reference [`LambertEntrainment`](@ref) by the ``D^2`` denominator and the
-``\\mu`` (not ``2\\mu``) prefactor.
+Gaspar (1988) mechanical-energy entrainment (see [`GasparEntrainment`](@ref)):
+``e = 2\\mu u_\\star^3 / (g H \\delta\\rho)`` minus a melt detrainment correction
+(Lambert et al. 2023, Eq. 14; see `docs/src/equations.md`).
 """
 function _compute_entrainment!(m, ep::GasparEntrainment)
-    _launch_buoyancy_entrainment!(m, ep.mu / m.g, true)
-end
-
-# Shared by Lambert and Gaspar: they differ only in the production prefactor and
-# in whether the production term divides by D or by D².
-function _launch_buoyancy_entrainment!(m, prefactor, D_squared)
     launch!(
         _buoyancy_entrainment_kernel!,
         m.entr,
@@ -543,12 +529,11 @@ function _launch_buoyancy_entrainment!(m, prefactor, D_squared)
         m.Tb,
         m.z_draft,
         m.ustar,
-        m.D.present,
+        m.H.present,
         m.drho,
         m.melt,
         m.tmask,
-        prefactor,
-        D_squared,
+        (ep.mu + ep.mu) / m.g,
         m.max_detrainment,
         m.drho_floor,
         m.alpha,
@@ -564,25 +549,25 @@ $(TYPEDSIGNATURES)
 
 Compute entrainment/detrainment rates and assemble the net entrainment
 `m.nentr = entr + ent2 - detr` that enters the thickness and tracer equations.
-`ent2` is the minimum additional entrainment rate needed to prevent D falling
-below `D_min` after the upcoming thickness step; it is computed here (before
-stepping) from `D.past`, matching the reference Python LADDIE implementation.
+`ent2` is the minimum additional entrainment rate needed to prevent H falling
+below `H_min` after the upcoming thickness step; it is computed here (before
+stepping) from `H.past`, matching the reference Python LADDIE implementation.
 """
 function update_entrainment!(m, dt)
     _compute_entrainment!(m, m.entrainment)
-    upwind_advection_T(m.convD, m, m.D.present)
+    upwind_advection_T(m.convH, m, m.H.present)
     FT = m.FT
     launch!(
         _net_entrainment_kernel!,
         m.ent2,
         m.nentr,
-        m.D.past,
-        m.convD,
+        m.H.past,
+        m.convH,
         m.melt,
         m.entr,
         m.detr,
         m.tmask,
-        m.D_min,
+        m.H_min,
         FT(2) * dt,
     )
     return
@@ -591,23 +576,23 @@ end
 @kernel function _net_entrainment_kernel!(
     ent2,
     nentr,
-    @Const(D_past),
-    @Const(convD),
+    @Const(H_past),
+    @Const(convH),
     @Const(melt),
     @Const(entr),
     @Const(detr),
     @Const(tmask),
-    D_min,
+    H_min,
     dt2,
 )
-    D_min, dt2 = _val(D_min), _val(dt2)
+    H_min, dt2 = _val(H_min), _val(dt2)
     i, j = @index(Global, NTuple)
     @inbounds begin
         ent2[i, j] =
             max(
-                zero(D_min),
-                (D_min - D_past[i, j]) / dt2 -
-                (convD[i, j] + melt[i, j] + entr[i, j] - detr[i, j]),
+                zero(H_min),
+                (H_min - H_past[i, j]) / dt2 -
+                (convH[i, j] + melt[i, j] + entr[i, j] - detr[i, j]),
             ) * tmask[i, j]
         nentr[i, j] = entr[i, j] + ent2[i, j] - detr[i, j]
     end
@@ -644,11 +629,10 @@ end
 end
 
 # Buoyancy-flux entrainment, fusing S_b, δρ_b, drho_pos, the signed rate, entr and
-# detr into one pass; only entr and detr are stored.  Production term = prefactor·u★³/(D·δρ) for the reference form
-# (LambertEntrainment, prefactor = 2μ/g) and prefactor·u★³/(D²·δρ) for the literal
-# Eq. 14 (GasparEntrainment, prefactor = μ/g, `D_squared = true`).
+# detr into one pass; only entr and detr are stored.  Production term =
+# prefactor·u★³/(H·δρ) with prefactor = 2μ/g (GasparEntrainment).
 # drho_pos = max(drho_floor, drho) is never zero, so the δρ_b/drho_pos division is
-# safe; D can be zero outside the domain, hence _safe_div for the production term.
+# safe; H can be zero outside the domain, hence _safe_div for the production term.
 @kernel function _buoyancy_entrainment_kernel!(
     entr,
     detr,
@@ -657,12 +641,11 @@ end
     @Const(Tb),
     @Const(z_draft),
     @Const(ustar),
-    @Const(D),
+    @Const(H),
     @Const(drho),
     @Const(melt),
     @Const(tmask),
     prefactor,
-    D_squared,
     max_detrainment,
     drho_floor,
     alpha,
@@ -680,10 +663,8 @@ end
         sb = _freezing_salinity(Tb[i, j], z_draft[i, j], l1, l2, l3)
         db_ij = _drho(S[i, j], sb, T[i, j], Tb[i, j], beta, alpha) * tmask[i, j]
         us3 = ustar[i, j]^3
-        Dij = D[i, j]
-        Dpow = D_squared ? Dij * Dij : Dij
         e_ij =
-            prefactor * _safe_div(us3, Dpow * drho_pos) -
+            prefactor * _safe_div(us3, H[i, j] * drho_pos) -
             db_ij / drho_pos * melt[i, j] * tmask[i, j]
         z = zero(FT)
         entr[i, j] = max(e_ij, z)
@@ -698,7 +679,7 @@ end
     @Const(U),
     @Const(V),
     @Const(drho),
-    @Const(D),
+    @Const(H),
     @Const(tmask),
     coeff,
     drho_coeff,
@@ -714,7 +695,7 @@ end
         u_im = (U[i, j] + U[im1, j]) * half
         v_jm = (V[i, j] + V[i, jm1]) * half
         speed_sq =
-            max(zero(FT), u_im * u_im + v_jm * v_jm - drho_coeff * drho[i, j] * D[i, j])
+            max(zero(FT), u_im * u_im + v_jm * v_jm - drho_coeff * drho[i, j] * H[i, j])
         entr[i, j] = coeff * _safe_sqrt(speed_sq) * tmask[i, j]
         detr[i, j] = zero(FT)
     end

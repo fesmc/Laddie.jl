@@ -28,7 +28,7 @@
                    u_bottom_drag(m.model)        .+ u_diffusion(m.model) .-
                    u_detrainment(m.model)
         U_ref = m.model.U.past .+
-            Laddie.div0(rhs_U, Laddie.ip_t(m.model, m.model.D.present)) .* m.model.umask .* dt
+            Laddie.div0(rhs_U, Laddie.ip_t(m.model, m.model.H.present)) .* m.model.umask .* dt
 
         rhs_V = .- v_thickness_tendency(m.model) .+ v_advection(m.model) .-
                    v_pressure_depth(m.model)     .+ v_pressure_slope(m.model) .-
@@ -36,7 +36,7 @@
                    v_bottom_drag(m.model)        .+ v_diffusion(m.model) .-
                    v_detrainment(m.model)
         V_ref = m.model.V.past .+
-            Laddie.div0(rhs_V, Laddie.jp_t(m.model, m.model.D.present)) .* m.model.vmask .* dt
+            Laddie.div0(rhs_V, Laddie.jp_t(m.model, m.model.H.present)) .* m.model.vmask .* dt
 
         rhs_T = .- tracer_thickness_tendency(m.model, m.model.T.present) .+
                    tracer_advection(m.model, m.model.T.present) .+
@@ -44,14 +44,14 @@
                    T_ice_ocean_exchange(m.model) .+
                    tracer_diffusion(m.model, m.model.T.past) .-
                    tracer_convection(m.model, m.model.T.past, m.model.Ta)
-        T_ref = m.model.T.past .+ Laddie.div0(rhs_T, m.model.D.present) .* m.model.tmask .* dt
+        T_ref = m.model.T.past .+ Laddie.div0(rhs_T, m.model.H.present) .* m.model.tmask .* dt
 
         rhs_S = .- tracer_thickness_tendency(m.model, m.model.S.present) .+
                    tracer_advection(m.model, m.model.S.present) .+
                    tracer_entrainment(m.model, m.model.Sa) .+
                    tracer_diffusion(m.model, m.model.S.past) .-
                    tracer_convection(m.model, m.model.S.past, m.model.Sa)
-        S_ref = m.model.S.past .+ Laddie.div0(rhs_S, m.model.D.present) .* m.model.tmask .* dt
+        S_ref = m.model.S.past .+ Laddie.div0(rhs_S, m.model.H.present) .* m.model.tmask .* dt
 
         Laddie.step_u_momentum!(m.model, dt)
         Laddie.step_v_momentum!(m.model, dt)
@@ -65,27 +65,27 @@
     end
 end
 
-@testset "Conservation: D equation exact over one step" begin
+@testset "Conservation: H equation exact over one step" begin
     m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
     Laddie.advance_leapfrog!(m.model, m.clock.dt)
-    D_past = copy(m.model.D.past)
-    src    = copy((m.model.convD .+ m.model.melt .+ m.model.nentr) .* m.model.tmask)
+    H_past = copy(m.model.H.past)
+    src    = copy((m.model.convH .+ m.model.melt .+ m.model.nentr) .* m.model.tmask)
     Laddie.leapfrog_step!(m.model, m.clock.dt, 2)
-    @test m.model.D.future ≈ D_past .+ src .* (2 * m.clock.dt)
+    @test m.model.H.future ≈ H_past .+ src .* (2 * m.clock.dt)
 end
 
-@testset "Conservation: D ≥ D_min after 1-day run" begin
+@testset "Conservation: H ≥ H_min after 1-day run" begin
     m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
     run!(m; days=1.0, verbose=false)
     active = m.model.tmask .> 0
-    @test all(m.model.D.present[active] .>= m.model.D_min - 1e-10)
+    @test all(m.model.H.present[active] .>= m.model.H_min - 1e-10)
 end
 
-@testset "Conservation: D ≥ D_min after 1-day run (cold)" begin
+@testset "Conservation: H ≥ H_min after 1-day run (cold)" begin
     m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold)
     run!(m; days=1.0, verbose=false)
     active = m.model.tmask .> 0
-    @test all(m.model.D.present[active] .>= m.model.D_min - 1e-10)
+    @test all(m.model.H.present[active] .>= m.model.H_min - 1e-10)
 end
 
 @testset "Float32 vs Float64: mean melt within 1%" begin

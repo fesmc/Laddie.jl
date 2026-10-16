@@ -116,18 +116,18 @@ The turbulent heat exchange coefficients are determined by:
 
 ```math
 \\begin{aligned}
-\\gamma_T &= \\frac{u_\\star}{2.12 \\, \\log \\frac{u_\\star D}{\\nu_0} + 12.5 \\, \\mathrm{Pr}^{2/3} - 8.68} \\\\
-\\gamma_S &= \\frac{u_\\star}{2.12 \\, \\log \\frac{u_\\star D}{\\nu_0} + 12.5 \\, \\mathrm{Sc}^{2/3} - 8.68}
+\\gamma_T &= \\frac{u_\\star}{2.12 \\, \\log \\frac{u_\\star H}{\\nu_0} + 12.5 \\, \\mathrm{Pr}^{2/3} - 8.68} \\\\
+\\gamma_S &= \\frac{u_\\star}{2.12 \\, \\log \\frac{u_\\star H}{\\nu_0} + 12.5 \\, \\mathrm{Sc}^{2/3} - 8.68}
 \\end{aligned}
 ```
 
 This results in a quadratic equation for the melt rate ``\\dot{m}``.
 
-The log term is floored at zero, i.e. ``u_\\star D/\\nu_0`` is taken as at least 1.
+The log term is floored at zero, i.e. ``u_\\star H/\\nu_0`` is taken as at least 1.
 Below that the layer is thinner than its own viscous sublayer, where the log law
 does not hold, and the unbounded log would drive the denominator through zero and
 give a negative or huge ``\\gamma``.  The floor never binds at the default
-parameters: `Params.u_tide` and `Params.D_min` keep ``u_\\star D/\\nu_0`` above
+parameters: `Params.u_tide` and `Params.H_min` keep ``u_\\star H/\\nu_0`` above
 about 170.  With the floor, both denominators stay positive when
 ``12.5 \\, \\mathrm{Pr}^{2/3} > 8.68`` (and likewise for `Sc`), which the
 constructor checks.

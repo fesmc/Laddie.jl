@@ -51,10 +51,10 @@ calls writes on the same cadence as one advanced by a single call.
 |------|-------|-------|
 | `:Ut`, `:Vt` | x- and y-velocity averaged onto T-points | m s⁻¹ |
 | `:Uu`, `:Vv` | x- and y-velocity on their own u- and v-points | m s⁻¹ |
-| `:D`, `:T`, `:S` | layer thickness, temperature, salinity | m, °C, psu |
+| `:H`, `:T`, `:S` | layer thickness, temperature, salinity | m, °C, psu |
 | `:melt` | basal melt rate | m yr⁻¹ |
 | `:entr`, `:detr` | entrainment and detrainment rates | m yr⁻¹ |
-| `:ent2` | the extra entrainment that keeps `D ≥ D_min` | m yr⁻¹ |
+| `:ent2` | the extra entrainment that keeps `H ≥ H_min` | m yr⁻¹ |
 | `:Tbase`, `:Tamb` | temperature at the ice–ocean interface, ambient temperature at the layer base | °C |
 | `:gammaT` | turbulent heat-exchange velocity | m s⁻¹ |
 | `:ustar` | friction velocity at the ice base | m s⁻¹ |
@@ -65,7 +65,7 @@ Static fields, written once: `:mask` (the mask and the margin flags `at_isf`,
 `at_grl`, `at_lnd`, `at_gap`) and `:z_draft` (the ice draft, m).
 
 ```julia
-OutputConfig(; name = "warm", saveday = 1.0, fields = (:D, :melt, :entr))
+OutputConfig(; name = "warm", saveday = 1.0, fields = (:H, :melt, :entr))
 ```
 
 # Fields
@@ -85,7 +85,7 @@ Base.@kwdef struct OutputConfig{T,F}
     "log file name inside the run directory"
     logfilename::String = "log.txt"
     "variables written to `output.nc` (see the table above)"
-    fields::F = (:Ut, :Vt, :D, :T, :S, :melt, :mask, :z_draft)
+    fields::F = (:Ut, :Vt, :H, :T, :S, :melt, :mask, :z_draft)
     OutputConfig{T,F}(args...) where {T,F} = new{T,F}(args...)
 end
 
@@ -158,7 +158,7 @@ const _OUTPUT_FIELDS = (
     Uu = _outfield("m s-1", "x-velocity on u-grid", m -> m.U.present),
     Vt = _outfield("m s-1", "y-velocity on t-grid", Val(:t_v)),
     Vv = _outfield("m s-1", "y-velocity on v-grid", m -> m.V.present),
-    D = _outfield("m", "mixed-layer thickness", m -> m.D.present),
+    H = _outfield("m", "mixed-layer thickness", m -> m.H.present),
     T = _outfield("degC", "layer-averaged temperature", m -> m.T.present),
     S = _outfield("psu", "layer-averaged salinity", m -> m.S.present),
     melt = _outfield("m yr-1", "basal melt rate", m -> m.melt; per_year = true),
@@ -598,7 +598,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Write a JLD2 restart file containing all three leapfrog levels of D, U, V,
+Write a JLD2 restart file containing all three leapfrog levels of H, U, V,
 T, S at every `output.restday`-day interval.  Called once per time step inside
 `run!`; the final state is written by `run!` after the loop.  Also writes
 `restart_latest.jld2`.  Arrays are moved to CPU before saving so the file is
@@ -613,7 +613,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Load D, U, V, T, S from the JLD2 restart file at `path` into all three leapfrog
+Load H, U, V, T, S from the JLD2 restart file at `path` into all three leapfrog
 levels of the model's `Var` structs, set the clock to the restart time, then call
 `update_secondary_fields!` and one bootstrap integration step.
 
@@ -660,11 +660,11 @@ function printdiags(sim)
     dxdy = m.dx * m.dy
     area = sum(m.tmask) * dxdy
 
-    d_Dav = active_sum(m.D.present) * dxdy / area
-    @. d = ifelse(m.tmask > 0, m.D.present, Inf)
-    d_Dmin = minimum(d)
-    @. d = ifelse(m.tmask > 0, m.D.present, -Inf)
-    d_Dmax = maximum(d)
+    d_Hav = active_sum(m.H.present) * dxdy / area
+    @. d = ifelse(m.tmask > 0, m.H.present, Inf)
+    d_Hmin = minimum(d)
+    @. d = ifelse(m.tmask > 0, m.H.present, -Inf)
+    d_Hmax = maximum(d)
 
     # Melt statistics over ice-covered cells, and the largest T-point speed, as
     # reported by `meltstats`.
@@ -681,7 +681,7 @@ function printdiags(sim)
     d_Etot = 1e-6 * active_sum(m.entr) * dxdy
     d_E2tot = 1e-6 * active_sum(m.ent2) * dxdy
     d_DEtot = 1e-6 * active_sum(m.detr) * dxdy
-    d_PSI = -1e-6 * active_sum(m.convD) * dxdy
+    d_PSI = -1e-6 * active_sum(m.convH) * dxdy
 
     @. d = ifelse(m.tmask > 0, m.drho, 100.0)
     d_drho = 1000.0 * minimum(d)
@@ -691,9 +691,9 @@ function printdiags(sim)
     line = @sprintf(
         "%8.3f days || %5.1f [%4.2f %4.0f] m || %5.2f | %3.0f m/yr | %7.2f Gt/yr || %5.2f %% || %5.3f + %5.3f - %5.3f | %5.3f Sv || %3.2f m/s || %5.5f %3.0f []",
         t_days,
-        d_Dav,
-        d_Dmin,
-        d_Dmax,
+        d_Hav,
+        d_Hmin,
+        d_Hmax,
         d_Mav,
         d_Mmax,
         d_Mtot,

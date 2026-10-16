@@ -9,7 +9,7 @@ layer** and evolves five 2-D fields:
 
 | field | meaning | C-grid location |
 |-------|---------|-----------------|
-| ``D`` | layer thickness (m) | cell centre |
+| ``H`` | layer thickness (m) | cell centre |
 | ``U, V`` | depth-averaged velocity (m/s) | cell faces |
 | ``T, S`` | depth-averaged temperature (°C) / salinity (psu) | cell centre |
 
@@ -19,26 +19,26 @@ The model integrates vertically-averaged shallow-water equations with
 thermodynamics. Schematically:
 
 ```math
-\frac{\partial D}{\partial t} = -\nabla\!\cdot(\mathbf{u}\,D) + \dot{m} + \dot{e}
+\frac{\partial H}{\partial t} = -\nabla\!\cdot(\mathbf{u}\,H) + \dot{m} + \dot{e}
 ```
 
 ```math
-\frac{\partial (D\mathbf{u})}{\partial t} =
--\nabla\!\cdot(\mathbf{u}\,D\,\mathbf{u})
-- f\,D\,\mathbf{u}^{\perp}
-- g\,D\,\nabla(D\,\Delta\rho')
+\frac{\partial (H\mathbf{u})}{\partial t} =
+-\nabla\!\cdot(\mathbf{u}\,H\,\mathbf{u})
+- f\,H\,\mathbf{u}^{\perp}
+- g\,H\,\nabla(H\,\Delta\rho')
 + (\text{draft pressure})
 - C_d\,|\mathbf{u}|\mathbf{u}
-+ A_h\,\nabla^2(D\mathbf{u})
++ A_h\,\nabla^2(H\mathbf{u})
 ```
 
 ```math
-\frac{\partial (DT)}{\partial t} = -\nabla\!\cdot(\mathbf{u}\,D\,T)
+\frac{\partial (HT)}{\partial t} = -\nabla\!\cdot(\mathbf{u}\,H\,T)
 + \dot{e}\,T_a + \dot{m}\,T_b - \gamma_T (T - T_b) + K_h\nabla^2 T
 ```
 
 ```math
-\frac{\partial (DS)}{\partial t} = -\nabla\!\cdot(\mathbf{u}\,D\,S)
+\frac{\partial (HS)}{\partial t} = -\nabla\!\cdot(\mathbf{u}\,H\,S)
 + \dot{e}\,S_a + K_h\nabla^2 S
 \qquad(\text{ice is salt-free})
 ```
@@ -125,11 +125,11 @@ thickness. Where the buoyancy supplied by melting outweighs the turbulent
 production, the net rate turns negative and the layer detrains instead.
 
 **Ambient profiles** ``T_a, S_a``. Sampled from a prescribed background ocean
-profile at the depth of the layer base ``z_b - D``. See the
+profile at the depth of the layer base ``z_b - H``. See the
 [ISOMIP+ example](generated/isomip.md#Forcing) for the warm/cold profiles used
 here.
 
-**Coriolis** ``fD``. At ice-shelf scale, rotation steers the meltwater into
+**Coriolis** ``fH``. At ice-shelf scale, rotation steers the meltwater into
 boundary currents rather than letting it flow straight up-slope — visible in the
 flow-speed plot of the [ISOMIP+ warm run](generated/isomip.md#Warm-run).
 
@@ -144,7 +144,7 @@ large range of coupled ice-sheet response (Jesse et al., 2026). LADDIE.jl offers
 | | [`SinkGapsBC`](@ref) (default) | [`ConnectedGapsBC`](@ref) |
 |---|---|---|
 | gap cell is | open ocean | dynamically active, ice-free |
-| ``D, T, S`` in the gap | not stepped | stepped |
+| ``H, T, S`` in the gap | not stepped | stepped |
 | gap edge behaves like | the calving front | the shelf interior |
 | heat and momentum arriving at the gap | leave the cavity | continue downstream |
 

@@ -22,7 +22,7 @@ work buffers serves all four equations:
 |--------|----------|
 | `adv` | `cU`, `cV`, `cT`, `cS` |
 | `lap` | `lU`, `lV`, `lT`, `lS` |
-| `Dq`  | `DT`, `DS` (the advected tracer content D·q) |
+| `Hq`  | `DT`, `DS` (the advected tracer content H·q) |
 
 The reference equation terms in `test/equation_terms.jl` (`u_advection`, `u_diffusion`, …)
 return copies of these buffers, because the next term to be evaluated would
@@ -44,7 +44,7 @@ kernel; the melt kernel forms its own), and `Sb`, `drhob` and the signed entrain
 rate `ent`, which are now locals of `_buoyancy_entrainment_kernel!`.  Four more live
 only between two consecutive kernels and now use the shared work buffers: the speed
 limiter's scale factors go in `adv`/`lap` (free between the momentum and tracer
-steps), and the collocated cross-velocities of `NonlinearLateralViscosity` in `Dq`
+steps), and the collocated cross-velocities of `NonlinearLateralViscosity` in `Hq`
 (unused during the momentum steps).
 
 ### Staggered averages formed in the kernels (−14 matrices)

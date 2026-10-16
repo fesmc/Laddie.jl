@@ -88,7 +88,7 @@ end
     sim = Simulation(m)
     @test sim.model === m
     run!(sim; days = 0.5, verbose = false)
-    @test all(isfinite, m.D.present) && all(isfinite, m.melt)
+    @test all(isfinite, m.H.present) && all(isfinite, m.melt)
 end
 
 @testset "Geometry ingestion: ice_base_depth values" begin
@@ -236,6 +236,6 @@ end
     @test all(isfinite, m.model.melt)
     @test all(m.model.melt[m.model.tmask .> 0] .>= 0)
     run!(m; days = 0.5, verbose = false)
-    @test all(isfinite, m.model.D.present)
+    @test all(isfinite, m.model.H.present)
     @test all(isfinite, m.model.melt)
 end

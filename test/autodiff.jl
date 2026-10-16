@@ -7,7 +7,7 @@
 function ad_melt(x; tstep = FixedDt(), output = OutputConfig())
     T = eltype(x)
     params = Params(; FT = T, C_d = x[1], melting = FixedGamTMelting(x[2]),
-                    entrainment = LambertEntrainment(x[3]))
+                    entrainment = GasparEntrainment(x[3]))
     sim = build_isomip(CPU(); FT = T, nx = 20, ny = 10, isomipcond = :warm, params,
                        tstep, output)
     run!(sim; days = 2.0, verbose = false)

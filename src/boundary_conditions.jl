@@ -5,8 +5,8 @@
 # A wall's tangential-momentum condition is one slip factor `s` on the faces it
 # bounds, with the Python LADDIE convention: 0 = free slip, 2 = no slip, anything
 # in between partial slip.  The kernels follow the Python stencils exactly:
-#   - lateral viscosity: the wall-face flux is −(1 + s)·D·u/Δ² — the zero velocity
-#     stored beyond the wall, plus an extra wall drag s·D·u/Δ²;
+#   - lateral viscosity: the wall-face flux is −(1 + s)·H·u/Δ² — the zero velocity
+#     stored beyond the wall, plus an extra wall drag s·H·u/Δ²;
 #   - momentum advection: the face velocity at the wall is (1 − s)·u.
 # So s = 0 removes the extra wall drag rather than making the wall exactly
 # stress-free; the naming follows the reference.
@@ -264,9 +264,9 @@ $(TYPEDEF)
 
 Keep the layer-thickness-gradient part of the pressure-gradient force at
 one-sided faces — the ice front, and the edges of a gap demoted to ocean by
-[`SinkGapsBC`](@ref) — evaluating it as `(D_neighbour - D)/Δ` with the
+[`SinkGapsBC`](@ref) — evaluating it as `(H_neighbour - H)/Δ` with the
 neighbour's stored thickness, which masking pins to `0` there. The term is thus
-a full one-sided gradient, as if `D` fell to zero across one grid cell.
+a full one-sided gradient, as if `H` fell to zero across one grid cell.
 
 This is what Python LADDIE v1.x does (`integrate.py`, `-g·ip_t(Ddrho)·(Dxm1 -
 D)/dx` with `Dxm1 = roll(D*tmask)`), so it is **the default** and the setting
@@ -288,7 +288,7 @@ parts there.
 
 This is what the LADDIE v2 Fortran reference does at calving-front faces
 (`laddie_velocity.f90:118-126`, `IF (mask_cf_b .OR. mask_gl_b) ... assume
-dH/dx = 0`). It avoids treating a masked neighbour's stored `D = 0` as a real
+dH/dx = 0`). It avoids treating a masked neighbour's stored `H = 0` as a real
 thickness: under [`FullDepthGradient`](@ref) that term is roughly 150× larger
 at the ice front than in the interior on a warm ISOMIP+ run.
 

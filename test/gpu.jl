@@ -19,13 +19,13 @@ end
 @testset "run! GPU: advances state and matches CPU" begin
     m_c = build_isomip(CPU();       nx=20, ny=10, isomipcond=:warm)
     m_g = build_isomip(gpu_backend; nx=20, ny=10, isomipcond=:warm)
-    D0_g = copy(Array(m_g.model.D.present))
+    H0_g = copy(Array(m_g.model.H.present))
     run!(m_c; days=0.5, verbose=false)
     run!(m_g; days=0.5, verbose=false)
-    @test Array(m_g.model.D.present) != D0_g
-    @test all(isfinite, Array(m_g.model.D.present))
+    @test Array(m_g.model.H.present) != H0_g
+    @test all(isfinite, Array(m_g.model.H.present))
     @test all(isfinite, Array(m_g.model.melt))
-    @test Array(m_g.model.D.present) ≈ m_c.model.D.present
+    @test Array(m_g.model.H.present) ≈ m_c.model.H.present
     @test Array(m_g.model.melt)      ≈ m_c.model.melt
     # CFL monitor reductions run on the device and match the CPU value.
     @test Laddie._cfl_number(m_g) ≈ Laddie._cfl_number(m_c)
@@ -46,7 +46,7 @@ end
     m_g = build_isomip(gpu_backend; FT=Float32, nx=20, ny=10, isomipcond=:warm)
     run!(m_c; days=0.5, verbose=false)
     run!(m_g; days=0.5, verbose=false)
-    @test all(isfinite, Array(m_g.model.D.present))
+    @test all(isfinite, Array(m_g.model.H.present))
     @test all(isfinite, Array(m_g.model.melt))
     _, mn_c, _ = meltstats(m_c)
     _, mn_g, _ = meltstats(m_g)
@@ -59,6 +59,6 @@ end
     m_g = build_isomip(gpu_backend; nx = 20, ny = 10, isomipcond = :warm,
                        tstep = AdaptiveDt())
     run!(m_g; days = 1.0, verbose = false)
-    @test all(isfinite, Array(m_g.model.D.present)) && all(isfinite, Array(m_g.model.melt))
+    @test all(isfinite, Array(m_g.model.H.present)) && all(isfinite, Array(m_g.model.melt))
     @test 1.0 <= m_g.clock.dt <= 1000.0
 end

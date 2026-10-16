@@ -7,7 +7,7 @@ it cell by cell with the reference output. The settings are the reference's, not
 defaults, and make a good starting point for a realistic cavity. Four of them matter:
 
   * `nu = 0.8`: `nu = 0.1` is unstable at `dt = 120 s` and inflates the mean melt sevenfold.
-  * No cap on the layer thickness ([`NoMaxLayerThickness`](@ref), the default): capping `D`
+  * No cap on the layer thickness ([`NoMaxLayerThickness`](@ref), the default): capping `H`
     at the water column cuts melt by ~90 % (see [`AbstractMaxLayerThickness`](@ref)).
   * `ClampDensity` convection, as in the reference (the default `ResetToAmbient`: −0.07 %).
   * `PyGradient`, the reference's ice-base slope (the default `JlGradient`: −0.8 %).
@@ -68,16 +68,16 @@ forcing = CavityForcing(OceanForcing1D(Tz, Sz, z; FT), PrescribedIceForcing(-25.
 
 # ## Parameters and run
 #
-# `A_h`, `K_h`, `D_min` and `C_d_top` are the paper's values for 500 m (Table 2).
+# `A_h`, `K_h`, `H_min` and `C_d_top` are the paper's values for 500 m (Table 2).
 
 params = Params(; FT,
     A_h = 25.0, K_h = 25.0,
     C_d = 2.5e-3, C_d_top = 1.1e-3,
-    D_min = 2.8, u_tide = 0.01,
+    H_min = 2.8, u_tide = 0.01,
     max_detrainment = 0.5, v_cut = 1.414,
-    D_init = 10.0, dT_init = -0.1, dS_init = -0.1,
+    H_init = 10.0, dT_init = -0.1, dS_init = -0.1,
     coriolis = CoriolisParameter0D(-1.37e-4),
-    entrainment = LambertEntrainment(2.5),
+    entrainment = GasparEntrainment(2.5),
     melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
     convection_scheme = ClampDensity(0.005),
 )
@@ -94,7 +94,7 @@ nsteps = round(Int, 5 * 86400 / sim.clock.dt)
 for _ in 1:nsteps
     time_step!(sim)
     acc["melt"] .+= m.melt
-    acc["D"] .+= m.D.present
+    acc["D"] .+= m.H.present
     acc["T"] .+= m.T.present
     acc["S"] .+= m.S.present
 end
@@ -104,7 +104,7 @@ avg["melt"] .*= 86400 * 365.25          # m s⁻¹ → m yr⁻¹
 # ## Comparison with the reference
 #
 # The reference file holds the same 5-day average on the same grid. The check fails if
-# mean or max melt is 2 % off, or `D` 2 m off on average; an unstable `nu` or a thickness
+# mean or max melt is 2 % off, or `H` 2 m off on average; an unstable `nu` or a thickness
 # cap misses these by orders of magnitude.
 
 ds = Dataset(REFERENCE)
@@ -113,7 +113,7 @@ shelf = Array(ds["tmask"]) .== 1
 close(ds)
 
 for (name, r) in (("Laddie.jl", avg), ("reference", ref))
-    @printf "%-9s  mean melt %.3f m/yr, max %.1f m/yr, D in [%.1f, %.0f] m\n" name mean(r["melt"][shelf]) maximum(r["melt"][shelf]) extrema(r["D"][shelf])...
+    @printf "%-9s  mean melt %.3f m/yr, max %.1f m/yr, H in [%.1f, %.0f] m\n" name mean(r["melt"][shelf]) maximum(r["melt"][shelf]) extrema(r["D"][shelf])...
 end
 for v in ("melt", "D", "T", "S")
     d = abs.(avg[v][shelf] .- ref[v][shelf])
@@ -123,7 +123,7 @@ end
 rel(f) = abs(f(avg["melt"][shelf]) / f(ref["melt"][shelf]) - 1)
 @assert rel(mean) < 0.02 "mean melt off by $(round(100rel(mean); digits = 2)) %"
 @assert rel(maximum) < 0.02 "max melt off by $(round(100rel(maximum); digits = 2)) %"
-@assert mean(abs.(avg["D"][shelf] .- ref["D"][shelf])) < 2.0 "mean |ΔD| ≥ 2 m"
+@assert mean(abs.(avg["D"][shelf] .- ref["D"][shelf])) < 2.0 "mean |ΔH| ≥ 2 m"
 
 # ## Figure
 
@@ -140,9 +140,9 @@ end
 panel!(1, 1, avg["melt"], "melt (m/yr): Laddie.jl", (0, 60), :inferno)
 panel!(1, 2, ref["melt"], "melt (m/yr): reference", (0, 60), :inferno)
 panel!(1, 3, avg["melt"] .- ref["melt"], "melt (m/yr): Laddie.jl − reference", (-5, 5), :RdBu)
-panel!(2, 1, avg["D"], "D (m): Laddie.jl", (0, 200), :viridis)
-panel!(2, 2, ref["D"], "D (m): reference", (0, 200), :viridis)
-panel!(2, 3, avg["D"] .- ref["D"], "D (m): Laddie.jl − reference", (-5, 5), :RdBu)
+panel!(2, 1, avg["D"], "H (m): Laddie.jl", (0, 200), :viridis)
+panel!(2, 2, ref["D"], "H (m): reference", (0, 200), :viridis)
+panel!(2, 3, avg["D"] .- ref["D"], "H (m): Laddie.jl − reference", (-5, 5), :RdBu)
 save(joinpath(pkgdir(Laddie), "docs", "src", "assets", "crosson-dotson.png"), fig)
 
 # ## Results
@@ -154,10 +154,10 @@ save(joinpath(pkgdir(Laddie), "docs", "src", "assets", "crosson-dotson.png"), fi
 # |:---------------------|----------:|----------:|
 # | mean melt (m yr⁻¹)   | 9.839     | 9.818     |
 # | max melt (m yr⁻¹)    | 114.2     | 114.3     |
-# | `D` range (m)        | 2.8–509   | 2.7–510   |
+# | `H` range (m)        | 2.8–509   | 2.7–510   |
 #
 # Mean melt agrees to +0.21 %. Mean absolute differences per cell are 0.13 m yr⁻¹ in melt,
-# 0.62 m in `D`, 0.006 °C in `T` and 0.0015 in `S`.
+# 0.62 m in `H`, 0.006 °C in `T` and 0.0015 in `S`.
 #
 # ![Crosson–Dotson: Laddie.jl vs reference](../assets/crosson-dotson.png)
 #

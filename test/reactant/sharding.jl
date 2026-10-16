@@ -8,7 +8,7 @@ using Reactant: Sharding
 Reactant.set_default_backend("cpu")
 
 const KW = (; nx = 40, ny = 20, isomipcond = :warm)   # a 42 × 22 grid
-prognostics(m) = [Array(getfield(getproperty(m, v), :present)) for v in (:D, :U, :V, :T, :S)]
+prognostics(m) = [Array(getfield(getproperty(m, v), :present)) for v in (:H, :U, :V, :T, :S)]
 maxrel(a, b) = maximum(maximum(abs, x .- y) / max(maximum(abs, y), eps()) for (x, y) in zip(a, b))
 nshards(a) = length(unique(a.sharding.device_to_array_slices))
 melt(dir, n) = Laddie.NCDatasets.NCDataset(ds -> coalesce.(Array(ds["melt"][:, :, :]), 0.0),
@@ -27,7 +27,7 @@ melt(dir, n) = Laddie.NCDatasets.NCDataset(ds -> coalesce.(Array(ds["melt"][:, :
         out(n) = output ? (; output = OutputConfig(; name = n, resultdir = dir, saveday = 0.25)) : (;)
         ref = build_isomip(CPU(); KW..., out("cpu")...)
         rsim = to_backend(build_isomip(CPU(); KW..., out("rx")...), backend)
-        @test nshards(rsim.model.D.present) == shards
+        @test nshards(rsim.model.H.present) == shards
         @test nshards(rsim.model.forcing.ocean.Tz) == 1        # replicated
         for s in (ref, rsim)
             run!(s; days = 0.5, verbose = false)
@@ -56,6 +56,6 @@ melt(dir, n) = Laddie.NCDatasets.NCDataset(ds -> coalesce.(Array(ds["melt"][:, :
         @test size(build_isomip(CPU(); KW..., domain_cropping = crop(1)).model.melt, 1) % 4 != 0
         sim = build_isomip(CPU(); KW..., domain_cropping = crop((4, 1)))
         @test size(sim.model.melt, 1) % 4 == 0
-        @test nshards(to_backend(sim, split_x).model.D.present) == 4
+        @test nshards(to_backend(sim, split_x).model.H.present) == 4
     end
 end

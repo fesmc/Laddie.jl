@@ -67,7 +67,7 @@ function _update_conv2!(m, cs::RelaxToAmbient)
         m.conv2,
         m.drho,
         m.imask,
-        m.D.present,
+        m.H.present,
         cs.convection_time,
     )
 end
@@ -76,48 +76,48 @@ end
     conv2,
     @Const(drho),
     @Const(imask),
-    @Const(D),
+    @Const(H),
     convection_time,
 )
     convection_time = _val(convection_time)
     i, j = @index(Global, NTuple)
-    @inbounds conv2[i, j] = (drho[i, j] < 0) * imask[i, j] * D[i, j] / convection_time
+    @inbounds conv2[i, j] = (drho[i, j] < 0) * imask[i, j] * H[i, j] / convection_time
 end
 
 # The per-step elementwise updates below are kernels rather than broadcasts: on
 # the CPU a broadcast runs on the main thread only, both costing its own time
 # serially and pulling the arrays the threaded kernels just wrote across cores.
 @kernel function _integration_terms_kernel!(
-    dDdt,
-    Ddrho,
-    @Const(D_future),
-    @Const(D_past),
-    @Const(D),
+    dHdt,
+    Hdrho,
+    @Const(H_future),
+    @Const(H_past),
+    @Const(H),
     @Const(drho),
     dt,
 )
     dt = _val(dt)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        dDdt[i, j] = (D_future[i, j] - D_past[i, j]) / (dt + dt)
-        Ddrho[i, j] = D[i, j] * drho[i, j]
+        dHdt[i, j] = (H_future[i, j] - H_past[i, j]) / (dt + dt)
+        Hdrho[i, j] = H[i, j] * drho[i, j]
     end
 end
 
-# `dt` is the base time step.  dD/dt is always taken over 2·dt, as in Python LADDIE
-# v1 (`prepare_integrate`), although `D.future` and `D.past` are only dt apart in
+# `dt` is the base time step.  dH/dt is always taken over 2·dt, as in Python LADDIE
+# v1 (`prepare_integrate`), although `H.future` and `H.past` are only dt apart in
 # the bootstrap step, which therefore sees half the thickness tendency.  Dividing
 # by the true step length instead is not a free fix: the ISOMIP+ spin-up is
 # sensitive to that one step, and the 1-day Python verification then fails
-# (max |ΔD| 3 → 35 m, mean melt −3 %).
+# (max |ΔH| 3 → 35 m, mean melt −3 %).
 function precompute_integration_terms!(m, dt)
     launch!(
         _integration_terms_kernel!,
-        m.dDdt,
-        m.Ddrho,
-        m.D.future,
-        m.D.past,
-        m.D.present,
+        m.dHdt,
+        m.Hdrho,
+        m.H.future,
+        m.H.past,
+        m.H.present,
         m.drho,
         dt,
     )
@@ -127,8 +127,8 @@ end
 
 @kernel function _step_thickness_kernel!(
     out,
-    @Const(D0),
-    @Const(convD),
+    @Const(H0),
+    @Const(convH),
     @Const(melt),
     @Const(nentr),
     @Const(tmask),
@@ -138,8 +138,8 @@ end
     i, j = @index(Global, NTuple)
     @inbounds out[i, j] = ifelse(
         iszero(tmask[i, j]),
-        D0[i, j],
-        D0[i, j] + (convD[i, j] + melt[i, j] + nentr[i, j]) * dt,
+        H0[i, j],
+        H0[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j]) * dt,
     )
 end
 
@@ -147,9 +147,9 @@ end
     out,
     @Const(Up),
     @Const(U1),
-    @Const(dDdt),
-    @Const(Ddrho),
-    @Const(D1),
+    @Const(dHdt),
+    @Const(Hdrho),
+    @Const(H1),
     @Const(drho),
     @Const(dzdx),
     @Const(V1),
@@ -175,13 +175,13 @@ end
         ip1 = i + 1
         jm1 = j - 1
         tmip = tmask[i, j] + tmask[ip1, j]
-        ip_dDdt = _safe_div(dDdt[i, j] + dDdt[ip1, j], tmip)
-        ip_D_drho = _safe_div(Ddrho[i, j] + Ddrho[ip1, j], tmip)
-        ip_D_dzdx = _safe_div(Ddrho[i, j] * dzdx[i, j] + Ddrho[ip1, j] * dzdx[ip1, j], tmip)
-        ip_D = _safe_div(D1[i, j] + D1[ip1, j], tmip)
+        ip_dHdt = _safe_div(dHdt[i, j] + dHdt[ip1, j], tmip)
+        ip_H_drho = _safe_div(Hdrho[i, j] + Hdrho[ip1, j], tmip)
+        ip_H_dzdx = _safe_div(Hdrho[i, j] * dzdx[i, j] + Hdrho[ip1, j] * dzdx[ip1, j], tmip)
+        ip_H = _safe_div(H1[i, j] + H1[ip1, j], tmip)
         Vjm = _face_avg(V1, vmask, i, j, i, jm1)
         Vjm_ip = _face_avg_ring0(V1, vmask, ip1, j, 0, -1)
-        ip_D_Vjm = _safe_div(D1[i, j] * Vjm + D1[ip1, j] * Vjm_ip, tmip)
+        ip_H_Vjm = _safe_div(H1[i, j] * Vjm + H1[ip1, j] * Vjm_ip, tmip)
         ipjmV = half * (half * (V1[i, j] + V1[i, jm1]) + half * (V1[ip1, j] + V1[ip1, jm1]))
         # tmip is 2 at a fully-interior face (both neighbours active) and 1 at a
         # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where the
@@ -191,18 +191,18 @@ end
         # 1.0; 1 (TruncatedDepthGradient) drops it, as LADDIE v2 does at
         # mask_cf_b faces.  See AbstractFrontPressure.
         pgf_gate = one(FT) + pgf_w * (tmip - FT(2))
-        D_next = D1[ip1, j] * tmask[ip1, j]
+        H_next = H1[ip1, j] * tmask[ip1, j]
         rhs =
-            -U1[i, j] * ip_dDdt +                                      # thickness-tendency correction
+            -U1[i, j] * ip_dHdt +                                      # thickness-tendency correction
             cU[i, j] +                                                  # horizontal advection
-            -g * ip_D_drho * (D_next - D1[i, j]) / dx * pgf_gate +     # pressure: D gradient
-            g * ip_D_dzdx +                                             # pressure: ice-shelf slope
-            -half * g * ip_D^2 * (drho[ip1, j] - drho[i, j]) / dx +     # pressure: density gradient
-            fu[i, j] * ip_D_Vjm +                                              # Coriolis
+            -g * ip_H_drho * (H_next - H1[i, j]) / dx * pgf_gate +     # pressure: H gradient
+            g * ip_H_dzdx +                                             # pressure: ice-shelf slope
+            -half * g * ip_H^2 * (drho[ip1, j] - drho[i, j]) / dx +     # pressure: density gradient
+            fu[i, j] * ip_H_Vjm +                                              # Coriolis
             -C_d * U1[i, j] * _safe_sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
             lU[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * U1[i, j]                                     # momentum loss by detrainment
-        out[i, j] = Up[i, j] + _safe_div(rhs, ip_D) * umask[i, j] * dt
+        out[i, j] = Up[i, j] + _safe_div(rhs, ip_H) * umask[i, j] * dt
     end
 end
 
@@ -210,9 +210,9 @@ end
     out,
     @Const(Vp),
     @Const(V1),
-    @Const(dDdt),
-    @Const(Ddrho),
-    @Const(D1),
+    @Const(dHdt),
+    @Const(Hdrho),
+    @Const(H1),
     @Const(drho),
     @Const(dzdy),
     @Const(U1),
@@ -238,28 +238,28 @@ end
         jp1 = j + 1
         im1 = i - 1
         tmjp = tmask[i, j] + tmask[i, jp1]
-        jp_dDdt = _safe_div(dDdt[i, j] + dDdt[i, jp1], tmjp)
-        jp_D_drho = _safe_div(Ddrho[i, j] + Ddrho[i, jp1], tmjp)
-        jp_D_dzdy = _safe_div(Ddrho[i, j] * dzdy[i, j] + Ddrho[i, jp1] * dzdy[i, jp1], tmjp)
-        jp_D = _safe_div(D1[i, j] + D1[i, jp1], tmjp)
+        jp_dHdt = _safe_div(dHdt[i, j] + dHdt[i, jp1], tmjp)
+        jp_H_drho = _safe_div(Hdrho[i, j] + Hdrho[i, jp1], tmjp)
+        jp_H_dzdy = _safe_div(Hdrho[i, j] * dzdy[i, j] + Hdrho[i, jp1] * dzdy[i, jp1], tmjp)
+        jp_H = _safe_div(H1[i, j] + H1[i, jp1], tmjp)
         Uim = _face_avg(U1, umask, i, j, im1, j)
         Uim_jp = _face_avg_ring0(U1, umask, i, jp1, -1, 0)
-        jp_D_Uim = _safe_div(D1[i, j] * Uim + D1[i, jp1] * Uim_jp, tmjp)
+        jp_H_Uim = _safe_div(H1[i, j] * Uim + H1[i, jp1] * Uim_jp, tmjp)
         jpimU = half * (half * (U1[i, j] + U1[im1, j]) + half * (U1[i, jp1] + U1[im1, jp1]))
         # See _step_u_momentum_kernel! for the ice-front gate.
         pgf_gate = one(FT) + pgf_w * (tmjp - FT(2))
-        D_next = D1[i, jp1] * tmask[i, jp1]
+        H_next = H1[i, jp1] * tmask[i, jp1]
         rhs =
-            -V1[i, j] * jp_dDdt +                                      # thickness-tendency correction
+            -V1[i, j] * jp_dHdt +                                      # thickness-tendency correction
             cV[i, j] +                                                  # horizontal advection
-            -g * jp_D_drho * (D_next - D1[i, j]) / dy * pgf_gate +     # pressure: D gradient
-            g * jp_D_dzdy +                                             # pressure: ice-shelf slope
-            -half * g * jp_D^2 * (drho[i, jp1] - drho[i, j]) / dy +     # pressure: density gradient
-            -fv[i, j] * jp_D_Uim +                                             # Coriolis
+            -g * jp_H_drho * (H_next - H1[i, j]) / dy * pgf_gate +     # pressure: H gradient
+            g * jp_H_dzdy +                                             # pressure: ice-shelf slope
+            -half * g * jp_H^2 * (drho[i, jp1] - drho[i, j]) / dy +     # pressure: density gradient
+            -fv[i, j] * jp_H_Uim +                                             # Coriolis
             -C_d * V1[i, j] * _safe_sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
             lV[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * V1[i, j]                                     # momentum loss by detrainment
-        out[i, j] = Vp[i, j] + _safe_div(rhs, jp_D) * vmask[i, j] * dt
+        out[i, j] = Vp[i, j] + _safe_div(rhs, jp_H) * vmask[i, j] * dt
     end
 end
 
@@ -273,14 +273,14 @@ end
     out,
     @Const(T_past),
     @Const(T_present),
-    @Const(dDdt),
+    @Const(dHdt),
     @Const(cT),
     @Const(nentr),
     @Const(Ta),
     @Const(melt),
     @Const(Tb),
     @Const(lT),
-    @Const(D1),
+    @Const(H1),
     @Const(tmask),
     gamT,
     K_h,
@@ -291,14 +291,14 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         rhs =
-            -T_present[i, j] * dDdt[i, j] +                 # thickness-tendency correction
+            -T_present[i, j] * dHdt[i, j] +                 # thickness-tendency correction
             cT[i, j] +                                      # horizontal advection
             nentr[i, j] * Ta[i, j] +                        # entrainment of ambient water at Ta
             melt[i, j] * Tb[i, j] +                         # meltwater input at freezing point
             -_at(gamT, i, j) * (T_present[i, j] - Tb[i, j]) + # turbulent ice-ocean heat exchange
             K_h * lT[i, j] +                                # horizontal diffusion
             -(T_past[i, j] - Ta[i, j]) * _at(conv2, i, j)   # convective restoring to ambient
-        out[i, j] = T_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
+        out[i, j] = T_past[i, j] + _safe_div(rhs, H1[i, j]) * tmask[i, j] * dt
     end
 end
 
@@ -306,12 +306,12 @@ end
     out,
     @Const(S_past),
     @Const(S_present),
-    @Const(dDdt),
+    @Const(dHdt),
     @Const(cS),
     @Const(nentr),
     @Const(Sa),
     @Const(lS),
-    @Const(D1),
+    @Const(H1),
     @Const(tmask),
     K_h,
     conv2,
@@ -321,21 +321,21 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         rhs =
-            -S_present[i, j] * dDdt[i, j] +                 # thickness-tendency correction
+            -S_present[i, j] * dHdt[i, j] +                 # thickness-tendency correction
             cS[i, j] +                                      # horizontal advection
             nentr[i, j] * Sa[i, j] +                        # entrainment of ambient water at Sa
             K_h * lS[i, j] +                                # horizontal diffusion
             -(S_past[i, j] - Sa[i, j]) * _at(conv2, i, j)   # convective restoring to ambient
-        out[i, j] = S_past[i, j] + _safe_div(rhs, D1[i, j]) * tmask[i, j] * dt
+        out[i, j] = S_past[i, j] + _safe_div(rhs, H1[i, j]) * tmask[i, j] * dt
     end
 end
 
 function step_thickness!(m, dt)
     launch!(
         _step_thickness_kernel!,
-        m.D.future,
-        m.D.past,
-        m.convD,
+        m.H.future,
+        m.H.past,
+        m.convH,
         m.melt,
         m.nentr,
         m.tmask,
@@ -352,9 +352,9 @@ function step_u_momentum!(m, dt)
         m.U.future,
         m.U.past,
         m.U.present,
-        m.dDdt,
-        m.Ddrho,
-        m.D.present,
+        m.dHdt,
+        m.Hdrho,
+        m.H.present,
         m.drho,
         m.dzdx,
         m.V.present,
@@ -382,9 +382,9 @@ function step_v_momentum!(m, dt)
         m.V.future,
         m.V.past,
         m.V.present,
-        m.dDdt,
-        m.Ddrho,
-        m.D.present,
+        m.dHdt,
+        m.Hdrho,
+        m.H.present,
         m.drho,
         m.dzdy,
         m.U.present,
@@ -404,21 +404,21 @@ function step_v_momentum!(m, dt)
     return
 end
 function step_temperature!(m, dt)
-    launch!(_product_kernel!, m.Dq, m.D.present, m.T.present)
-    upwind_advection_T(m.adv, m, m.Dq)
+    launch!(_product_kernel!, m.Hq, m.H.present, m.T.present)
+    upwind_advection_T(m.adv, m, m.Hq)
     laplace_T(m.lap, m, m.T.past)
     args = (
         m.T.future,
         m.T.past,
         m.T.present,
-        m.dDdt,
+        m.dHdt,
         m.adv,
         m.nentr,
         m.Ta,
         m.melt,
         m.Tb,
         m.lap,
-        m.D.present,
+        m.H.present,
         m.tmask,
     )
     gamT = first(_exchange_velocities(m))
@@ -426,19 +426,19 @@ function step_temperature!(m, dt)
     return
 end
 function step_salinity!(m, dt)
-    launch!(_product_kernel!, m.Dq, m.D.present, m.S.present)
-    upwind_advection_T(m.adv, m, m.Dq)
+    launch!(_product_kernel!, m.Hq, m.H.present, m.S.present)
+    upwind_advection_T(m.adv, m, m.Hq)
     laplace_T(m.lap, m, m.S.past)
     args = (
         m.S.future,
         m.S.past,
         m.S.present,
-        m.dDdt,
+        m.dHdt,
         m.adv,
         m.nentr,
         m.Sa,
         m.lap,
-        m.D.present,
+        m.H.present,
         m.tmask,
     )
     launch!(_step_salinity_kernel!, args..., m.K_h, m.conv2, dt)
@@ -452,44 +452,44 @@ end
 end
 
 # The upper bound of `max_layer_thickness` (see `_max_layer_thickness`), then the
-# D_min floor, in one pass.
+# H_min floor, in one pass.
 function _clamp_thickness!(m)
     launch!(
         _clamp_thickness_kernel!,
-        m.D.future,
+        m.H.future,
         m.z_draft,
         m.z_bed,
         m.tmask,
         m.params.max_layer_thickness,
-        m.D_min,
+        m.H_min,
     )
     return
 end
 
 @kernel function _clamp_thickness_kernel!(
-    D,
+    H,
     @Const(z_draft),
     @Const(z_bed),
     @Const(tmask),
     max_layer_thickness,
-    D_min,
+    H_min,
 )
-    D_min = _val(D_min)
+    H_min = _val(H_min)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        D[i, j] = _max_layer_thickness(
+        H[i, j] = _max_layer_thickness(
             max_layer_thickness,
-            D[i, j],
+            H[i, j],
             z_draft[i, j],
             z_bed[i, j],
             tmask[i, j],
         )
-        # The D_min floor must respect the domain mask: inactive cells hold D = 0.
-        # A non-zero D outside the domain would leak into the interior, because
+        # The H_min floor must respect the domain mask: inactive cells hold H = 0.
+        # A non-zero H outside the domain would leak into the interior, because
         # the face averages of the Laplacian stencils (`_face_avg`) divide the
         # *sum* over a cell pair by the number of active cells in it, biasing the
         # diffusion of every boundary cell.
-        D[i, j] = max(D[i, j], D_min) * tmask[i, j]
+        H[i, j] = max(H[i, j], H_min) * tmask[i, j]
     end
 end
 
@@ -514,7 +514,7 @@ function _check_nans_shelf!(m, varname, arr, clock)
 end
 
 # One leapfrog integration of `m` over `nsteps × dt`: `nsteps = 2` is the centred
-# step, `nsteps = 1` the first-order bootstrap.  dD/dt keeps the base `dt` (see
+# step, `nsteps = 1` the first-order bootstrap.  dH/dt keeps the base `dt` (see
 # `precompute_integration_terms!`).  With `check_nans`, each prognostic is checked for
 # NaNs on the shelf after its step, and an error reports the time of `clock`.
 function leapfrog_step!(m, dt, nsteps; check_nans = false, clock = nothing)
@@ -522,7 +522,7 @@ function leapfrog_step!(m, dt, nsteps; check_nans = false, clock = nothing)
     step_thickness!(m, span)
     _clamp_thickness!(m)
     precompute_integration_terms!(m, dt)
-    check_nans && _check_nans_shelf!(m, "D", m.D.future, clock)
+    check_nans && _check_nans_shelf!(m, "H", m.H.future, clock)
 
     # Both momentum components are stepped before the limiter, because it caps the
     # speed and so needs U and V together (see `clamp_velocities!`).
@@ -593,7 +593,7 @@ end
 
 function apply_robert_asselin_filter!(m, nu)
     for (var, mask) in
-        ((m.D, m.tmask), (m.U, m.umask), (m.V, m.vmask), (m.T, m.tmask), (m.S, m.tmask))
+        ((m.H, m.tmask), (m.U, m.umask), (m.V, m.vmask), (m.T, m.tmask), (m.S, m.tmask))
         launch!(
             _robert_asselin_kernel!,
             var.present,

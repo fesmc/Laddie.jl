@@ -77,12 +77,61 @@ function ISOMIPForcing(isomipcond::Symbol = :warm; FT = Float64)
     OceanForcing1D(Tz, Sz, z, dz, z0)
 end
 
-# Placeholder for a laterally varying ambient field (one profile per cell); not
-# exported.  Not implemented: `Model` accepts only `OceanForcing1D`, so passing this
-# raises an `ArgumentError` rather than silently ignoring the variation.
-struct OceanForcing2D <: AbstractOceanForcing end
+"""
+$(TYPEDEF)
 
-Base.show(io::IO, ::OceanForcing2D) = print(io, "OceanForcing2D() (not implemented)")
+Laterally varying ambient T/S: one vertical profile per grid cell, all on the same
+uniform z-grid.  `Tz` and `Sz` are `(nx, ny, nz)` arrays covering the full domain
+including the border ring (like a 2D `T_ice_base`); `Model` crops them with the
+grid.  Each cell samples its own column at the depth of its plume base, and depths
+outside the grid take the nearest level, as for [`OceanForcing1D`](@ref).
+
+Not exported, and not yet supported by the Reactant backend.
+
+# Fields
+$(TYPEDFIELDS)
+"""
+struct OceanForcing2D{FT,A<:AbstractArray{FT,3},V<:AbstractVector{FT}} <: AbstractOceanForcing
+    "ambient temperature per cell and level (°C)"
+    Tz::A
+    "ambient salinity per cell and level (psu)"
+    Sz::A
+    "depths of the uniform z-grid (m, negative downward, ascending)"
+    z::V
+    "z-grid spacing (m)"
+    dz::FT
+    "depth of the first z-grid point (m)"
+    z0::FT
+end
+
+"""
+    OceanForcing2D(Tz, Sz, z; FT = Float64)
+
+Per-cell profiles `Tz`, `Sz` of size `(nx, ny, nz)` on the depths `z` (m, negative
+downward), which must be uniformly spaced; they are sorted ascending.
+"""
+function OceanForcing2D(Tz::AbstractArray{<:Real,3}, Sz::AbstractArray{<:Real,3}, z::AbstractVector; FT = Float64)
+    size(Tz) == size(Sz) || throw(ArgumentError("Tz is $(size(Tz)) but Sz is $(size(Sz))"))
+    size(Tz, 3) == length(z) ||
+        throw(ArgumentError("Tz has $(size(Tz, 3)) levels but z has $(length(z))"))
+    length(z) ≥ 2 || throw(ArgumentError("need at least two levels"))
+    p = sortperm(z)
+    zs = Float64.(z[p])
+    dzs = diff(zs)
+    all(d -> isapprox(d, dzs[1]; rtol = 1e-6), dzs) ||
+        throw(ArgumentError("the levels of an OceanForcing2D must be uniformly spaced"))
+    T, S = FT.(Tz[:, :, p]), FT.(Sz[:, :, p])
+    all(isfinite, T) && all(isfinite, S) ||
+        throw(ArgumentError("Tz and Sz must be finite everywhere (fill the gaps first)"))
+    OceanForcing2D(T, S, FT.(zs), FT(dzs[1]), FT(zs[1]))
+end
+
+Base.show(io::IO, f::OceanForcing2D) = print(
+    io,
+    "OceanForcing2D{$(eltype(f.Tz))}: $(size(f.Tz, 1))×$(size(f.Tz, 2)) profiles of ",
+    "$(length(f.z)) levels, z ∈ [$(join(extrema(f.z), ", "))] m, ",
+    "T ∈ [$(join(_r.(extrema(f.Tz), 3), ", "))] °C, S ∈ [$(join(_r.(extrema(f.Sz), 3), ", "))] psu",
+)
 
 #########################
 # Ice

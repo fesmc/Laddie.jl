@@ -154,3 +154,42 @@ end
     @test getfield(m_bare, :forcing) isa CavityForcing
     @test all(m_bare.T_ice_base .== Laddie.DEFAULT_T_ICE_BASE)
 end
+
+@testset "PerBasinOceanForcing1D: each basin samples its own profile" begin
+    grid = build_isomip(CPU(); FT, nx = 20, ny = 10).model.grid
+    warm, cold = ISOMIPForcing(:warm; FT), ISOMIPForcing(:cold; FT)
+    # Basin 1 on the first half of the columns, basin 2 on the rest (full domain,
+    # border ring included).
+    basin = fill(1, grid.input_size)
+    basin[:, (grid.input_size[2]÷2+1):end] .= 2
+    f = PerBasinOceanForcing1D([warm, cold], basin)
+    @test size(f.Tz) == (2, length(warm.z))
+    @test f.Tz[1, :] ≈ warm.Tz && f.Sz[2, :] ≈ cold.Sz
+    m, mw, mc = (Model(grid; forcing = o) for o in (f, warm, cold))
+    foreach(Laddie.update_ambient_fields!, (m, mw, mc))
+    b = m.basin   # cropped with the grid
+    @test size(b) == size(m.Ta)
+    @test m.Ta[b .== 1] == mw.Ta[b .== 1] && m.Sa[b .== 1] == mw.Sa[b .== 1]
+    @test m.Ta[b .== 2] == mc.Ta[b .== 2] && m.Sa[b .== 2] == mc.Sa[b .== 2]
+    @test any(b .== 1) && any(b .== 2)
+    run!(Simulation(m); days = 0.2, verbose = false)
+    @test all(isfinite, m.H.present) && all(isfinite, m.melt)
+end
+
+@testset "PerBasinOceanForcing1D: profiles of different depth ranges, checks" begin
+    # A profile on a shorter grid is extended flat onto the common one.
+    profile(z, T, S) = Laddie.OceanForcing1D(FT.(T.(z)), FT.(S.(z)), FT.(z), FT(1), FT(first(z)))
+    deep = profile(-1000.0:1.0:-1.0, z -> 3 + z / 500, z -> 35 + z / 1000)
+    shallow = profile(-200.0:1.0:-1.0, z -> -1.5 - z / 400, z -> 33.5 - z / 400)
+    f = PerBasinOceanForcing1D([deep, shallow], fill(2, 4, 3))
+    @test first(f.z) == -1000 && last(f.z) == -1
+    @test f.Tz[1, :] ≈ deep.Tz
+    @test all(f.Tz[2, f.z .<= -200] .≈ shallow.Tz[1])   # flat below its own range
+    @test f.Tz[2, end] ≈ shallow.Tz[end]
+    @test eltype(f.basin) == Int32
+    @test_throws ArgumentError PerBasinOceanForcing1D([deep, shallow], fill(3, 4, 3))
+    @test_throws ArgumentError PerBasinOceanForcing1D([deep, shallow], fill(0, 4, 3))
+    grid = build_isomip(CPU(); FT, nx = 20, ny = 10).model.grid
+    @test_throws ArgumentError Model(grid; forcing = PerBasinOceanForcing1D([deep], fill(1, 3, 3)))
+    @test occursin("2 basin profiles", sprint(show, f))
+end

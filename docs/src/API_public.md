@@ -101,6 +101,7 @@ CavityForcing
 ```@docs
 AbstractOceanForcing
 OceanForcing1D
+PerBasinOceanForcing1D
 ISOMIPForcing
 ```
 

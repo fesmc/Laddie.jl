@@ -28,6 +28,9 @@ _forcing_to_backend(f::Union{AbstractOceanForcing,AbstractIceForcing}, backend) 
         x isa AbstractArray && eltype(x) <: Real && !(eltype(x) <: Integer) ?
         _to_device(backend, x) : x
     end
+# The basin map is an integer array the ambient kernel reads, so it moves too.
+_forcing_to_backend(f::PerBasinOceanForcing1D, backend) =
+    _mapfields(x -> x isa AbstractArray ? _to_device(backend, x) : x, f)
 
 """
 $(TYPEDSIGNATURES)

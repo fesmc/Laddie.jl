@@ -131,6 +131,39 @@ end
 @inline _level(P::AbstractVector, i, j, k) = @inbounds P[k]
 @inline _level(P::AbstractArray{<:Any,3}, i, j, k) = @inbounds P[i, j, k]
 
+# The ambient sampling of a `PerBasinOceanForcing1D`: as `_ambient_interp_kernel!`,
+# reading the profile of the cell's basin, row `basin[i, j]` of the `(n_basins, nz)`
+# tables. A kernel of its own, so the shared one (and its Reactant/Enzyme
+# workarounds) stays as it is; the depth index is computed the same way.
+@kernel function _ambient_interp_basin_kernel!(
+    Ta,
+    Sa,
+    @Const(z_draft),
+    @Const(H),
+    @Const(Tz),
+    @Const(Sz),
+    @Const(basin),
+    z0,
+    dz,
+    nz,
+)
+    z0, dz = _val(z0), _val(dz)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = typeof(z0)
+        depth_idx = (z_draft[i, j] - H[i, j] - z0) / dz
+        depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
+        depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
+        lo = floor(_primal(depth_idx))
+        idx_lo = unsafe_trunc(Int, lo)
+        idx_hi = clamp(idx_lo + 1, 0, nz - 1)
+        weight = depth_idx - lo
+        b = basin[i, j]
+        Ta[i, j] = weight * Tz[b, idx_hi+1] + (one(FT) - weight) * Tz[b, idx_lo+1]
+        Sa[i, j] = weight * Sz[b, idx_hi+1] + (one(FT) - weight) * Sz[b, idx_lo+1]
+    end
+end
+
 
 """
 $(TYPEDSIGNATURES)
@@ -139,7 +172,26 @@ Vertically interpolate the ambient T/S profiles to the depth of each grid cell's
 plume base (z_draft − H), writing results into `m.Ta` and `m.Sa`. This sampling has
 no numbered equation in Lambert et al. (2023); see `docs/src/equations.md`.
 """
-function update_ambient_fields!(m)
+update_ambient_fields!(m) = _update_ambient_fields!(m, m.forcing.ocean)
+
+function _update_ambient_fields!(m, ::PerBasinOceanForcing1D)
+    launch!(
+        _ambient_interp_basin_kernel!,
+        m.Ta,
+        m.Sa,
+        m.z_draft,
+        m.H.present,
+        m.Tz,
+        m.Sz,
+        m.basin,
+        m.z0,
+        m.dz,
+        length(m.z),
+    )
+    return
+end
+
+function _update_ambient_fields!(m, ::AbstractOceanForcing)
     nz = length(m.z)
     launch!(
         _ambient_interp_kernel!,

@@ -133,6 +133,119 @@ Base.show(io::IO, f::OceanForcing2D) = print(
     "T ∈ [$(join(_r.(extrema(f.Tz), 3), ", "))] °C, S ∈ [$(join(_r.(extrema(f.Sz), 3), ", "))] psu",
 )
 
+"""
+$(TYPEDEF)
+
+Ambient T/S from a handful of vertical profiles, one per basin, and a map assigning
+every grid cell to a basin.  Each cell samples its basin's profile at the depth of
+its plume base, exactly as an [`OceanForcing1D`](@ref) would.  This is the forcing
+of a domain that spans several basins (e.g. pan-Antarctic) when each basin is forced
+by its own front profile: `n_basins × nz` numbers instead of an
+[`OceanForcing2D`](@ref)'s `nx × ny × nz`.
+
+`basin` covers the full domain including the border ring (like a 2D `T_ice_base`),
+and `Model` crops it with the grid.  Every cell must hold a valid basin index in
+`1:size(Tz, 1)`, land and ocean included (the ambient kernel runs on every cell).
+Assign cells outside any basin to the nearest one before building the forcing.
+
+Construct it from per-basin [`OceanForcing1D`](@ref)s with
+`PerBasinOceanForcing1D(profiles, basin)`, which resamples them onto a common
+grid, or from `(n_basins, nz)` matrices on uniform levels with
+`PerBasinOceanForcing1D(Tz, Sz, z, basin)`.
+
+Not yet supported by the Reactant backend.
+
+# Fields
+$(TYPEDFIELDS)
+"""
+struct PerBasinOceanForcing1D{FT,M<:AbstractMatrix{FT},I<:AbstractMatrix{<:Integer},V<:AbstractVector{FT}} <:
+       AbstractOceanForcing
+    "ambient temperature per basin and level, `(n_basins, nz)` (°C)"
+    Tz::M
+    "ambient salinity per basin and level, `(n_basins, nz)` (psu)"
+    Sz::M
+    "basin index of every cell, in `1:n_basins`"
+    basin::I
+    "depths of the uniform z-grid (m, negative downward, ascending)"
+    z::V
+    "z-grid spacing (m)"
+    dz::FT
+    "depth of the first z-grid point (m)"
+    z0::FT
+end
+
+"""
+    PerBasinOceanForcing1D(Tz, Sz, z, basin; FT = Float64)
+
+Per-basin profiles `Tz`, `Sz` of size `(n_basins, nz)` on the depths `z` (m,
+negative downward), which must be uniformly spaced; they are sorted ascending.
+`basin` is the integer basin index of every cell of the full domain.
+"""
+function PerBasinOceanForcing1D(
+    Tz::AbstractMatrix{<:Real},
+    Sz::AbstractMatrix{<:Real},
+    z::AbstractVector,
+    basin::AbstractMatrix{<:Integer};
+    FT = Float64,
+)
+    size(Tz) == size(Sz) || throw(ArgumentError("Tz is $(size(Tz)) but Sz is $(size(Sz))"))
+    size(Tz, 2) == length(z) ||
+        throw(ArgumentError("Tz has $(size(Tz, 2)) levels but z has $(length(z))"))
+    length(z) ≥ 2 || throw(ArgumentError("need at least two levels"))
+    nb = size(Tz, 1)
+    all(b -> 1 ≤ b ≤ nb, basin) || throw(
+        ArgumentError("every cell needs a basin index in 1:$nb; got $(join(extrema(basin), "…"))"),
+    )
+    p = sortperm(z)
+    zs = Float64.(z[p])
+    dzs = diff(zs)
+    all(d -> isapprox(d, dzs[1]; rtol = 1e-6), dzs) ||
+        throw(ArgumentError("the levels of a PerBasinOceanForcing1D must be uniformly spaced"))
+    T, S = FT.(Tz[:, p]), FT.(Sz[:, p])
+    all(isfinite, T) && all(isfinite, S) || throw(ArgumentError("Tz and Sz must be finite"))
+    PerBasinOceanForcing1D(T, S, Int32.(basin), FT.(zs), FT(dzs[1]), FT(zs[1]))
+end
+
+"""
+    PerBasinOceanForcing1D(profiles, basin; FT = eltype of the profiles)
+
+One basin per `OceanForcing1D` in `profiles` (basin `k` is `profiles[k]`), resampled
+onto a common grid spanning all of them at their spacing, each extended flat beyond
+its own depth range, as `OceanForcing1D` itself extrapolates. Front profiles of
+different basins reach different depths, which this reconciles.
+"""
+function PerBasinOceanForcing1D(
+    profiles::AbstractVector{<:OceanForcing1D},
+    basin::AbstractMatrix{<:Integer};
+    FT = eltype(first(profiles).Tz),
+)
+    isempty(profiles) && throw(ArgumentError("need at least one profile"))
+    dz = Float64(first(profiles).dz)
+    all(p -> isapprox(Float64(p.dz), dz; rtol = 1e-6), profiles) ||
+        throw(ArgumentError("the profiles must share their z spacing"))
+    zlo = minimum(p -> Float64(first(p.z)), profiles)
+    zhi = maximum(p -> Float64(last(p.z)), profiles)
+    z = collect(zlo:dz:(zhi+dz/2))
+    sample(p, P) = map(z) do zk
+        x = clamp((zk - Float64(p.z0)) / Float64(p.dz), 0.0, length(p.z) - 1.0)
+        lo = floor(Int, x)
+        hi = min(lo + 1, length(p.z) - 1)
+        w = x - lo
+        (1 - w) * Float64(P[lo+1]) + w * Float64(P[hi+1])
+    end
+    Tz = permutedims(stack(sample(p, p.Tz) for p in profiles))
+    Sz = permutedims(stack(sample(p, p.Sz) for p in profiles))
+    return PerBasinOceanForcing1D(Tz, Sz, z, basin; FT)
+end
+
+Base.show(io::IO, f::PerBasinOceanForcing1D) = print(
+    io,
+    "PerBasinOceanForcing1D{$(eltype(f.Tz))}: $(size(f.Tz, 1)) basin profiles of ",
+    "$(length(f.z)) levels over $(size(f.basin, 1))×$(size(f.basin, 2)) cells, ",
+    "z ∈ [$(join(extrema(f.z), ", "))] m, ",
+    "T ∈ [$(join(_r.(extrema(f.Tz), 3), ", "))] °C, S ∈ [$(join(_r.(extrema(f.Sz), 3), ", "))] psu",
+)
+
 #########################
 # Ice
 #########################

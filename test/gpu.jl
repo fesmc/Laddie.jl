@@ -62,3 +62,19 @@ end
     @test all(isfinite, Array(m_g.model.H.present)) && all(isfinite, Array(m_g.model.melt))
     @test 1.0 <= m_g.clock.dt <= 1000.0
 end
+
+@testset "PerBasinOceanForcing1D (GPU): basin map on the device, matches CPU" begin
+    grid = build_isomip(CPU(); nx = 20, ny = 10).model.grid
+    basin = fill(1, grid.input_size)
+    basin[:, (grid.input_size[2]÷2+1):end] .= 2
+    f = PerBasinOceanForcing1D([ISOMIPForcing(:warm), ISOMIPForcing(:cold)], basin)
+    m_c = Model(grid; forcing = f)
+    m_g = to_backend(m_c, gpu_backend)
+    Laddie.update_ambient_fields!(m_c)
+    Laddie.update_ambient_fields!(m_g)
+    @test Array(m_g.Ta) ≈ m_c.Ta && Array(m_g.Sa) ≈ m_c.Sa
+    s_c, s_g = Simulation(m_c), Simulation(m_g)
+    run!(s_c; days = 0.2, verbose = false)
+    run!(s_g; days = 0.2, verbose = false)
+    @test Array(m_g.melt) ≈ m_c.melt
+end

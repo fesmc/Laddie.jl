@@ -95,6 +95,7 @@ PastLaplacianWeights
 AbstractFrontPressure
 FullDepthGradient
 TruncatedDepthGradient
+ZeroGradientFront
 ```
 
 ## Shelf gaps

@@ -126,6 +126,11 @@ The two reference implementations disagree on what to do about this, so
 - [`TruncatedDepthGradient`](@ref) drops it, as the LADDIE v2 Fortran reference does at
   calving-front faces. Measured on a warm ISOMIP+ run, the term is ~150× larger at the
   ice front than in the interior under the default.
+- [`ZeroGradientFront`](@ref) drops it and the density-gradient term
+  ``\tfrac12 g\,\bar H^2\,(\delta\rho_{x-1}-\delta\rho)/\Delta x`` as well, whose
+  neighbour ``\delta\rho`` is likewise masked to `0` there. This is the zero lateral
+  gradient at the calving front stated in the LADDIE v2 description paper; the v2
+  Fortran keeps the density term.
 
 Neither affects the grounding line, where no momentum equation is solved.
 

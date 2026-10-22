@@ -13,6 +13,7 @@
                melting = TurbulentGamTMelting(FT(13.8), FT(2432.0), FT(1.95e-6)),
                convection_scheme = RelaxToAmbient(FT(10000.0)),
                entrainment  = HollandEntrainment(FT(0.01775))),
+        Params(; FT, front_pressure = ZeroGradientFront()),
     )
     for params in configs
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)

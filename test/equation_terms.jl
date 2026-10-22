@@ -34,7 +34,7 @@
 #   γT      turbulent heat transfer coefficient [m s⁻¹]
 # ============================================================================
 using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, ip_t, jp_t,
-    im_u, jm_v, _safe_sqrt, _front_pgf_weight, momentum_advection_U, momentum_advection_V,
+    im_u, jm_v, _safe_sqrt, _front_pgf_weight, _front_drho_weight, momentum_advection_U, momentum_advection_V,
     laplace_U, laplace_V, laplace_T, upwind_advection_T
 
 # -- U-momentum terms (Eq. 2) -----------------------------------------------
@@ -48,6 +48,10 @@ using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, 
 # FullDepthGradient and 0 under TruncatedDepthGradient.  See AbstractFrontPressure.
 @inline _pgf_gate(m, tmask_stag) =
     one(m.FT) .+ _front_pgf_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
+# The same gate on the density-gradient PGF term: 0 at a one-sided face only
+# under ZeroGradientFront.
+@inline _drho_gate(m, tmask_stag) =
+    one(m.FT) .+ _front_drho_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
 
 # g·H̄·ρ̄·∂H/∂x  (pressure gradient from plume-thickness depth)
 @inline u_pressure_depth(m) =
@@ -57,7 +61,8 @@ using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, 
 @inline u_pressure_slope(m) = m.g .* ip_t(m, m.Hdrho .* m.dzdx)
 # ½g·H̄²·∂δρ/∂x  (internal pressure gradient)
 @inline u_pressure_density(m) =
-    (m.g / 2) .* ip_t(m, m.H.present) .^ 2 .* (xm1(m.drho) .- m.drho) ./ m.dx
+    (m.g / 2) .* ip_t(m, m.H.present) .^ 2 .* (xm1(m.drho) .- m.drho) ./ m.dx .*
+    _drho_gate(m, ip_count(m.tmask))
 # f·H̄·V  (Coriolis)
 @inline u_coriolis(m) = m.fu .* ip_t(m, m.H.present .* jm_v(m, m.V.present))
 # Cd·U·|u|  (quadratic bottom drag)
@@ -84,7 +89,8 @@ using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, 
 @inline v_pressure_slope(m) = m.g .* jp_t(m, m.Hdrho .* m.dzdy)
 # ½g·H̄²·∂δρ/∂y  (internal pressure gradient)
 @inline v_pressure_density(m) =
-    (m.g / 2) .* jp_t(m, m.H.present) .^ 2 .* (ym1(m.drho) .- m.drho) ./ m.dy
+    (m.g / 2) .* jp_t(m, m.H.present) .^ 2 .* (ym1(m.drho) .- m.drho) ./ m.dy .*
+    _drho_gate(m, jp_count(m.tmask))
 # f·H̄·U  (Coriolis)
 @inline v_coriolis(m) = m.fv .* jp_t(m, m.H.present .* im_u(m, m.U.present))
 # Cd·V·|u|  (quadratic bottom drag)

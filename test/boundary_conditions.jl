@@ -417,6 +417,53 @@ end
     @test all(isfinite, m_gap.model.melt) && all(isfinite, m_full2.model.melt)
 end
 
+@testset "Front pressure: ZeroGradientFront also drops the density-gradient term" begin
+    # TruncatedDepthGradient keeps the density-gradient part of the PGF at a
+    # one-sided face, a difference toward the masked-to-zero δρ of the ocean
+    # cell.  ZeroGradientFront drops it too, so that no lateral gradient acts
+    # across the ice front (Lambert et al. 2026), and leaves the interior alone.
+    # The ISOMIP channel has no one-sided face with a live velocity point, so
+    # use the hand-made domain of the testset above: an ice front in y and a
+    # SinkGapsBC gap, whose edges are one-sided faces in both directions.
+    mk = zeros(Int, 12, 22)
+    mk[1, :] .= 1;  mk[end, :] .= 1
+    mk[:, 1] .= 1;  mk[:, end] .= 1
+    mk[2:11, 2:3]  .= 2
+    mk[2:11, 4:20] .= 3
+    mk[2:11, 21]   .= 0
+    mk[5:7, 10:12] .= 4
+    z_draft = zeros(FT, size(mk))
+    z_draft[mk .== 3] .= FT(-200.0)
+    forcing = ISOMIPForcing(:warm; FT)
+    grid = Grid(mk, z_draft, FT(2000.0), FT(2000.0); domain_cropping = NoDomainCropping())
+    run(front_pressure) = (m = Simulation(Model(grid; forcing, params = Params(; FT, front_pressure)));
+                           run!(m; days = 0.5, verbose = false); m.model)
+    m_t = run(TruncatedDepthGradient())
+    m_z = run(ZeroGradientFront())
+    g = getfield(m_z, :geometry)
+    ip, jp = Laddie.ip_count(g.tmask), Laddie.jp_count(g.tmask)
+    front_u = (ip .== 1) .& (g.umask .== 1)
+    front_v = (jp .== 1) .& (g.vmask .== 1)
+    @test count(front_u) > 0 && count(front_v) > 0   # the assertions below have teeth
+
+    # Under the truncation the density term is live at one-sided faces; under
+    # ZeroGradientFront both front terms vanish there.
+    @test any(!iszero, u_pressure_density(m_t)[front_u])
+    @test any(!iszero, v_pressure_density(m_t)[front_v])
+    @test all(iszero, u_pressure_density(m_z)[front_u])
+    @test all(iszero, v_pressure_density(m_z)[front_v])
+    @test all(iszero, u_pressure_depth(m_z)[front_u])
+    @test all(iszero, v_pressure_depth(m_z)[front_v])
+    # Interior faces keep the term, with a gate of exactly 1, and the other
+    # settings never gate it.
+    @test all(_drho_gate(m_z, ip)[ip .== 2] .== 1)
+    @test all(_drho_gate(m_t, ip) .== 1)
+
+    # And the choice integrates to a different state.
+    @test m_z.U.present != m_t.U.present
+    @test all(isfinite, m_z.melt)
+end
+
 @testset "Wall advection: slip-scaled (v1) vs none (v2)" begin
     # The slip factor always scales the viscous wall drag; `wall_advection`
     # decides whether it also scales the momentum advected across a wall face.

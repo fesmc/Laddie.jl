@@ -163,10 +163,11 @@ end
     g,
     C_d,
     pgf_w,
+    drho_w,
     dx,
     dt,
 )
-    g, C_d, pgf_w, dx, dt = _val(g), _val(C_d), _val(pgf_w), _val(dx), _val(dt)
+    g, C_d, pgf_w, drho_w, dx, dt = _val(g), _val(C_d), _val(pgf_w), _val(drho_w), _val(dx), _val(dt)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -189,15 +190,17 @@ end
         # pgf_w selects what happens there: 0 (FullDepthGradient, the Python
         # v1.x behaviour) keeps the term and leaves this an exact multiply by
         # 1.0; 1 (TruncatedDepthGradient) drops it, as LADDIE v2 does at
-        # mask_cf_b faces.  See AbstractFrontPressure.
+        # mask_cf_b faces.  drho_w gates the density-gradient term the same
+        # way, 1 only under ZeroGradientFront.  See AbstractFrontPressure.
         pgf_gate = one(FT) + pgf_w * (tmip - FT(2))
+        drho_gate = one(FT) + drho_w * (tmip - FT(2))
         H_next = H1[ip1, j] * tmask[ip1, j]
         rhs =
             -U1[i, j] * ip_dHdt +                                      # thickness-tendency correction
             cU[i, j] +                                                  # horizontal advection
             -g * ip_H_drho * (H_next - H1[i, j]) / dx * pgf_gate +     # pressure: H gradient
             g * ip_H_dzdx +                                             # pressure: ice-shelf slope
-            -half * g * ip_H^2 * (drho[ip1, j] - drho[i, j]) / dx +     # pressure: density gradient
+            -half * g * ip_H^2 * (drho[ip1, j] - drho[i, j]) / dx * drho_gate + # pressure: density gradient
             fu[i, j] * ip_H_Vjm +                                              # Coriolis
             -C_d * U1[i, j] * _safe_sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
             lU[i, j] +                                                   # horizontal viscosity
@@ -226,10 +229,11 @@ end
     g,
     C_d,
     pgf_w,
+    drho_w,
     dy,
     dt,
 )
-    g, C_d, pgf_w, dy, dt = _val(g), _val(C_d), _val(pgf_w), _val(dy), _val(dt)
+    g, C_d, pgf_w, drho_w, dy, dt = _val(g), _val(C_d), _val(pgf_w), _val(drho_w), _val(dy), _val(dt)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -246,15 +250,16 @@ end
         Uim_jp = _face_avg_ring0(U1, umask, i, jp1, -1, 0)
         jp_H_Uim = _safe_div(H1[i, j] * Uim + H1[i, jp1] * Uim_jp, tmjp)
         jpimU = half * (half * (U1[i, j] + U1[im1, j]) + half * (U1[i, jp1] + U1[im1, jp1]))
-        # See _step_u_momentum_kernel! for the ice-front gate.
+        # See _step_u_momentum_kernel! for the ice-front gates.
         pgf_gate = one(FT) + pgf_w * (tmjp - FT(2))
+        drho_gate = one(FT) + drho_w * (tmjp - FT(2))
         H_next = H1[i, jp1] * tmask[i, jp1]
         rhs =
             -V1[i, j] * jp_dHdt +                                      # thickness-tendency correction
             cV[i, j] +                                                  # horizontal advection
             -g * jp_H_drho * (H_next - H1[i, j]) / dy * pgf_gate +     # pressure: H gradient
             g * jp_H_dzdy +                                             # pressure: ice-shelf slope
-            -half * g * jp_H^2 * (drho[i, jp1] - drho[i, j]) / dy +     # pressure: density gradient
+            -half * g * jp_H^2 * (drho[i, jp1] - drho[i, j]) / dy * drho_gate + # pressure: density gradient
             -fv[i, j] * jp_H_Uim +                                             # Coriolis
             -C_d * V1[i, j] * _safe_sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
             lV[i, j] +                                                   # horizontal viscosity
@@ -368,6 +373,7 @@ function step_u_momentum!(m, dt)
         m.g,
         m.C_d,
         _front_pgf_weight(m.front_pressure, m.g),
+        _front_drho_weight(m.front_pressure, m.g),
         m.dx,
         dt,
     )
@@ -398,6 +404,7 @@ function step_v_momentum!(m, dt)
         m.g,
         m.C_d,
         _front_pgf_weight(m.front_pressure, m.g),
+        _front_drho_weight(m.front_pressure, m.g),
         m.dy,
         dt,
     )

@@ -249,11 +249,13 @@ struct NoInflow <: AbstractOpenOceanBC end
 #############################
 
 """
-Abstract supertype for the treatment of the layer-thickness-gradient part of the
-pressure-gradient force at one-sided faces — the ice front, and the edges of a gap
-demoted to ocean by [`SinkGapsBC`](@ref).  Pass a concrete instance as
-`Params(; front_pressure = ...)`: [`FullDepthGradient`](@ref) (Python LADDIE v1.x,
-the default) or [`TruncatedDepthGradient`](@ref) (LADDIE v2).
+Abstract supertype for the treatment of the layer-thickness- and density-gradient
+parts of the pressure-gradient force at one-sided faces — the ice front, and the
+edges of a gap demoted to ocean by [`SinkGapsBC`](@ref).  Pass a concrete instance
+as `Params(; front_pressure = ...)`: [`FullDepthGradient`](@ref) (Python LADDIE
+v1.x, the default), [`TruncatedDepthGradient`](@ref) (LADDIE v2) or
+[`ZeroGradientFront`](@ref) (the zero-lateral-gradient condition stated by
+Lambert et al. 2026).
 
 The grounding line is unaffected either way — no momentum equation is solved there.
 """
@@ -296,16 +298,43 @@ Neither choice affects the grounding line, where the velocity masks are zero
 and no momentum equation is solved at all.
 
 Select via `Params(; front_pressure = TruncatedDepthGradient())`.
+
+See also [`ZeroGradientFront`](@ref), which drops the density-gradient part as well.
 """
 struct TruncatedDepthGradient <: AbstractFrontPressure end
 
-# Weight `w` in the per-face gate `1 + w*(tmask_stag - 2)`, which is 1 on a
+"""
+$(TYPEDEF)
+
+Drop both the layer-thickness-gradient and the density-gradient parts of the
+pressure-gradient force at one-sided faces — the ice front, and the edges of a gap
+demoted to ocean by [`SinkGapsBC`](@ref) — keeping only the ice-base-slope part
+there.
+
+Under [`TruncatedDepthGradient`](@ref) the density-gradient term is still
+evaluated as `(δρ_neighbour - δρ)/Δ`, with the neighbour's stored `δρ`, which
+masking pins to `0`: a one-sided gradient, as if the layer were neutrally buoyant
+across one grid cell. This option makes the momentum equation consistent with the
+condition stated in the LADDIE v2 description paper (Lambert et al. 2026), "zero
+lateral gradients are applied to all main variables (H, U, V, T, and S)" at the
+calving front. The v2 Fortran comments the same intent (`laddie_velocity.f90:119`,
+"Assume dH/dx and ddrho/dx = 0") but keeps the `ddrho_amb_dx_b` term in its code.
+
+Select via `Params(; front_pressure = ZeroGradientFront())`.
+"""
+struct ZeroGradientFront <: AbstractFrontPressure end
+
+# Weights `w` in the per-face gate `1 + w*(tmask_stag - 2)`, which is 1 on a
 # fully-interior face (tmask_stag == 2) either way, and at a one-sided face
-# (tmask_stag == 1) is 1 for FullDepthGradient / 0 for TruncatedDepthGradient.
+# (tmask_stag == 1) is 1 for w = 0 (term kept) / 0 for w = 1 (term dropped).
 # w = 0 multiplies the term by exactly 1.0, so the default is bit-identical to
-# Python v1.x.
+# Python v1.x.  `_front_pgf_weight` gates the thickness-gradient term,
+# `_front_drho_weight` the density-gradient term.
 _front_pgf_weight(::FullDepthGradient, x) = zero(x)
 _front_pgf_weight(::TruncatedDepthGradient, x) = one(x)
+_front_pgf_weight(::ZeroGradientFront, x) = one(x)
+_front_drho_weight(::AbstractFrontPressure, x) = zero(x)
+_front_drho_weight(::ZeroGradientFront, x) = one(x)
 
 #############################
 # Gaps BC

@@ -46,7 +46,17 @@ function gaps_sim(; kw...)
     return Simulation(model; kw...)
 end
 
-# Every non-default scheme, in four runs.  Not covered: TopographicMaxLayerThickness
+# The ISOMIP+ channel forced by two profiles, one per half: the indexed gather of a
+# PerBasinOceanForcing1D (as front_ocean_forcing builds it).
+function per_basin_sim(; kw...)
+    grid = build_isomip(CPU(); KW...).model.grid
+    basin = fill(1, grid.input_size)
+    basin[:, (grid.input_size[2]÷2+1):end] .= 2
+    forcing = PerBasinOceanForcing1D([ISOMIPForcing(:warm), ISOMIPForcing(:cold)], basin)
+    return Simulation(Model(grid; forcing); kw...)
+end
+
+# Every non-default scheme, in five runs.  Not covered: TopographicMaxLayerThickness
 # (the kernel of RelativeMaxLayerThickness at fraction 1) and OceanForcing2D (not
 # supported by the Reactant backend yet).
 const SCHEME_SCENARIOS = [
@@ -70,6 +80,7 @@ const SCHEME_SCENARIOS = [
     "prescribed" => () -> build_isomip(CPU(); KW...,
         params = Params(; melting = PrescribedMelting([i < 25 ? 2.0 : 8.0 for i = 1:42, _ = 1:22]))),
     "gaps" => gaps_sim,
+    "per-basin forcing" => per_basin_sim,
 ]
 
 @testset "Reactant extension" begin
@@ -241,8 +252,8 @@ const SCHEME_SCENARIOS = [
         @test Reactant.to_number(g.params.C_d) ≈ d rtol = 1e-10
         vTz = randn(Random.Xoshiro(1), length(model.forcing.ocean.Tz))
         tz = Enzyme.make_zero(model)
-        tz.forcing.ocean.Tz .= Reactant.to_rarray(vTz)
-        @test sum(Array(g.forcing.ocean.Tz) .* vTz) ≈
+        tz.forcing.ocean.Tz .= Reactant.to_rarray(reshape(vTz, size(model.forcing.ocean.Tz)))
+        @test sum(vec(Array(g.forcing.ocean.Tz)) .* vTz) ≈
               Reactant.to_number(only(fprog(mk(), tz, dt, n))) rtol = 1e-10
     end
 

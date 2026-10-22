@@ -151,14 +151,16 @@ Assign cells outside any basin to the nearest one before building the forcing.
 Construct it from per-basin [`OceanForcing1D`](@ref)s with
 `PerBasinOceanForcing1D(profiles, basin)`, which resamples them onto a common
 grid, or from `(n_basins, nz)` matrices on uniform levels with
-`PerBasinOceanForcing1D(Tz, Sz, z, basin)`.
+`PerBasinOceanForcing1D(Tz, Sz, z, basin)`.  A "basin" is any group of cells
+sharing a profile: [`front_ocean_forcing`](@ref) builds one with a profile per
+ice-front water column, which cells of the cavity behind it share.
 
-Not yet supported by the Reactant backend.
+Supported by the Reactant backend, including differentiation through it.
 
 # Fields
 $(TYPEDFIELDS)
 """
-struct PerBasinOceanForcing1D{FT,M<:AbstractMatrix{FT},I<:AbstractMatrix{<:Integer},V<:AbstractVector{FT}} <:
+struct PerBasinOceanForcing1D{FT,M<:AbstractMatrix,I<:AbstractMatrix,V<:AbstractVector} <:
        AbstractOceanForcing
     "ambient temperature per basin and level, `(n_basins, nz)` (°C)"
     Tz::M

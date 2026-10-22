@@ -593,10 +593,17 @@ function _write_restart!(sim, t_days)
     )
     # Save the current dt so an adaptive run resumes at the step it left off
     # (the saved leapfrog levels are separated by this dt); FixedDt saves dt0.
+    # The grid's active cells, crop and full-domain size let a finer run start
+    # from this one (`init_from_restart!(...; refine)`).
+    g = m.grid
     jldsave(
         filename;
         t_days,
         dt = _float64(sim.clock.dt),
+        dx = _float64(g.dx),
+        tmask = Array(m.tmask) .> 0,
+        crop = (extrema(g.crop[1]), extrema(g.crop[2])),
+        input_size = Tuple(g.input_size),
         map(_v, _prognostics(m))...,
     )
 
@@ -620,25 +627,39 @@ function saverestart!(sim)
 end
 
 """
-$(TYPEDSIGNATURES)
+    init_from_restart!(sim, path; refine = 1, coarse_grid = nothing)
 
 Load H, U, V, T, S from the JLD2 restart file at `path` into all three leapfrog
 levels of the model's `Var` structs, set the clock to the restart time, then call
 `update_secondary_fields!` and one bootstrap integration step.  The saved CPU
 arrays are copied to the model's backend (CPU or GPU) and converted to its
 element type, so a restart written at one precision or on one backend loads on
-another.
+another.  [`Simulation`](@ref) calls it for its `restart` keyword.
+
+With `refine = f > 1`, `path` is the restart of a run whose cells are `f` times
+coarser, on the same full domain: each coarse cell holds `f × f` fine ones, and
+the fine domain, border ring included, is `f .* (coarse size .- 2) .+ 2` cells.
+Each fine cell takes H, T and S of the coarse cell it lies in where that cell was
+active, and each fine velocity point the cell-centred velocity of that coarse cell
+(the mean of its two faces), on the fine velocity masks.  Fine cells whose coarse
+cell was not active (a finer shelf reaches further) keep the state `sim` was built
+with, so call this on a simulation started from rest.  dt is the restart's divided
+by `f`.  The two runs may crop their domains differently.  The coarse grid is read
+from the restart file; files written before it was stored there need the coarse
+run's [`Grid`](@ref) as `coarse_grid`.
 
 Geometry (masks, z_draft) must already be initialised before calling this.
 """
-function init_from_restart!(sim, path::AbstractString)
+function init_from_restart!(sim, path::AbstractString; refine::Integer = 1, coarse_grid = nothing)
+    refine ≥ 1 || throw(ArgumentError("refine must be a positive integer, got $refine"))
     m = sim.model
     sim.io.restartfile = path
     jldopen(path, "r") do f
         sim.clock.time = f["t_days"] * _float64(m.seconds_per_day)
         # Resume at the saved dt when present (adaptive runs); older files
         # without it keep the dt the simulation was constructed with.
-        haskey(f, "dt") && (sim.clock.dt = m.FT(f["dt"]))
+        haskey(f, "dt") && (sim.clock.dt = m.FT(f["dt"] / refine))
+        fine = refine == 1 ? (name, a, dst) -> a : _refiner(m, f, refine, coarse_grid)
         for (name, var) in pairs(_prognostics(m))
             # Restarts from before the layer thickness was renamed D → H store it as "D".
             data = f[name == :H && !haskey(f, "H") ? "D" : String(name)]
@@ -648,13 +669,87 @@ function init_from_restart!(sim, path::AbstractString)
             # fails to compile on the GPU.
             for level in (:past, :present, :future)
                 dst = getfield(var, level)
-                copyto!(dst, convert(Array{eltype(dst)}, getfield(data, level)))
+                src = fine(name, getfield(data, level), dst)
+                size(src) == size(dst) || throw(
+                    ArgumentError(
+                        "the restart's $name is $(size(src)) cells but the model's is $(size(dst)); " *
+                        "to start from a coarser run, pass `refine`",
+                    ),
+                )
+                copyto!(dst, convert(Array{eltype(dst)}, src))
             end
         end
     end
     _bootstrap_leapfrog!(m, sim.clock.dt; _nan_check(sim)...)
-    _print2log(sim, "Restarted from $(path) at $(_t_days(sim)) days")
+    refined = refine == 1 ? "" : " (refined $(refine)×)"
+    _print2log(sim, "Restarted from $(path)$(refined) at $(_t_days(sim)) days")
     return sim
+end
+
+# The coarse run's grid as the restart file stores it, or as `coarse_grid` gives it
+# for files written before it was stored: its active cells (cropped), crop ranges,
+# full-domain size and spacing (`nothing` when unknown).
+function _coarse_layout(f, coarse_grid)
+    if haskey(f, "tmask")
+        (r, c) = f["crop"]
+        return (; tmask = f["tmask"], crop = (r[1]:r[2], c[1]:c[2]), input_size = f["input_size"], dx = f["dx"])
+    end
+    coarse_grid === nothing && throw(
+        ArgumentError(
+            "this restart file does not store its grid (written before refinement was " *
+            "supported); pass the coarse run's Grid as `coarse_grid`",
+        ),
+    )
+    g = coarse_grid
+    tmask = (g.mask .== 3) .| (g.mask .== 4)   # active cells: shelf and gaps
+    return (; tmask, crop = g.crop, input_size = Tuple(g.input_size), dx = _float64(g.dx))
+end
+
+# A function `(name, coarse level, model level) -> fine level` that refines a
+# coarse restart onto the model's grid, `f` times finer (`init_from_restart!`).
+function _refiner(m, file, f, coarse_grid)
+    co = _coarse_layout(file, coarse_grid)
+    g = m.grid
+    fine_size = f .* (co.input_size .- 2) .+ 2
+    Tuple(g.input_size) == fine_size || throw(
+        ArgumentError(
+            "the model's full domain is $(Tuple(g.input_size)) cells, but $(f)× the coarse " *
+            "$(co.input_size) (border ring kept) is $fine_size",
+        ),
+    )
+    co.dx === nothing || isapprox(co.dx, f * _float64(g.dx); rtol = 1e-6) || throw(
+        ArgumentError("the restart's dx is $(co.dx) m, not $(f)× the model's $(_float64(g.dx)) m"),
+    )
+    # Coarse cropped index of the coarse cell holding each fine cell of the model's
+    # crop, the border rings mapping onto each other; 0 outside the coarse crop
+    # (inactive there: cropping keeps every active cell).
+    function parents(fine_range, n_fine, n_coarse, coarse_range)
+        map(fine_range) do i
+            p = i == 1 ? 1 : i == n_fine ? n_coarse : (i - 2) ÷ f + 2
+            p in coarse_range ? p - first(coarse_range) + 1 : 0
+        end
+    end
+    I = parents(g.crop[1], g.input_size[1], co.input_size[1], co.crop[1])
+    J = parents(g.crop[2], g.input_size[2], co.input_size[2], co.crop[2])
+    pick(a, i, j, default) = (I[i] > 0 && J[j] > 0) ? a[I[i], J[j]] : default
+    active_c = co.tmask
+    wet = [pick(active_c, i, j, false) for i in eachindex(I), j in eachindex(J)]
+    tmask = Array(m.tmask) .> 0
+    umask, vmask = Array(m.umask), Array(m.vmask)
+    return function (name, a, dst)
+        if name in (:U, :V)
+            # Faces → cell centres: the mean of a cell's two faces, the west
+            # (south) one being the previous index.
+            c = name == :U ? (a .+ circshift(a, (1, 0))) ./ 2 : (a .+ circshift(a, (0, 1))) ./ 2
+            c = ifelse.(active_c, c, zero(eltype(c)))
+            vmask_ = name == :U ? umask : vmask
+            return [pick(c, i, j, zero(eltype(c))) * vmask_[i, j] for i in eachindex(I), j in eachindex(J)]
+        else
+            keep = Array(dst)
+            return [wet[i, j] & tmask[i, j] ? pick(a, i, j, keep[i, j]) : keep[i, j]
+                    for i in eachindex(I), j in eachindex(J)]
+        end
+    end
 end
 
 # ============================================================================

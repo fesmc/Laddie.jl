@@ -105,6 +105,21 @@ PerBasinOceanForcing1D
 ISOMIPForcing
 ```
 
+#### From a 3D ocean field
+
+Ocean models that force ice-sheet models mostly have no ice-shelf cavities.
+[`front_ocean_forcing`](@ref) gives every cavity cell the water column at the ice
+front that feeds it; [`regrid_ocean`](@ref) and [`fill_ocean!`](@ref) bring a
+coarse ocean grid onto the model's cells.
+
+```@docs
+front_ocean_forcing
+front_sources
+nearest_seed
+regrid_ocean
+fill_ocean!
+```
+
 ### Ice
 
 ```@docs

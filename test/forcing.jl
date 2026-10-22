@@ -193,3 +193,122 @@ end
     @test_throws ArgumentError Model(grid; forcing = PerBasinOceanForcing1D([deep], fill(1, 3, 3)))
     @test occursin("2 basin profiles", sprint(show, f))
 end
+
+@testset "nearest_seed: exact Euclidean distance and label" begin
+    labels = zeros(Int, 23, 17)
+    seeds = [(3, 4), (20, 2), (11, 15), (18, 13), (1, 17)]
+    for (k, (i, j)) in enumerate(seeds)
+        labels[i, j] = k
+    end
+    lab, d2 = nearest_seed(labels)
+    for I in CartesianIndices(labels)
+        d = [(I[1] - i)^2 + (I[2] - j)^2 for (i, j) in seeds]
+        @test d2[I] == minimum(d)
+        @test d[lab[I]] == minimum(d)   # a nearest seed (ties may go either way)
+    end
+    @test all(lab[i, j] == k for (k, (i, j)) in enumerate(seeds))
+    lab0, d0 = nearest_seed(zeros(Int, 4, 3))
+    @test all(==(0), lab0) && all(isinf, d0)
+end
+
+@testset "front_sources: through the cavity, deepest neighbour, fallback" begin
+    # Two shelves (3) separated by grounded ice (2) along j = 5, open ocean (0) at
+    # i ≥ 10.  The upper shelf meets the ocean only at its far corner (9, 10), so
+    # its cells must take that front even where the lower front is nearer in a
+    # straight line.  An enclosed pool (0) in the lower shelf is cavity, and an
+    # isolated shelf cell with no front takes the nearest front in a straight line.
+    mask = fill(1, 12, 12)
+    mask[2:11, 2:11] .= 2
+    mask[4:9, 2:4] .= 3
+    mask[4:9, 6:10] .= 3
+    mask[9, 6:9] .= 2
+    mask[10:11, 2:11] .= 0
+    mask[6, 3] = 0       # enclosed water
+    mask[2, 11] = 3      # shelf cell without a front
+    # Front cell (9, 3) has one open neighbour, (10, 3); the enclosed pool's
+    # neighbours are all shelf.  `depth` ranks ties between open neighbours.
+    depth = zeros(12, 12)
+    src, lost = front_sources(mask; depth)
+    C = CartesianIndices(mask)
+    srcij(i, j) = Tuple(C[src[i, j]])
+    @test lost == 1
+    @test all(srcij(i, j)[2] in 2:4 for i = 4:9, j = 2:4)                 # lower shelf, own front
+    @test all(srcij(i, j) == (10, 10) for i = 4:8, j = 6:10)              # upper shelf, through the corner
+    @test srcij(8, 6) == (10, 10)   # straight line would pick the lower front (√5 vs √17)
+    @test src[6, 3] > 0             # enclosed water is cavity
+    @test srcij(9, 3) == (10, 3)
+    @test all(src[mask .== 2] .== 0) && all(src[10:11, :] .== 0)
+    @test srcij(2, 11)[1] == 10     # the fallback still picks an open-ocean column
+    # Only wet open cells can be sources: dry out (10, 3) and (9, 3) takes a neighbour's.
+    wet = trues(size(mask)); wet[10, 3] = false
+    src2, _ = front_sources(mask; wet)
+    @test Tuple(C[src2[9, 3]]) != (10, 3)
+    @test_throws ArgumentError front_sources(fill(3, 5, 5))
+    # A front cell with several open neighbours takes the one of lowest `depth`.
+    island = fill(1, 6, 6)
+    island[2:5, 2:5] .= 0
+    island[3, 3] = 3
+    d = zeros(6, 6); d[4, 3] = -800; d[3, 4] = -500
+    s3, _ = front_sources(island; depth = d)
+    @test Tuple(CartesianIndices(island)[s3[3, 3]]) == (4, 3)
+end
+
+@testset "front_ocean_forcing: cavity cells take their front's column" begin
+    # An ISOMIP+ channel whose shelf ends at x = 30 km, with open ocean beyond.
+    # Each open-ocean column is the warm profile shifted by 0.1 °C per column, so
+    # a cavity cell's profile tells which column fed it: the front of its row.
+    sim = build_isomip(CPU(); FT, nx = 20, ny = 10, xfront = 30_000.0,
+                       domain_cropping = NoDomainCropping())
+    grid = sim.model.grid
+    mask = grid.mask
+    warm = ISOMIPForcing(:warm; FT)
+    z = collect(-1000.0:50.0:-50.0)
+    prof(zz) = -1.9 + zz * (1.0 + 1.9) / -720.0
+    nx, ny = size(mask)
+    T = [mask[i, j] == 0 ? prof(min(z[k], -1.0)) + 0.1i : NaN for i = 1:nx, j = 1:ny, k = eachindex(z)]
+    S = [mask[i, j] == 0 ? 34.0 : NaN for i = 1:nx, j = 1:ny, k = eachindex(z)]
+    ifront = findlast(i -> mask[i, 5] == 3, 1:nx)
+    T[ifront+1, 2, 1:5] .= NaN   # a shorter column extends flat below its water
+    f = front_ocean_forcing(T, S, z, mask; FT)
+    @test f isa PerBasinOceanForcing1D
+    @test size(f.Tz, 1) == count(mask[ifront+1, :] .== 0)   # one profile per front cell's source
+    for j = 3:(ny-1), i = 2:ifront
+        mask[i, j] == 3 || continue
+        @test f.Tz[f.basin[i, j], :] ≈ T[ifront+1, j, :]
+    end
+    @test all(f.Tz[f.basin[ifront, 2], 1:5] .≈ T[ifront+1, 2, 6])
+    @test all(1 .<= f.basin .<= size(f.Tz, 1))
+    m = Model(grid; forcing = f)
+    run!(Simulation(m); days = 0.2, verbose = false)
+    @test all(isfinite, m.H.present) && all(isfinite, m.melt)
+    @test_throws ArgumentError front_ocean_forcing(T[1:5, :, :], S, z, mask)
+end
+
+@testset "regrid_ocean and fill_ocean!" begin
+    x, y = collect(0.0:8.0:64.0), collect(0.0:8.0:40.0)
+    lin(xx, yy, k) = 0.1xx - 0.05yy + k
+    T = [lin(xx, yy, k) for xx in x, yy in y, k = 1:3]
+    S = T .+ 30
+    px, py = collect(1.0:2.0:63.0), collect(1.0:2.0:39.0)
+    o = regrid_ocean(T, S, x, y, px, py)
+    @test size(o.T) == (length(px), length(py), 3)
+    @test o.T ≈ [lin(xx, yy, k) for xx in px, yy in py, k = 1:3]   # bilinear is exact on linear fields
+    @test o.S ≈ o.T .+ 30
+    # Missing source cells are left out, the weights renormalised: a constant
+    # field stays constant next to a hole, and a fully dry region is NaN.
+    C = fill(2.0, length(x), length(y), 1)
+    C[1:3, :, 1] .= NaN
+    C[5, 3, 1] = NaN
+    oc = regrid_ocean(C, C, x, y, px, py)
+    @test all(isnan, oc.T[px .< 16, :, 1])
+    @test all(oc.T[px .> 16, :, 1] .≈ 2)
+    # fill_ocean!: flat below a column's water, and dry columns take the nearest one.
+    A = [k == 3 ? NaN : Float64(i + 10k) for i = 1:4, j = 1:3, k = 1:3]
+    A[1, :, :] .= NaN
+    B = copy(A)
+    fill_ocean!(A, B)
+    @test all(isfinite, A)
+    @test A[2, 1, 3] == A[2, 1, 2]
+    @test A[1, 2, :] == A[2, 2, :]
+    Laddie.OceanForcing2D(A, B, [-300.0, -200.0, -100.0])   # complete, so it constructs
+end

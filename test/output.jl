@@ -152,3 +152,59 @@ end
     @test_throws ErrorException m.model.no_such_field
     @test_throws ErrorException (m.model.no_such_field = 1)
 end
+
+@testset "Restart: refine a coarse run onto a finer grid" begin
+    # The same ISOMIP+ channel at 4 km and at 2 km: the full domains satisfy
+    # fine = 2 (coarse − 2) + 2, and the default cropping crops them differently.
+    tmp = mktempdir()
+    crop = MinRectangleDomainCropping()
+    coarse = build_isomip(CPU(); nx = 20, ny = 6, dx = 4000.0, dy = 4000.0, xfront = 60_000.0,
+                          domain_cropping = crop,
+                          output = OutputConfig(; name = "coarse", resultdir = tmp, saveday = 0.5))
+    run!(coarse; days = 0.5, verbose = false)
+    file = joinpath(tmp, "coarse", "restart_latest.jld2")
+    Laddie.JLD2.jldopen(file, "r") do f
+        @test haskey(f, "tmask") && f["input_size"] == coarse.model.grid.input_size
+    end
+    fine_sim() = build_isomip(CPU(); nx = 40, ny = 12, dx = 2000.0, dy = 2000.0, xfront = 60_000.0,
+                              domain_cropping = crop)
+    fine = fine_sim()
+    Laddie.init_from_restart!(fine, file; refine = 2)
+    @test fine.clock.time ≈ coarse.clock.time
+    @test fine.clock.dt ≈ coarse.clock.dt / 2
+
+    # Before the bootstrap step moved `present`, every fine cell held its coarse
+    # parent's state; `past` is not touched by the bootstrap, so check it there.
+    gc, gf = coarse.model.grid, fine.model.grid
+    @test first(gc.crop[1]) > 1 && first(gf.crop[1]) != 2 * (first(gc.crop[1]) - 2) + 2   # crops differ
+    parent(i, nf, nc) = i == 1 ? 1 : i == nf ? nc : (i - 2) ÷ 2 + 2
+    Hc = Laddie.JLD2.load(file, "H").past
+    tm_c = Laddie.JLD2.load(file, "tmask")
+    tm_f = fine.model.tmask .> 0
+    checked = 0
+    for (jj, j) in enumerate(gf.crop[2]), (ii, i) in enumerate(gf.crop[1])
+        pi = parent(i, gf.input_size[1], gc.input_size[1]) - first(gc.crop[1]) + 1
+        pj = parent(j, gf.input_size[2], gc.input_size[2]) - first(gc.crop[2]) + 1
+        (1 <= pi <= size(Hc, 1) && 1 <= pj <= size(Hc, 2) && tm_c[pi, pj] && tm_f[ii, jj]) || continue
+        @test fine.model.H.past[ii, jj] == Hc[pi, pj]
+        checked += 1
+    end
+    @test checked > 0.9 * count(tm_f)
+    run!(fine; days = 0.2, verbose = false)
+    @test all(isfinite, fine.model.H.present) && all(isfinite, fine.model.melt)
+
+    # A file without the grid (written before it was stored) needs `coarse_grid`.
+    legacy = joinpath(tmp, "legacy.jld2")
+    Laddie.JLD2.jldopen(file, "r") do f
+        Laddie.JLD2.jldsave(legacy; t_days = f["t_days"], dt = f["dt"], H = f["H"],
+                            U = f["U"], V = f["V"], T = f["T"], S = f["S"])
+    end
+    @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), legacy; refine = 2)
+    f2 = Laddie.init_from_restart!(fine_sim(), legacy; refine = 2, coarse_grid = gc)
+    @test f2.model.H.past == Laddie.init_from_restart!(fine_sim(), file; refine = 2).model.H.past
+
+    # Mismatches are caught: a plain restart onto the finer grid, and a factor that
+    # does not refine the coarse domain.
+    @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), file)
+    @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), file; refine = 3)
+end

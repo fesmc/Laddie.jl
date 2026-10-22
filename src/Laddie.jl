@@ -15,6 +15,7 @@ include("advection.jl")
 include("timestepping.jl")
 include("simulationend.jl")
 include("forcing.jl")
+include("ocean_sources.jl")
 include("geometry.jl")
 include("io.jl")
 include("variable.jl")
@@ -87,6 +88,7 @@ export AbstractTimeStepper, FixedDt, AdaptiveDt
 export AbstractCFL, ConservativeCFL, ExactCFL
 export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateEnd
 export AbstractOceanForcing, OceanForcing1D, PerBasinOceanForcing1D, ISOMIPForcing
+export front_ocean_forcing, front_sources, nearest_seed, regrid_ocean, fill_ocean!
 export AbstractIceForcing, PrescribedIceForcing
 export CavityForcing
 

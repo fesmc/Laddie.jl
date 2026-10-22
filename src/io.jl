@@ -624,7 +624,10 @@ $(TYPEDSIGNATURES)
 
 Load H, U, V, T, S from the JLD2 restart file at `path` into all three leapfrog
 levels of the model's `Var` structs, set the clock to the restart time, then call
-`update_secondary_fields!` and one bootstrap integration step.
+`update_secondary_fields!` and one bootstrap integration step.  The saved CPU
+arrays are copied to the model's backend (CPU or GPU) and converted to its
+element type, so a restart written at one precision or on one backend loads on
+another.
 
 Geometry (masks, z_draft) must already be initialised before calling this.
 """
@@ -637,10 +640,16 @@ function init_from_restart!(sim, path::AbstractString)
         # without it keep the dt the simulation was constructed with.
         haskey(f, "dt") && (sim.clock.dt = m.FT(f["dt"]))
         for (name, var) in pairs(_prognostics(m))
-            data = f[String(name)]
-            var.past .= data.past
-            var.present .= data.present
-            var.future .= data.future
+            # Restarts from before the layer thickness was renamed D → H store it as "D".
+            data = f[name == :H && !haskey(f, "H") ? "D" : String(name)]
+            # The file holds plain CPU arrays: convert each level to the model's
+            # element type (FT, or a `Dual` with zero derivatives), then copy it to
+            # the model's device.  A broadcast from a CPU array into a device array
+            # fails to compile on the GPU.
+            for level in (:past, :present, :future)
+                dst = getfield(var, level)
+                copyto!(dst, convert(Array{eltype(dst)}, getfield(data, level)))
+            end
         end
     end
     _bootstrap_leapfrog!(m, sim.clock.dt; _nan_check(sim)...)

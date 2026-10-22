@@ -133,6 +133,21 @@ end
     @test meta2["run"]["t_start_days"] ≈ 1.0 atol = 0.01
     @test meta2["simulation"]["restart"] == restartfile
 
+    # A restart loads into a model of another precision, and a file from before
+    # the D → H rename (thickness stored as "D") still loads.
+    m_ref = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, restart = restartfile)
+    m32 = build_isomip(CPU(); FT = Float32, nx = 20, ny = 10, isomipcond = :warm,
+                       restart = restartfile)
+    @test eltype(m32.model.H.present) == Float32
+    @test m32.model.T.present ≈ Float32.(m_ref.model.T.present)
+    legacy = joinpath(tmpdir, "legacy_D.jld2")
+    Laddie.JLD2.jldopen(restartfile, "r") do f
+        Laddie.JLD2.jldsave(legacy; t_days = f["t_days"], dt = f["dt"], D = f["H"],
+                            U = f["U"], V = f["V"], T = f["T"], S = f["S"])
+    end
+    m_legacy = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, restart = legacy)
+    @test m_legacy.model.H.present == m_ref.model.H.present
+
     # Typed Model: unknown properties now error instead of landing in a Dict
     @test_throws ErrorException m.model.no_such_field
     @test_throws ErrorException (m.model.no_such_field = 1)

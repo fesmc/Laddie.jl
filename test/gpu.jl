@@ -78,3 +78,21 @@ end
     run!(s_g; days = 0.2, verbose = false)
     @test Array(m_g.melt) ≈ m_c.melt
 end
+
+@testset "Restart (GPU): a CPU restart file loads on the device" begin
+    # The restart file holds CPU arrays; loading it used to broadcast them
+    # straight into the device arrays, which does not compile on the GPU.
+    tmp = mktempdir()
+    m_c = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm,
+                       output = OutputConfig(; name = "gpurestart", resultdir = tmp, saveday = 0.5, restday = 0.5))
+    run!(m_c; days = 0.5, verbose = false)
+    file = joinpath(tmp, "gpurestart", "restart_latest.jld2")
+    m_g = build_isomip(gpu_backend; nx = 20, ny = 10, isomipcond = :warm, restart = file)
+    m_r = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, restart = file)
+    @test m_g.clock.time ≈ m_r.clock.time
+    @test Array(m_g.model.H.present) ≈ m_r.model.H.present
+    @test Array(m_g.model.T.present) ≈ m_r.model.T.present
+    run!(m_g; days = 0.2, verbose = false)
+    run!(m_r; days = 0.2, verbose = false)
+    @test Array(m_g.model.melt) ≈ m_r.model.melt
+end

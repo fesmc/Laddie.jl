@@ -145,9 +145,7 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 # behave like v2 rather than v1:
 #   * [`UStarGamTMelting`](@ref): the transfer coefficients scale with the friction velocity,
 #     ``\gamma_T = \Gamma_T u_\star``;
-#   * [`LambertEntrainment`](@ref): what v2 calls `'Gaspar1988'`. Laddie.jl's
-#     [`GasparEntrainment`](@ref) is a different form, which gives a thinner layer and
-#     about 13 % less melt;
+#   * [`GasparEntrainment`](@ref): what v2 calls `'Gaspar1988'`;
 #   * `drho_floor`: v2 floors the density contrast in the entrainment at the same
 #     0.005 kg m⁻³ as its convection;
 #   * an ice temperature of 0 °C (the `PrescribedIceForcing` above): v2 without ice
@@ -170,7 +168,7 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 # One v2 setting is deliberately left off: its `'upstream'` momentum advection, which
 # Laddie.jl has as [`UpstreamMomentumAdvection`](@ref) — the momentum riding on the thickness
 # equation's donor-cell mass fluxes. It has no wall term of its own, so on this geometry, at
-# v2's wall viscosity, the layer runs away at the grounding line (mean `D` 60 m against 10 m,
+# v2's wall viscosity, the layer runs away at the grounding line (mean `H` 60 m against 10 m,
 # peaks above 2 km, melt eight times v2's). It needs `A_h = 50`, five times v2's `Ah`, to
 # hold — and then melts 9 % more than v2, against the 3 % below with the centred scheme
 # Laddie.jl inherited from v1. The divergence takes both the ocean-level sampling and the
@@ -179,7 +177,7 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 
 params = Params(; FT,
     melting = UStarGamTMelting(3.0e-2),
-    entrainment = LambertEntrainment(2.5),
+    entrainment = GasparEntrainment(2.5),
     drho_floor = 0.005 / rho0,
     lateral_viscosity = NonlinearLateralViscosity(10.0),
     front_pressure = TruncatedDepthGradient(),
@@ -190,8 +188,8 @@ params = Params(; FT,
     K_h = 10.0,
     max_detrainment = 1e-3,
     rho0_seawater = rho0, rho_ice = 917.0,
-    D_min = 1.0, u_tide = 0.01, v_cut = 1.0,
-    D_init = 2.0, dT_init = 0.0, dS_init = -0.1,
+    H_min = 1.0, u_tide = 0.01, v_cut = 1.0,
+    H_init = 2.0, dT_init = 0.0, dS_init = -0.1,
 )
 
 # ## Runs

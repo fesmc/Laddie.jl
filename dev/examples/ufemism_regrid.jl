@@ -10,7 +10,7 @@
 #   mask       Laddie.jl mask (0 ocean, 1 land border, 2 grounded, 3 floating)
 #   footprint  where the reference geometry (year 0) had ice — what marks a cell a gap
 #   z_draft, z_bed
-#   melt, speed, D, T, S   LADDIE v2's own fields at that time
+#   melt, speed, H, T, S   LADDIE v2's own fields at that time
 #   area_float             floating area on the mesh (m²), to check the regridding
 
 using NCDatasets
@@ -100,7 +100,7 @@ function regrid_snapshot(path, year, xc, yc)
         melt = at("melt"),                          # m s⁻¹
         speed = hypot.(_per_triangle(Float64.(coalesce.(ds["U_lad"][:, it], NaN)), loc),
                        _per_triangle(Float64.(coalesce.(ds["V_lad"][:, it], NaN)), loc)),
-        D = at("H_lad"), T = at("T_lad"), S = at("S_lad"),
+        H = at("H_lad"), T = at("T_lad"), S = at("S_lad"),
         area_float = sum(ds["A"][:][map(k -> k in (4, 6, 8), ds["mask"][:, it])]),
     )
     close(ds)

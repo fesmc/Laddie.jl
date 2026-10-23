@@ -288,6 +288,74 @@ end
 @inline _at(x::Number, i, j) = x
 @inline _at(x::AbstractArray, i, j) = @inbounds x[i, j]
 
+# The two `tracer_form`s (see `AbstractTracerForm`).  The advective form steps the
+# tracer with the product-rule term `-q ∂H/∂t` in its rhs; the flux form steps the
+# content H·q and divides by the new thickness, so that term drops out.  Masked
+# cells keep their past value under both.
+#
+# Under the flux form the content belongs to the unclamped thickness `H_star` of
+# `_step_thickness_kernel!`, and `_clamp_thickness!` may since have moved H_future
+# away from it.  The clamp then has to move water with its matching tracer, as the
+# preventive `detr_cap` and `ent2` do: volume cut at the cap leaves at the layer's
+# own q, volume added by the floor comes in at ambient `qa`.  Dividing the content
+# by the clamped H instead would scale q by H_star/H_future.
+#
+# The flux form also takes the terms that remove layer water at its own q — the
+# outflow through the cell faces and the cap detrainment, plus for T the frazil
+# formation, together the rate `sink` (m s⁻¹) — at the new level instead of the
+# present one.  rhs carries them as
+# `-sink·q_present`; they are added back to the content and moved into the
+# denominator.  q⁺ is then a weighted mean of q⁻ and the waters coming in, with
+# nonnegative weights at any step: explicit, a thin cell that a thick neighbour
+# flushes several times over in one step would lose more tracer than it holds.
+@inline _thickness_tendency(::AdvectiveTracerForm, q, dHdt) = -q * dHdt
+@inline _thickness_tendency(::FluxTracerForm, q, dHdt) = zero(q)
+@inline _tracer_update(::AdvectiveTracerForm, q_past, q_present, rhs, sink, H1, H_past, H_future, H_star, qa, tmask, dt) =
+    q_past + _safe_div(rhs, H1) * tmask * dt
+@inline function _tracer_update(::FluxTracerForm, q_past, q_present, rhs, sink, H1, H_past, H_future, H_star, qa, tmask, dt)
+    content = H_past * q_past + (rhs + sink * q_present) * dt
+    added = max(H_future - H_star, zero(H_star))   # by the floor, at qa
+    return ifelse(
+        tmask > 0,
+        _safe_div(content + added * qa, max(H_future, H_star) + sink * dt),
+        q_past,
+    )
+end
+
+# The outflow rate of each cell (m s⁻¹), the volume leaving through its faces per unit
+# area: the outgoing half of the face fluxes of `_upwind_advection_T_kernel!`, whose
+# donor is the cell itself.  Only the flux form needs it (`_tracer_update`); it goes
+# into `Hq`, which the tracer's own advection term has consumed by then.
+_outflow_rate!(m, ::AdvectiveTracerForm) = nothing
+function _outflow_rate!(m, ::FluxTracerForm)
+    launch_interior!(
+        _outflow_rate_kernel!,
+        m.Hq,
+        m.H.present,
+        m.U.present,
+        m.V.present,
+        m.umask,
+        m.vmask,
+        m.dx,
+        m.dy,
+    )
+    return
+end
+
+@kernel function _outflow_rate_kernel!(out, @Const(H), @Const(U), @Const(V), @Const(umask), @Const(vmask), dx, dy)
+    dx, dy = _val(dx), _val(dy)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
+    @inbounds begin
+        z = zero(dx)
+        out[i, j] =
+            H[i, j] * (
+                (max(V[i, j], z) * vmask[i, j] - min(V[i, j-1], z) * vmask[i, j-1]) / dy +
+                (max(U[i, j], z) * umask[i, j] - min(U[i-1, j], z) * umask[i-1, j]) / dx
+            )
+    end
+end
+
 @kernel function _step_temperature_kernel!(
     out,
     @Const(T_past),
@@ -301,7 +369,12 @@ end
     @Const(Tb),
     @Const(lT),
     @Const(H1),
+    @Const(H_past),
+    @Const(H_future),
+    @Const(convH),
+    @Const(outflow),
     @Const(tmask),
+    tracer_form,
     gamT,
     K_h,
     conv2,
@@ -315,7 +388,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         rhs =
-            -T_present[i, j] * dHdt[i, j] +                 # thickness-tendency correction
+            _thickness_tendency(tracer_form, T_present[i, j], dHdt[i, j]) + # thickness-tendency correction
             cT[i, j] +                                      # horizontal advection
             nentr[i, j] * Ta[i, j] +                        # entrainment of ambient water at Ta
             -detr_cap[i, j] * T_present[i, j] +             # cap detrainment of layer water at T
@@ -324,7 +397,14 @@ end
             K_h * lT[i, j] +                                # horizontal diffusion
             -(T_past[i, j] - Ta[i, j]) * _at(conv2, i, j) + # convective restoring to ambient
             _at(frazil, i, j) * (L / c_p - T_present[i, j]) # frazil: latent heat in, water out at T
-        out[i, j] = T_past[i, j] + _safe_div(rhs, H1[i, j]) * tmask[i, j] * dt
+        # The unclamped thickness, exactly as `_step_thickness_kernel!` forms it.
+        H_star = H_past[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j] - detr_cap[i, j] - _at(frazil, i, j)) * dt
+        # Frazil removes layer water at T, so it is part of the sink.
+        out[i, j] = _tracer_update(
+            tracer_form, T_past[i, j], T_present[i, j], rhs,
+            outflow[i, j] + detr_cap[i, j] + _at(frazil, i, j),
+            H1[i, j], H_past[i, j], H_future[i, j], H_star, Ta[i, j], tmask[i, j], dt,
+        )
     end
 end
 
@@ -339,24 +419,35 @@ end
     @Const(Sa),
     @Const(lS),
     @Const(H1),
+    @Const(H_past),
+    @Const(H_future),
+    @Const(convH),
+    @Const(melt),
+    @Const(outflow),
     @Const(tmask),
+    tracer_form,
     K_h,
     conv2,
+    frazil,
     dt,
 )
-    K_h, conv2, dt = _val(K_h), _val(conv2), _val(dt)
+    K_h, conv2, frazil, dt = _val(K_h), _val(conv2), _val(frazil), _val(dt)
     i, j = @index(Global, NTuple)
     @inbounds begin
         rhs =
-            -S_present[i, j] * dHdt[i, j] +                 # thickness-tendency correction
+            _thickness_tendency(tracer_form, S_present[i, j], dHdt[i, j]) + # thickness-tendency correction
             cS[i, j] +                                      # horizontal advection
             nentr[i, j] * Sa[i, j] +                        # entrainment of ambient water at Sa
             -detr_cap[i, j] * S_present[i, j] +             # cap detrainment of layer water at S
             K_h * lS[i, j] +                                # horizontal diffusion
             -(S_past[i, j] - Sa[i, j]) * _at(conv2, i, j)   # convective restoring to ambient
-        # No frazil term: frazil leaves its salt behind, and the thickness-tendency
-        # correction concentrates it in the thinner layer (brine rejection).
-        out[i, j] = S_past[i, j] + _safe_div(rhs, H1[i, j]) * tmask[i, j] * dt
+        # No frazil term, and no frazil in the sink: frazil leaves its salt behind,
+        # which the thinner layer then holds (brine rejection).
+        H_star = H_past[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j] - detr_cap[i, j] - _at(frazil, i, j)) * dt
+        out[i, j] = _tracer_update(
+            tracer_form, S_past[i, j], S_present[i, j], rhs, outflow[i, j] + detr_cap[i, j],
+            H1[i, j], H_past[i, j], H_future[i, j], H_star, Sa[i, j], tmask[i, j], dt,
+        )
     end
 end
 
@@ -445,6 +536,7 @@ function step_temperature!(m, dt)
     launch!(_product_kernel!, m.Hq, m.H.present, m.T.present)
     upwind_advection_T(m.adv, m, m.Hq)
     laplace_T(m.lap, m, m.T.past)
+    _outflow_rate!(m, m.params.tracer_form)
     args = (
         m.T.future,
         m.T.past,
@@ -458,7 +550,12 @@ function step_temperature!(m, dt)
         m.Tb,
         m.lap,
         m.H.present,
+        m.H.past,
+        m.H.future,
+        m.convH,
+        m.Hq,
         m.tmask,
+        m.params.tracer_form,
     )
     gamT = first(_exchange_velocities(m))
     launch!(_step_temperature_kernel!, args..., gamT, m.K_h, m.conv2, m.frazil, m.L, m.c_p, dt)
@@ -468,6 +565,7 @@ function step_salinity!(m, dt)
     launch!(_product_kernel!, m.Hq, m.H.present, m.S.present)
     upwind_advection_T(m.adv, m, m.Hq)
     laplace_T(m.lap, m, m.S.past)
+    _outflow_rate!(m, m.params.tracer_form)
     args = (
         m.S.future,
         m.S.past,
@@ -479,9 +577,15 @@ function step_salinity!(m, dt)
         m.Sa,
         m.lap,
         m.H.present,
+        m.H.past,
+        m.H.future,
+        m.convH,
+        m.melt,
+        m.Hq,
         m.tmask,
+        m.params.tracer_form,
     )
-    launch!(_step_salinity_kernel!, args..., m.K_h, m.conv2, dt)
+    launch!(_step_salinity_kernel!, args..., m.K_h, m.conv2, m.frazil, dt)
     return
 end
 
@@ -495,7 +599,8 @@ end
 # H_min floor, in one pass.  Both are enforced before the step, by `detr_cap` and
 # `ent2` (`update_entrainment!`), so this is a safety net: it binds only where the
 # first guess there misses the stepped H — in the bootstrap step, which spans dt
-# rather than the 2·dt both are computed for, and by rounding.
+# rather than the 2·dt both are computed for, and by rounding.  Under
+# `FluxTracerForm` the tracer step accounts for what it moves (`_tracer_update`).
 function _clamp_thickness!(m)
     launch!(
         _clamp_thickness_kernel!,

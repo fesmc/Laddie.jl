@@ -172,6 +172,9 @@ term ``\dot f\,(L/c_p - T)`` (zero unless `frazil_ice = RelaxedFrazilIce`, see
 ```
 
 with `cT` ``=-\nabla\!\cdot(H\mathbf{U}T)``, then ``T^{+} = T^{p} + (\mathrm{rhs}/H)\,\Delta t``.
+That is the default [`AdvectiveTracerForm`](@ref). Under [`FluxTracerForm`](@ref)
+the ``-T\,\partial_t H`` term is left out of `rhs` and the content is stepped
+instead, ``T^{+} = (H^{p}T^{p} + \mathrm{rhs}\,\Delta t)/H^{+}``.
 
 ### (5) Salt
 

@@ -17,6 +17,10 @@
         Params(; FT, max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0))),
         Params(; FT, frazil_ice = RelaxedFrazilIce(FT(3600.0)),
                convection_scheme = ClampDensity(FT(0.005))),
+        Params(; FT, tracer_form = FluxTracerForm(),
+               max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0))),
+        Params(; FT, tracer_form = FluxTracerForm(), frazil_ice = RelaxedFrazilIce(FT(3600.0)),
+               convection_scheme = ClampDensity(FT(0.005))),
     )
     for params in configs
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
@@ -44,23 +48,21 @@
         V_ref = m.model.V.past .+
             Laddie.div0(rhs_V, Laddie.jp_t(m.model, m.model.H.present)) .* m.model.vmask .* dt
 
-        rhs_T = .- tracer_thickness_tendency(m.model, m.model.T.present) .+
-                   tracer_advection(m.model, m.model.T.present) .+
+        rhs_T =    tracer_advection(m.model, m.model.T.present) .+
                    tracer_entrainment(m.model, m.model.Ta) .-
                    tracer_cap_detrainment(m.model, m.model.T.present) .+
                    T_ice_ocean_exchange(m.model) .+
                    tracer_diffusion(m.model, m.model.T.past) .-
                    tracer_convection(m.model, m.model.T.past, m.model.Ta) .+
                    T_frazil(m.model)
-        T_ref = m.model.T.past .+ Laddie.div0(rhs_T, m.model.H.present) .* m.model.tmask .* dt
+        T_ref = tracer_step(m.model, m.model.T, rhs_T, dt; extra_sink = frazil_field(m.model))
 
-        rhs_S = .- tracer_thickness_tendency(m.model, m.model.S.present) .+
-                   tracer_advection(m.model, m.model.S.present) .+
+        rhs_S =    tracer_advection(m.model, m.model.S.present) .+
                    tracer_entrainment(m.model, m.model.Sa) .-
                    tracer_cap_detrainment(m.model, m.model.S.present) .+
                    tracer_diffusion(m.model, m.model.S.past) .-
                    tracer_convection(m.model, m.model.S.past, m.model.Sa)
-        S_ref = m.model.S.past .+ Laddie.div0(rhs_S, m.model.H.present) .* m.model.tmask .* dt
+        S_ref = tracer_step(m.model, m.model.S, rhs_S, dt)
 
         Laddie.step_u_momentum!(m.model, dt)
         Laddie.step_v_momentum!(m.model, dt)

@@ -35,6 +35,13 @@ inside.
 
 Only the momentum advection is affected; tracer advection is upwind either way.
 
+The **tracer equations** can be stepped in two forms, `Params(; tracer_form)`:
+[`AdvectiveTracerForm`](@ref), the default, steps ``T`` and ``S`` themselves with
+the product-rule term ``-q\,\partial_t H``, as Python LADDIE v1.x does;
+[`FluxTracerForm`](@ref) steps the contents ``HT`` and ``HS`` and divides by the
+new thickness, as LADDIE v2 does. The flux form cannot amplify a mismatch between
+the thickness and tracer budgets in a thin layer.
+
 ## Time integration
 
 The prognostic variables advance with a **leapfrog** scheme. Each variable

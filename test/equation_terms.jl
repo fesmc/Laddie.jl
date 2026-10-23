@@ -33,7 +33,7 @@
 #   K_h      horizontal diffusivity [m² s⁻¹]
 #   γT      turbulent heat transfer coefficient [m s⁻¹]
 # ============================================================================
-using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, ip_t, jp_t,
+using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, ip_t, jp_t,
     im_u, jm_v, _safe_sqrt, _front_pgf_weight, _front_drho_weight, momentum_advection_U, momentum_advection_V,
     laplace_U, laplace_V, laplace_T, upwind_advection_T
 
@@ -114,6 +114,27 @@ using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, 
 @inline tracer_entrainment(m, qa) = m.nentr .* qa
 # d_cap·q  (cap detrainment of layer water; see `detr_cap`)
 @inline tracer_cap_detrainment(m, q) = m.detr_cap .* q
+
+# One tracer step of the Var `q` from `rhs`, the tracer terms without q·∂H/∂t, in
+# the model's `tracer_form`: the advective form adds that term and divides by
+# H, the flux form steps the content H·q and divides by the new thickness.
+tracer_step(m, q, rhs, dt) = tracer_step(m.params.tracer_form, m, q, rhs, dt)
+tracer_step(::AdvectiveTracerForm, m, q, rhs, dt) =
+    q.past .+ Laddie.div0(rhs .- tracer_thickness_tendency(m, q.present), m.H.present) .*
+              m.tmask .* dt
+# The flux form divides by the stepped thickness, before `_clamp_thickness!`, and
+# takes the terms that remove water at the layer's own q at the new level: the
+# outflow through the faces and the cap detrainment.
+function tracer_step(::FluxTracerForm, m, q, rhs, dt)
+    z = zero(eltype(m.U.present))
+    U, V = m.U.present, m.V.present
+    outflow = m.H.present .* (
+        (max.(V, z) .* m.vmask .- min.(yp1(V), z) .* yp1(m.vmask)) ./ m.dy .+
+        (max.(U, z) .* m.umask .- min.(xp1(U), z) .* xp1(m.umask)) ./ m.dx)
+    sink = outflow .+ m.detr_cap
+    content = m.H.past .* q.past .+ (rhs .+ sink .* q.present) .* dt
+    return ifelse.(m.tmask .> 0, Laddie.div0(content, m.H.future .+ sink .* dt), q.past)
+end
 # Kh·∇²q  (horizontal diffusion)
 @inline tracer_diffusion(m, q_past) = m.K_h .* laplace_T(similar(q_past), m, q_past)
 # (q_past − qa)·conv2  (convective relaxation, RelaxToAmbient only)

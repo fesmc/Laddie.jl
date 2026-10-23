@@ -221,6 +221,28 @@ end
     @test all(m.H.future[.!act] .== 0)
 end
 
+@testset "RelativeMaxLayerThickness: fraction of the water column, with a floor" begin
+    @test RelativeMaxLayerThickness(0.8).H_floor === 0.0
+    @test RelativeMaxLayerThickness(0.8, 10).H_floor === 10.0
+    @test Params(; FT = Float32, max_layer_thickness = RelativeMaxLayerThickness(0.8, 10.0)).max_layer_thickness ===
+          RelativeMaxLayerThickness(0.8f0, 10.0f0)
+    mk = zeros(Int, 12, 8)
+    mk[1, :] .= 1; mk[end, :] .= 1; mk[:, 1] .= 1; mk[:, end] .= 1
+    mk[2:3, 2:7] .= 2; mk[4:10, 2:7] .= 3; mk[11, 2:7] .= 0
+    z_draft = fill(FT(-300.0), size(mk))
+    z_bed = fill(FT(-310.0), size(mk))
+    z_bed[4:6, :] .= FT(-302.0)                  # a 2 m water column under part of the shelf
+    grid = Grid(mk, z_draft, 1000.0, 1000.0; z_bed, domain_cropping = NoDomainCropping())
+    act = mk .== 3
+    capped(mlt) = (m = Model(grid; forcing = ISOMIPForcing(:warm; FT), params = Params(; FT, max_layer_thickness = mlt));
+                   m.H.future .= FT(80.0) .* m.tmask; Laddie._clamp_thickness!(m); m.H.future)
+    thin = falses(size(mk)); thin[4:6, :] .= true
+    H = capped(RelativeMaxLayerThickness(0.8))
+    @test all(H[act .& thin] .≈ 1.6) && all(H[act .& .!thin] .≈ 8)
+    H = capped(RelativeMaxLayerThickness(0.8, 5.0))
+    @test all(H[act .& thin] .≈ 5) && all(H[act .& .!thin] .≈ 8)   # the floor only where 0.8·wc < 5 m
+end
+
 @testset "ClampDensity convection scheme: build and short run" begin
     params = Params(; FT, convection_scheme = ClampDensity(FT(0.005)))
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
@@ -306,6 +328,54 @@ end
     # Float32 promotion follows Params, like every other parameterization.
     @test Params(; FT = Float32, coriolis = CoriolisParameter0D()).coriolis isa
           CoriolisParameter0D{Float32}
+end
+
+@testset "Tracer form: advective (v1) vs flux (v2)" begin
+    @test Params().tracer_form isa AdvectiveTracerForm
+    @test Params(; FT, tracer_form = FluxTracerForm()).tracer_form isa FluxTracerForm
+
+    # Both forms discretise the same budget, but the advective one carries a larger
+    # time-step error: on 2-day warm ISOMIP+, cutting dt from 210 s to 52.5 s moved
+    # the mean melt by 7.3 % under the advective form and by 0.36 % under the flux
+    # form, and the two forms meet as dt shrinks (5.22 vs 5.35 m/yr at 52.5 s).
+    melt(tf, dt) = (m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, dt,
+                                     params = Params(; FT, tracer_form = tf));
+                    run!(m; days = 2.0, verbose = false); meltstats(m)[2])
+    flux = melt(FluxTracerForm(), 210.0), melt(FluxTracerForm(), 52.5)
+    adv = melt(AdvectiveTracerForm(), 210.0), melt(AdvectiveTracerForm(), 52.5)
+    @test abs(flux[1] - flux[2]) / flux[2] < 0.01
+    @test abs(adv[1] - adv[2]) / adv[2] > 5 * abs(flux[1] - flux[2]) / flux[2]
+    @test abs(flux[2] - adv[2]) / adv[2] < 0.05
+end
+
+@testset "Flux tracer form: the clamp moves water with its tracer" begin
+    upd(H_future, H_star; q_past = 2.0, H_past = 4.0, rhs = 0.5, qa = 7.0, tmask = 1.0, dt = 2.0) =
+        Laddie._tracer_update(FluxTracerForm(), q_past, q_past, rhs, 0.0, NaN, H_past, H_future, H_star, qa, tmask, dt)
+    content = 4.0 * 2.0 + 0.5 * 2.0                     # H⁻q⁻ + rhs·dt = 9
+    @test upd(6.0, 6.0) ≈ content / 6                   # unclamped: content / H⁺
+    @test upd(3.0, 6.0) ≈ content / 6                   # cut at the cap: q unchanged
+    @test upd(8.0, 6.0) ≈ (content + 2 * 7.0) / 8       # raised by the floor: 2 m of ambient
+    @test upd(1.0, -0.5) ≈ (content + 1.5 * 7.0) / 1    # H* below zero: as v2's entr_dmin
+    @test upd(3.0, 6.0; tmask = 0.0) == 2.0             # masked: q⁻ kept
+    # The cut leaves the old relation q = content / H*, whatever the clamp's size.
+    @test upd(1.0, 50.0) ≈ content / 50
+end
+
+@testset "Flux tracer form: outflow taken at the new level" begin
+    # A 1 m cell flushed by fresh water at 50 times its volume per step: inflow
+    # equals outflow, so H stays 1 m.  Explicit, the outflow of the present salt
+    # would leave a negative content; implicit, q⁺ is the mean of the old and the
+    # incoming water, weighted by their volumes.
+    sink, dt, q = 50.0, 1.0, 34.0
+    rhs = sink * 0.0 - sink * q                           # inflow at q = 0, outflow at q
+    upd(; kw...) = Laddie._tracer_update(FluxTracerForm(), q, q, rhs, sink, NaN, 1.0, 1.0, 1.0,
+                                         34.5, 1.0, dt; kw...)
+    @test upd() ≈ q / (1 + sink * dt)                     # 1 m of old water, 50 m of fresh
+    @test 0 <= upd() <= q
+    @test (1.0 * q + rhs * dt) / 1.0 < 0                  # what the explicit update gives
+    # With no outflow the update is the explicit one.
+    @test Laddie._tracer_update(FluxTracerForm(), 2.0, 3.0, 0.5, 0.0, NaN, 4.0, 4.5, 4.5, 7.0, 1.0, 2.0) ≈
+          (4.0 * 2.0 + 0.5 * 2.0) / 4.5
 end
 
 @testset "Momentum advection: centred (v1) vs upstream (v2)" begin

@@ -9,7 +9,8 @@ instance as `Params(; momentum_advection = ...)`:
 [`CentredMomentumAdvection`](@ref) (the default) or
 [`UpstreamMomentumAdvection`](@ref).
 
-Tracer advection is always upwind and is unaffected.
+Tracer advection is always upwind and is unaffected; for the form of the tracer
+equations see [`AbstractTracerForm`](@ref).
 """
 abstract type AbstractMomentumAdvection end
 
@@ -61,3 +62,66 @@ order `|u|·Δ/2`, which at 1 km and 0.1 m s⁻¹ is ≈ 50 m² s⁻¹, far abov
 Select via `Params(; momentum_advection = UpstreamMomentumAdvection())`.
 """
 struct UpstreamMomentumAdvection <: AbstractMomentumAdvection end
+
+"""
+$(TYPEDEF)
+
+Abstract supertype for the form in which the temperature and salinity equations
+are stepped.  Pass a concrete instance as `Params(; tracer_form = ...)`:
+[`AdvectiveTracerForm`](@ref) (the default) or [`FluxTracerForm`](@ref).
+
+Both integrate the same flux-form budget `∂(Hq)/∂t = -∇·(H u q) + …`
+and differ only in what they step: the tracer `q` itself, or its content `H q`.
+"""
+abstract type AbstractTracerForm end
+
+"""
+$(TYPEDEF)
+
+Step the tracer itself (the default), as Python LADDIE v1.x does: the budget is
+expanded by the product rule into `H ∂q/∂t = … - q ∂H/∂t`, with `∂H/∂t`
+taken from the thickness step just made, and
+
+```
+q⁺ = q⁻ + 2Δt · rhs / Hⁿ.
+```
+
+The `- q ∂H/∂t` term cancels the volume sources only as far as the discrete
+`∂H/∂t` matches them in the same step.  It does not wherever the thickness
+step is clamped or restarted, and the mismatch is then divided by `H`: in thin
+layers this can drive `q` far outside the range of the waters that make it up.
+
+Select via `Params(; tracer_form = AdvectiveTracerForm())` (the default).
+"""
+struct AdvectiveTracerForm <: AbstractTracerForm end
+
+"""
+$(TYPEDEF)
+
+Step the tracer content, as LADDIE v2 does (`laddie_tracers.f90`), and recover the
+tracer by dividing by the new thickness:
+
+```
+(Hq)⁺ = H⁻ q⁻ + 2Δt · rhs,     q⁺ = (Hq)⁺ / H⁺,
+```
+
+where `rhs` is the advective tracer `rhs` without its `- q ∂H/∂t` term.  The
+sources then enter the tracer only in proportion to the volume they bring, so a
+mismatch between the thickness and tracer budgets cannot be amplified by a thin
+layer.
+
+Where the clamp after the thickness step moves `H⁺` off the stepped value `H*`,
+the moved water carries its matching tracer, as LADDIE v2's preventive bounds do:
+volume cut at the upper bound leaves at the layer's own `q`, volume added by the
+`H_min` floor comes in at the ambient `q_a`,
+
+```
+q⁺ = ((Hq)⁺ + max(H⁺ - H*, 0) q_a) / max(H⁺, H*).
+```
+
+The clamp binds mostly in the bootstrap step, where `ent2` and the cap
+detrainment, sized for a 2Δt step, do only half their work.
+
+Select via `Params(; tracer_form = FluxTracerForm())`.
+"""
+struct FluxTracerForm <: AbstractTracerForm end

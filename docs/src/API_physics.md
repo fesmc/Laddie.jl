@@ -71,6 +71,9 @@ NoWallAdvection
 AbstractMomentumAdvection
 CentredMomentumAdvection
 UpstreamMomentumAdvection
+AbstractTracerForm
+AdvectiveTracerForm
+FluxTracerForm
 ```
 
 ## Lateral viscosity

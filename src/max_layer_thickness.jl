@@ -78,12 +78,22 @@ end
 """
 $(TYPEDEF)
 
-Cap the layer thickness at a fraction of the local water-column depth,
-`H <= f_H_max * (z_draft - z_bed)`, leaving some ambient column beneath the
-plume.  Like [`TopographicMaxLayerThickness`](@ref) this only bites when a bed
-elevation `z_bed` was given to [`Grid`](@ref).
+Cap the layer thickness at a fraction of the local water-column depth, but never
+below `H_floor`: `H <= max(f_H_max * (z_draft - z_bed), H_floor)`.  The fraction
+leaves some ambient column beneath the plume.  Like
+[`TopographicMaxLayerThickness`](@ref) this only bites when a bed elevation `z_bed`
+was given to [`Grid`](@ref).
 
-Select via `Params(; max_layer_thickness = RelativeMaxLayerThickness(0.8))`.
+`H_floor` is for cells where the draft nearly meets the bed.  A cell's water column
+is the vertical distance between its mean draft and its mean bed, as if the draft
+were horizontal; where the two nearly meet, the draft is unlikely to be, and a plume
+can be thicker than that mean distance.  Capped at a few metres, such a cell also
+leaves the layer almost no room between `H_min` and the cap, and the cap
+detrainment and the `H_min` top-up then have to pass all the water that neighbours
+advect into it through a layer of about a metre.
+
+Select via `Params(; max_layer_thickness = RelativeMaxLayerThickness(0.8))`, or
+`RelativeMaxLayerThickness(0.8, 10.0)` for a 10 m floor.
 
 # Fields
 $(TYPEDFIELDS)
@@ -91,6 +101,12 @@ $(TYPEDFIELDS)
 @kwdef struct RelativeMaxLayerThickness{FT} <: AbstractMaxLayerThickness
     "fraction of the local water column (default `4/5`)"
     f_H_max::FT = 4/5
+    "lowest value of the cap, where the water column is thin (m, default `0`, i.e. none)"
+    H_floor::FT = zero(f_H_max)
+end
+function RelativeMaxLayerThickness(f_H_max::Real, H_floor::Real = zero(f_H_max))
+    f, h = promote(f_H_max, H_floor)
+    return RelativeMaxLayerThickness{typeof(f)}(f, h)
 end
 
 # Per-cell upper bound on the thickness `H`: the target of the cap detrainment in
@@ -102,7 +118,7 @@ end
 @inline _max_layer_thickness(c::AbsoluteMaxLayerThickness, H, z_draft, z_bed, tmask) =
     min(H, _val(c.H_max)) * tmask
 @inline _max_layer_thickness(c::RelativeMaxLayerThickness, H, z_draft, z_bed, tmask) =
-    min(H, _val(c.f_H_max) * (z_draft - z_bed)) * tmask
+    min(H, max(_val(c.f_H_max) * (z_draft - z_bed), _val(c.H_floor))) * tmask
 
 # The caps reach `_net_entrainment_kernel!` and `_clamp_thickness_kernel!` whole, so their field has to be adapted
 # with the other kernel arguments: a traced parameter (Reactant) becomes a device

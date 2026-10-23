@@ -604,6 +604,12 @@ Compute entrainment/detrainment rates and assemble the net entrainment
 `ent2` is the minimum additional entrainment rate needed to prevent H falling
 below `H_min` after the upcoming thickness step; it is computed here (before
 stepping) from `H.past`, matching the reference Python LADDIE implementation.
+
+`detr_cap` is the mirror image for the upper bound `Params.max_layer_thickness`:
+the detrainment rate that brings the same first guess of `H` down to the cap, as
+LADDIE v2 does (`laddie_thickness.f90`).  It removes layer water at the layer's own
+T, S and velocity, so it thins the layer without changing its tracers or momentum
+(see the step kernels in `numerics.jl`); it is zero wherever the cap does not bind.
 """
 function update_entrainment!(m, dt)
     _compute_entrainment!(m, m.entrainment)
@@ -613,12 +619,16 @@ function update_entrainment!(m, dt)
         _net_entrainment_kernel!,
         m.ent2,
         m.nentr,
+        m.detr_cap,
         m.H.past,
         m.convH,
         m.melt,
         m.entr,
         m.detr,
+        m.z_draft,
+        m.z_bed,
         m.tmask,
+        m.params.max_layer_thickness,
         m.H_min,
         FT(2) * dt,
     )
@@ -628,18 +638,23 @@ end
 @kernel function _net_entrainment_kernel!(
     ent2,
     nentr,
+    detr_cap,
     @Const(H_past),
     @Const(convH),
     @Const(melt),
     @Const(entr),
     @Const(detr),
+    @Const(z_draft),
+    @Const(z_bed),
     @Const(tmask),
+    max_layer_thickness,
     H_min,
     dt2,
 )
     H_min, dt2 = _val(H_min), _val(dt2)
     i, j = @index(Global, NTuple)
     @inbounds begin
+        FT = typeof(H_min)
         ent2[i, j] =
             max(
                 zero(H_min),
@@ -647,6 +662,16 @@ end
                 (convH[i, j] + melt[i, j] + entr[i, j] - detr[i, j]),
             ) * tmask[i, j]
         nentr[i, j] = entr[i, j] + ent2[i, j] - detr[i, j]
+        # First guess of the stepped H, then the excess over the cap.  The floor
+        # wins where the cap is below H_min, as in `_clamp_thickness_kernel!`.
+        # Masked cells may sit under a bed of -Inf, hence the `ifelse`.
+        H_star = H_past[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j]) * dt2
+        H_top = max(
+            _max_layer_thickness(max_layer_thickness, H_star, z_draft[i, j], z_bed[i, j], one(FT)),
+            H_min,
+        )
+        detr_cap[i, j] =
+            ifelse(tmask[i, j] > 0, max(zero(FT), (H_star - H_top) / dt2), zero(FT))
     end
 end
 

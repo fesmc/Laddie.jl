@@ -131,6 +131,7 @@ end
     @Const(convH),
     @Const(melt),
     @Const(nentr),
+    @Const(detr_cap),
     @Const(tmask),
     dt,
 )
@@ -139,7 +140,7 @@ end
     @inbounds out[i, j] = ifelse(
         iszero(tmask[i, j]),
         H0[i, j],
-        H0[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j]) * dt,
+        H0[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j] - detr_cap[i, j]) * dt,
     )
 end
 
@@ -154,6 +155,7 @@ end
     @Const(dzdx),
     @Const(V1),
     @Const(detr),
+    @Const(detr_cap),
     @Const(cU),
     @Const(lU),
     @Const(tmask),
@@ -177,6 +179,7 @@ end
         jm1 = j - 1
         tmip = tmask[i, j] + tmask[ip1, j]
         ip_dHdt = _safe_div(dHdt[i, j] + dHdt[ip1, j], tmip)
+        ip_detr_cap = _safe_div(detr_cap[i, j] + detr_cap[ip1, j], tmip)
         ip_H_drho = _safe_div(Hdrho[i, j] + Hdrho[ip1, j], tmip)
         ip_H_dzdx = _safe_div(Hdrho[i, j] * dzdx[i, j] + Hdrho[ip1, j] * dzdx[ip1, j], tmip)
         ip_H = _safe_div(H1[i, j] + H1[ip1, j], tmip)
@@ -204,7 +207,8 @@ end
             fu[i, j] * ip_H_Vjm +                                              # Coriolis
             -C_d * U1[i, j] * _safe_sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
             lU[i, j] +                                                   # horizontal viscosity
-            -detr[i, j] * U1[i, j]                                     # momentum loss by detrainment
+            -detr[i, j] * U1[i, j] +                                   # momentum loss by detrainment
+            -ip_detr_cap * U1[i, j]                                    # cap detrainment, cancels its share of dHdt
         out[i, j] = Up[i, j] + _safe_div(rhs, ip_H) * umask[i, j] * dt
     end
 end
@@ -220,6 +224,7 @@ end
     @Const(dzdy),
     @Const(U1),
     @Const(detr),
+    @Const(detr_cap),
     @Const(cV),
     @Const(lV),
     @Const(tmask),
@@ -243,6 +248,7 @@ end
         im1 = i - 1
         tmjp = tmask[i, j] + tmask[i, jp1]
         jp_dHdt = _safe_div(dHdt[i, j] + dHdt[i, jp1], tmjp)
+        jp_detr_cap = _safe_div(detr_cap[i, j] + detr_cap[i, jp1], tmjp)
         jp_H_drho = _safe_div(Hdrho[i, j] + Hdrho[i, jp1], tmjp)
         jp_H_dzdy = _safe_div(Hdrho[i, j] * dzdy[i, j] + Hdrho[i, jp1] * dzdy[i, jp1], tmjp)
         jp_H = _safe_div(H1[i, j] + H1[i, jp1], tmjp)
@@ -263,7 +269,8 @@ end
             -fv[i, j] * jp_H_Uim +                                             # Coriolis
             -C_d * V1[i, j] * _safe_sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
             lV[i, j] +                                                   # horizontal viscosity
-            -detr[i, j] * V1[i, j]                                     # momentum loss by detrainment
+            -detr[i, j] * V1[i, j] +                                   # momentum loss by detrainment
+            -jp_detr_cap * V1[i, j]                                    # cap detrainment, cancels its share of dHdt
         out[i, j] = Vp[i, j] + _safe_div(rhs, jp_H) * vmask[i, j] * dt
     end
 end
@@ -281,6 +288,7 @@ end
     @Const(dHdt),
     @Const(cT),
     @Const(nentr),
+    @Const(detr_cap),
     @Const(Ta),
     @Const(melt),
     @Const(Tb),
@@ -299,6 +307,7 @@ end
             -T_present[i, j] * dHdt[i, j] +                 # thickness-tendency correction
             cT[i, j] +                                      # horizontal advection
             nentr[i, j] * Ta[i, j] +                        # entrainment of ambient water at Ta
+            -detr_cap[i, j] * T_present[i, j] +             # cap detrainment of layer water at T
             melt[i, j] * Tb[i, j] +                         # meltwater input at freezing point
             -_at(gamT, i, j) * (T_present[i, j] - Tb[i, j]) + # turbulent ice-ocean heat exchange
             K_h * lT[i, j] +                                # horizontal diffusion
@@ -314,6 +323,7 @@ end
     @Const(dHdt),
     @Const(cS),
     @Const(nentr),
+    @Const(detr_cap),
     @Const(Sa),
     @Const(lS),
     @Const(H1),
@@ -329,6 +339,7 @@ end
             -S_present[i, j] * dHdt[i, j] +                 # thickness-tendency correction
             cS[i, j] +                                      # horizontal advection
             nentr[i, j] * Sa[i, j] +                        # entrainment of ambient water at Sa
+            -detr_cap[i, j] * S_present[i, j] +             # cap detrainment of layer water at S
             K_h * lS[i, j] +                                # horizontal diffusion
             -(S_past[i, j] - Sa[i, j]) * _at(conv2, i, j)   # convective restoring to ambient
         out[i, j] = S_past[i, j] + _safe_div(rhs, H1[i, j]) * tmask[i, j] * dt
@@ -343,6 +354,7 @@ function step_thickness!(m, dt)
         m.convH,
         m.melt,
         m.nentr,
+        m.detr_cap,
         m.tmask,
         dt,
     )
@@ -364,6 +376,7 @@ function step_u_momentum!(m, dt)
         m.dzdx,
         m.V.present,
         m.detr,
+        m.detr_cap,
         m.adv,
         m.lap,
         m.tmask,
@@ -395,6 +408,7 @@ function step_v_momentum!(m, dt)
         m.dzdy,
         m.U.present,
         m.detr,
+        m.detr_cap,
         m.adv,
         m.lap,
         m.tmask,
@@ -421,6 +435,7 @@ function step_temperature!(m, dt)
         m.dHdt,
         m.adv,
         m.nentr,
+        m.detr_cap,
         m.Ta,
         m.melt,
         m.Tb,
@@ -443,6 +458,7 @@ function step_salinity!(m, dt)
         m.dHdt,
         m.adv,
         m.nentr,
+        m.detr_cap,
         m.Sa,
         m.lap,
         m.H.present,
@@ -459,7 +475,10 @@ end
 end
 
 # The upper bound of `max_layer_thickness` (see `_max_layer_thickness`), then the
-# H_min floor, in one pass.
+# H_min floor, in one pass.  Both are enforced before the step, by `detr_cap` and
+# `ent2` (`update_entrainment!`), so this is a safety net: it binds only where the
+# first guess there misses the stepped H — in the bootstrap step, which spans dt
+# rather than the 2·dt both are computed for, and by rounding.
 function _clamp_thickness!(m)
     launch!(
         _clamp_thickness_kernel!,

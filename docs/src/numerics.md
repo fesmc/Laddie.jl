@@ -184,7 +184,8 @@ Several limiters guard against numerical blow-up in extreme conditions:
 - **Tracer bounds** (`Params.T_min` … `S_max`) keep ``T`` and ``S`` in a plausible
   range; note that they also hide a diverging run from the blow-up check.
 - An optional **maximum layer thickness** (`Params.max_layer_thickness`), off by
-  default; read its warning before enabling it.
+  default, enforced the same way through detrainment of layer water at its own
+  ``T``, ``S`` and velocity; read its warning before enabling it.
 
 `run!` also checks the prognostic fields for non-finite values at a regular
 cadence and aborts with an error instead of integrating NaNs.

@@ -55,6 +55,7 @@ calls writes on the same cadence as one advanced by a single call.
 | `:melt` | basal melt rate | m yr⁻¹ |
 | `:entr`, `:detr` | entrainment and detrainment rates | m yr⁻¹ |
 | `:ent2` | the extra entrainment that keeps `H ≥ H_min` | m yr⁻¹ |
+| `:detr_cap` | the detrainment that keeps `H` under `max_layer_thickness` | m yr⁻¹ |
 | `:Tbase`, `:Tamb` | temperature at the ice–ocean interface, ambient temperature at the layer base | °C |
 | `:gammaT` | turbulent heat-exchange velocity | m s⁻¹ |
 | `:ustar` | friction velocity at the ice base | m s⁻¹ |
@@ -166,6 +167,12 @@ const _OUTPUT_FIELDS = (
     entr = _outfield("m yr-1", "entrainment rate", m -> m.entr; per_year = true),
     ent2 = _outfield("m yr-1", "additional entrainment", m -> m.ent2; per_year = true),
     detr = _outfield("m yr-1", "detrainment rate", m -> m.detr; per_year = true),
+    detr_cap = _outfield(
+        "m yr-1",
+        "detrainment keeping H under the maximum layer thickness",
+        m -> m.detr_cap;
+        per_year = true,
+    ),
     Tbase = _outfield("degC", "temperature at ice base", m -> m.Tb),
     Tamb = _outfield("degC", "ambient temperature at layer base", m -> m.Ta),
     gammaT = _outfield("m s-1", "turbulent heat exchange velocity", m -> m.gamT),
@@ -787,7 +794,7 @@ function printdiags(sim)
     d_Mtot = stats.total_melt
     d_Vmax = stats.max_speed
 
-    @. d = (m.melt + m.entr + m.ent2 - m.detr) * m.tmask
+    @. d = (m.melt + m.entr + m.ent2 - m.detr - m.detr_cap) * m.tmask
     total = sum(d) * dxdy
     d_MWF = total > 0 ? 100.0 * active_sum(m.melt) * dxdy / total : 0.0
 

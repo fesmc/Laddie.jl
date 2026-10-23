@@ -14,6 +14,7 @@
                convection_scheme = RelaxToAmbient(FT(10000.0)),
                entrainment  = HollandEntrainment(FT(0.01775))),
         Params(; FT, front_pressure = ZeroGradientFront()),
+        Params(; FT, max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0))),
     )
     for params in configs
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
@@ -41,7 +42,8 @@
 
         rhs_T = .- tracer_thickness_tendency(m.model, m.model.T.present) .+
                    tracer_advection(m.model, m.model.T.present) .+
-                   tracer_entrainment(m.model, m.model.Ta) .+
+                   tracer_entrainment(m.model, m.model.Ta) .-
+                   tracer_cap_detrainment(m.model, m.model.T.present) .+
                    T_ice_ocean_exchange(m.model) .+
                    tracer_diffusion(m.model, m.model.T.past) .-
                    tracer_convection(m.model, m.model.T.past, m.model.Ta)
@@ -49,7 +51,8 @@
 
         rhs_S = .- tracer_thickness_tendency(m.model, m.model.S.present) .+
                    tracer_advection(m.model, m.model.S.present) .+
-                   tracer_entrainment(m.model, m.model.Sa) .+
+                   tracer_entrainment(m.model, m.model.Sa) .-
+                   tracer_cap_detrainment(m.model, m.model.S.present) .+
                    tracer_diffusion(m.model, m.model.S.past) .-
                    tracer_convection(m.model, m.model.S.past, m.model.Sa)
         S_ref = m.model.S.past .+ Laddie.div0(rhs_S, m.model.H.present) .* m.model.tmask .* dt
@@ -73,6 +76,36 @@ end
     src    = copy((m.model.convH .+ m.model.melt .+ m.model.nentr) .* m.model.tmask)
     Laddie.leapfrog_step!(m.model, m.clock.dt, 2)
     @test m.model.H.future ≈ H_past .+ src .* (2 * m.clock.dt)
+end
+
+@testset "Maximum layer thickness: preventive detrainment" begin
+    # A binding cap is met by detraining layer water before the step, so the
+    # stepped H lands on the cap without the corrective clamp.  That the detrained
+    # water leaves at the layer's T and S is checked by the fused-kernel test.
+    H_cap = FT(5.0)   # ISOMIP H reaches ~11 m here, so this binds
+    m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm,
+                     params = Params(; FT, max_layer_thickness = AbsoluteMaxLayerThickness(H_cap)))
+    run!(m; days = 0.5, verbose = false)
+    mm = m.model
+    Laddie.advance_leapfrog!(mm, m.clock.dt)
+    capped = (mm.detr_cap .> 0) .& (mm.tmask .> 0)
+    @test any(capped)
+    dt2 = 2 * m.clock.dt
+    H_past = copy(mm.H.past)
+    src = copy((mm.convH .+ mm.melt .+ mm.nentr .- mm.detr_cap) .* mm.tmask)
+    Laddie.step_thickness!(mm, dt2)
+    @test mm.H.future ≈ H_past .+ src .* dt2
+    @test all(mm.H.future[capped] .≈ H_cap)    # lands on the cap before any clamp
+    @test maximum(mm.H.future) <= H_cap * (1 + 10eps(FT))
+    @test all(mm.detr_cap[mm.tmask .== 0] .== 0)
+    run!(m; days = 0.5, verbose = false)
+    @test maximum(m.model.H.present) <= H_cap * (1 + 10eps(FT))
+end
+
+@testset "Maximum layer thickness: no cap leaves detr_cap at zero" begin
+    m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm)
+    run!(m; days = 0.2, verbose = false)
+    @test all(iszero, m.model.detr_cap)
 end
 
 @testset "Conservation: H ≥ H_min after 1-day run" begin

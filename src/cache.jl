@@ -42,6 +42,8 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,PM}
     ent2::A
     "net entrainment `entr + ent2 - detr` of the thickness and tracer equations (m s⁻¹)"
     nentr::A
+    "detrainment of layer water that keeps `H` under `max_layer_thickness` after the thickness step (m s⁻¹)"
+    detr_cap::A
     "convective-instability indicator: `1` where `drho < 0` was corrected"
     convection::A
     "upwind advection term of the thickness equation (m s⁻¹)"

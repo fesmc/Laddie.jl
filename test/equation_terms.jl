@@ -73,7 +73,7 @@ using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, 
 # laplace_U, since it dispatches on `Params.lateral_viscosity`)
 @inline u_diffusion(m) = copy(laplace_U(m))
 # e·U  (detrainment momentum loss)
-@inline u_detrainment(m) = m.detr .* m.U.present
+@inline u_detrainment(m) = (m.detr .+ ip_t(m, m.detr_cap)) .* m.U.present
 
 # -- V-momentum terms (Eq. 3) -----------------------------------------------
 
@@ -101,7 +101,7 @@ using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, 
 # laplace_V, since it dispatches on `Params.lateral_viscosity`)
 @inline v_diffusion(m) = copy(laplace_V(m))
 # ė·V  (detrainment momentum loss)
-@inline v_detrainment(m) = m.detr .* m.V.present
+@inline v_detrainment(m) = (m.detr .+ jp_t(m, m.detr_cap)) .* m.V.present
 
 # -- Tracer terms (Eqs. 4–5) -------------------------------------------------
 
@@ -112,6 +112,8 @@ using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, 
     upwind_advection_T(similar(m.H.present), m, m.H.present .* q)
 # e_net·qa  (entrainment of ambient water)
 @inline tracer_entrainment(m, qa) = m.nentr .* qa
+# d_cap·q  (cap detrainment of layer water; see `detr_cap`)
+@inline tracer_cap_detrainment(m, q) = m.detr_cap .* q
 # Kh·∇²q  (horizontal diffusion)
 @inline tracer_diffusion(m, q_past) = m.K_h .* laplace_T(similar(q_past), m, q_past)
 # (q_past − qa)·conv2  (convective relaxation, RelaxToAmbient only)

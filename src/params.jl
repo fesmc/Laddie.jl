@@ -19,6 +19,7 @@ struct Params{
     EP<:AbstractEntrainment,
     MP<:AbstractMelting,
     CS<:AbstractConvectionScheme,
+    FZ<:AbstractFrazilIce,
     MLT<:AbstractMaxLayerThickness,
     LV<:AbstractLateralViscosity,
     LW<:AbstractLaplacianWeights,
@@ -99,6 +100,8 @@ struct Params{
     melting::MP
     "convective-instability treatment, an [`AbstractConvectionScheme`](@ref) (default `ResetToAmbient(0.005)`)"
     convection_scheme::CS
+    "frazil-ice formation in a supercooled layer, an [`AbstractFrazilIce`](@ref) (default none)"
+    frazil_ice::FZ
     "upper bound on the layer thickness, an [`AbstractMaxLayerThickness`](@ref) (default none)"
     max_layer_thickness::MLT
     "lateral momentum viscosity, an [`AbstractLateralViscosity`](@ref) (default constant `A_h`)"
@@ -165,6 +168,7 @@ _param_defaults() = (
     entrainment = GasparEntrainment(2.5),
     melting = FixedGamTMelting(0.00018),
     convection_scheme = ResetToAmbient(0.005),
+    frazil_ice = NoFrazilIce(),
     max_layer_thickness = NoMaxLayerThickness(),
     lateral_viscosity = PrescribedLateralViscosity(),
     laplacian_weights = PresentLaplacianWeights(),

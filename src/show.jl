@@ -107,6 +107,7 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  entrainment    = ", p.entrainment)
     println(io, "  melt           = ", p.melting)
     println(io, "  convection     = ", p.convection_scheme)
+    println(io, "  frazil ice     = ", p.frazil_ice)
     println(io, "  max layer H    = ", p.max_layer_thickness)
     println(io, "  lat. viscosity = ", p.lateral_viscosity)
     println(io, "  lap. weights   = ", p.laplacian_weights)

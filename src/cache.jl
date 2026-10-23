@@ -8,7 +8,8 @@ every time step.  The physics outputs are read through the model, e.g.
 `A` is the concrete matrix type (matching the grid and state).  The scheme-dependent
 slots are scalars or fields: `GamT` (`gamT`, `gamS`) is a field for
 `TurbulentGamTMelting`, `UStarGamTMelting` and `PrescribedMelting`, `Conv2` (`conv2`) for
-`RelaxToAmbient`, and `PM` (`melt_prescribed`) for `PrescribedMelting`.
+`RelaxToAmbient`, `Frz` (`frazil`) for `RelaxedFrazilIce`, and `PM` (`melt_prescribed`)
+for `PrescribedMelting`.
 
 `adv`, `lap` and `Hq` are shared by the four stepped equations: U, V, T and S are
 stepped one after another, and each consumes its terms before the next one writes
@@ -21,7 +22,7 @@ never read by the time step, so any host-side diagnostic may overwrite it.
 # Fields
 $(TYPEDFIELDS)
 """
-mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,PM}
+mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,Frz,PM}
     "basal melt rate (m s⁻¹)"
     melt::A
     "temperature at the ice–ocean interface (°C)"
@@ -54,6 +55,8 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,PM}
     Hdrho::A
     "relaxation rate toward ambient under `RelaxToAmbient` (a field), else an unused scalar"
     conv2::Conv2
+    "frazil-ice formation rate under `RelaxedFrazilIce` (m s⁻¹, freshwater equivalent; a field), else zero as a scalar"
+    frazil::Frz
     "turbulent heat transfer velocity (m s⁻¹): a field, or a scalar under `FixedGamTMelting`"
     gamT::GamT
     "turbulent salt transfer velocity (m s⁻¹): a field, or a scalar under `FixedGamTMelting`"
@@ -80,6 +83,8 @@ _prescribed_init(FT, _, _, ::Type) = zero(FT)
 _prescribed_init(FT, nx, ny, ::Type{<:PrescribedMelting}) = zeros(FT, nx, ny)
 _conv2_init(FT, _, _, ::Type{<:Union{ClampDensity,ResetToAmbient}}) = zero(FT)
 _conv2_init(FT, nx, ny, ::Type{<:RelaxToAmbient}) = zeros(FT, nx, ny)
+_frazil_init(FT, _, _, ::Type{<:NoFrazilIce}) = zero(FT)
+_frazil_init(FT, nx, ny, ::Type{<:RelaxedFrazilIce}) = zeros(FT, nx, ny)
 
 """
 $(TYPEDSIGNATURES)
@@ -87,11 +92,13 @@ $(TYPEDSIGNATURES)
 Allocate all scratch matrices for a grid of size `(nx, ny)`.
 `MP` (melt param type) determines whether `gamT`/`gamS` are scalars or arrays and
 whether a prescribed melt field is carried; `CS` (convection scheme type)
-determines whether `conv2` is a scalar or array.
+determines whether `conv2` is a scalar or array, and `FZ` (frazil scheme type) the
+same for `frazil`.
 """
-function Cache(FT::Type, MP::Type, CS::Type, nx::Int, ny::Int)
+function Cache(FT::Type, MP::Type, CS::Type, FZ::Type, nx::Int, ny::Int)
     special = (
         conv2 = _conv2_init(FT, nx, ny, CS),
+        frazil = _frazil_init(FT, nx, ny, FZ),
         gamT = _gamT_init(FT, nx, ny, MP),
         gamS = _gamT_init(FT, nx, ny, MP),
         melt_prescribed = _prescribed_init(FT, nx, ny, MP),
@@ -100,6 +107,7 @@ function Cache(FT::Type, MP::Type, CS::Type, nx::Int, ny::Int)
         Matrix{FT},
         typeof(special.gamT),
         typeof(special.conv2),
+        typeof(special.frazil),
         typeof(special.melt_prescribed),
     }
     fields = map(fn -> haskey(special, fn) ? special[fn] : zeros(FT, nx, ny), fieldnames(C))

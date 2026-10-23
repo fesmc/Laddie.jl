@@ -31,6 +31,14 @@ ResetToAmbient
 RelaxToAmbient
 ```
 
+## Frazil ice
+
+```@docs
+AbstractFrazilIce
+NoFrazilIce
+RelaxedFrazilIce
+```
+
 ## Open boundary
 
 ```@docs

@@ -628,6 +628,7 @@ function update_entrainment!(m, dt)
         m.z_draft,
         m.z_bed,
         m.tmask,
+        m.frazil,
         m.params.max_layer_thickness,
         m.H_min,
         FT(2) * dt,
@@ -647,25 +648,27 @@ end
     @Const(z_draft),
     @Const(z_bed),
     @Const(tmask),
+    frazil,
     max_layer_thickness,
     H_min,
     dt2,
 )
-    H_min, dt2 = _val(H_min), _val(dt2)
+    H_min, dt2, frazil = _val(H_min), _val(dt2), _val(frazil)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(H_min)
+        # Frazil formation removes layer water like a sink, so the floor tops it up.
         ent2[i, j] =
             max(
                 zero(H_min),
                 (H_min - H_past[i, j]) / dt2 -
-                (convH[i, j] + melt[i, j] + entr[i, j] - detr[i, j]),
+                (convH[i, j] + melt[i, j] - _at(frazil, i, j) + entr[i, j] - detr[i, j]),
             ) * tmask[i, j]
         nentr[i, j] = entr[i, j] + ent2[i, j] - detr[i, j]
         # First guess of the stepped H, then the excess over the cap.  The floor
         # wins where the cap is below H_min, as in `_clamp_thickness_kernel!`.
         # Masked cells may sit under a bed of -Inf, hence the `ifelse`.
-        H_star = H_past[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j]) * dt2
+        H_star = H_past[i, j] + (convH[i, j] + melt[i, j] - _at(frazil, i, j) + nentr[i, j]) * dt2
         H_top = max(
             _max_layer_thickness(max_layer_thickness, H_star, z_draft[i, j], z_bed[i, j], one(FT)),
             H_min,
@@ -784,6 +787,62 @@ function update_secondary_fields!(m, dt)
     update_density!(m)
     update_convection!(m)
     update_melt!(m)
+    update_frazil!(m)
     update_entrainment!(m, dt)
     return
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Frazil-ice formation rate `m.frazil` (m s⁻¹, freshwater equivalent) under
+[`RelaxedFrazilIce`](@ref): the rate whose latent heat relaxes the supercooling of
+the past level, ``\\max(T_f - T, 0)``, over `relaxation_time`.  Ice-covered cells
+only (`imask`): a gap cell is open water, and the ice it would form is sea ice, not
+marine ice.  Nothing to do under [`NoFrazilIce`](@ref), where `m.frazil` is a scalar
+zero.  Computed before `update_entrainment!`, whose preventive bounds on H include
+it.
+"""
+update_frazil!(m) = update_frazil!(m, m.frazil_ice)
+update_frazil!(m, ::NoFrazilIce) = nothing
+function update_frazil!(m, fz::RelaxedFrazilIce)
+    launch!(
+        _frazil_kernel!,
+        m.frazil,
+        m.T.past,
+        m.S.past,
+        m.H.present,
+        m.z_draft,
+        m.imask,
+        fz.relaxation_time,
+        m.c_p,
+        m.L,
+        m.l1,
+        m.l2,
+        m.l3,
+    )
+end
+
+@kernel function _frazil_kernel!(
+    frazil,
+    @Const(T),
+    @Const(S),
+    @Const(H),
+    @Const(z_draft),
+    @Const(imask),
+    relaxation_time,
+    c_p,
+    L,
+    l1,
+    l2,
+    l3,
+)
+    relaxation_time, c_p, L, l1, l2, l3 =
+        _val(relaxation_time), _val(c_p), _val(L), _val(l1), _val(l2), _val(l3)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = typeof(c_p)
+        supercooling = max(zero(FT), l1 * S[i, j] + l2 + l3 * z_draft[i, j] - T[i, j])
+        frazil[i, j] = imask[i, j] * c_p / L * H[i, j] * supercooling / relaxation_time
+    end
 end

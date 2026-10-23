@@ -3,8 +3,8 @@
 ## Size
 
 The `Cache` struct holds **18 pre-allocated `nx×ny` matrices**, plus
-`gamT/gamS`, `conv2` and `melt_prescribed`, which are matrices only for the melt and
-convection schemes that need them (scalars otherwise).  At 2000×2000 Float64 each
+`gamT/gamS`, `conv2`, `frazil` and `melt_prescribed`, which are matrices only for the
+melt, convection and frazil schemes that need them (scalars otherwise).  At 2000×2000 Float64 each
 matrix is 32 MB, so the default cache is about 550 MiB at that resolution.
 
 ## Reductions made

@@ -133,14 +133,15 @@ end
     @Const(nentr),
     @Const(detr_cap),
     @Const(tmask),
+    frazil,
     dt,
 )
-    dt = _val(dt)
+    dt, frazil = _val(dt), _val(frazil)
     i, j = @index(Global, NTuple)
     @inbounds out[i, j] = ifelse(
         iszero(tmask[i, j]),
         H0[i, j],
-        H0[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j] - detr_cap[i, j]) * dt,
+        H0[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j] - detr_cap[i, j] - _at(frazil, i, j)) * dt,
     )
 end
 
@@ -162,6 +163,7 @@ end
     @Const(umask),
     @Const(vmask),
     @Const(fu),
+    frazil,
     g,
     C_d,
     pgf_w,
@@ -170,6 +172,7 @@ end
     dt,
 )
     g, C_d, pgf_w, drho_w, dx, dt = _val(g), _val(C_d), _val(pgf_w), _val(drho_w), _val(dx), _val(dt)
+    frazil = _val(frazil)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -180,6 +183,7 @@ end
         tmip = tmask[i, j] + tmask[ip1, j]
         ip_dHdt = _safe_div(dHdt[i, j] + dHdt[ip1, j], tmip)
         ip_detr_cap = _safe_div(detr_cap[i, j] + detr_cap[ip1, j], tmip)
+        ip_frazil = _safe_div(_at(frazil, i, j) + _at(frazil, ip1, j), tmip)
         ip_H_drho = _safe_div(Hdrho[i, j] + Hdrho[ip1, j], tmip)
         ip_H_dzdx = _safe_div(Hdrho[i, j] * dzdx[i, j] + Hdrho[ip1, j] * dzdx[ip1, j], tmip)
         ip_H = _safe_div(H1[i, j] + H1[ip1, j], tmip)
@@ -208,7 +212,7 @@ end
             -C_d * U1[i, j] * _safe_sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
             lU[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * U1[i, j] +                                   # momentum loss by detrainment
-            -ip_detr_cap * U1[i, j]                                    # cap detrainment, cancels its share of dHdt
+            -(ip_detr_cap + ip_frazil) * U1[i, j]                      # cap detrainment and frazil, cancel their share of dHdt
         out[i, j] = Up[i, j] + _safe_div(rhs, ip_H) * umask[i, j] * dt
     end
 end
@@ -231,6 +235,7 @@ end
     @Const(vmask),
     @Const(umask),
     @Const(fv),
+    frazil,
     g,
     C_d,
     pgf_w,
@@ -239,6 +244,7 @@ end
     dt,
 )
     g, C_d, pgf_w, drho_w, dy, dt = _val(g), _val(C_d), _val(pgf_w), _val(drho_w), _val(dy), _val(dt)
+    frazil = _val(frazil)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -249,6 +255,7 @@ end
         tmjp = tmask[i, j] + tmask[i, jp1]
         jp_dHdt = _safe_div(dHdt[i, j] + dHdt[i, jp1], tmjp)
         jp_detr_cap = _safe_div(detr_cap[i, j] + detr_cap[i, jp1], tmjp)
+        jp_frazil = _safe_div(_at(frazil, i, j) + _at(frazil, i, jp1), tmjp)
         jp_H_drho = _safe_div(Hdrho[i, j] + Hdrho[i, jp1], tmjp)
         jp_H_dzdy = _safe_div(Hdrho[i, j] * dzdy[i, j] + Hdrho[i, jp1] * dzdy[i, jp1], tmjp)
         jp_H = _safe_div(H1[i, j] + H1[i, jp1], tmjp)
@@ -270,7 +277,7 @@ end
             -C_d * V1[i, j] * _safe_sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
             lV[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * V1[i, j] +                                   # momentum loss by detrainment
-            -jp_detr_cap * V1[i, j]                                    # cap detrainment, cancels its share of dHdt
+            -(jp_detr_cap + jp_frazil) * V1[i, j]                      # cap detrainment and frazil, cancel their share of dHdt
         out[i, j] = Vp[i, j] + _safe_div(rhs, jp_H) * vmask[i, j] * dt
     end
 end
@@ -298,9 +305,13 @@ end
     gamT,
     K_h,
     conv2,
+    frazil,
+    L,
+    c_p,
     dt,
 )
     gamT, K_h, conv2, dt = _val(gamT), _val(K_h), _val(conv2), _val(dt)
+    frazil, L, c_p = _val(frazil), _val(L), _val(c_p)
     i, j = @index(Global, NTuple)
     @inbounds begin
         rhs =
@@ -311,7 +322,8 @@ end
             melt[i, j] * Tb[i, j] +                         # meltwater input at freezing point
             -_at(gamT, i, j) * (T_present[i, j] - Tb[i, j]) + # turbulent ice-ocean heat exchange
             K_h * lT[i, j] +                                # horizontal diffusion
-            -(T_past[i, j] - Ta[i, j]) * _at(conv2, i, j)   # convective restoring to ambient
+            -(T_past[i, j] - Ta[i, j]) * _at(conv2, i, j) + # convective restoring to ambient
+            _at(frazil, i, j) * (L / c_p - T_present[i, j]) # frazil: latent heat in, water out at T
         out[i, j] = T_past[i, j] + _safe_div(rhs, H1[i, j]) * tmask[i, j] * dt
     end
 end
@@ -342,6 +354,8 @@ end
             -detr_cap[i, j] * S_present[i, j] +             # cap detrainment of layer water at S
             K_h * lS[i, j] +                                # horizontal diffusion
             -(S_past[i, j] - Sa[i, j]) * _at(conv2, i, j)   # convective restoring to ambient
+        # No frazil term: frazil leaves its salt behind, and the thickness-tendency
+        # correction concentrates it in the thinner layer (brine rejection).
         out[i, j] = S_past[i, j] + _safe_div(rhs, H1[i, j]) * tmask[i, j] * dt
     end
 end
@@ -356,6 +370,7 @@ function step_thickness!(m, dt)
         m.nentr,
         m.detr_cap,
         m.tmask,
+        m.frazil,
         dt,
     )
     return
@@ -383,6 +398,7 @@ function step_u_momentum!(m, dt)
         m.umask,
         m.vmask,
         m.fu,
+        m.frazil,
         m.g,
         m.C_d,
         _front_pgf_weight(m.front_pressure, m.g),
@@ -415,6 +431,7 @@ function step_v_momentum!(m, dt)
         m.vmask,
         m.umask,
         m.fv,
+        m.frazil,
         m.g,
         m.C_d,
         _front_pgf_weight(m.front_pressure, m.g),
@@ -444,7 +461,7 @@ function step_temperature!(m, dt)
         m.tmask,
     )
     gamT = first(_exchange_velocities(m))
-    launch!(_step_temperature_kernel!, args..., gamT, m.K_h, m.conv2, dt)
+    launch!(_step_temperature_kernel!, args..., gamT, m.K_h, m.conv2, m.frazil, m.L, m.c_p, dt)
     return
 end
 function step_salinity!(m, dt)

@@ -239,6 +239,57 @@ end
     @test all(isfinite, m.model.melt)
 end
 
+@testset "RelaxedFrazilIce: rate, relaxation toward T_f, brine rejection" begin
+    @test Params(; FT).frazil_ice === NoFrazilIce()
+    @test build_isomip(CPU(); FT, nx = 20, ny = 10).model.frazil === zero(FT)
+
+    τ = FT(3600.0)
+    params = Params(; FT, frazil_ice = RelaxedFrazilIce(τ),
+                    convection_scheme = ClampDensity(FT(0.005)))
+    m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
+    run!(m; days = 0.2, verbose = false)
+    mm = m.model
+    @test all(iszero, mm.frazil)   # ISOMIP+ is never supercooled on its own
+
+    dT = FT(0.05)
+    supercool!(mm, dT)
+    dt = m.clock.dt
+    Laddie.advance_leapfrog!(mm, dt)
+    ice = mm.imask .> 0
+    # The rate whose latent heat removes the past level's supercooling over τ.
+    @test mm.frazil[ice] ≈ mm.c_p / mm.L .* mm.H.present[ice] .* dT ./ τ
+    @test all(iszero, mm.frazil[.!ice])
+
+    # The same step with and without the frazil.  The difference is the frazil
+    # alone wherever the H_min floor does not bind (ent2 would top up the loss).
+    frz = copy(mm.frazil)
+    free = ice .& (mm.ent2 .== 0)
+    @test count(free) > 0.9 * count(ice)
+    Laddie.leapfrog_step!(mm, dt, 2)
+    with = map(copy, (H = mm.H.future, U = mm.U.future, T = mm.T.future, S = mm.S.future))
+    fill!(mm.frazil, 0)
+    Laddie.update_entrainment!(mm, dt)
+    Laddie.leapfrog_step!(mm, dt, 2)
+
+    # Water leaves the layer ...
+    @test (with.H .- mm.H.future)[free] ≈ -2dt .* frz[free] rtol = 1e-8
+    # ... and its latent heat relaxes T toward T_f at the rate 1/τ ...
+    @test (with.T .- mm.T.future)[free] ≈ fill(2dt * dT / τ, count(free)) rtol = 1e-8
+    # ... while its salt stays behind ...
+    @test (with.S .- mm.S.future)[free] ≈
+          (2dt .* mm.S.present .* frz ./ mm.H.present)[free] rtol = 1e-8
+    # ... and it carries its own momentum, so the velocity does not change.
+    free_u = free .& circshift(free, (-1, 0))
+    @test with.U[free_u] ≈ mm.U.future[free_u] rtol = 1e-10 atol = 1e-14
+
+    # Stays finite and reduces the supercooling over a longer run.
+    sc(mm) = maximum((mm.l1 .* mm.S.present .+ mm.l2 .+ mm.l3 .* mm.z_draft .-
+                      mm.T.present)[ice])
+    run!(m; days = 0.5, verbose = false)
+    @test all(isfinite, mm.H.present) && all(isfinite, mm.T.present)
+    @test sc(mm) < dT / 2
+end
+
 @testset "Coriolis: 0D/2D defaults agree, latitude varies f, C-grid staggering" begin
     # The whole point of the default latitude being derived from the default f
     # rather than rounded to -70: the two options must agree exactly, so

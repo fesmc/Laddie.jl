@@ -15,10 +15,14 @@
                entrainment  = HollandEntrainment(FT(0.01775))),
         Params(; FT, front_pressure = ZeroGradientFront()),
         Params(; FT, max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0))),
+        Params(; FT, frazil_ice = RelaxedFrazilIce(FT(3600.0)),
+               convection_scheme = ClampDensity(FT(0.005))),
     )
     for params in configs
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
         run!(m; days = 0.2, verbose = false)   # develop a non-trivial flow
+        # Frazil needs a supercooled layer, which ISOMIP+ never forms.
+        params.frazil_ice isa RelaxedFrazilIce && supercool!(m.model, FT(0.05))
         Laddie.advance_leapfrog!(m.model, m.clock.dt)
         dt = 2 * m.clock.dt
         Laddie.step_thickness!(m.model, dt)
@@ -46,7 +50,8 @@
                    tracer_cap_detrainment(m.model, m.model.T.present) .+
                    T_ice_ocean_exchange(m.model) .+
                    tracer_diffusion(m.model, m.model.T.past) .-
-                   tracer_convection(m.model, m.model.T.past, m.model.Ta)
+                   tracer_convection(m.model, m.model.T.past, m.model.Ta) .+
+                   T_frazil(m.model)
         T_ref = m.model.T.past .+ Laddie.div0(rhs_T, m.model.H.present) .* m.model.tmask .* dt
 
         rhs_S = .- tracer_thickness_tendency(m.model, m.model.S.present) .+
@@ -66,6 +71,7 @@
         @test m.model.V.future ≈ V_ref rtol = 1e-10 atol = 1e-12
         @test m.model.T.future ≈ T_ref rtol = 1e-10 atol = 1e-12
         @test m.model.S.future ≈ S_ref rtol = 1e-10 atol = 1e-12
+        params.frazil_ice isa RelaxedFrazilIce && @test any(>(0), m.model.frazil)
     end
 end
 

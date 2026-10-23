@@ -73,7 +73,7 @@ using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, 
 # laplace_U, since it dispatches on `Params.lateral_viscosity`)
 @inline u_diffusion(m) = copy(laplace_U(m))
 # e·U  (detrainment momentum loss)
-@inline u_detrainment(m) = (m.detr .+ ip_t(m, m.detr_cap)) .* m.U.present
+@inline u_detrainment(m) = (m.detr .+ ip_t(m, m.detr_cap) .+ ip_t(m, frazil_field(m))) .* m.U.present
 
 # -- V-momentum terms (Eq. 3) -----------------------------------------------
 
@@ -101,7 +101,7 @@ using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, 
 # laplace_V, since it dispatches on `Params.lateral_viscosity`)
 @inline v_diffusion(m) = copy(laplace_V(m))
 # ė·V  (detrainment momentum loss)
-@inline v_detrainment(m) = (m.detr .+ jp_t(m, m.detr_cap)) .* m.V.present
+@inline v_detrainment(m) = (m.detr .+ jp_t(m, m.detr_cap) .+ jp_t(m, frazil_field(m))) .* m.V.present
 
 # -- Tracer terms (Eqs. 4–5) -------------------------------------------------
 
@@ -118,5 +118,23 @@ using Laddie: xm1, ym1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, 
 @inline tracer_diffusion(m, q_past) = m.K_h .* laplace_T(similar(q_past), m, q_past)
 # (q_past − qa)·conv2  (convective relaxation, RelaxToAmbient only)
 @inline tracer_convection(m, q_past, qa) = (q_past .- qa) .* m.conv2
+# ḟ·(L/c_p − T)  (frazil: latent heat released, water removed at T; temperature only,
+# since the salt stays behind)
+@inline T_frazil(m) = frazil_field(m) .* (m.L / m.c_p .- m.T.present)
 # ṁ·Tb − γT·(T − Tb)  (ice-ocean heat exchange; temperature equation only)
 @inline T_ice_ocean_exchange(m) = m.melt .* m.Tb .- m.gamT .* (m.T.present .- m.Tb)
+
+# The frazil formation rate as a field: `model.frazil` is a scalar zero under
+# NoFrazilIce.
+frazil_field(m) = m.frazil .+ zero(m.H.present)
+
+# Set T at the present and future levels (past and present after the next
+# `advance_leapfrog!`) to `dT` below the freezing point at the ice base, under the
+# ice cover only.  ISOMIP+ never becomes supercooled on its own.
+function supercool!(m, dT)
+    for (T, S) in ((m.T.present, m.S.present), (m.T.future, m.S.future))
+        Tf = m.l1 .* S .+ m.l2 .+ m.l3 .* m.z_draft
+        T .= ifelse.(m.imask .> 0, Tf .- dT, T)
+    end
+    return m
+end

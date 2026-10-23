@@ -7,6 +7,7 @@ const KA = KernelAbstractions
 include("entrainment.jl")
 include("melting.jl")
 include("convection.jl")
+include("frazil.jl")
 include("max_layer_thickness.jl")
 include("coriolis.jl")
 include("boundary_conditions.jl")
@@ -60,6 +61,7 @@ export AbstractEntrainment, HollandEntrainment, GasparEntrainment
 export AbstractMelting,
     FixedGamTMelting, TurbulentGamTMelting, UStarGamTMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
+export AbstractFrazilIce, NoFrazilIce, RelaxedFrazilIce
 export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D
 export AbstractMaxLayerThickness,
     NoMaxLayerThickness,

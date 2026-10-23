@@ -80,9 +80,11 @@ thickness, so the prognostic variable stepped is ``q`` itself, not ``Hq``.
 \tag{1}
 ```
 
-Kernel `_step_thickness_kernel!`: ``H^{+} = H^{0} + (\mathrm{convH} + \dot m + \dot e)\,\Delta t``,
+Kernel `_step_thickness_kernel!`: ``H^{+} = H^{0} + (\mathrm{convH} + \dot m + \dot e - \dot f)\,\Delta t``,
 where `convH` ``= -\nabla\!\cdot(H\mathbf{U})`` (advection), `m.melt` ``=\dot m``,
-`m.nentr` ``=\dot e``.
+`m.nentr` ``=\dot e`` and `m.frazil` ``=\dot f``, the frazil-ice formation (zero unless
+`frazil_ice = RelaxedFrazilIce`, see [Frazil ice](@ref)). The cap detrainment `detr_cap`
+is a sink of the same kind.
 
 ### (2) ``U``-momentum
 
@@ -157,13 +159,16 @@ Kernel `_step_v_momentum_kernel!`, structurally identical to (2) with
 ```
 
 Kernel `_step_temperature_kernel!` (and `mat_*` variants for array-valued
-``\gamma_T``/`conv2`). The implemented `rhs` adds one Laddie.jl term beyond the
-paper — the convective relaxation ``-(T^{p}-T_a)\,\mathrm{conv2}`` (zero unless
-`convection_scheme = RelaxToAmbient`, see [Convective relaxation](@ref)):
+``\gamma_T``/`conv2`). The implemented `rhs` adds two Laddie.jl terms beyond the
+paper: the convective relaxation ``-(T^{p}-T_a)\,\mathrm{conv2}`` (zero unless
+`convection_scheme = RelaxToAmbient`, see [Convective relaxation](@ref)), and the frazil
+term ``\dot f\,(L/c_p - T)`` (zero unless `frazil_ice = RelaxedFrazilIce`, see
+[Frazil ice](@ref)):
 
 ```math
 \mathrm{rhs} = -T\,\partial_t H + \mathrm{cT} + \dot e\,T_a + \dot m\,T_b
-- \gamma_T(T - T_b) + K_h\nabla^2 T - (T^{p}-T_a)\,\mathrm{conv2},
+- \gamma_T(T - T_b) + K_h\nabla^2 T - (T^{p}-T_a)\,\mathrm{conv2}
++ \dot f\,(L/c_p - T),
 ```
 
 with `cT` ``=-\nabla\!\cdot(H\mathbf{U}T)``, then ``T^{+} = T^{p} + (\mathrm{rhs}/H)\,\Delta t``.
@@ -178,7 +183,8 @@ with `cT` ``=-\nabla\!\cdot(H\mathbf{U}T)``, then ``T^{+} = T^{p} + (\mathrm{rhs
 
 Kernel `_step_salinity_kernel!`. Identical structure to (4) but with **no**
 ice–ocean exchange term (ice is salt-free), plus the same optional `conv2`
-relaxation toward ``S_a``.
+relaxation toward ``S_a``. Frazil adds no term: the ice is salt-free, so its salt stays in
+the layer, and ``-S\,\partial_t H`` concentrates it as the layer thins.
 
 ## Closures
 
@@ -315,6 +321,22 @@ toward ambient over `convection_time` via the `conv2` field appearing in (4)–(
 (reset unstable-cell T/S to ambient) set `conv2 = 0` and act directly on the
 fields instead.
 
+### Frazil ice
+
+For `frazil_ice = RelaxedFrazilIce`, a supercooled layer forms frazil ice that is
+deposited on the ice base at once. Under the ice cover, the rate is
+
+```math
+\dot f = \frac{c_p}{L}\,\frac{H\,\max(T_f - T^{p}, 0)}{\tau},
+\qquad T_f = l_1 S^{p} + l_2 + l_3 z_b,
+```
+
+with ``\tau`` = `relaxation_time`. The frozen water leaves the layer at its own ``T`` and
+velocity: it is subtracted in (1), and the momentum equations carry
+``-\overline{\dot f}\,U`` next to the cap detrainment, which cancels its share of the
+thickness-tendency correction. Its latent heat ``L\dot f`` enters (4), so ``T`` relaxes
+toward ``T_f`` at the rate ``1/\tau``. The salt stays in the layer, see (5).
+
 ## Equation → code map
 
 | eq | quantity | source of truth |
@@ -331,3 +353,4 @@ fields instead.
 | (14) | entrainment | `GasparEntrainment` → `_buoyancy_entrainment_kernel!` (default); Holland → `_holland_entrainment_kernel!` |
 | — | min-thickness / net ``\dot e`` | `update_entrainment!` |
 | — | convective relaxation | `update_convection!`, `_update_conv2!` |
+| — | frazil ice | `update_frazil!`, `_frazil_kernel!` |

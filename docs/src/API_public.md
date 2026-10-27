@@ -38,32 +38,9 @@ fill_small_shelf_patches!
 fill_small_grounded_patches!
 ```
 
-### Mask preprocessing
-
-```@docs
-AbstractPreprocess
-FillOceanHolesPreprocess
-FillShelfHolesPreprocess
-FillSmallShelfPatchesPreprocess
-FillSmallGroundedPatchesPreprocess
-MarkGapsPreprocess
-```
-
-### Domain cropping
-
-```@docs
-AbstractDomainCropping
-MinRectangleDomainCropping
-NoDomainCropping
-```
-
-### Ice-base slope
-
-```@docs
-AbstractIceSlopeGradient
-JlGradient
-PyGradient
-```
+Mask preprocessing, domain cropping and the ice-base slope are described in
+[Mask preprocessing](numerics/preprocessing.md), [Domain cropping](numerics/domain_cropping.md)
+and [Ice-base slope](numerics/ice_slope.md).
 
 ## Model container
 
@@ -100,12 +77,7 @@ CavityForcing
 
 ### Ocean
 
-```@docs
-AbstractOceanForcing
-OceanForcing1D
-PerBasinOceanForcing1D
-ISOMIPForcing
-```
+The ocean forcing types are described in [Ocean forcing](physics/ocean_forcing.md).
 
 #### From a 3D ocean field
 

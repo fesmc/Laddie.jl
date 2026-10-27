@@ -45,7 +45,7 @@ and the same code runs multi-threaded on the CPU (`julia -t N`).
 
 | page | contents |
 |------|----------|
-| [Physics](physics.md) | what the model represents and the governing balances |
-| [Numerics](numerics.md) | grid, time stepping, boundaries, stability |
+| [Physics](physics/index.md) | what the model represents, the governing balances, and one page per closure (melt, entrainment, equation of state, …) |
+| [Numerics](numerics/index.md) | grid, time stepping, boundaries, stability, and one page per numerical choice |
 | [ISOMIP+](generated/isomip.md) | forcing, a warm run, Python validation, spin-up, warm vs cold |
 | [Crosson–Dotson](generated/crosson-dotson.md) | reproduction of Lambert et al. (2023) |

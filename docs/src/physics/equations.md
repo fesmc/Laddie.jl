@@ -50,6 +50,9 @@ The layer thickness is ``H``, as in LADDIE v2 (Lambert et al. 2026). Lambert et 
 | ``C_d`` | `m.C_d` | quadratic drag coefficient (momentum) | – |
 | ``C_d^{\text{top}}`` | `m.C_d_top` | drag coefficient (friction velocity) | – |
 | ``A_h, K_h`` | `m.A_h`, `m.K_h` | horizontal viscosity / diffusivity | m² s⁻¹ |
+| ``\gamma_T, \gamma_S`` | `m.gamT`, `m.gamS` | turbulent exchange velocities | m s⁻¹ |
+| ``u_\star`` | `m.ustar` | friction velocity | m s⁻¹ |
+| ``\lambda_1,\lambda_2,\lambda_3`` | `m.l1,m.l2,m.l3` | linear-liquidus coefficients | – |
 
 !!! note "``A_h`` is the coefficient only under the default viscosity scheme"
     The momentum equations below write lateral viscosity as ``A_h\nabla^2\mathbf{u}``,
@@ -61,9 +64,6 @@ The layer thickness is ``H``, as in LADDIE v2 (Lambert et al. 2026). Lambert et 
     choice). Note that `dt` control (`_cfl_number`) accounts for advection and gravity
     waves only — there is no viscous stability constraint, so a large viscosity on a
     fine grid is not caught automatically.
-| ``\gamma_T, \gamma_S`` | `m.gamT`, `m.gamS` | turbulent exchange velocities | m s⁻¹ |
-| ``u_\star`` | `m.ustar` | friction velocity | m s⁻¹ |
-| ``\lambda_1,\lambda_2,\lambda_3`` | `m.l1,m.l2,m.l3` | linear-liquidus coefficients | – |
 
 ## Prognostic equations (1–5)
 
@@ -83,7 +83,7 @@ thickness, so the prognostic variable stepped is ``q`` itself, not ``Hq``.
 Kernel `_step_thickness_kernel!`: ``H^{+} = H^{0} + (\mathrm{convH} + \dot m + \dot e - \dot f)\,\Delta t``,
 where `convH` ``= -\nabla\!\cdot(H\mathbf{U})`` (advection), `m.melt` ``=\dot m``,
 `m.nentr` ``=\dot e`` and `m.frazil` ``=\dot f``, the frazil-ice formation (zero unless
-`frazil_ice = RelaxedFrazilIce`, see [Frazil ice](@ref)). The cap detrainment `detr_cap`
+`frazil_ice = RelaxedFrazilIce`, see [Frazil ice](frazil_ice.md)). The cap detrainment `detr_cap`
 is a sink of the same kind.
 
 ### (2) ``U``-momentum
@@ -114,7 +114,8 @@ Kernel `_step_u_momentum_kernel!` integrates the **expanded** form (per unit
 
 then ``U^{+} = U^{p} + (\mathrm{rhs}/\bar H)\,\Delta t``. Overbars denote C-grid
 face interpolation to the ``U``-node. The detrainment-momentum-loss term is a
-Laddie.jl addition (see [Entrainment](@ref)).
+Laddie.jl addition (see [Entrainment](entrainment.md)). The front-pressure choice below is
+described on [its own page](../numerics/front_pressure.md).
 
 At a **one-sided face** — the ice front, or a `SinkGapsBC` gap-sink edge — the neighbour
 needed for ``H_{x-1}`` is not part of the active domain, and masking pins its stored
@@ -163,7 +164,7 @@ Kernel `_step_temperature_kernel!` (and `mat_*` variants for array-valued
 paper: the convective relaxation ``-(T^{p}-T_a)\,\mathrm{conv2}`` (zero unless
 `convection_scheme = RelaxToAmbient`, see [Convective relaxation](@ref)), and the frazil
 term ``\dot f\,(L/c_p - T)`` (zero unless `frazil_ice = RelaxedFrazilIce`, see
-[Frazil ice](@ref)):
+[Frazil ice](frazil_ice.md)):
 
 ```math
 \mathrm{rhs} = -T\,\partial_t H + \mathrm{cT} + \dot e\,T_a + \dot m\,T_b

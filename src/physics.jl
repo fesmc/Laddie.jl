@@ -14,6 +14,25 @@
 # γ_T / γ_S, the fixed ratio of the heat and salt exchange velocities.
 const _GAMMA_T_OVER_S = 35
 
+# Conduction into the ice at one cell (see `AbstractIceConduction`): the effective
+# `c_i` of the melt-proportional term, and the fixed flux `q` (J kg⁻¹ m s⁻¹, per unit
+# mass of freshwater like the melt) that the heat balance carries on top of it.  `Tf`
+# is the freezing point at the layer salinity, `T - Tf` having the sign of the melt,
+# `Ts` the ice temperature of the forcing.  The ice thickness is the hydrostatic one
+# from the draft; `_safe_div` keeps cells without ice at zero.
+@inline function _ice_conduction(cond, c_i, T, Tf, Ts, z_draft)
+    ci_eff = c_i * ifelse(T > Tf, cond.ci_melt, cond.ci_freeze)
+    Hi = -z_draft * cond.thick_ratio
+    q = _safe_div(cond.k_ice * (Tf - Ts), Hi * cond.rho_fw)
+    return ci_eff, q
+end
+
+# The scalars `_ice_conduction` reads, for the kernel launches.
+function _conduction_args(m)
+    ci_melt, ci_freeze, k_ice = _conduction_coefficients(m.params.ice_conduction, m.FT)
+    return (; ci_melt, ci_freeze, k_ice, thick_ratio = m.rho0_seawater / m.rho_ice, rho_fw = m.rho_freshwater)
+end
+
 @kernel function _density_kernel!(
     drho,
     @Const(Sa),
@@ -49,24 +68,31 @@ end
     l1,
     l2,
     l3,
+    cond,
 )
-    gamT, gamS, c_p, c_i, L, l1, l2, l3 =
-        _val(gamT), _val(gamS), _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3)
+    gamT, gamS, c_p, c_i, L, l1, l2, l3, cond =
+        _val(gamT), _val(gamS), _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3), _val(cond)
     i, j = @index(Global, NTuple)
     FT = typeof(c_p)
     @inbounds begin
         # Effective latent heat, per cell: L_eff = L - c_i*T_i.  Colder ice soaks up
         # more heat per unit melt, and the ice base need not be equally cold across
         # the domain, so this is read from the ice forcing rather than a constant.
-        cp_over_Leff = c_p / (L - c_i * T_ice_base[i, j])
-        ci_over_cp = c_i / c_p
+        Tf_depth = l2 + l3 * z_draft[i, j]
+        # The closure for the conduction into the ice sets the c_i of this cell and a
+        # fixed flux q.  The flux enters the heat balance as c_p·γT·(T − Tb) − q, so it
+        # is the temperature T − q/(c_p·γT) that the equations below see.
+        ci_eff, q_cond =
+            _ice_conduction(cond, c_i, T[i, j], Tf_depth + l1 * S[i, j], T_ice_base[i, j], z_draft[i, j])
+        cp_over_Leff = c_p / (L - ci_eff * T_ice_base[i, j])
+        ci_over_cp = ci_eff / c_p
         gT = _at(gamT, i, j)
         gS = _at(gamS, i, j)
-        Tf_depth = l2 + l3 * z_draft[i, j]
+        T_bal = T[i, j] - _safe_div(q_cond, c_p * gT)
         quad_b =
-            cp_over_Leff * gT * (Tf_depth - T[i, j]) +
+            cp_over_Leff * gT * (Tf_depth - T_bal) +
             gS * (one(FT) + cp_over_Leff * ci_over_cp * (Tf_depth + l1 * S[i, j]))
-        quad_c = cp_over_Leff * gT * gS * (Tf_depth - T[i, j] + l1 * S[i, j])
+        quad_c = cp_over_Leff * gT * gS * (Tf_depth - T_bal + l1 * S[i, j])
         disc = quad_b * quad_b - FT(4) * quad_c
         disc = ifelse(disc < zero(FT), zero(FT), disc)
         melt_rate = (-quad_b + _safe_sqrt(disc)) / FT(2)
@@ -84,7 +110,7 @@ end
             iszero(tmask[i, j]),
             zero(FT),
             ifelse(iszero(imask[i, j]), T[i, j],
-                   _safe_div(cp_over_Leff * gT * T[i, j] - melt_rate, Tb_denom)),
+                   _safe_div(cp_over_Leff * gT * T_bal - melt_rate, Tb_denom)),
         )
     end
 end
@@ -418,6 +444,7 @@ function _launch_three_eq_melt!(m)
         m.l1,
         m.l2,
         m.l3,
+        _conduction_args(m),
     )
 end
 
@@ -449,6 +476,7 @@ function update_melt!(m, ::PrescribedMelting)
         m.l1,
         m.l2,
         m.l3,
+        _conduction_args(m),
     )
 end
 
@@ -476,8 +504,10 @@ end
     l1,
     l2,
     l3,
+    cond,
 )
-    c_p, c_i, L, l1, l2, l3 = _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3)
+    c_p, c_i, L, l1, l2, l3, cond =
+        _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3), _val(cond)
     i, j = @index(Global, NTuple)
     FT = typeof(c_p)
     @inbounds begin
@@ -493,7 +523,8 @@ end
         else
             mdot = melt_prescribed[i, j]
             tb = _freezing_point(S[i, j], z_draft[i, j], l1, l2, l3)
-            heat = mdot * (L - c_i * (T_ice_base[i, j] - tb)) / c_p
+            ci_eff, q_cond = _ice_conduction(cond, c_i, T[i, j], tb, T_ice_base[i, j], z_draft[i, j])
+            heat = (mdot * (L - ci_eff * (T_ice_base[i, j] - tb)) + q_cond) / c_p
             melt[i, j] = mdot
             Tb[i, j] = tb
             gamT[i, j] = _safe_div(heat, T[i, j] - tb)

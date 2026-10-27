@@ -20,6 +20,7 @@ struct Params{
     MP<:AbstractMelting,
     CS<:AbstractConvectionScheme,
     FZ<:AbstractFrazilIce,
+    IC<:AbstractIceConduction,
     MLT<:AbstractMaxLayerThickness,
     LV<:AbstractLateralViscosity,
     LW<:AbstractLaplacianWeights,
@@ -103,6 +104,8 @@ struct Params{
     convection_scheme::CS
     "frazil-ice formation in a supercooled layer, an [`AbstractFrazilIce`](@ref) (default none)"
     frazil_ice::FZ
+    "heat conduction into the ice at the interface, an [`AbstractIceConduction`](@ref) (default Holland & Jenkins)"
+    ice_conduction::IC
     "upper bound on the layer thickness, an [`AbstractMaxLayerThickness`](@ref) (default none)"
     max_layer_thickness::MLT
     "lateral momentum viscosity, an [`AbstractLateralViscosity`](@ref) (default constant `A_h`)"
@@ -172,6 +175,7 @@ _param_defaults() = (
     melting = FixedGamTMelting(0.00018),
     convection_scheme = ResetToAmbient(0.005),
     frazil_ice = NoFrazilIce(),
+    ice_conduction = HollandJenkinsConduction(),
     max_layer_thickness = NoMaxLayerThickness(),
     lateral_viscosity = PrescribedLateralViscosity(),
     laplacian_weights = PresentLaplacianWeights(),

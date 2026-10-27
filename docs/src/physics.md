@@ -117,6 +117,30 @@ holds it as a scalar or as a 2D field, so a temperate ice front can sit next to 
 interior. Colder ice absorbs more heat per unit melt — ``L_\text{eff}`` runs from
 3.34e5 J kg⁻¹ at 0 °C to 3.84e5 at −25 °C — so it acts as a direct brake on melting.
 
+The term ``-c_i (T_i - T_b)\,\dot m`` in ``L_\text{eff}`` is the heat conducted into the
+ice, in the linearisation of Holland & Jenkins (1999), which assumes that the ice
+velocity is proportional to the melt rate.  `Params(; ice_conduction = ...)` selects
+other closures from Wiskandt & Jourdain (2025):
+
+| closure | heat conducted into the ice | when it is reasonable |
+|---|---|---|
+| `HollandJenkinsConduction()` (default) | ``\dot m\,c_i\,(T_b - T_i)``, melting and refreezing | melting; the v1/v2 behaviour |
+| `MeltOnlyConduction()` | the same for ``\dot m > 0``, zero otherwise | as above, and a refreezing base of marine ice near the freezing point |
+| `NoConduction()` | none, ``L_\text{eff} = L`` | marine ice only; overestimates melt by ``c_i (T_s - T_f)/L`` (≈ 11 % for ``T_s = -20`` °C) |
+| `LinearProfileConduction()` | ``k_i (T_f - T_s)/H_i``, independent of ``\dot m`` | thick, slow ice shelves in thermal steady state (e.g. Ross) |
+
+The switch of `MeltOnlyConduction` is the sign of ``T - T_f(S, z_b)``, which is the sign of
+``\dot m``, so the melt equations are solved once.  `LinearProfileConduction` takes ``T_f``
+at the layer salinity so that the flux does not depend on ``\dot m`` and the equation
+stays quadratic, and the ice thickness from the draft by hydrostatic equilibrium.
+
+!!! warning "Experimental"
+    Every closure but the default is experimental, and constructing one logs a warning.
+    The `T_ice_base` of the ice forcing is used as the ice temperature ``T_i`` by all of
+    them; for `LinearProfileConduction` it is the *surface* temperature ``T_s`` of a
+    linear profile, which is typically colder than the ``T_i`` that suits
+    `HollandJenkinsConduction`.
+
 **Entrainment** ``\dot e`` (Gaspar 1988 / Gladish 2012). Turbulence at the base
 of the layer mixes warm ambient water *upward* into it. This supplies the heat
 for melting and is a **positive feedback**: more shear/melt → more entrainment →

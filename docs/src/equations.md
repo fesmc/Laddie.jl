@@ -233,6 +233,15 @@ c = \frac{c_p}{L_\text{eff}}\gamma_T\gamma_S(\tilde T_f - T + \lambda_1 S).
 The interface temperature is then
 ``T_b = (c_p\gamma_T\,T/L_\text{eff} - \dot m)/(c_p\gamma_T/L_\text{eff} + c_i\dot m/L_\text{eff})``.
 
+The ``c_i`` terms are the conduction into the ice of `ice_conduction =
+HollandJenkinsConduction` (the default). With `ice_conduction` set to another
+[`AbstractIceConduction`](@ref), the kernel replaces ``c_i`` per cell by
+``c_{i,\text{eff}} = c_i\,w`` with ``w \in \{0, 1\}`` set by the sign of ``T - T_f(S, z_b)``
+(`MeltOnlyConduction`: 1 where melting, 0 otherwise; `NoConduction`, `LinearProfileConduction`: 0),
+and adds the fixed flux ``q = k_i(T_f - T_s)/(\rho_\text{fw} H_i)`` of `LinearProfileConduction`
+to the heat balance (8), which amounts to evaluating the equations above at
+``T - q/(c_p\gamma_T)`` in place of ``T``.
+
 ### (11–12) Turbulent exchange coefficients
 
 ```math
@@ -351,6 +360,7 @@ toward ``T_f`` at the rate ``1/\tau``. The salt stays in the layer, see (5).
 | (5) | salt | `_step_salinity_kernel!` + `mat_*` variant |
 | (6)/(7) | reduced gravity / EOS | `update_density!`, `_density_kernel!` |
 | (8)–(10) | three-eq melt + liquidus | `_three_eq_melt_kernel!` |
+| — | conduction into the ice | `_ice_conduction`, `_conduction_coefficients` |
 | (11)/(12) | ``\gamma_T,\gamma_S`` | `_compute_turbulent_transfer_coefficients!` |
 | (13) | ``u_\star`` | `_ustar_kernel!` |
 | (14) | entrainment | `GasparEntrainment` → `_buoyancy_entrainment_kernel!` (default); Holland → `_holland_entrainment_kernel!` |

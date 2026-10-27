@@ -31,6 +31,16 @@ ResetToAmbient
 RelaxToAmbient
 ```
 
+## Ice conduction
+
+```@docs
+AbstractIceConduction
+HollandJenkinsConduction
+MeltOnlyConduction
+NoConduction
+LinearProfileConduction
+```
+
 ## Frazil ice
 
 ```@docs

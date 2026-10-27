@@ -472,3 +472,104 @@ end
     @test upstream.max_speed <= centred.max_speed
     @test upstream.mean_meltrate ≈ centred.mean_meltrate rtol = 0.05
 end
+
+@testset "AbstractIceConduction: closures, heat balance, warnings" begin
+    quiet(f) = Base.CoreLogging.with_logger(f, Base.CoreLogging.NullLogger())
+
+    # The default is the Holland & Jenkins linearisation and warns of nothing; the
+    # others warn (once per session under the console logger, through `maxlog`).
+    @test Params(; FT).ice_conduction === HollandJenkinsConduction()
+    @test_logs HollandJenkinsConduction()
+    @test_logs (:warn, r"experimental ice-conduction closure") MeltOnlyConduction()
+    @test_logs (:warn, r"LinearProfileConduction") LinearProfileConduction()
+
+    none, meltonly, lin = quiet() do
+        NoConduction(), MeltOnlyConduction(), LinearProfileConduction(FT(2.1))
+    end
+    @test lin.conductivity === FT(2.1)
+    @test quiet(() -> LinearProfileConduction().conductivity) === 2.1
+    @test sprint(show, lin) == "LinearProfileConduction(conductivity = 2.1 W/m/K)"
+    @test sprint(show, none) == "NoConduction()"
+    @test occursin("ice conduction = HollandJenkinsConduction()",
+                   sprint(show, MIME("text/plain"), Params(; FT)))
+    # Promotion to the precision of the Params.
+    p32 = quiet(() -> Params(; FT = Float32, ice_conduction = LinearProfileConduction(2.1)))
+    @test p32.ice_conduction.conductivity === 2.1f0
+
+    # The balance at the interface, for a melting and a supercooled (freezing) layer:
+    #   c_p γT (T − Tb) = ṁ (L − c_i,eff (T_i − Tb)) + q,   γS (S − Sb) = ṁ Sb,
+    # with Tb the liquidus at Sb, and c_i,eff and q set by the closure.
+    function balance(closure, fmelt, ffreeze, k; supercooled)
+        sim = quiet() do
+            build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                         params = Params(; FT, ice_conduction = closure))
+        end
+        m = sim.model
+        Tf = @. m.l1 * m.S.present + m.l2 + m.l3 * m.z_draft
+        supercooled && (m.T.present .= ifelse.(m.imask .> 0, Tf .- 0.05, m.T.present))
+        Laddie.update_melt!(m)
+        ice = m.imask .> 0
+        ci = @. m.c_i * ifelse(m.T.present > Tf, fmelt, ffreeze)
+        Hi = @. -m.z_draft * m.rho0_seawater / m.rho_ice
+        q = @. k * (Tf - m.T_ice_base) / (Hi * m.rho_freshwater)
+        Sb = @. m.gamS * m.S.present / (m.gamS + m.melt)
+        # Tb is the liquidus at Sb exactly where there is no melt-proportional conduction.
+        # Where there is, the kernel's quadratic takes the m² coefficient as L − c_i T_i
+        # rather than L − c_i (T_i − T̃_f), a ~1e-3 K approximation of long standing.
+        Tliq = @. m.l1 * Sb + m.l2 + m.l3 * m.z_draft
+        if all(iszero, ci[ice])
+            @test m.Tb[ice] ≈ Tliq[ice]
+        else
+            @test maximum(abs, (m.Tb .- Tliq)[ice]) < 1e-2
+        end
+        lhs = @. m.c_p * m.gamT * (m.T.present - m.Tb)
+        rhs = @. m.melt * (m.L - ci * (m.T_ice_base - m.Tb)) + q
+        @test lhs[ice] ≈ rhs[ice]
+        @test all(isfinite, m.melt) && all(isfinite, m.Tb)
+        sign = supercooled ? -1 : 1
+        @test all(sign .* m.melt[ice] .> 0)
+        return copy(m.melt)
+    end
+
+    cases = ((HollandJenkinsConduction(), 1, 1, 0), (meltonly, 1, 0, 0),
+             (none, 0, 0, 0), (lin, 0, 0, FT(2.1)))
+    melt = Dict(sc => [balance(c, f1, f2, k; supercooled = sc) for (c, f1, f2, k) in cases]
+                for sc in (false, true))
+
+    # Where melting, MeltOnly is the default closure; where freezing, it is NoConduction.
+    @test melt[false][2] == melt[false][1]
+    @test melt[true][2] == melt[true][3]
+    # No conduction lets L_eff fall to L, so the melt is larger than with the colder-ice
+    # latent heat (by about c_i |T_i| / L, 15 % for T_i = -25 °C).
+    ice = build_isomip(CPU(); FT, nx = 20, ny = 10).model.imask .> 0
+    @test all(melt[false][3][ice] .> melt[false][1][ice])
+    # The linear profile conducts a fixed heat sink: less melt than without conduction.
+    @test all(melt[false][4][ice] .< melt[false][3][ice])
+
+    # The prescribed melt carries the same conduction in its heat sink.
+    for (c, f1, f2, k) in cases
+        sim = quiet() do
+            build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                         params = Params(; FT, melting = PrescribedMelting(5.0),
+                                         ice_conduction = c))
+        end
+        m = sim.model
+        Laddie.update_melt!(m)
+        Tf = @. m.l1 * m.S.present + m.l2 + m.l3 * m.z_draft
+        ci = @. m.c_i * ifelse(m.T.present > Tf, f1, f2)
+        Hi = @. -m.z_draft * m.rho0_seawater / m.rho_ice
+        q = @. k * (Tf - m.T_ice_base) / (Hi * m.rho_freshwater)
+        heat = @. (m.melt * (m.L - ci * (m.T_ice_base - m.Tb)) + q) / m.c_p
+        @test (m.gamT .* (m.T.present .- m.Tb))[ice] ≈ heat[ice]
+    end
+
+    # Every closure runs.
+    for (c, _, _, _) in cases
+        sim = quiet() do
+            build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                         params = Params(; FT, ice_conduction = c))
+        end
+        run!(sim; days = 0.5, verbose = false)
+        @test all(isfinite, sim.model.H.present) && all(isfinite, sim.model.melt)
+    end
+end

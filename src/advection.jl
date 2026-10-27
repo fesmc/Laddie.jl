@@ -68,7 +68,7 @@ $(TYPEDEF)
 
 Abstract supertype for the form in which the temperature and salinity equations
 are stepped.  Pass a concrete instance as `Params(; tracer_form = ...)`:
-[`AdvectiveTracerForm`](@ref) (the default) or [`FluxTracerForm`](@ref).
+[`FluxTracerForm`](@ref) (the default) or [`AdvectiveTracerForm`](@ref).
 
 Both integrate the same flux-form budget `∂(Hq)/∂t = -∇·(H u q) + …`
 and differ only in what they step: the tracer `q` itself, or its content `H q`.
@@ -78,7 +78,7 @@ abstract type AbstractTracerForm end
 """
 $(TYPEDEF)
 
-Step the tracer itself (the default), as Python LADDIE v1.x does: the budget is
+Step the tracer itself, as Python LADDIE v1.x does: the budget is
 expanded by the product rule into `H ∂q/∂t = … - q ∂H/∂t`, with `∂H/∂t`
 taken from the thickness step just made, and
 
@@ -91,14 +91,15 @@ The `- q ∂H/∂t` term cancels the volume sources only as far as the discrete
 step is clamped or restarted, and the mismatch is then divided by `H`: in thin
 layers this can drive `q` far outside the range of the waters that make it up.
 
-Select via `Params(; tracer_form = AdvectiveTracerForm())` (the default).
+Select it explicitly, `Params(; tracer_form = AdvectiveTracerForm())`, to reproduce
+Python LADDIE v1.x, as its verification test does.
 """
 struct AdvectiveTracerForm <: AbstractTracerForm end
 
 """
 $(TYPEDEF)
 
-Step the tracer content, as LADDIE v2 does (`laddie_tracers.f90`), and recover the
+Step the tracer content (the default), as LADDIE v2 does (`laddie_tracers.f90`), and recover the
 tracer by dividing by the new thickness:
 
 ```
@@ -122,6 +123,6 @@ q⁺ = ((Hq)⁺ + max(H⁺ - H*, 0) q_a) / max(H⁺, H*).
 The clamp binds mostly in the bootstrap step, where `ent2` and the cap
 detrainment, sized for a 2Δt step, do only half their work.
 
-Select via `Params(; tracer_form = FluxTracerForm())`.
+Select via `Params(; tracer_form = FluxTracerForm())` (the default).
 """
 struct FluxTracerForm <: AbstractTracerForm end

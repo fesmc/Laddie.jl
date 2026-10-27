@@ -80,6 +80,7 @@ params = Params(; FT,
     entrainment = GasparEntrainment(2.5),
     melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
     convection_scheme = ClampDensity(0.005),
+    tracer_form = AdvectiveTracerForm(),  # the reference steps T and S, not H·T and H·S
 )
 ## The reference applies one partial-slip factor of 1 to every wall.
 boundary = BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))

@@ -114,7 +114,7 @@ end
     # because the extra melt cools and freshens the layer that drives it.
     m_warm = build(PrescribedIceForcing(FT(0.0)))
     run!(m_warm; days = 1.0, verbose = false)
-    @test sum(m_warm.model.melt) / sum(m_def.model.melt) ≈ 1.072 rtol = 0.02
+    @test sum(m_warm.model.melt) / sum(m_def.model.melt) ≈ 1.049 rtol = 0.02   # 1.072 under AdvectiveTracerForm
 
     # A 2D field is the point of the move: temperate ice over the upstream half
     # of the shelf, cold ice over the rest, must land strictly between the two

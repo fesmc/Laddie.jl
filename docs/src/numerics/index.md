@@ -69,7 +69,7 @@ describe one family each:
 | page | abstract type | selected with | default |
 |------|---------------|---------------|---------|
 | [Momentum advection](momentum_advection.md) | [`AbstractMomentumAdvection`](@ref) | `Params(; momentum_advection)` | `CentredMomentumAdvection()` |
-| [Tracer form](tracer_form.md) | [`AbstractTracerForm`](@ref) | `Params(; tracer_form)` | `AdvectiveTracerForm()` |
+| [Tracer form](tracer_form.md) | [`AbstractTracerForm`](@ref) | `Params(; tracer_form)` | `FluxTracerForm()` |
 | [Laplacian weights](laplacian_weights.md) | [`AbstractLaplacianWeights`](@ref) | `Params(; laplacian_weights)` | `PresentLaplacianWeights()` |
 | [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; tstep)` | `FixedDt()` |
 | [CFL number](cfl.md) | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `ExactCFL()` |

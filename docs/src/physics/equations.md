@@ -67,11 +67,13 @@ The layer thickness is ``H``, as in LADDIE v2 (Lambert et al. 2026). Lambert et 
 
 ## Prognostic equations (1–5)
 
-The model evolves five depth-integrated 2-D fields. Each kernel in
-`src/numerics.jl` expands the flux-form left-hand side
+The model evolves five depth-integrated 2-D fields. The momentum kernels in
+`src/numerics.jl` expand the flux-form left-hand side
 ``\partial(H\,q)/\partial t = q\,\partial H/\partial t + H\,\partial q/\partial t``
-and divides the momentum/tracer right-hand sides by the (face-interpolated)
-thickness, so the prognostic variable stepped is ``q`` itself, not ``Hq``.
+and divide the right-hand sides by the face-interpolated thickness, so the variable
+stepped is ``U`` itself, not ``HU``. The tracer kernels do the same under
+[`AdvectiveTracerForm`](@ref), and step the content ``HT`` under the default
+[`FluxTracerForm`](@ref); see (4).
 
 ### (1) Layer thickness — continuity
 
@@ -173,9 +175,9 @@ term ``\dot f\,(L/c_p - T)`` (zero unless `frazil_ice = RelaxedFrazilIce`, see
 ```
 
 with `cT` ``=-\nabla\!\cdot(H\mathbf{U}T)``, then ``T^{+} = T^{p} + (\mathrm{rhs}/H)\,\Delta t``.
-That is the default [`AdvectiveTracerForm`](@ref). Under [`FluxTracerForm`](@ref)
-the ``-T\,\partial_t H`` term is left out of `rhs` and the content is stepped
-instead, ``T^{+} = (H^{p}T^{p} + \mathrm{rhs}\,\Delta t)/H^{+}``.
+That is [`AdvectiveTracerForm`](@ref), the form of the paper and of Python v1.x. Under
+[`FluxTracerForm`](@ref), the default, the ``-T\,\partial_t H`` term is left out of `rhs`
+and the content is stepped instead, ``T^{+} = (H^{p}T^{p} + \mathrm{rhs}\,\Delta t)/H^{+}``.
 
 ### (5) Salt
 

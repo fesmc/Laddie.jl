@@ -119,7 +119,7 @@ struct Params{
     front_pressure::FP
     "momentum-advection scheme, an [`AbstractMomentumAdvection`](@ref) (default centred, as in v1.x)"
     momentum_advection::MA
-    "form of the tracer equations, an [`AbstractTracerForm`](@ref) (default advective, as in v1.x)"
+    "form of the tracer equations, an [`AbstractTracerForm`](@ref) (default flux form, as in v2)"
     tracer_form::TF
     "Coriolis parameter, an [`AbstractCoriolisParameter`](@ref) (default f-plane at `-1.37e-4` s⁻¹)"
     coriolis::CP
@@ -185,7 +185,7 @@ _param_defaults() = (
     laplacian_weights = PresentLaplacianWeights(),
     front_pressure = FullDepthGradient(),
     momentum_advection = CentredMomentumAdvection(),
-    tracer_form = AdvectiveTracerForm(),
+    tracer_form = FluxTracerForm(),
     coriolis = CoriolisParameter0D(),
 )
 

@@ -12,12 +12,15 @@
     # (no mask awareness), so the field residuals are meaningful here.
     # For production runs use the default JlGradient() which avoids spurious
     # slopes from ocean/grounded neighbours.  Likewise the Python walls are one
-    # partial-slip factor of 1, not the no-slip default.
+    # partial-slip factor of 1, not the no-slip default, and Python steps the
+    # tracers in advective form, not the flux-form default.
     py_restart = joinpath(@__DIR__, "..", "docs", "assets", "restart_000001.nc")
     if isfile(py_restart)
         v1_walls = BoundaryConditions(; grounding_line = PartialSlipGL(1.0),
                                       land = PartialSlipLand(1.0))
-        m = build_isomip(; isomipcond = :warm, gradient = PyGradient(), boundary = v1_walls)
+        v1_params = Params(; tracer_form = AdvectiveTracerForm())
+        m = build_isomip(; isomipcond = :warm, gradient = PyGradient(), boundary = v1_walls,
+                         params = v1_params)
         run!(m; days = 1.0, verbose = false)
 
         NCD = Laddie.NCDatasets

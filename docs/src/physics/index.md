@@ -66,7 +66,8 @@ the forcing. The pages of this section describe one family each:
 | [Ice-shelf gaps](gaps.md) | [`AbstractGapsBC`](@ref) | `BoundaryConditions(; gaps)` | `SinkGapsBC()` |
 
 The defaults reproduce Python LADDIE v1.x, against which Laddie.jl is validated, except
-for the no-slip walls (see [Wall slip](../numerics/walls.md)). Options marked
+for the no-slip walls (see [Wall slip](../numerics/walls.md)) and the flux-form tracer step
+(see [Tracer form](../numerics/tracer_form.md)), which follow LADDIE v2. Options marked
 *experimental* log a warning when constructed.
 
 The ice forcing has a single member, [`PrescribedIceForcing`](@ref), which supplies the

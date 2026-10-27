@@ -72,10 +72,18 @@ end
 # as one block: with Laddie's (32, 8) GPU workgroup the tiling leaks into the raised
 # program as gathers and transposes, and the step runs about 2× slower.  Native
 # kernels keep that workgroup, as on the CUDA backend.
+#
+# Reactant 0.2.286 mis-lowers a raised kernel whose one block has 2^22 iterations or
+# more: it writes only a sliver of the ndrange (a 4-point stencil over 2048 × 2048
+# writes 2048 points) and leaves the rest untouched, so a step silently does
+# nothing (pan-Antarctic grids finer than 3 km). From that size the raised kernels
+# keep the workgroup too: slower, but correct.
+const MAX_RAISED_BLOCK = 2^22
 function _launch_traced!(kernel!, ndrange, args)
     f = TRACING_FUSION[]
     backend = KA.get_backend(first(args))
-    k = f === :native ? kernel!(backend, Laddie._workgroup(backend)) : kernel!(backend)
+    tiled = f === :native || prod(ndrange) >= MAX_RAISED_BLOCK
+    k = tiled ? kernel!(backend, Laddie._workgroup(backend)) : kernel!(backend)
     k(args...; ndrange)
     f === :kernel && _barrier!(args...)
     return nothing

@@ -53,12 +53,12 @@ function _check_scalar_or_field(x, sz, name, desc)
     return x
 end
 
-# Bring a user-supplied basal ice temperature onto the full domain: a scalar is
+# Bring a user-supplied ice temperature `T_ice_base` onto the full domain: a scalar is
 # broadcast, a matrix is checked against the grid's input size and converted to FT,
 # so `_crop_ice_forcing` can then slice it with the grid's crop ranges.  Materialising once at build keeps
 # the melt kernel to a single indexed path instead of a scalar and a field variant.
 function _expand_ice_forcing(ice::PrescribedIceForcing, sz, FT)
-    T = _check_scalar_or_field(ice.T_ice_base, sz, "T_ice_base", "basal ice temperature")
+    T = _check_scalar_or_field(ice.T_ice_base, sz, "T_ice_base", "ice temperature")
     Tb = T isa AbstractMatrix ? FT.(T) : fill(FT(T), sz)
     any(isnan, Tb) && throw(ArgumentError("T_ice_base contains NaN"))
     all(<=(0), Tb) || throw(
@@ -233,7 +233,7 @@ the `boundary.grounding_line` slip condition), while `1` is rock (`lnd`, and
 # Keywords
 - `forcing` (required): a `CavityForcing`, or an ocean forcing alone (e.g.
   `ISOMIPForcing`, `OceanForcing1D`), which is paired with a uniform
-  `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`.  A 2D basal ice temperature must
+  `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`.  A 2D ice temperature `T_ice_base` must
   cover the grid's input arrays (`grid.input_size`); it is cropped with the grid.
 - `params`: a `Params` object with all physical constants and parameterizations
   (default `Params(; FT)` at the grid's precision).  A 2D latitude in
@@ -331,7 +331,7 @@ Convenience constructor for the idealised ISOMIP+ channel geometry
 - `z_draft_gl`, `z_draft_front`: ice-draft depth at grounding line and ice front in
   metres (default −720 m and −200 m).
 - `isomipcond`: `:warm` (1 °C at depth) or `:cold` (nearly freezing).
-- `ice_forcing`: an `AbstractIceForcing` supplying the basal ice temperature
+- `ice_forcing`: an `AbstractIceForcing` supplying the ice temperature `T_ice_base`
   (default: uniform `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`).
 - `FT`: floating-point precision type (default `Float64`; use `Float32` for GPU).
 - `params`: `Params` object (default `Params(; FT)`, the ISOMIP+-canonical values).

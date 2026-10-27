@@ -366,8 +366,8 @@ to −1 m.
 - `backend`: KernelAbstractions backend of the arrays (default `CPU()`).
 - `FT`: floating-point precision type (default `Float64`).
 
-Full-domain fields a model is given later — a 2D latitude or basal ice
-temperature — must match the size of the arrays passed here; the model crops
+Full-domain fields a model is given later — a 2D latitude or ice
+temperature `T_ice_base` — must match the size of the arrays passed here; the model crops
 them with `grid.crop`.
 
 ```julia

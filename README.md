@@ -99,8 +99,9 @@ masks, ice-base slope and Coriolis field from it, so one grid can drive several
 models — e.g. both gap treatments.
 
 A model is driven by a `CavityForcing` — an ocean forcing plus an ice forcing.
-Passing the ocean forcing alone, as above, pairs it with a uniform basal ice
-temperature of −25 °C. Supply the ice explicitly to vary it in space:
+Passing the ocean forcing alone, as above, pairs it with a uniform ice
+temperature `T_ice_base` of −25 °C (the temperature of the ice above its base,
+typically the surface temperature; the base itself is at the freezing point). Supply the ice explicitly to vary it in space:
 
 ```julia
 forcing = CavityForcing(ocean, PrescribedIceForcing(T_ice_base))  # same size as mask

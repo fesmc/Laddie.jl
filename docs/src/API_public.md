@@ -88,7 +88,9 @@ DebugConfig
 ## Forcing
 
 A model is driven by a [`CavityForcing`](@ref): an ocean forcing supplying the
-ambient T/S, and an ice forcing supplying the basal ice temperature. Passing an
+ambient T/S, and an ice forcing supplying the ice temperature `T_ice_base` (the temperature of the ice
+above the basal boundary layer, typically the surface temperature; see
+[`PrescribedIceForcing`](@ref)). Passing an
 ocean forcing on its own to `Model` is shorthand for pairing it with a uniform
 `PrescribedIceForcing(-25.0)`.
 

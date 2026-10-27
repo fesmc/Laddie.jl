@@ -3,8 +3,9 @@
 #
 # A `CavityForcing` bundles the two external drivers of the meltwater layer:
 #   - `ocean` — the ambient T/S the layer entrains and exchanges heat with
-#   - `ice`   — the state of the ice above it; currently the basal ice
-#               temperature, which sets the effective latent heat of melting
+#   - `ice`   — the state of the ice above it; currently the ice temperature above
+#               the basal thermal boundary layer (`T_ice_base`, typically the surface
+#               temperature), which sets the heat conducted into the ice
 #
 # Ocean profiles are carried on a uniform z-grid.  The concrete vector type is a
 # type parameter V (Vector{FT} on CPU, CuArray{FT,1} on GPU after to_backend),
@@ -254,16 +255,28 @@ Base.show(io::IO, f::PerBasinOceanForcing1D) = print(
 
 """
 Supertype of every ice forcing: the state of the ice above the layer.  Subtypes
-must provide `T_ice_base`, the temperature of the ice at its base (°C, ≤ 0),
-which sets the effective latent heat ``L_\\text{eff} = L - c_i T_i`` in the
-three-equation melt solve.
+must provide `T_ice_base` (°C, ≤ 0), the ice temperature ``T_i`` that the
+[`AbstractIceConduction`](@ref) closure uses for the heat conducted into the ice;
+see [`PrescribedIceForcing`](@ref) for what it is and is not.
 """
 abstract type AbstractIceForcing end
 
 """
 $(TYPEDEF)
 
-Basal ice temperature held fixed for the whole run.
+Ice temperature ``T_i`` held fixed for the whole run.
+
+Despite its name, `T_ice_base` is **not** the temperature at the ice base: the base
+is at the interface temperature ``T_b``, the freezing point, which the melt solve
+computes every step.  The ice column is not resolved; the heat conducted into the ice
+is a closure ([`AbstractIceConduction`](@ref)), and ``T_i`` is the temperature of the
+ice *above* the thin thermal boundary layer at the base, into which the ice is advected
+as it melts.  For the default [`HollandJenkinsConduction`](@ref) (Holland & Jenkins
+1999), a steady ice column, that is the ice-shelf **surface temperature** (Wiskandt &
+Jourdain 2025 use the 1980–2019 mean snow-surface temperature).  With an ice sheet
+model at hand, the ice temperature 50–100 m above the base, as a 2D field, carries the
+transient and upstream-advected state of the ice instead.  Were ``T_i`` the basal
+temperature, ``T_i = T_b`` and it would have no effect.
 
 `T_ice_base` may be given as a scalar (uniform ice, the common standalone case)
 or as a full-domain matrix the same size as `mask`, letting a colder interior sit
@@ -284,11 +297,11 @@ PrescribedIceForcing(T_ice_matrix)   # 2D, same size as `mask`
 $(TYPEDFIELDS)
 """
 struct PrescribedIceForcing{M} <: AbstractIceForcing
-    "basal ice temperature (°C): a scalar, or a full-domain matrix the size of `mask`"
+    "ice temperature above the basal boundary layer, typically the surface temperature (°C): a scalar, or a full-domain matrix the size of `mask`"
     T_ice_base::M
 end
 
-# Default basal ice temperature, applied when a bare ocean forcing is passed to
+# Default ice temperature `T_ice_base`, applied when a bare ocean forcing is passed to
 # `Model` (the ISOMIP+ value).
 const DEFAULT_T_ICE_BASE = -25.0
 
@@ -318,7 +331,7 @@ $(TYPEDFIELDS)
 struct CavityForcing{O<:AbstractOceanForcing,I<:AbstractIceForcing}
     "the ocean forcing (ambient temperature and salinity)"
     ocean::O
-    "the ice forcing (basal ice temperature)"
+    "the ice forcing (the ice temperature `T_ice_base`)"
     ice::I
 end
 

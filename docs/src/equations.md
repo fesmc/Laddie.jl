@@ -224,8 +224,9 @@ T_b = \lambda_1 S_b + \lambda_2 + \lambda_3 z_b \tag{10}
 ```
 
 Equation (10) is the linear liquidus.
-Define the **effective latent heat** ``L_\text{eff} = L - c_i T_i``, where the basal
-ice temperature ``T_i`` is supplied per cell by the ice forcing. Eliminating
+Define the **effective latent heat** ``L_\text{eff} = L - c_i T_i``, where the ice
+temperature ``T_i`` (`T_ice_base`; the temperature of the ice above the basal boundary
+layer, not at the base, which is at ``T_b``) is supplied per cell by the ice forcing. Eliminating
 ``T_b, S_b`` gives a quadratic in ``\dot m``, solved pointwise in
 `_three_eq_melt_kernel!` with ``\tilde T_f = \lambda_2 + \lambda_3 z_b``:
 

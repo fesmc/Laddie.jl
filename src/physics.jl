@@ -56,7 +56,7 @@ end
         _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], _layer_depth(z_draft[i, j], H[i, j]), eos) * tmask[i, j]
 end
 
-# Three-equation melt parameterisation (Jenkins 1991) + ice-base temperature.
+# Three-equation melt parameterisation (Jenkins 1991) + interface temperature Tb.
 # `gamT`/`gamS` are scalars (FixedGamTMelting) or per-cell fields
 # (TurbulentGamTMelting); `_at` reads either.
 @kernel function _three_eq_melt_kernel!(

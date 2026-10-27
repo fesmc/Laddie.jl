@@ -1,4 +1,4 @@
-# Ocean and ice forcing: profile resampling, ambient lookup, basal ice temperature.
+# Ocean and ice forcing: profile resampling, ambient lookup, ice temperature (T_ice_base).
 
 @testset "OceanForcing1D: resampling, sorting, flat extrapolation" begin
     z_c = [-1000.0, -500.0, -100.0]

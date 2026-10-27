@@ -58,7 +58,7 @@ Fields are accessed directly on `m` through a flat forwarding layer:
 | `m.f`, `m.fu`, `m.fv` | `Geometry` | Coriolis at T-, u- and v-points |
 | `m.boundary` | `BoundaryConditions` | `m.boundary.land` (not flattened) |
 | `m.Tz`, `m.Sz`, `m.z` | Forcing (ocean) | ambient profile arrays |
-| `m.T_ice_base` | Forcing (ice) | basal ice temperature field |
+| `m.T_ice_base` | Forcing (ice) | ice temperature above the basal boundary layer (see `PrescribedIceForcing`) |
 
 `m.FT` returns the floating-point type (`Float64` or `Float32`) of the scalar
 parameters, which `Model` checks against the grid and forcing, and `m.nx`, `m.ny`

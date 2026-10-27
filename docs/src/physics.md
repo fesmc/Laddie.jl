@@ -103,7 +103,7 @@ T_b = \lambda_1 S_b + \lambda_2 + \lambda_3\,z_b
 
 Here ``T_b`` and ``S_b`` are the boundary temperature and salinity at the ice
 face, ``L_\text{eff} = L - c_i T_i`` is the effective latent heat adjusted for
-basal ice temperature ``T_i``, and the turbulent exchange velocities
+the ice temperature ``T_i`` (see below: not the temperature at the base, which is ``T_b``), and the turbulent exchange velocities
 ``\gamma_T, \gamma_S`` scale with the friction velocity
 
 ```math
@@ -170,8 +170,11 @@ departs from the layer's.  Jenkins et al. expect the three-equation form to be t
     salinity contrast, and `gamS` is not used.
 
 ``T_i`` comes from the **ice forcing**, not the parameter set: `PrescribedIceForcing`
-holds it as a scalar or as a 2D field, so a temperate ice front can sit next to a cold
-interior. Colder ice absorbs more heat per unit melt — ``L_\text{eff}`` runs from
+holds it (as `T_ice_base`) as a scalar or as a 2D field, so a temperate ice front can sit
+next to a cold interior.  Despite the field name, it is not the temperature at the ice
+base: the base is at ``T_b``, the freezing point, and ``T_i`` is the temperature of the
+ice above the thin thermal boundary layer at the base — the surface temperature for a
+steady ice shelf, or the temperature 50–100 m above the base from an ice sheet model. Colder ice absorbs more heat per unit melt — ``L_\text{eff}`` runs from
 3.34e5 J kg⁻¹ at 0 °C to 3.84e5 at −25 °C — so it acts as a direct brake on melting.
 
 The term ``-c_i (T_i - T_b)\,\dot m`` in ``L_\text{eff}`` is the heat conducted into the

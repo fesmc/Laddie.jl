@@ -616,7 +616,7 @@ $(TYPEDFIELDS)
 end
 
 # Index ranges of the kept sub-rectangle.  Returned rather than applied so every
-# full-domain input — mask, draft, bed, and a 2D basal ice temperature — is sliced
+# full-domain input — mask, draft, bed, and a 2D ice temperature — is sliced
 # with one identical pair of ranges.
 _crop_ranges(mask, ::NoDomainCropping) = axes(mask, 1), axes(mask, 2)
 

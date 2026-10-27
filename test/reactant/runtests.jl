@@ -56,7 +56,7 @@ function per_basin_sim(; kw...)
     return Simulation(Model(grid; forcing); kw...)
 end
 
-# Every non-default scheme, in five runs.  Not covered: TopographicMaxLayerThickness
+# Every non-default scheme, in seven runs.  Not covered: TopographicMaxLayerThickness
 # (the kernel of RelativeMaxLayerThickness at fraction 1) and OceanForcing2D (not
 # supported by the Reactant backend yet).
 const SCHEME_SCENARIOS = [
@@ -79,6 +79,12 @@ const SCHEME_SCENARIOS = [
                                       wall_advection = NoWallAdvection())),
     "prescribed" => () -> build_isomip(CPU(); KW...,
         params = Params(; melting = PrescribedMelting([i < 25 ? 2.0 : 8.0 for i = 1:42, _ = 1:22]))),
+    "two-equation melt + linear profile" => () -> build_isomip(CPU(); KW...,
+        params = Params(; melting = TwoEquationMelting(), ice_conduction = LinearProfileConduction())),
+    "Roquet EOS + melt-only conduction" => () -> build_isomip(CPU(); KW...,
+        params = Params(; equation_of_state = RoquetEOS(), ice_conduction = MeltOnlyConduction(),
+                        melting = UStarGamTMelting(3.0e-2, 70.0),
+                        convection_scheme = ResetToAmbient())),
     "gaps" => gaps_sim,
     "per-basin forcing" => per_basin_sim,
 ]

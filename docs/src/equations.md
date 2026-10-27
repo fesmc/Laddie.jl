@@ -200,7 +200,16 @@ g_a' = \frac{g\,\Delta\rho_a}{\rho_0}, \tag{6}
 ```
 
 `update_density!` / `_density_kernel!` computes the dimensionless
-``\delta\rho = \beta(S_a-S) - \alpha(T_a-T)`` into `m.drho` (masked).
+``\delta\rho = \beta(S_a-S) - \alpha(T_a-T)`` into `m.drho` (masked) for the default
+`equation_of_state = LinearEOS`. For any [`AbstractEquationOfState`](@ref) the contrast is
+```math
+\delta\rho = \beta\,(S_a - S) - \bigl(a_0 + a_T\,\bar T + a_Z\,Z\bigr)(T_a - T),
+\qquad \bar T = \tfrac12(T_a + T),
+```
+with the scalars from `_eos_coefficients`: ``(\beta, \alpha, 0, 0)`` for `LinearEOS`, and for `RoquetEOS`
+``(b_0, -C_b\Theta_0, C_b, T_h)/\rho_0``. ``Z`` is the depth of the layer mid-point,
+``-z_b + H/2``, in the density and the convective reset, and the ice-base depth ``-z_b`` for the interface
+term of the buoyancy-flux entrainment (14). The default reproduces the linear contrast to the last bit.
 
 ### (8–10) Three-equation melt parameterisation
 
@@ -358,7 +367,7 @@ toward ``T_f`` at the rate ``1/\tau``. The salt stays in the layer, see (5).
 | (3) | ``V``-momentum | `_step_v_momentum_kernel!`; terms: `v_*` fns (`test/equation_terms.jl`) |
 | (4) | heat | `_step_temperature_kernel!` + `mat_*` variants |
 | (5) | salt | `_step_salinity_kernel!` + `mat_*` variant |
-| (6)/(7) | reduced gravity / EOS | `update_density!`, `_density_kernel!` |
+| (6)/(7) | reduced gravity / EOS | `update_density!`, `_density_kernel!`, `_drho`, `_eos_coefficients` |
 | (8)–(10) | three-eq melt + liquidus | `_three_eq_melt_kernel!` |
 | — | conduction into the ice | `_ice_conduction`, `_conduction_coefficients` |
 | — | two-equation melt (`TwoEquationMelting`) | `_two_eq_melt_kernel!`, `_ustar_gamT_kernel!` |

@@ -9,6 +9,7 @@ include("melting.jl")
 include("convection.jl")
 include("frazil.jl")
 include("conduction.jl")
+include("eos.jl")
 include("max_layer_thickness.jl")
 include("coriolis.jl")
 include("boundary_conditions.jl")
@@ -63,6 +64,7 @@ export AbstractMelting,
     FixedGamTMelting, TurbulentGamTMelting, UStarGamTMelting, TwoEquationMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
 export AbstractFrazilIce, NoFrazilIce, RelaxedFrazilIce
+export AbstractEquationOfState, LinearEOS, RoquetEOS
 export AbstractIceConduction, HollandJenkinsConduction, MeltOnlyConduction, NoConduction,
     LinearProfileConduction
 export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D

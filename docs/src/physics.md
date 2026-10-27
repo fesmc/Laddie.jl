@@ -54,6 +54,35 @@ density contrast with the ambient cavity water,
 
 which sets the pressure gradients that push the light meltwater up the draft.
 
+The seawater equation of state is nonlinear, mostly in the thermal expansion ``\alpha``, which
+falls towards the freezing point (**cabbeling**) and rises with depth (**thermobaricity**).
+`Params(; equation_of_state = ...)` selects it:
+
+| equation of state | ``\delta\rho`` | ``\alpha`` |
+|---|---|---|
+| `LinearEOS()` (default) | ``\beta\,\Delta S - \alpha\,\Delta T`` | constant, `Params.alpha` |
+| `RoquetEOS()` | ``\beta\,\Delta S - (a_0 + a_T \bar T + a_Z Z)\,\Delta T`` | ``\bigl[C_b(\Theta - \Theta_0) + T_h Z\bigr]/\rho_0`` |
+
+where ``\Delta X = X_a - X``, ``\bar T = (T_a + T)/2`` and ``Z`` is the depth of the layer
+mid-point.  `RoquetEOS` is the simplified polynomial of Roquet et al. (2015, Eq. 17),
+``\rho' = -\tfrac{C_b}{2}(\Theta - \Theta_0)^2 - T_h Z \Theta + b_0 S_A``, with the paper's
+``C_b = 0.011`` kg m⁻³ K⁻², ``\Theta_0 = -4.5`` °C, ``T_h = 2.5\times10^{-5}`` kg m⁻⁴ K⁻¹ and
+``b_0 = 0.77`` kg m⁻³ (g kg⁻¹)⁻¹.  Its thermal expansion is 0.029 kg m⁻³ K⁻¹ at the surface freezing
+point, 0.041 at 500 m, and 0.068 at 0.5 °C and 500 m, against the constant 0.038 of the linear default,
+so the buoyancy contrast of a plume against its ambient is weaker where it is warm or deep (by about 5 %
+for a cold plume and 25 % for a warm one at 500 m).  The meltwater plume is the one place where the
+EOS enters Laddie: through ``\delta\rho`` in the pressure gradient, the entrainment and the convective
+stability.
+
+!!! warning "Experimental"
+    `RoquetEOS` is experimental and logs a warning when constructed.  Roquet et al. (2015) fit it to the
+    open ocean in Conservative Temperature and Absolute Salinity, which Laddie takes as its temperature
+    and salinity (only salinity differences enter, so the offset to practical salinity cancels), and say
+    it serves understanding rather than realistic simulation (TEOS-10 does).
+    Supercooled cavity water is an extrapolation.  `Params.alpha` and `Params.beta` are used by
+    `LinearEOS` only, and an ambient profile built as neutral for them (as in the examples) is not neutral
+    for another equation of state.
+
 **Three-equation melt** ``\dot{m}`` (Jenkins 1991). Three constraints hold
 simultaneously at the ice–ocean interface:
 
@@ -165,9 +194,9 @@ stays quadratic, and the ice thickness from the draft by hydrostatic equilibrium
 !!! warning "Experimental"
     Every closure but the default is experimental, and constructing one logs a warning.
     The `T_ice_base` of the ice forcing is used as the ice temperature ``T_i`` by all of
-    them; for `LinearProfileConduction` it is the *surface* temperature ``T_s`` of a
-    linear profile, which is typically colder than the ``T_i`` that suits
-    `HollandJenkinsConduction`.
+    them. In Holland & Jenkins (1999) and Wiskandt & Jourdain (2025) this is the ice-shelf
+    *surface* temperature ``T_s`` for every closure (the ice at the base itself is at the
+    freezing point); Wiskandt & Jourdain use the 1980–2019 mean snow-surface temperature.
 
 **Entrainment** ``\dot e`` (Gaspar 1988 / Gladish 2012). Turbulence at the base
 of the layer mixes warm ambient water *upward* into it. This supplies the heat

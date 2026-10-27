@@ -662,3 +662,96 @@ end
     @test all(isfinite, sim.model.H.present) && all(isfinite, sim.model.T.present)
     @test any(>(0), sim.model.melt)
 end
+
+@testset "AbstractEquationOfState: LinearEOS default, RoquetEOS contrast, convection" begin
+    quiet(f) = Base.CoreLogging.with_logger(f, Base.CoreLogging.NullLogger())
+    mk(; kw...) = quiet() do
+        build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = Params(; FT, kw...))
+    end
+
+    @test Params(; FT).equation_of_state === LinearEOS()
+    @test occursin("eq. of state   = LinearEOS()", sprint(show, MIME("text/plain"), Params(; FT)))
+    @test_logs LinearEOS()
+    @test_logs (:warn, r"RoquetEOS is an experimental equation of state") RoquetEOS()
+    eos = quiet(() -> RoquetEOS())
+    @test (eos.Cb, eos.Theta0, eos.Th, eos.b0) == (0.011, -4.5, 2.5e-5, 0.77)
+    @test quiet(() -> RoquetEOS(0.011, -4.5, 2.5e-5, 1)).b0 === 1.0     # mixed types promote
+    @test_throws ArgumentError RoquetEOS(-0.01, -4.5, 2.5e-5, 0.77)
+    @test_throws ArgumentError RoquetEOS(0.011, -4.5, 2.5e-5, 0.0)
+    @test sprint(show, eos) == "RoquetEOS(Cb = 0.011, Theta0 = -4.5, Th = 2.5e-5, b0 = 0.77)"
+    p32 = quiet(() -> Params(; FT = Float32, equation_of_state = RoquetEOS()))
+    @test p32.equation_of_state === RoquetEOS{Float32}(0.011f0, -4.5f0, 2.5f-5, 0.77f0)
+
+    # The coefficients: the linear ones are the Params constants, with no T or Z dependence.
+    m_lin = mk().model
+    @test Laddie._eos_coefficients(m_lin) === (; beta = m_lin.beta, a0 = m_lin.alpha, aT = zero(FT), aZ = zero(FT))
+    m_rq = mk(equation_of_state = eos).model
+    c = Laddie._eos_coefficients(m_rq)
+    ρ0 = m_rq.rho0_seawater
+    @test c.beta ≈ 0.77 / ρ0 && c.aT ≈ 0.011 / ρ0 && c.aZ ≈ 2.5e-5 / ρ0 && c.a0 ≈ 0.011 * 4.5 / ρ0
+
+    # α and β of Roquet et al. (2015), through the pointwise contrast (kg m⁻³ K⁻¹ and per g kg⁻¹).
+    α(T, Z) = -Laddie._drho(35.0, 35.0, T + 1e-3, T - 1e-3, Z, c) * ρ0 / 2e-3
+    @test α(-1.9, 0.0) ≈ 0.011 * 2.6 rtol = 1e-9                  # 0.0286: 0.028 at freezing, as in the paper
+    @test α(-1.9, 500.0) ≈ 0.011 * 2.6 + 2.5e-5 * 500 rtol = 1e-9 # thermobaricity
+    @test α(0.5, 500.0) ≈ 0.011 * 5.0 + 2.5e-5 * 500 rtol = 1e-9  # cabbeling: α rises with Θ
+    @test α(-4.5, 0.0) ≈ 0 atol = 1e-12                           # Θ₀: no surface expansion
+    @test Laddie._drho(35.1, 35.0, 0.0, 0.0, 300.0, c) * ρ0 ≈ 0.077 rtol = 1e-9
+    # Antisymmetric and zero for equal states.
+    @test Laddie._drho(34.7, 34.4, 0.5, -1.0, 400.0, c) ≈ -Laddie._drho(34.4, 34.7, -1.0, 0.5, 400.0, c)
+    @test Laddie._drho(34.5, 34.5, -1.5, -1.5, 400.0, c) == 0
+    # The reference contrasts of the planning notes (warm plume against a warm ambient, at 500 m).
+    @test Laddie._drho(34.7, 34.4, 0.5, -1.0, 500.0, c) ≈ 1.38e-4 rtol = 5e-3
+    @test Laddie._drho(34.7, 34.4, 0.5, -1.0, 500.0, Laddie._eos_coefficients(m_lin)) ≈ 1.79e-4 rtol = 5e-3
+
+    # `update_density!` evaluates Roquet's polynomial at the layer mid-depth: independent check.
+    ρp(T, S, Z) = (-0.011 / 2 * (T + 4.5)^2 - 2.5e-5 * Z * T + 0.77 * S) / ρ0
+    sim = mk(equation_of_state = eos)
+    run!(sim; days = 0.2, verbose = false)
+    m = sim.model
+    Laddie.update_density!(m)
+    Z = @. -m.z_draft + m.H.present / 2
+    ref = @. ρp(m.Ta, m.Sa, Z) - ρp(m.T.present, m.S.present, Z)
+    act = m.tmask .> 0
+    @test m.drho[act] ≈ ref[act] rtol = 1e-9
+    @test all(iszero, m.drho[.!act])
+    # An `alpha` override still moves a LinearEOS run (the constants stay the source of truth) ...
+    m1 = mk().model; m2 = mk(alpha = 2 * m1.alpha).model
+    Laddie.update_density!(m1); Laddie.update_density!(m2)
+    @test m1.drho != m2.drho
+    # ... and does not touch a RoquetEOS one.
+    m3 = mk(equation_of_state = eos, alpha = 2 * m1.alpha).model
+    m4 = mk(equation_of_state = eos).model
+    Laddie.update_density!(m3); Laddie.update_density!(m4)
+    @test m3.drho == m4.drho
+
+    # ResetToAmbient resets to a contrast of exactly the threshold, whatever the EOS.
+    for e in (LinearEOS(), eos)
+        s = mk(equation_of_state = e, convection_scheme = ResetToAmbient(FT(0.005)))
+        run!(s; days = 0.2, verbose = false)
+        mm = s.model
+        ice = mm.imask .> 0
+        mm.S.present .= ifelse.(ice, mm.Sa .+ 0.5, mm.S.present)     # saltier than ambient: unstable
+        Laddie.update_density!(mm)
+        @test all(<(0), mm.drho[ice])
+        Laddie.update_convection!(mm, mm.convection_scheme)
+        @test all(mm.convection[ice] .== 1)
+        @test mm.drho[ice] ≈ fill(FT(0.005) / mm.rho0_seawater, count(ice)) rtol = 1e-9
+        Laddie.update_density!(mm)
+        @test mm.drho[ice] ≈ fill(FT(0.005) / mm.rho0_seawater, count(ice)) rtol = 1e-9
+    end
+
+    # Every convection scheme and entrainment runs under RoquetEOS, and the melt differs from linear.
+    melts = map((ResetToAmbient(FT(0.005)), ClampDensity(FT(0.005)), RelaxToAmbient(FT(10000.0)))) do cs
+        s = mk(equation_of_state = eos, convection_scheme = cs)
+        run!(s; days = 0.5, verbose = false)
+        @test all(isfinite, s.model.H.present) && all(isfinite, s.model.melt) && all(isfinite, s.model.drho)
+        return copy(s.model.melt)
+    end
+    s_h = mk(equation_of_state = eos, entrainment = HollandEntrainment(FT(0.01775)))
+    run!(s_h; days = 0.5, verbose = false)
+    @test all(isfinite, s_h.model.H.present)
+    s_l = mk(convection_scheme = ResetToAmbient(FT(0.005)))
+    run!(s_l; days = 0.5, verbose = false)
+    @test s_l.model.melt != melts[1]
+end

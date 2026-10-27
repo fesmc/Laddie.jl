@@ -4,6 +4,14 @@
 Pages = ["API_physics.md"]
 ```
 
+## Equation of state
+
+```@docs
+AbstractEquationOfState
+LinearEOS
+RoquetEOS
+```
+
 ## Entrainment
 
 ```@docs

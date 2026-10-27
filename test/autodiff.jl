@@ -56,3 +56,27 @@ end
         @test eltype(ds["melt"][:, :, end]) <: Union{Missing,Float64}
     end
 end
+
+@testset "ForwardDiff through the RoquetEOS parameters" begin
+    # Cb, Θ₀ and T_h, scaled so that the base point AD_X0 is the paper's values; the
+    # tag and the Dual type are those of the closures above.
+    function ad_eos_loss(x)
+        T = eltype(x)
+        eos = Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
+            RoquetEOS(T(0.011) * x[1] / 2.5e-3, T(-4.5) * x[2] / 1.8e-4, T(2.5e-5) * x[3] / 2.5, T(0.77))
+        end
+        params = Params(; FT = T, equation_of_state = eos)
+        sim = build_isomip(CPU(); FT = T, nx = 20, ny = 10, isomipcond = :warm, params)
+        run!(sim; days = 2.0, verbose = false)
+        return sum(sim.model.melt) / length(sim.model.melt)
+    end
+    g = ad_gradient(ad_eos_loss)
+    @test all(isfinite, g)
+    @test any(!iszero, g)
+    for k in eachindex(AD_X0)
+        h = 1e-6 * AD_X0[k]
+        e = zeros(length(AD_X0)); e[k] = h
+        fd = (ad_eos_loss(AD_X0 .+ e) - ad_eos_loss(AD_X0 .- e)) / 2h
+        @test g[k] ≈ fd rtol = 1e-4
+    end
+end

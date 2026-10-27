@@ -21,6 +21,7 @@ struct Params{
     CS<:AbstractConvectionScheme,
     FZ<:AbstractFrazilIce,
     IC<:AbstractIceConduction,
+    EQ<:AbstractEquationOfState,
     MLT<:AbstractMaxLayerThickness,
     LV<:AbstractLateralViscosity,
     LW<:AbstractLaplacianWeights,
@@ -63,10 +64,10 @@ struct Params{
     c_p::FT
     "specific heat capacity of ice (J kg⁻¹ K⁻¹, default `2009`)"
     c_i::FT
-    # EOS (linear liquidus + thermal/haline expansion)
-    "thermal expansion coefficient (K⁻¹, default `3.733e-5`)"
+    # EOS (the linear constants, used by `LinearEOS`) and the linear liquidus
+    "thermal expansion coefficient of `LinearEOS` (K⁻¹, default `3.733e-5`)"
     alpha::FT
-    "haline contraction coefficient (psu⁻¹, default `7.843e-4`)"
+    "haline contraction coefficient of `LinearEOS` (psu⁻¹, default `7.843e-4`)"
     beta::FT
     "liquidus slope in salinity, T_f = l1·S + l2 + l3·z (K psu⁻¹, default `-5.73e-2`)"
     l1::FT
@@ -106,6 +107,8 @@ struct Params{
     frazil_ice::FZ
     "heat conduction into the ice at the interface, an [`AbstractIceConduction`](@ref) (default Holland & Jenkins)"
     ice_conduction::IC
+    "equation of state, an [`AbstractEquationOfState`](@ref) (default linear, with `alpha` and `beta`)"
+    equation_of_state::EQ
     "upper bound on the layer thickness, an [`AbstractMaxLayerThickness`](@ref) (default none)"
     max_layer_thickness::MLT
     "lateral momentum viscosity, an [`AbstractLateralViscosity`](@ref) (default constant `A_h`)"
@@ -176,6 +179,7 @@ _param_defaults() = (
     convection_scheme = ResetToAmbient(0.005),
     frazil_ice = NoFrazilIce(),
     ice_conduction = HollandJenkinsConduction(),
+    equation_of_state = LinearEOS(),
     max_layer_thickness = NoMaxLayerThickness(),
     lateral_viscosity = PrescribedLateralViscosity(),
     laplacian_weights = PresentLaplacianWeights(),

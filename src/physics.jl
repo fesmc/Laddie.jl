@@ -1,9 +1,15 @@
 # Point-wise equation-of-state and freezing-point pieces shared by several kernels.
 # Each spells out one formula in one operation order, so every caller rounds alike.
 
-# Buoyancy contrast (ρ_a − ρ)/ρ₀ of water (S, T) against (Sa, Ta), linear equation
-# of state.
-@inline _drho(Sa, S, Ta, T, beta, alpha) = beta * (Sa - S) - alpha * (Ta - T)
+# Buoyancy contrast (ρ_a − ρ)/ρ₀ of water (S, T) against (Sa, Ta) at depth `Z` (positive
+# downward), δρ = β ΔS − (a0 + aT T̄ + aZ Z) ΔT, with the coefficients `c` of
+# `_eos_coefficients`.  For the linear equation of state aT = aZ = 0 and a0 = α, which
+# leaves `β ΔS − α ΔT` to the last bit.
+@inline _drho(Sa, S, Ta, T, Z, c) = c.beta * (Sa - S) - (c.a0 + c.aT * (Ta + T) / 2 + c.aZ * Z) * (Ta - T)
+
+# Depth (positive downward) of the mid-point of the layer of thickness `H` under the ice
+# base at `z_draft`.
+@inline _layer_depth(z_draft, H) = -z_draft + H / 2
 
 # Liquidus: freezing temperature at salinity `S` and depth `z`, and its inverse, the
 # salinity whose freezing temperature at `z` is `Tf`.  `_three_eq_melt_kernel!`
@@ -40,12 +46,14 @@ end
     @Const(Ta),
     @Const(T),
     @Const(tmask),
-    beta,
-    alpha,
+    @Const(z_draft),
+    @Const(H),
+    eos,
 )
-    beta, alpha = _val(beta), _val(alpha)
+    eos = _val(eos)
     i, j = @index(Global, NTuple)
-    @inbounds drho[i, j] = _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], beta, alpha) * tmask[i, j]
+    @inbounds drho[i, j] =
+        _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], _layer_depth(z_draft[i, j], H[i, j]), eos) * tmask[i, j]
 end
 
 # Three-equation melt parameterisation (Jenkins 1991) + ice-base temperature.
@@ -234,7 +242,7 @@ function _update_ambient_fields!(m, ::AbstractOceanForcing)
     return
 end
 
-"Reduced (dimensionless) density ``\\delta\\rho = \\Delta\\rho_a/\\rho_0 = \\beta(S_a - S) - \\alpha(T_a - T)``  (Lambert et al. 2023, Eqs. 6–7)."
+"Reduced (dimensionless) density ``\\delta\\rho = \\Delta\\rho_a/\\rho_0`` of the ambient water against the layer, ``\\beta(S_a - S) - \\alpha(T_a - T)`` for [`LinearEOS`](@ref) (Lambert et al. 2023, Eqs. 6–7)."
 update_density!(m) = launch!(
     _density_kernel!,
     m.drho,
@@ -243,8 +251,9 @@ update_density!(m) = launch!(
     m.Ta,
     m.T.present,
     m.tmask,
-    m.beta,
-    m.alpha,
+    m.z_draft,
+    m.H.present,
+    _eos_coefficients(m),
 )
 
 """
@@ -290,7 +299,8 @@ v2 has no reset scheme to copy here, so this is a Laddie.jl-only decision.
 """
 function update_convection!(m, cs::ResetToAmbient)
     thr = cs.d_rho_min / m.rho0_seawater
-    S_adj = cs.d_rho_min / (m.rho0_seawater * m.beta)
+    eos = _eos_coefficients(m)
+    S_adj = cs.d_rho_min / (m.rho0_seawater * eos.beta)
     launch!(
         _reset_to_ambient_kernel!,
         m.convection,
@@ -301,10 +311,11 @@ function update_convection!(m, cs::ResetToAmbient)
         m.Sa,
         m.tmask,
         m.imask,
+        m.z_draft,
+        m.H.present,
         thr,
         S_adj,
-        m.beta,
-        m.alpha,
+        eos,
     )
 end
 
@@ -319,12 +330,13 @@ end
     @Const(Sa),
     @Const(tmask),
     @Const(imask),
+    @Const(z_draft),
+    @Const(H),
     thr,
     S_adj,
-    beta,
-    alpha,
+    eos,
 )
-    thr, S_adj, beta, alpha = _val(thr), _val(S_adj), _val(beta), _val(alpha)
+    thr, S_adj, eos = _val(thr), _val(S_adj), _val(eos)
     i, j = @index(Global, NTuple)
     FT = typeof(thr)
     @inbounds begin
@@ -334,7 +346,8 @@ end
         if (d < thr) & ice
             T[i, j] = Ta[i, j]
             S[i, j] = Sa[i, j] - S_adj
-            drho[i, j] = _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], beta, alpha) * tmask[i, j]
+            drho[i, j] =
+                _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], _layer_depth(z_draft[i, j], H[i, j]), eos) * tmask[i, j]
         end
     end
 end
@@ -689,8 +702,7 @@ function _compute_entrainment!(m, ep::GasparEntrainment)
         (ep.mu + ep.mu) / m.g,
         m.max_detrainment,
         m.drho_floor,
-        m.alpha,
-        m.beta,
+        _eos_coefficients(m),
         m.l1,
         m.l2,
         m.l3,
@@ -829,20 +841,19 @@ end
     prefactor,
     max_detrainment,
     drho_floor,
-    alpha,
-    beta,
+    eos,
     l1,
     l2,
     l3,
 )
-    prefactor, max_detrainment, drho_floor, alpha, beta, l1, l2, l3 =
-        _val(prefactor), _val(max_detrainment), _val(drho_floor), _val(alpha), _val(beta), _val(l1), _val(l2), _val(l3)
+    prefactor, max_detrainment, drho_floor, eos, l1, l2, l3 =
+        _val(prefactor), _val(max_detrainment), _val(drho_floor), _val(eos), _val(l1), _val(l2), _val(l3)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(prefactor)
         drho_pos = max(drho_floor, drho[i, j])
         sb = _freezing_salinity(Tb[i, j], z_draft[i, j], l1, l2, l3)
-        db_ij = _drho(S[i, j], sb, T[i, j], Tb[i, j], beta, alpha) * tmask[i, j]
+        db_ij = _drho(S[i, j], sb, T[i, j], Tb[i, j], -z_draft[i, j], eos) * tmask[i, j]
         us3 = ustar[i, j]^3
         e_ij =
             prefactor * _safe_div(us3, H[i, j] * drho_pos) -

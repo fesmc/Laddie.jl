@@ -555,18 +555,88 @@ Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::UStarGamTMelting)
     update_ustar!(m)
-    launch!(_ustar_gamma_kernel!, m.gamT, m.gamS, m.ustar, m.tmask, mp.Gamma_T)
+    launch!(_ustar_gamma_kernel!, m.gamT, m.gamS, m.ustar, m.tmask, mp.Gamma_T, mp.ratio)
     _launch_three_eq_melt!(m)
 end
 
-@kernel function _ustar_gamma_kernel!(gamT, gamS, @Const(ustar), @Const(tmask), Gamma_T)
-    Gamma_T = _val(Gamma_T)
+@kernel function _ustar_gamma_kernel!(gamT, gamS, @Const(ustar), @Const(tmask), Gamma_T, ratio)
+    Gamma_T, ratio = _val(Gamma_T), _val(ratio)
     i, j = @index(Global, NTuple)
-    FT = typeof(Gamma_T)
     @inbounds begin
         g = Gamma_T * ustar[i, j] * tmask[i, j]
         gamT[i, j] = g
-        gamS[i, j] = g / FT(_GAMMA_T_OVER_S)
+        gamS[i, j] = g / ratio
+    end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Two-equation ice–ocean melt parameterisation (see [`TwoEquationMelting`](@ref)).
+Sets `m.ustar`, `m.gamT`, `m.melt`, `m.Tb` (the freezing point at the layer salinity);
+`m.gamS` is not used.
+"""
+function update_melt!(m, mp::TwoEquationMelting)
+    update_ustar!(m)
+    launch!(_ustar_gamT_kernel!, m.gamT, m.ustar, m.tmask, mp.Gamma_TS)
+    launch!(
+        _two_eq_melt_kernel!,
+        m.melt,
+        m.Tb,
+        m.T.present,
+        m.S.present,
+        m.z_draft,
+        m.tmask,
+        m.imask,
+        m.T_ice_base,
+        m.gamT,
+        m.c_p,
+        m.c_i,
+        m.L,
+        m.l1,
+        m.l2,
+        m.l3,
+        _conduction_args(m),
+    )
+end
+
+@kernel function _ustar_gamT_kernel!(gamT, @Const(ustar), @Const(tmask), Gamma)
+    Gamma = _val(Gamma)
+    i, j = @index(Global, NTuple)
+    @inbounds gamT[i, j] = Gamma * ustar[i, j] * tmask[i, j]
+end
+
+# c_p·γT·(T − Tb) = ṁ·(L − c_i,eff·(T_i − Tb)) + q at Tb = Tf(S): linear in ṁ.  Gap
+# cells follow the three-equation kernel: no melt, and Tb = T so that the exchange term
+# of the temperature equation vanishes.
+@kernel function _two_eq_melt_kernel!(
+    melt,
+    Tb,
+    @Const(T),
+    @Const(S),
+    @Const(z_draft),
+    @Const(tmask),
+    @Const(imask),
+    @Const(T_ice_base),
+    @Const(gamT),
+    c_p,
+    c_i,
+    L,
+    l1,
+    l2,
+    l3,
+    cond,
+)
+    c_p, c_i, L, l1, l2, l3, cond =
+        _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3), _val(cond)
+    i, j = @index(Global, NTuple)
+    FT = typeof(c_p)
+    @inbounds begin
+        Tf = _freezing_point(S[i, j], z_draft[i, j], l1, l2, l3)
+        ci_eff, q_cond = _ice_conduction(cond, c_i, T[i, j], Tf, T_ice_base[i, j], z_draft[i, j])
+        melt_rate = (c_p * gamT[i, j] * (T[i, j] - Tf) - q_cond) / (L - ci_eff * (T_ice_base[i, j] - Tf))
+        melt[i, j] = iszero(imask[i, j]) ? zero(FT) : melt_rate
+        Tb[i, j] = ifelse(iszero(tmask[i, j]), zero(FT), ifelse(iszero(imask[i, j]), T[i, j], Tf))
     end
 end
 

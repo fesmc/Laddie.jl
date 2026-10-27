@@ -573,3 +573,92 @@ end
         @test all(isfinite, sim.model.H.present) && all(isfinite, sim.model.melt)
     end
 end
+
+@testset "UStarGamTMelting ratio: default 35, validation, γS = γT / ratio" begin
+    quiet(f) = Base.CoreLogging.with_logger(f, Base.CoreLogging.NullLogger())
+    @test UStarGamTMelting(FT(3.0e-2)).ratio === FT(35)
+    @test UStarGamTMelting().ratio === 35.0
+    @test_logs UStarGamTMelting(3.0e-2, 35)          # the default ratio does not warn
+    @test_logs (:warn, r"heat-to-salt transfer ratio") UStarGamTMelting(3.0e-2, 70)
+    mp = quiet(() -> UStarGamTMelting(FT(3.0e-2), 70))   # mixed types promote
+    @test mp === quiet(() -> UStarGamTMelting(FT(3.0e-2), FT(70)))
+    @test_throws ArgumentError UStarGamTMelting(3.0e-2, -1.0)
+    @test_throws ArgumentError UStarGamTMelting(3.0e-2, 0.0)
+    p32 = quiet(() -> Params(; FT = Float32, melting = UStarGamTMelting(3.0e-2, 70.0)))
+    @test p32.melting === UStarGamTMelting{Float32}(3.0f-2, 70.0f0)
+
+    sim = quiet() do
+        build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                     params = Params(; FT, melting = mp))
+    end
+    run!(sim; days = 0.5, verbose = false)
+    mm = sim.model
+    act = mm.tmask .> 0
+    @test mm.gamT[act] == mp.Gamma_T .* mm.ustar[act]
+    @test mm.gamS == mm.gamT ./ 70
+    @test all(isfinite, mm.melt)
+end
+
+@testset "TwoEquationMelting: linear heat balance at Tf(S), three-equation limit" begin
+    quiet(f) = Base.CoreLogging.with_logger(f, Base.CoreLogging.NullLogger())
+    @test_logs (:warn, r"TwoEquationMelting is an experimental") TwoEquationMelting()
+    @test quiet(() -> TwoEquationMelting().Gamma_TS) === 0.0178
+    @test_throws ArgumentError TwoEquationMelting(0.0)
+    p32 = quiet(() -> Params(; FT = Float32, melting = TwoEquationMelting(0.01)))
+    @test p32.melting === TwoEquationMelting{Float32}(0.01f0)
+
+    mk(; melting, conduction = HollandJenkinsConduction(), supercooled = false) = begin
+        sim = quiet() do
+            build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                         params = Params(; FT, melting, ice_conduction = conduction))
+        end
+        m = sim.model
+        run!(sim; days = 0.2, verbose = false)
+        Tf = @. m.l1 * m.S.present + m.l2 + m.l3 * m.z_draft
+        supercooled && (m.T.present .= ifelse.(m.imask .> 0, Tf .- 0.05, m.T.present))
+        Laddie.update_melt!(m)
+        m, Tf
+    end
+
+    Γ = FT(0.0178)
+    for (conduction, fmelt, ffreeze, k) in (
+        (HollandJenkinsConduction(), 1, 1, 0),
+        (quiet(() -> MeltOnlyConduction()), 1, 0, 0),
+        (quiet(() -> LinearProfileConduction(FT(2.1))), 0, 0, FT(2.1)),
+    ), supercooled in (false, true)
+        m, Tf = mk(; melting = quiet(() -> TwoEquationMelting(Γ)), conduction, supercooled)
+        ice = m.imask .> 0
+        # γ_TS = Γ_TS u★, interface at the freezing point of the layer salinity.
+        @test m.gamT[m.tmask .> 0] == (Γ .* m.ustar)[m.tmask .> 0]
+        @test all(iszero, m.gamS)
+        @test m.Tb[ice] == Tf[ice]
+        # The heat balance, linear in ṁ.
+        ci = @. m.c_i * ifelse(m.T.present > Tf, fmelt, ffreeze)
+        Hi = @. -m.z_draft * m.rho0_seawater / m.rho_ice
+        q = @. k * (Tf - m.T_ice_base) / (Hi * m.rho_freshwater)
+        lhs = @. m.c_p * m.gamT * (m.T.present - m.Tb)
+        rhs = @. m.melt * (m.L - ci * (m.T_ice_base - m.Tb)) + q
+        @test lhs[ice] ≈ rhs[ice]
+        # Gap and open-ocean cells do not melt; their Tb leaves the exchange term at zero.
+        @test all(iszero, m.melt[.!ice])
+        @test all(isfinite, m.melt)
+        supercooled && conduction isa HollandJenkinsConduction && @test all(<(0), m.melt[ice])
+    end
+
+    # With γS → ∞ the salt balance forces Sb → S and the three-equation scheme reduces to
+    # this one, ratio → 0 being γS = γT / ratio → ∞.
+    m2, _ = mk(; melting = quiet(() -> TwoEquationMelting(Γ)))
+    m3, _ = mk(; melting = quiet(() -> UStarGamTMelting(Γ, FT(1e-8))))
+    ice = m2.imask .> 0
+    @test m3.melt[ice] ≈ m2.melt[ice] rtol = 1e-5
+    @test m3.Tb[ice] ≈ m2.Tb[ice] rtol = 1e-5
+
+    # A short run of the scheme.
+    sim = quiet() do
+        build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                     params = Params(; FT, melting = TwoEquationMelting(Γ)))
+    end
+    run!(sim; days = 0.5, verbose = false)
+    @test all(isfinite, sim.model.H.present) && all(isfinite, sim.model.T.present)
+    @test any(>(0), sim.model.melt)
+end

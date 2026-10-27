@@ -19,6 +19,7 @@ AbstractMelting
 FixedGamTMelting
 TurbulentGamTMelting
 UStarGamTMelting
+TwoEquationMelting
 PrescribedMelting
 ```
 

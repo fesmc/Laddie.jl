@@ -7,8 +7,19 @@ Available subtypes:
  - [`FixedGamTMelting`](@ref)
  - [`TurbulentGamTMelting`](@ref)
  - [`UStarGamTMelting`](@ref)
+ - [`TwoEquationMelting`](@ref)
 """
 abstract type AbstractMelting end
+
+# Warning for an experimental option, shared by the parameterization families.  One
+# warning per session under the console logger, through `maxlog`, since rebuilding a
+# parameter set calls the constructors again.
+_warn_experimental(name, kind, default) = @warn(
+    "$name is an experimental $kind; the default is $default.  " *
+    "See the documentation for its assumptions.",
+    maxlog = 1,
+    _id = Symbol(name),
+)
 
 """
 $(TYPEDEF)
@@ -77,16 +88,29 @@ Three-equation ice–ocean melt parameterisation (the equations are given under
 velocity (Jenkins et al. 2010):
 
 ```math
-\\gamma_T = \\Gamma_T \\, u_\\star, \\qquad \\gamma_S = \\gamma_T / 35 .
+\\gamma_T = \\Gamma_T \\, u_\\star, \\qquad \\gamma_S = \\gamma_T / r ,
 ```
+
+with the ratio ``r`` of the heat and salt transfer coefficients 35 by default.
 
 This is LADDIE v2's `'uniform'` option, which is also what the ISOMIP+ protocol tunes
 (Asay-Davis et al. 2016).  Jesse et al. (2026) use ``\\Gamma_T = 3 \\times 10^{-2}``.
+
+Jenkins et al. (2010) fit ``C_d^{1/2}\\Gamma_T = 1.1 \\times 10^{-3}`` and
+``C_d^{1/2}\\Gamma_S = 3.1 \\times 10^{-5}`` (``r`` = 35) to observations beneath Ronne Ice
+Shelf, with ``C_d`` = 0.0097; McPhee et al. (2008) give ``r`` between 35 and 70 for a melting
+base.  Since ``\\Gamma`` multiplies the ``u_\\star`` of this model, which uses
+`Params.C_d_top`, the equivalent is ``\\Gamma_T = 1.1 \\times 10^{-3}/\\sqrt{C_d^\\text{top}}``, about
+``3.3 \\times 10^{-2}`` for the default `C_d_top = 1.1e-3`.  The default
+``\\Gamma_T = 3 \\times 10^{-2}`` is already close.
+
+A ratio other than 35 is experimental and warns when constructed.
 
 # Example
 
 ```julia
 Params(; melting = UStarGamTMelting(3.0e-2))
+Params(; melting = UStarGamTMelting(3.0e-2, 70.0))   # Γ_T / Γ_S = 70
 ```
 
 # Fields
@@ -95,7 +119,75 @@ $(TYPEDFIELDS)
 @kwdef struct UStarGamTMelting{FT} <: AbstractMelting
     "dimensionless heat transfer coefficient (default `3.0e-2`)"
     Gamma_T::FT = 3.0e-2
+    "ratio of the heat to the salt transfer coefficient, ``\\gamma_T/\\gamma_S`` (default `35`)"
+    ratio::FT = 35.0
+    UStarGamTMelting{FT}(Gamma_T, ratio) where {FT} = new{FT}(Gamma_T, ratio)
 end
+
+function UStarGamTMelting(Gamma_T::FT, ratio::FT) where {FT<:Real}
+    ratio > 0 ||
+        throw(ArgumentError("UStarGamTMelting: ratio must be positive, got $ratio"))
+    ratio == 35 || _warn_experimental("UStarGamTMelting(ratio = $ratio)", "heat-to-salt transfer ratio", "35")
+    return UStarGamTMelting{FT}(Gamma_T, ratio)
+end
+UStarGamTMelting(Gamma_T::Real, ratio::Real) = UStarGamTMelting(promote(Gamma_T, ratio)...)
+UStarGamTMelting(Gamma_T::FT) where {FT<:AbstractFloat} = UStarGamTMelting(Gamma_T, FT(35))
+
+# Rebuilt unchecked: a zero AD tangent (`Enzyme.make_zero`) must pass.
+_rebuild(::Type{<:UStarGamTMelting}, Gamma_T, ratio) =
+    UStarGamTMelting{typeof(Gamma_T)}(Gamma_T, ratio)
+
+"""
+$(TYPEDEF)
+
+Two-equation ice–ocean melt parameterisation (McPhee 1992; Jenkins et al. 2010, Eqs. 14–15).
+The interface is at the freezing point of the layer salinity, ``T_b = T_f(S, z_b)``, so the salt
+balance drops out, and the heat transfer coefficient ``\\gamma_{TS} = \\Gamma_{TS}\\,u_\\star``
+absorbs the effect of salt diffusion:
+
+```math
+c_p\\,\\gamma_{TS}\\,(T - T_b) = \\dot m\\,L + \\dot m\\,c_i\\,(T_b - T_i) + q_\\text{cond}
+```
+
+(``q_\\text{cond}`` and the ``c_i`` term from [`AbstractIceConduction`](@ref), the
+Holland & Jenkins form by default.)  Unlike the three-equation form it is linear in ``\\dot m``,
+
+```math
+\\dot m = \\frac{c_p\\,\\gamma_{TS}\\,(T - T_f) - q_\\text{cond}}{L - c_{i}\\,(T_i - T_f)} .
+```
+
+It is as good as the three-equation form at the one site where Jenkins et al. tested both,
+and expected to be less so under strong thermal forcing, where the interface salinity departs
+from the layer's: ``\\Gamma_T > \\Gamma_{TS}`` always (Jenkins et al. 2010, Eq. 8).  The
+buoyancy-flux entrainment reads the interface salinity ``S_b = S`` of this scheme, so the
+buoyancy of the meltwater enters only through the thickness, not through the entrainment's
+melt correction.  `gamS` is not used and stays zero.
+
+Jenkins et al. (2010) fit ``C_d^{1/2}\\Gamma_{TS} = 5.9 \\times 10^{-4}`` (``\\Gamma_{TS}`` = 0.006
+with ``C_d`` = 0.0097; McPhee 1992).  Since ``\\Gamma_{TS}`` multiplies the ``u_\\star`` of this model,
+which uses `Params.C_d_top`, the equivalent is ``5.9 \\times 10^{-4}/\\sqrt{C_d^\\text{top}}``, which is
+the default `0.0178` for `C_d_top = 1.1e-3`.  Change it along with `C_d_top`.
+
+Select via `Params(; melting = TwoEquationMelting())`; warns when constructed.
+
+# Fields
+$(TYPEDFIELDS)
+"""
+@kwdef struct TwoEquationMelting{FT} <: AbstractMelting
+    "dimensionless heat transfer coefficient (default `0.0178`)"
+    Gamma_TS::FT = 0.0178
+    TwoEquationMelting{FT}(Gamma_TS) where {FT} = new{FT}(Gamma_TS)
+end
+
+function TwoEquationMelting(Gamma_TS::FT) where {FT}
+    Gamma_TS > 0 ||
+        throw(ArgumentError("TwoEquationMelting: Gamma_TS must be positive, got $Gamma_TS"))
+    _warn_experimental("TwoEquationMelting", "melt parameterisation", "FixedGamTMelting(); see the three-equation schemes")
+    return TwoEquationMelting{FT}(Gamma_TS)
+end
+
+# Rebuilt unchecked: a zero AD tangent (`Enzyme.make_zero`) must pass.
+_rebuild(::Type{<:TwoEquationMelting}, Gamma_TS) = TwoEquationMelting{typeof(Gamma_TS)}(Gamma_TS)
 
 """
 $(TYPEDEF)

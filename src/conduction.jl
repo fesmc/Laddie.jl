@@ -22,13 +22,8 @@ temperature ``T_s`` of the paper.
 """
 abstract type AbstractIceConduction end
 
-# One warning per session, since rebuilding a parameter set calls the constructor again.
-_warn_experimental_conduction(name) = @warn(
-    "$name is an experimental ice-conduction closure; the default is " *
-    "HollandJenkinsConduction().  See the documentation for its assumptions.",
-    maxlog = 1,
-    _id = Symbol(name),
-)
+_warn_experimental_conduction(name) =
+    _warn_experimental(name, "ice-conduction closure", "HollandJenkinsConduction()")
 
 """
 $(TYPEDEF)

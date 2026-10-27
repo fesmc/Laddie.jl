@@ -110,7 +110,35 @@ The physical (melting) root is
 
 For `FixedGamTMelting`, ``\gamma_T`` is a prescribed constant and
 ``\gamma_S = \gamma_T / 35``; for `TurbulentGamTMelting` both are computed from
-``u_\star`` via a log-layer formulation (Holland & Jenkins 1999).
+``u_\star`` via a log-layer formulation (Holland & Jenkins 1999).  `UStarGamTMelting` takes
+``\gamma_T = \Gamma_T u_\star`` and ``\gamma_S = \gamma_T / r`` with ``r`` = 35 by default (an
+experimental `ratio`, e.g. 70, is possible; McPhee et al. 2008 give 35–70 for a melting base).
+
+Jenkins et al. (2010) tested these parameterizations against the thinning of the Ronne Ice
+Shelf measured by radar, and give ``C_d^{1/2}\Gamma_T = 1.1\times10^{-3}`` and
+``C_d^{1/2}\Gamma_S = 3.1\times10^{-5}`` for the three-equation form.  Since ``\Gamma`` multiplies
+the ``u_\star`` of this model, which uses `C_d_top`, divide by ``\sqrt{C_d^\text{top}}``: that gives
+``\Gamma_T \approx 3.3\times10^{-2}`` for the default `C_d_top = 1.1e-3`, close to the
+`UStarGamTMelting` default of ``3\times10^{-2}``.  The same data are fit equally well by the
+**two-equation** form (`TwoEquationMelting`; McPhee 1992), which drops the salt balance and sets
+the interface at the freezing point of the layer salinity, ``T_b = T_f(S, z_b)``:
+
+```math
+c_p\,\gamma_{TS}\,(T - T_b) = \dot{m}\,L_\text{eff} + q_\text{cond}
+\;\Rightarrow\;
+\dot m = \frac{c_p\,\gamma_{TS}\,(T - T_f) - q_\text{cond}}{L - c_i\,(T_i - T_f)},
+```
+
+linear in ``\dot m``, with ``\gamma_{TS} = \Gamma_{TS}\,u_\star`` and
+``C_d^{1/2}\Gamma_{TS} = 5.9\times10^{-4}`` (default ``\Gamma_{TS} = 0.0178``).  The two forms agree
+when ``\gamma_S \to \infty``, and differ under strong thermal forcing, where the interface salinity
+departs from the layer's.  Jenkins et al. expect the three-equation form to be the more general.
+
+!!! warning "Experimental"
+    `TwoEquationMelting` and a `UStarGamTMelting` ratio other than 35 are experimental and
+    log a warning when constructed.  The two-equation scheme leaves the interface salinity at
+    the layer salinity, so the melt correction of the buoyancy-flux entrainment sees no
+    salinity contrast, and `gamS` is not used.
 
 ``T_i`` comes from the **ice forcing**, not the parameter set: `PrescribedIceForcing`
 holds it as a scalar or as a 2D field, so a temperate ice front can sit next to a cold

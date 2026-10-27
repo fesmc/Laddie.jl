@@ -361,6 +361,7 @@ toward ``T_f`` at the rate ``1/\tau``. The salt stays in the layer, see (5).
 | (6)/(7) | reduced gravity / EOS | `update_density!`, `_density_kernel!` |
 | (8)–(10) | three-eq melt + liquidus | `_three_eq_melt_kernel!` |
 | — | conduction into the ice | `_ice_conduction`, `_conduction_coefficients` |
+| — | two-equation melt (`TwoEquationMelting`) | `_two_eq_melt_kernel!`, `_ustar_gamT_kernel!` |
 | (11)/(12) | ``\gamma_T,\gamma_S`` | `_compute_turbulent_transfer_coefficients!` |
 | (13) | ``u_\star`` | `_ustar_kernel!` |
 | (14) | entrainment | `GasparEntrainment` → `_buoyancy_entrainment_kernel!` (default); Holland → `_holland_entrainment_kernel!` |

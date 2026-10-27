@@ -60,7 +60,7 @@ export build_isomip,
 
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment
 export AbstractMelting,
-    FixedGamTMelting, TurbulentGamTMelting, UStarGamTMelting, PrescribedMelting
+    FixedGamTMelting, TurbulentGamTMelting, UStarGamTMelting, TwoEquationMelting, PrescribedMelting
 export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
 export AbstractFrazilIce, NoFrazilIce, RelaxedFrazilIce
 export AbstractIceConduction, HollandJenkinsConduction, MeltOnlyConduction, NoConduction,

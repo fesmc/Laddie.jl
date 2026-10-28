@@ -3,8 +3,8 @@
 #############################
 
 # A wall's tangential-momentum condition is one slip factor `s` on the faces it
-# bounds, with the Python LADDIE convention: 0 = free slip, 2 = no slip, anything
-# in between partial slip.  The kernels follow the Python stencils exactly:
+# bounds, with the LADDIE v1 convention: 0 = free slip, 2 = no slip, anything
+# in between partial slip.  The kernels follow the LADDIE v1 stencils exactly:
 #   - lateral viscosity: the wall-face flux is −(1 + s)·H·u/Δ² — the zero velocity
 #     stored beyond the wall, plus an extra wall drag s·H·u/Δ²;
 #   - momentum advection: the face velocity at the wall is (1 − s)·u.
@@ -39,7 +39,7 @@ tangential velocity vanishes at walls bordering grounded ice (mask value `2`).
 Implemented as a slip factor of `2` on grounding-line faces.  Land walls (mask
 value `1`) are governed independently by `BoundaryConditions.land`.
 
-Motivated by LADDIE v2.0 (Lambert et al., in review, 2026), where a no-slip
+Motivated by LADDIE v2.0 ([Lambert et al. (2026)](@cite lambert_one-layer_2026)), where a no-slip
 grounding-line condition improves melt patterns near the grounding line
 compared to observations.
 
@@ -51,7 +51,7 @@ struct NoSlipGL <: AbstractGroundingLineBC end
 $(TYPEDEF)
 
 Free-slip momentum boundary condition at the grounding line: slip factor `0` at
-walls bordering grounded ice, the free-slip end of the Python LADDIE convention (no
+walls bordering grounded ice, the free-slip end of the LADDIE v1 convention (no
 wall drag beyond the zero velocity stored in the wall cell).
 
 Select via `BoundaryConditions(; grounding_line = FreeSlipGL())`.
@@ -64,7 +64,7 @@ $(TYPEDEF)
 Partial-slip momentum boundary condition at the grounding line, with a slip
 `factor` between `0` (free slip) and `2` (no slip).
 
-Python LADDIE v1.x applies one factor, `slip = 1`, to every wall; reproduce it with
+LADDIE v1 applies one factor, `slip = 1`, to every wall; reproduce it with
 `BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))`.
 
 Select via `BoundaryConditions(; grounding_line = PartialSlipGL(1.0))`.
@@ -123,7 +123,7 @@ $(TYPEDEF)
 
 Partial-slip momentum boundary condition at land walls, with a slip `factor`
 between `0` (free slip) and `2` (no slip).  See [`PartialSlipGL`](@ref) for
-reproducing Python LADDIE v1.x.
+reproducing LADDIE v1.
 
 Select via `BoundaryConditions(; land = PartialSlipLand(1.0))`.
 
@@ -166,7 +166,7 @@ abstract type AbstractWallAdvection end
 $(TYPEDEF)
 
 Apply the wall slip factor to the upwind momentum advection as well as to the
-viscous wall drag, as Python LADDIE v1.x does (the default): the tangential
+viscous wall drag, as LADDIE v1 does (the default): the tangential
 momentum flux across a wall face is formed with a ghost velocity
 `(1 - slip)·u`, so free slip (`0`) leaves the flux at its interior value, no
 slip (`2`) reverses it.
@@ -252,10 +252,10 @@ struct NoInflow <: AbstractOpenOceanBC end
 Abstract supertype for the treatment of the layer-thickness- and density-gradient
 parts of the pressure-gradient force at one-sided faces — the ice front, and the
 edges of a gap demoted to ocean by [`SinkGapsBC`](@ref).  Pass a concrete instance
-as `Params(; front_pressure = ...)`: [`FullDepthGradient`](@ref) (Python LADDIE
+as `Params(; front_pressure = ...)`: [`FullDepthGradient`](@ref) (LADDIE v1
 v1.x, the default), [`TruncatedDepthGradient`](@ref) (LADDIE v2) or
 [`ZeroGradientFront`](@ref) (the zero-lateral-gradient condition stated by
-Lambert et al. 2026).
+[Lambert et al. 2026](@cite lambert_one-layer_2026)).
 
 The grounding line is unaffected either way — no momentum equation is solved there.
 """
@@ -270,9 +270,9 @@ one-sided faces — the ice front, and the edges of a gap demoted to ocean by
 neighbour's stored thickness, which masking pins to `0` there. The term is thus
 a full one-sided gradient, as if `H` fell to zero across one grid cell.
 
-This is what Python LADDIE v1.x does (`integrate.py`, `-g·ip_t(Ddrho)·(Dxm1 -
+This is what LADDIE v1 does (`integrate.py`, `-g·ip_t(Ddrho)·(Dxm1 -
 D)/dx` with `Dxm1 = roll(D*tmask)`), so it is **the default** and the setting
-under which Laddie.jl reproduces the Python reference.
+under which Laddie.jl reproduces the LADDIE v1 code.
 
 Select via `Params(; front_pressure = FullDepthGradient())` (the default).
 
@@ -288,7 +288,7 @@ one-sided faces — the ice front, and the edges of a gap demoted to ocean by
 [`SinkGapsBC`](@ref) — keeping only the ice-base-slope and density-gradient
 parts there.
 
-This is what the LADDIE v2 Fortran reference does at calving-front faces
+This is what the LADDIE v2 does at calving-front faces
 (`laddie_velocity.f90:118-126`, `IF (mask_cf_b .OR. mask_gl_b) ... assume
 dH/dx = 0`). It avoids treating a masked neighbour's stored `H = 0` as a real
 thickness: under [`FullDepthGradient`](@ref) that term is roughly 150× larger
@@ -315,9 +315,9 @@ Under [`TruncatedDepthGradient`](@ref) the density-gradient term is still
 evaluated as `(δρ_neighbour - δρ)/Δ`, with the neighbour's stored `δρ`, which
 masking pins to `0`: a one-sided gradient, as if the layer were neutrally buoyant
 across one grid cell. This option makes the momentum equation consistent with the
-condition stated in the LADDIE v2 description paper (Lambert et al. 2026), "zero
+condition stated in the LADDIE v2 description paper ([Lambert et al. 2026](@cite lambert_one-layer_2026)), "zero
 lateral gradients are applied to all main variables (H, U, V, T, and S)" at the
-calving front. The v2 Fortran comments the same intent (`laddie_velocity.f90:119`,
+calving front. The v2 code comments the same intent (`laddie_velocity.f90:119`,
 "Assume dH/dx and ddrho/dx = 0") but keeps the `ddrho_amb_dx_b` term in its code.
 
 Select via `Params(; front_pressure = ZeroGradientFront())`.
@@ -328,7 +328,7 @@ struct ZeroGradientFront <: AbstractFrontPressure end
 # fully-interior face (tmask_stag == 2) either way, and at a one-sided face
 # (tmask_stag == 1) is 1 for w = 0 (term kept) / 0 for w = 1 (term dropped).
 # w = 0 multiplies the term by exactly 1.0, so the default is bit-identical to
-# Python v1.x.  `_front_pgf_weight` gates the thickness-gradient term,
+# LADDIE v1.  `_front_pgf_weight` gates the thickness-gradient term,
 # `_front_drho_weight` the density-gradient term.
 _front_pgf_weight(::FullDepthGradient, x) = zero(x)
 _front_pgf_weight(::TruncatedDepthGradient, x) = one(x)
@@ -378,7 +378,7 @@ coupled ice-sheet driver knows its own reference geometry) or from a reference i
 footprint with [`MarkGapsPreprocess`](@ref) in the `preprocess` list of [`Grid`](@ref).  This
 boundary condition only decides what happens in the cells so marked.
 
-Motivated by Jesse et al. (2026, https://doi.org/10.5194/egusphere-2026-4237),
+Motivated by [Jesse et al. (2026, https://doi.org/10.5194/egusphere-2026-4237)](@cite jesse_ice-sheet_2026),
 who show that the choice between this treatment and [`SinkGapsBC`](@ref) can alter
 coupled ice-volume loss by an amount comparable to 1 °C of ocean warming.  The two
 are deliberate end-members; reality lies somewhere between them.
@@ -417,7 +417,7 @@ available as [`PartialSlipGL`](@ref) and [`PartialSlipLand`](@ref).
 ```julia
 BoundaryConditions(; land = FreeSlipLand(), gaps = ConnectedGapsBC())
 
-# Python LADDIE v1.x walls
+# LADDIE v1 walls
 BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
 
 # LADDIE v2 walls: no slip in the viscosity, no momentum across walls

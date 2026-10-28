@@ -318,7 +318,7 @@ end
 $(TYPEDSIGNATURES)
 
 Convenience constructor for the idealised ISOMIP+ channel geometry
-(Asay-Davis et al. 2016).  Builds the mask and ice draft analytically, then the
+([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)).  Builds the mask and ice draft analytically, then the
 `Grid`, `Model` and a ready-to-run [`Simulation`](@ref) of it.
 
 # Arguments

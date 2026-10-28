@@ -1,8 +1,8 @@
 #=
-# Crosson–Dotson: reproducing LADDIE v1 (Lambert et al., 2023)
+# Crosson–Dotson: reproducing LADDIE v1
 
 This script reproduces the Crosson–Dotson run of
-[Lambert et al. (2023)](https://doi.org/10.5194/tc-17-3203-2023) (their Figs. 3–4) and compares
+[Lambert et al. (2023)](@cite lambert_modelling_2023) (their Figs. 3–4) and compares
 it cell by cell with the reference output. The settings are the reference's, not Laddie.jl's
 defaults, and make a good starting point for a realistic cavity. Four of them matter:
 

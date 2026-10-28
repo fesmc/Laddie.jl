@@ -6,10 +6,11 @@ more entrainment, more heat and more melt. Where the buoyancy supplied by meltin
 outweighs the turbulent production, the net rate turns negative and the layer detrains
 instead. The scheme is selected with `Params(; entrainment = ...)`.
 
-## Buoyancy-flux entrainment (Gaspar 1988)
+## Buoyancy-flux entrainment ([Gaspar 1988](@cite gaspar_modeling_1988))
 
 [`GasparEntrainment`](@ref), the default, solves the mechanical-energy balance of the
-layer (Gaspar 1988; Gladish et al. 2012; Lambert et al. 2023, Eq. 14)
+layer ([Gaspar (1988)](@cite gaspar_modeling_1988); [Gladish et al. (2012)](@cite gladish_ice-shelf_2012);
+[Lambert et al. (2023), Eq. 14](@cite lambert_modelling_2023))
 
 ```math
 \frac{H}{2}\, g_b'\,\dot m + \frac{H}{2}\, g_a'\,\dot e = \mu\,u_\star^3
@@ -28,10 +29,9 @@ Here ``g_a' = g\,\delta\rho`` is the reduced gravity against the ambient water a
 ``g_b' = g\,\delta\rho_b`` that against the interface water, at ``T_b`` and ``S_b``. The
 positive part is entrainment, the negative part detrainment, bounded by
 `Params.max_detrainment` (unbounded by default). This is the reference LADDIE v1
-`'Gaspar'` and v2 `'Gaspar1988'` scheme, verified bit-for-bit against the Python
-reference.
+`'Gaspar'` and v2 `'Gaspar1988'` scheme, verified bit-for-bit against the LADDIE v1 code.
 
-## Shear entrainment (Holland & Jenkins 1999)
+## Shear entrainment ([Holland & Jenkins 1999](@cite holland_modeling_1999))
 
 [`HollandEntrainment`](@ref) is driven by the shear alone, with no detrainment:
 

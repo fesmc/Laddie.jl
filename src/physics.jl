@@ -91,7 +91,7 @@ end
         # more heat per unit melt, and the ice base need not be equally cold across
         # the domain, so this is read from the ice forcing rather than a constant.
         Tf_depth = l2 + l3 * z_draft[i, j]
-        # The closure for the conduction into the ice sets the c_i of this cell and a
+        # The parameterisation for the conduction into the ice sets the c_i of this cell and a
         # fixed flux q.  The flux enters the heat balance as c_p·γT·(T − Tb) − q, so it
         # is the temperature T − q/(c_p·γT) that the equations below see.
         ci_eff, q_cond =
@@ -207,7 +207,7 @@ $(TYPEDSIGNATURES)
 
 Vertically interpolate the ambient T/S profiles to the depth of each grid cell's
 plume base (z_draft − H), writing results into `m.Ta` and `m.Sa`. This sampling has
-no numbered equation in Lambert et al. (2023); see `docs/src/equations.md`.
+no numbered equation in [Lambert et al. (2023)](@cite lambert_modelling_2023); see `docs/src/equations.md`.
 """
 update_ambient_fields!(m) = _update_ambient_fields!(m, m.forcing.ocean)
 
@@ -424,7 +424,7 @@ end
 $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with a fixed heat transfer
-coefficient ``\\gamma_T`` (Jenkins 1991; Lambert et al. 2023, Eqs. 8–10 and 13).
+coefficient ``\\gamma_T`` ([Jenkins 1991](@cite jenkins_onedimensional_1991); [Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 8–10 and 13).
 Sets `m.ustar`, `m.melt`, `m.Tb`; `m.gamT` and `m.gamS` hold the constant
 exchange velocities from the start.
 """
@@ -555,7 +555,7 @@ $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with turbulence-dependent
 transfer coefficients ``\\gamma_T``, ``\\gamma_S`` via the log-layer formulation
-(Holland & Jenkins 1999; Lambert et al. 2023, Eqs. 8–13).
+([Holland & Jenkins 1999](@cite holland_modeling_1999); [Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 8–13).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::TurbulentGamTMelting)
@@ -664,7 +664,7 @@ update_melt!(m) = update_melt!(m, m.melting)
 $(TYPEDSIGNATURES)
 
 Holland–Jenkins shear entrainment (see [`HollandEntrainment`](@ref)), an
-alternative to the buoyancy-flux form of Lambert et al. (2023, Eq. 14).
+alternative to the buoyancy-flux form of [Lambert et al. (2023, Eq. 14)](@cite lambert_modelling_2023).
 """
 function _compute_entrainment!(m, ep::HollandEntrainment)
     coeff = ep.cl * m.K_h / m.A_h^2
@@ -687,9 +687,9 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Gaspar (1988) mechanical-energy entrainment (see [`GasparEntrainment`](@ref)):
+[Gaspar (1988)](@cite gaspar_modeling_1988) mechanical-energy entrainment (see [`GasparEntrainment`](@ref)):
 ``e = 2\\mu u_\\star^3 / (g H \\delta\\rho)`` minus a melt detrainment correction
-(Lambert et al. 2023, Eq. 14; see `docs/src/equations.md`).
+([Lambert et al. 2023](@cite lambert_modelling_2023), Eq. 14; see `docs/src/equations.md`).
 """
 function _compute_entrainment!(m, ep::GasparEntrainment)
     launch!(
@@ -723,7 +723,7 @@ Compute entrainment/detrainment rates and assemble the net entrainment
 `m.nentr = entr + ent2 - detr` that enters the thickness and tracer equations.
 `ent2` is the minimum additional entrainment rate needed to prevent H falling
 below `H_min` after the upcoming thickness step; it is computed here (before
-stepping) from `H.past`, matching the reference Python LADDIE implementation.
+stepping) from `H.past`, matching the LADDIE v1 code.
 
 `detr_cap` is the mirror image for the upper bound `Params.max_layer_thickness`:
 the detrainment rate that brings the same first guess of `H` down to the cap, as

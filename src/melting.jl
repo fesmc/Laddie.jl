@@ -62,7 +62,7 @@ Base.show(io::IO, mp::PrescribedMelting) =
 """
 $(TYPEDEF)
 
-Three-equation ice–ocean melt parameterisation (Jenkins 1991; the equations are
+Three-equation ice–ocean melt parameterisation ([Jenkins 1991](@cite jenkins_onedimensional_1991); the equations are
 given under [`TurbulentGamTMelting`](@ref)) with a constant turbulent heat transfer
 coefficient ``\\gamma_T`` and ``\\gamma_S = \\gamma_T / 35`` (the default).
 
@@ -85,7 +85,7 @@ $(TYPEDEF)
 
 Three-equation ice–ocean melt parameterisation (the equations are given under
 [`TurbulentGamTMelting`](@ref)) with transfer coefficients proportional to the friction
-velocity (Jenkins et al. 2010):
+velocity ([Jenkins et al. 2010](@cite jenkins_observation_2010)):
 
 ```math
 \\gamma_T = \\Gamma_T \\, u_\\star, \\qquad \\gamma_S = \\gamma_T / r ,
@@ -94,12 +94,11 @@ velocity (Jenkins et al. 2010):
 with the ratio ``r`` of the heat and salt transfer coefficients 35 by default.
 
 This is LADDIE v2's `'uniform'` option, which is also what the ISOMIP+ protocol tunes
-(Asay-Davis et al. 2016).  Jesse et al. (2026) use ``\\Gamma_T = 3 \\times 10^{-2}``.
+([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)).  [Jesse et al. (2026)](@cite jesse_ice-sheet_2026) use ``\\Gamma_T = 3 \\times 10^{-2}``.
 
-Jenkins et al. (2010) fit ``C_d^{1/2}\\Gamma_T = 1.1 \\times 10^{-3}`` and
+[Jenkins et al. (2010)](@cite jenkins_observation_2010) fit ``C_d^{1/2}\\Gamma_T = 1.1 \\times 10^{-3}`` and
 ``C_d^{1/2}\\Gamma_S = 3.1 \\times 10^{-5}`` (``r`` = 35) to observations beneath Ronne Ice
-Shelf, with ``C_d`` = 0.0097; McPhee et al. (2008) give ``r`` between 35 and 70 for a melting
-base.  Since ``\\Gamma`` multiplies the ``u_\\star`` of this model, which uses
+Shelf, with ``C_d`` = 0.0097.  Since ``\\Gamma`` multiplies the ``u_\\star`` of this model, which uses
 `Params.C_d_top`, the equivalent is ``\\Gamma_T = 1.1 \\times 10^{-3}/\\sqrt{C_d^\\text{top}}``, about
 ``3.3 \\times 10^{-2}`` for the default `C_d_top = 1.1e-3`.  The default
 ``\\Gamma_T = 3 \\times 10^{-2}`` is already close.
@@ -140,7 +139,7 @@ _rebuild(::Type{<:UStarGamTMelting}, Gamma_T, ratio) =
 """
 $(TYPEDEF)
 
-Two-equation ice–ocean melt parameterisation (McPhee 1992; Jenkins et al. 2010, Eqs. 14–15).
+Two-equation ice–ocean melt parameterisation ([McPhee 1992](@cite mcphee_turbulent_1992); [Jenkins et al. 2010](@cite jenkins_observation_2010), Eqs. 14–15).
 The interface is at the freezing point of the layer salinity, ``T_b = T_f(S, z_b)``, so the salt
 balance drops out, and the heat transfer coefficient ``\\gamma_{TS} = \\Gamma_{TS}\\,u_\\star``
 absorbs the effect of salt diffusion:
@@ -156,15 +155,15 @@ Holland & Jenkins form by default.)  Unlike the three-equation form it is linear
 \\dot m = \\frac{c_p\\,\\gamma_{TS}\\,(T - T_f) - q_\\text{cond}}{L - c_{i}\\,(T_i - T_f)} .
 ```
 
-It is as good as the three-equation form at the one site where Jenkins et al. tested both,
+It is as good as the three-equation form at the one site where [Jenkins et al.](@cite jenkins_observation_2010) tested both,
 and expected to be less so under strong thermal forcing, where the interface salinity departs
-from the layer's: ``\\Gamma_T > \\Gamma_{TS}`` always (Jenkins et al. 2010, Eq. 8).  The
+from the layer's: ``\\Gamma_T > \\Gamma_{TS}`` always ([Jenkins et al. 2010](@cite jenkins_observation_2010), Eq. 8).  The
 buoyancy-flux entrainment reads the interface salinity ``S_b = S`` of this scheme, so the
 buoyancy of the meltwater enters only through the thickness, not through the entrainment's
 melt correction.  `gamS` is not used and stays zero.
 
-Jenkins et al. (2010) fit ``C_d^{1/2}\\Gamma_{TS} = 5.9 \\times 10^{-4}`` (``\\Gamma_{TS}`` = 0.006
-with ``C_d`` = 0.0097; McPhee 1992).  Since ``\\Gamma_{TS}`` multiplies the ``u_\\star`` of this model,
+[Jenkins et al. (2010)](@cite jenkins_observation_2010) fit ``C_d^{1/2}\\Gamma_{TS} = 5.9 \\times 10^{-4}`` (``\\Gamma_{TS}`` = 0.006
+with ``C_d`` = 0.0097; [McPhee 1992](@cite mcphee_turbulent_1992)).  Since ``\\Gamma_{TS}`` multiplies the ``u_\\star`` of this model,
 which uses `Params.C_d_top`, the equivalent is ``5.9 \\times 10^{-4}/\\sqrt{C_d^\\text{top}}``, which is
 the default `0.0178` for `C_d_top = 1.1e-3`.  Change it along with `C_d_top`.
 
@@ -194,7 +193,7 @@ $(TYPEDEF)
 
 Three-equation melt parameterisation with turbulence-dependent transfer
 coefficients ``\\gamma_T`` and ``\\gamma_S`` via the log-layer formulation
-(Holland & Jenkins 1999; Lambert et al. 2023, Eqs. 11–12):
+([Holland & Jenkins 1999](@cite holland_modeling_1999); [Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 11–12):
 
 ```math
 \\begin{aligned}

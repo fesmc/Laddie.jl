@@ -17,7 +17,7 @@ Each step applies the function of the same name, which can also be called on a m
 directly: [`fill_ocean_holes!`](@ref), [`fill_shelf_holes!`](@ref),
 [`fill_small_shelf_patches!`](@ref) and [`fill_small_grounded_patches!`](@ref).
 
-`MarkGapsPreprocess` mirrors the `refgeo_Hi > 0` test of the reference implementation: a
+`MarkGapsPreprocess` mirrors the `refgeo_Hi > 0` test of the reference code: a
 gap is an ice-free cell where the reference geometry had ice, not a topological property
 of the mask. Place it after any hole-filling steps, so the gaps it marks are not
 reclassified afterwards. What happens in a gap is the [gaps boundary

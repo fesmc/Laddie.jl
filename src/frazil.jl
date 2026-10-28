@@ -3,7 +3,7 @@ Abstract supertype for frazil-ice formation: ice crystals that grow in a
 supercooled layer, i.e. where ``T < T_f(S, z_b)``, and are deposited on the ice
 base.  The three-equation melt can already freeze directly at the interface, but in
 real Ice Shelf Water plumes most of the supercooling is released by frazil instead
-(Jenkins & Bombosch 1995; Smedsrud & Jenkins 2004).  Pass a concrete instance as
+([Jenkins & Bombosch 1995](@cite jenkins_modeling_1995); [Smedsrud & Jenkins 2004](@cite smedsrud_frazil_2004)).  Pass a concrete instance as
 `Params(; frazil_ice = ...)`: [`NoFrazilIce`](@ref) (the default) or
 [`RelaxedFrazilIce`](@ref).
 """
@@ -42,10 +42,10 @@ relaxation of [`RelaxToAmbient`](@ref), so the step is stable for
 `relaxation_time > dt` and does not overshoot ``T_f`` for `relaxation_time > 2dt`.
 
 The default ``\\tau`` = 1 h is an order-of-magnitude choice.  The literature has no
-relaxation time for a depth-integrated plume.  Rees Jones & Wells (2018, The
-Cryosphere 12, 25–38) find that frazil adjusts to its forcing over a few hundred
+relaxation time for a depth-integrated plume.  [Rees Jones & Wells (2018, The
+Cryosphere 12, 25–38)](@cite rees_jones_frazil-ice_2018) find that frazil adjusts to its forcing over a few hundred
 seconds in a 1 m layer, a time proportional to the layer depth, which gives about an
-hour for a 10 m layer.  Smedsrud & Jenkins (2004) find a residual supercooling of
+hour for a 10 m layer.  [Smedsrud & Jenkins (2004)](@cite smedsrud_frazil_2004) find a residual supercooling of
 ~0.02 °C that frazil growth leaves in place for up to a day.  Ocean models often
 remove the supercooling within one step (``\\tau \\to \\Delta t``).
 

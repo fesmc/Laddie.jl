@@ -1,7 +1,7 @@
 #=
-# Amundsen Sea Embayment: reproducing LADDIE v2 (Lambert et al., 2026)
+# Amundsen Sea Embayment: reproducing LADDIE v2
 
-[Lambert et al. (2026)](https://doi.org/10.5194/egusphere-2025-4717) run LADDIE v2 over the
+[Lambert et al. (2026)](@cite lambert_one-layer_2026) run LADDIE v2 over the
 Amundsen Sea Embayment at 1 km for 20 days (their Sec. 3.1 and Fig. 3). This page repeats
 that run with Laddie.jl, with the settings that are closest to v2, and compares the result
 with v2's own output. What still differs is the discretisation: v2 uses a triangular mesh and

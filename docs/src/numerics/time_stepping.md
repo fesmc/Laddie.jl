@@ -33,7 +33,7 @@ either makes long runs prone to divergence.
 The step size is controlled by `Simulation(model; tstep = ...)`:
 
 - [`FixedDt`](@ref), the default: the step stays at the `dt` the `Simulation` was
-  built with, as in LADDIE v1.x.
+  built with, as in LADDIE v1.
 - [`AdaptiveDt`](@ref): a CFL controller sets the step.
 
 ### Adaptive time stepping

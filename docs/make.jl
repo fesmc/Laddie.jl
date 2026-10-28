@@ -1,6 +1,13 @@
 using Laddie
 using Documenter
+using DocumenterCitations
 using Literate
+
+# Bibliography for every `[key](@citet)` / `[key](@citep)` in the pages.
+bib = CitationBibliography(
+    joinpath(@__DIR__, "assets", "laddie-description.bib");
+    style = :authoryear,
+)
 
 # Run Literate on the example scripts → Documenter-flavoured markdown.
 const EXAMPLES = ["isomip.jl"]
@@ -70,8 +77,10 @@ makedocs(;
         assets    = String[],
         collapselevel = 1,          # the sidebar lists pages, not their sections
     ),
+    plugins = [bib],
     pages = [
         "Home"           => "index.md",
+        "LADDIE versions" => "versions.md",
         "Physics" => [
             "Overview" => "physics/index.md",
             "Equation of state" => "physics/equation_of_state.md",
@@ -116,8 +125,10 @@ makedocs(;
         ],
         "API reference" => [
             "Setup and running" => "API_public.md",
+            "Published setups" => "API_published.md",
             "Automatic differentiation" => "API_ad.md",
         ],
+        "References" => "references.md",
     ],
     checkdocs = :exports,
     warnonly = true,

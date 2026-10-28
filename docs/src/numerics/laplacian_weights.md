@@ -7,7 +7,7 @@ time level of ``H`` multiplies it is a choice, `Params(; laplacian_weights = ...
 
 - [`PresentLaplacianWeights`](@ref), the default: `H.present`.
 - [`PastLaplacianWeights`](@ref): the lagged, filtered `H.past`, so the weight sits on
-  the same time level as the diffused field. This is what Python LADDIE v1.x does.
+  the same time level as the diffused field. This is what LADDIE v1 does.
 
 The difference is small. On the [Crosson–Dotson](../generated/crosson-dotson.md)
 validation case the two options give the same mean melt to 0.01 % and differ locally by

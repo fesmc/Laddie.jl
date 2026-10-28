@@ -18,7 +18,7 @@ abstract type AbstractMomentumAdvection end
 $(TYPEDEF)
 
 Evaluate the advected momentum as the average of the two velocities either side
-of the face (the default), as Python LADDIE v1.x does: the east face of a
+of the face (the default), as LADDIE v1 does: the east face of a
 U-control volume carries `H̄·ū·ū` with `ū = (U[i] + U[i+1])/2`, and likewise for
 the other faces.  Centred differencing adds no numerical viscosity of its own.
 
@@ -78,7 +78,7 @@ abstract type AbstractTracerForm end
 """
 $(TYPEDEF)
 
-Step the tracer itself, as Python LADDIE v1.x does: the budget is
+Step the tracer itself, as LADDIE v1 does: the budget is
 expanded by the product rule into `H ∂q/∂t = … - q ∂H/∂t`, with `∂H/∂t`
 taken from the thickness step just made, and
 
@@ -92,7 +92,7 @@ step is clamped or restarted, and the mismatch is then divided by `H`: in thin
 layers this can drive `q` far outside the range of the waters that make it up.
 
 Select it explicitly, `Params(; tracer_form = AdvectiveTracerForm())`, to reproduce
-Python LADDIE v1.x, as its verification test does.
+LADDIE v1, as its verification test does.
 """
 struct AdvectiveTracerForm <: AbstractTracerForm end
 

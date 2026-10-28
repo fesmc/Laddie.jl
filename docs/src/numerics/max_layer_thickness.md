@@ -29,7 +29,7 @@ the cell through a layer of about a metre.
 
 Without a cap the layer can exceed the local water column where its volume budget takes
 it — as it does in the published Crosson–Dotson run, in 10 % of the shelf cells. That is
-a known limitation of a one-layer model.
+a known limitation of a depth-averaged model.
 
 !!! warning "A cap still removes water, and that can cost more than it looks"
     Until 2026-10 the cap was purely corrective: it clamped `H` *after* the step and
@@ -41,7 +41,7 @@ a known limitation of a one-layer model.
     cap never binds. Both findings predate the detrainment form and have not been
     re-measured with it.
 
-    Python LADDIE v1 has no upper bound at all (its `maxD = 3000 m` never binds),
+    LADDIE v1 has no upper bound at all (its `maxD = 3000 m` never binds),
     and LADDIE v2's Antarctic setup uses a fixed `Hmax` of 10 000 m that never binds
     either. Prefer the default, and reach for a cap only as a stability measure.
 

@@ -36,6 +36,7 @@ include("stencils.jl")
 include("backend.jl")
 include("api.jl")
 include("build.jl")
+include("reproductions.jl")
 include("show.jl")
 
 export Model, Grid, State, Cache, Params, BoundaryConditions
@@ -58,6 +59,13 @@ export build_isomip,
     trace_parameters,
     adaptive_schedule,
     DtSchedule
+
+# Published LADDIE v1/v2 setups (reproductions.jl)
+export ParamsCrossonDotsonv1, ParamsFRISv1, ParamsPIGv1, ParamsASEv1
+export SimulationCrossonDotsonv1,
+    SimulationFRISv1, SimulationPIGv1, SimulationASEv1, SimulationASEv1Theoretical
+export ParamsISOMIPv2, ParamsAISv2, ParamsASEv2, ParamsPIGv2, ParamsMISOMIPv2, ParamsMISOMIPGapsv2
+export SimulationISOMIPv2, SimulationASEv2, SimulationMISOMIPv2, SimulationMISOMIPGapsv2
 
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment
 export AbstractMelting,

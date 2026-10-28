@@ -1,7 +1,7 @@
 #=
 # ISOMIP+ channel cavity
 
-The idealised ISOMIP+ cavity (Asay-Davis et al., 2016): an 80 km-wide channel, 240 × 40
+The idealised ISOMIP+ cavity ([Asay-Davis et al., 2016](@cite asay-davis_experimental_2016)): an 80 km-wide channel, 240 × 40
 cells at 2 km, with an ice draft that deepens from the ice front (east) to the grounding
 line (west). [`build_isomip`](@ref) sets it up with these defaults:
 
@@ -17,8 +17,8 @@ line (west). [`build_isomip`](@ref) sets it up with these defaults:
 | ``H_\min`` | 1 m | minimum layer thickness |
 | wall slip | 2 (no slip) | grounding line and land |
 
-This page walks through the forcing, a warm run, the validation against the Python
-LADDIE code, the spin-up, and the contrast between the warm and cold cavities.
+This page walks through the forcing, a warm run, the validation against the LADDIE v1
+code, the spin-up, and the contrast between the warm and cold cavities.
 =#
 
 using Laddie
@@ -80,13 +80,13 @@ fig
 max_melt, mean_melt, max_speed = meltstats(mw)
 println("mean melt $(round(mean_melt; digits = 2)) m/yr, max melt $(round(max_melt; digits = 2)) m/yr, max speed $(round(max_speed; digits = 3)) m/s")
 
-# ## Validation against the Python code
+# ## Validation against LADDIE v1
 #
-# The same warm configuration, run for one day by the original Python LADDIE
+# The same warm configuration, run for one day by the original LADDIE v1 code
 # (`runladdie.py config_isomip_compare.toml`, geometry from `gen_isomip_geom.py`), is stored
-# in `docs/assets/restart_000001.nc`. Laddie.jl repeats the day with the Python ice-base
-# slope (`PyGradient`), the Python wall condition (one partial-slip factor of 1 on
-# every wall) and the Python tracer step (`AdvectiveTracerForm`), and the two end states
+# in `docs/assets/restart_000001.nc`. Laddie.jl repeats the day with the v1 ice-base
+# slope (`PyGradient`), the v1 wall condition (one partial-slip factor of 1 on
+# every wall) and the v1 tracer step (`AdvectiveTracerForm`), and the two end states
 # are compared cell by cell.
 
 v1_walls = BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
@@ -98,7 +98,7 @@ mj = sim_py.model
 ds = Dataset(joinpath(pkgdir(Laddie), "docs", "assets", "restart_000001.nc"))
 py = Dict(v => coalesce.(ds[v][:, :, 2], 0.0) for v in ("D", "T", "S", "U", "V"))   # level 2 = present
 close(ds)
-# Python v1 calls the layer thickness `D`; Laddie.jl calls it `H`.
+# LADDIE v1 calls the layer thickness `D`; Laddie.jl calls it `H`.
 jl = Dict(v => getproperty(mj, v == "D" ? :H : Symbol(v)).present[2:end-1, 2:end-1] for v in keys(py))
 
 on = mj.tmask[2:end-1, 2:end-1] .> 0
@@ -109,7 +109,7 @@ for v in ("D", "T", "S", "U", "V")
 end
 
 # The residuals are floating-point noise (different evaluation order in NumPy and Julia),
-# far below anything visible in the maps. The Python log reports a mean melt of
+# far below anything visible in the maps. The v1 log reports a mean melt of
 # 24.42 m/yr and a max of 141 m/yr at the end of the day.
 
 max_melt, mean_melt, _ = meltstats(mj)
@@ -122,8 +122,8 @@ fig = Figure(size = (1100, 390))
 for (i, (v, unit, crange, drange, cmap)) in enumerate((("T", "°C", (-2, 0), 0.015, :thermal),
                                                        ("D", "m", (0, 50), 3.0, :viridis)))
     mapplot!(fig, i, 1, mj, masked(jl[v]), "$v: Laddie.jl ($unit)"; colormap = cmap, colorrange = crange)
-    mapplot!(fig, i, 2, mj, masked(py[v]), "$v: Python ($unit)"; colormap = cmap, colorrange = crange)
-    mapplot!(fig, i, 3, mj, masked(jl[v] .- py[v]), "$v: Laddie.jl − Python ($unit)";
+    mapplot!(fig, i, 2, mj, masked(py[v]), "$v: LADDIE v1 ($unit)"; colormap = cmap, colorrange = crange)
+    mapplot!(fig, i, 3, mj, masked(jl[v] .- py[v]), "$v: Laddie.jl − LADDIE v1 ($unit)";
              colormap = :RdBu, colorrange = (-drange, drange))
 end
 fig

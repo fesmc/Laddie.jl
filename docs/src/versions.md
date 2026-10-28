@@ -13,11 +13,10 @@ the default a plain run uses.
 | language | Python | Fortran, parallel | Julia, [KernelAbstractions](https://github.com/JuliaGPU/KernelAbstractions.jl): CPU threads and GPUs |
 | grid | structured Arakawa C-grid | unstructured triangular mesh, UFEMISM-integrated | structured C-grid, as v1 |
 | time stepping | leapfrog with Robert–Asselin filter | forward–backward Runge–Kutta (FB-RK3) | leapfrog with Robert–Asselin filter, as v1; fixed or adaptive step (`AdaptiveDt`) |
-| typical run time | — | — | 2 min\* |
+| typical run time\* | 40 min | 5 min | 30 s |
 | automatic differentiation | no | no | yes |
 
-\* The [Amundsen Sea example](generated/lambert-ase.md): 20 days at 1 km, on 8 pinned threads of an
-8-core workstation.
+\* Best time achieved by each code: LADDIE v1 on one CPU, LADDIE v2 on 64 CPUs, Laddie.jl on one GPU.
 
 ## Using the versions
 

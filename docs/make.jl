@@ -49,6 +49,15 @@ if get(ENV, "LADDIE_DOCS_INVERSE", "false") == "true"
 end
 Literate.markdown(inv_script, gendir; documenter = true, codefence = "```julia" => "```")
 
+# The reproductions page shows one comparison with published LADDIE runs, statically: it
+# needs `papers/`. Set LADDIE_DOCS_REPRODUCTIONS=true to run every comparison in its table
+# (reproductions_all.jl, a few hours) and print the rows.
+rep_script = joinpath(exdir, "reproductions.jl")
+if get(ENV, "LADDIE_DOCS_REPRODUCTIONS", "false") == "true"
+    Base.include(Module(:Reproductions), joinpath(exdir, "reproductions_all.jl"))
+end
+Literate.markdown(rep_script, gendir; documenter = true, codefence = "```julia" => "```")
+
 DocMeta.setdocmeta!(Laddie, :DocTestSetup, :(using Laddie); recursive=true)
 
 makedocs(;
@@ -59,6 +68,7 @@ makedocs(;
         canonical = "https://fesmc.github.io/Laddie.jl",
         edit_link = "main",
         assets    = String[],
+        collapselevel = 1,          # the sidebar lists pages, not their sections
     ),
     pages = [
         "Home"           => "index.md",
@@ -101,6 +111,7 @@ makedocs(;
             "Amundsen Sea" => "generated/lambert-ase.md",
             "Ice-shelf gaps" => "generated/jesse-gaps.md",
             "Inverse problems" => "generated/inverse-problems.md",
+            "Reproducing published runs" => "generated/reproductions.md",
         ],
         "API reference" => [
             "Setup and running" => "API_public.md",

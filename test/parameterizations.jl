@@ -496,7 +496,7 @@ end
     # others warn (once per session under the console logger, through `maxlog`).
     @test Params(; FT).ice_conduction === HollandJenkinsConduction()
     @test_logs HollandJenkinsConduction()
-    @test_logs (:warn, r"experimental ice-conduction closure") MeltOnlyConduction()
+    @test_logs (:warn, r"experimental ice-conduction parameterisation") MeltOnlyConduction()
     @test_logs (:warn, r"LinearProfileConduction") LinearProfileConduction()
 
     none, meltonly, lin = quiet() do

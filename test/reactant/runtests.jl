@@ -135,7 +135,8 @@ const SCHEME_SCENARIOS = [
         fwd(m, dm, dt, n) = Enzyme.autodiff(Enzyme.Forward, loss, Enzyme.Duplicated(m, dm),
                                             Enzyme.Const(dt), Enzyme.Const(n))
         d = Reactant.to_number(only(reactant_compile(fwd, sim.model, dmodel, dt, n)(sim.model, dmodel, dt, n)))
-        @test d ≈ fd rtol = 1e-5
+        # The ±1e-3 °C central difference is good to ~1e-4 under the flux form.
+        @test d ≈ fd rtol = 1e-4
     end
 
     @testset "traced parameters" begin

@@ -1,5 +1,14 @@
 _to_device(backend, a::AbstractArray) =
-    (b = KA.allocate(backend, eltype(a), size(a)); copyto!(b, a); b)
+    (b = KA.allocate(backend, eltype(a), size(a)); copyto!(b, _flush_subnormals(a)); b)
+
+# Subnormal floats set to zero.  A velocity at rest decays geometrically under drag
+# and, in Float32 on CUDA (which keeps subnormals), can end up at ~1e-42 rather than
+# 0 (pan-Antarctic restarts at front corners).  XLA flushes subnormals to zero on the
+# GPU while `_safe_div` and `_safe_sqrt` test for an exact zero, so such a value makes
+# the reverse-mode gradient NaN.  Physically they are zero.
+_flush_subnormals(a::AbstractArray{T}) where {T<:AbstractFloat} =
+    map(x -> ifelse(abs(x) < floatmin(T), zero(T), x), a)
+_flush_subnormals(a) = a
 
 # `x` with every field of its float matrix type `A` moved to `backend`.  Integer
 # masks, coordinate vectors, ranges, strings and scalars stay where they are, and so

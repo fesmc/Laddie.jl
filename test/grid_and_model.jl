@@ -168,3 +168,16 @@ end
     @test !isapprox(meltstats(m)[2], meltstats(m_sw)[2]; rtol = 1e-6)
     @test all(isfinite, m_sw.model.melt)
 end
+
+@testset "to_backend flushes subnormal state values to zero" begin
+    # A velocity at rest that has decayed to a Float32 subnormal (as CUDA leaves it)
+    # would make XLA's reverse-mode gradients NaN; on the device it is zero.
+    m = build_isomip(CPU(); FT = Float32, nx = 40, ny = 20).model
+    U = m.U.present
+    U[3, 3] = -6.0f-42
+    U[4, 3] = 0.25f0
+    m2 = to_backend(m, CPU())
+    @test m2.U.present[3, 3] === 0.0f0
+    @test m2.U.present[4, 3] === 0.25f0
+    @test m2.U.present[[1:2; 5:end], :] == U[[1:2; 5:end], :]
+end

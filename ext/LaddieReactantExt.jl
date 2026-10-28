@@ -148,12 +148,13 @@ function Laddie._to_device(p::ShardedPlacement, a::AbstractMatrix)
             "`Grid(...; domain_cropping = MinRectangleDomainCropping(; multiple = " *
             "$(ntuple(i -> i == d ? k : 1, 2))))`"))
     end
-    return Reactant.to_rarray(a; sharding = Reactant.Sharding.NamedSharding(p.mesh, p.partition))
+    return Reactant.to_rarray(Laddie._flush_subnormals(a);
+                              sharding = Reactant.Sharding.NamedSharding(p.mesh, p.partition))
 end
 # Sharded and replicated matrices share one type (one buffer per device), so the
 # rebuilt structs keep one matrix type.
 Laddie._to_device(p::ShardedPlacement, a::AbstractArray) =
-    Reactant.to_rarray(a; sharding = Reactant.Sharding.Replicated(p.mesh))
+    Reactant.to_rarray(Laddie._flush_subnormals(a); sharding = Reactant.Sharding.Replicated(p.mesh))
 
 """
 Batched execution through Reactant: the compiled programs of one simulation, and a

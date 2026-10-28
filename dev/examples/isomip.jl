@@ -85,11 +85,13 @@ println("mean melt $(round(mean_melt; digits = 2)) m/yr, max melt $(round(max_me
 # The same warm configuration, run for one day by the original Python LADDIE
 # (`runladdie.py config_isomip_compare.toml`, geometry from `gen_isomip_geom.py`), is stored
 # in `docs/assets/restart_000001.nc`. Laddie.jl repeats the day with the Python ice-base
-# slope (`PyGradient`) and the Python wall condition (one partial-slip factor of 1 on
-# every wall), and the two end states are compared cell by cell.
+# slope (`PyGradient`), the Python wall condition (one partial-slip factor of 1 on
+# every wall) and the Python tracer step (`AdvectiveTracerForm`), and the two end states
+# are compared cell by cell.
 
 v1_walls = BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
-sim_py = build_isomip(; isomipcond = :warm, gradient = PyGradient(), boundary = v1_walls)
+sim_py = build_isomip(; isomipcond = :warm, gradient = PyGradient(), boundary = v1_walls,
+                      params = Params(; tracer_form = AdvectiveTracerForm()))
 run!(sim_py; days = 1.0, verbose = false)
 mj = sim_py.model
 

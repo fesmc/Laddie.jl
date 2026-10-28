@@ -99,6 +99,7 @@ makedocs(;
             "Open-ocean boundary" => "numerics/open_ocean.md",
             "Ice-front pressure gradient" => "numerics/front_pressure.md",
             "Maximum layer thickness" => "numerics/max_layer_thickness.md",
+            "Kinks" => "numerics/kinks.md",
             "Ice-base slope" => "numerics/ice_slope.md",
             "Mask preprocessing" => "numerics/preprocessing.md",
             "Domain cropping" => "numerics/domain_cropping.md",

@@ -12,6 +12,7 @@ include("conduction.jl")
 include("eos.jl")
 include("max_layer_thickness.jl")
 include("coriolis.jl")
+include("kinks.jl")
 include("boundary_conditions.jl")
 include("viscosity.jl")
 include("advection.jl")
@@ -76,6 +77,7 @@ export AbstractEquationOfState, LinearEOS, RoquetEOS
 export AbstractIceConduction, HollandJenkinsConduction, MeltOnlyConduction, NoConduction,
     LinearProfileConduction
 export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D
+export AbstractKinks, ExactKinks, SmoothKinks
 export AbstractMaxLayerThickness,
     NoMaxLayerThickness,
     AbsoluteMaxLayerThickness,

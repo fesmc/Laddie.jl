@@ -170,6 +170,7 @@ end
     drho_w,
     dx,
     dt,
+    kinks,
 )
     g, C_d, pgf_w, drho_w, dx, dt = _val(g), _val(C_d), _val(pgf_w), _val(drho_w), _val(dx), _val(dt)
     frazil = _val(frazil)
@@ -209,7 +210,7 @@ end
             g * ip_H_dzdx +                                             # pressure: ice-shelf slope
             -half * g * ip_H^2 * (drho[ip1, j] - drho[i, j]) / dx * drho_gate + # pressure: density gradient
             fu[i, j] * ip_H_Vjm +                                              # Coriolis
-            -C_d * U1[i, j] * _safe_sqrt(U1[i, j]^2 + ipjmV^2) +             # quadratic drag
+            -C_d * U1[i, j] * _ssqrt(kinks, U1[i, j]^2 + ipjmV^2, _kink_width(kinks, :u)) +             # quadratic drag
             lU[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * U1[i, j] +                                   # momentum loss by detrainment
             -(ip_detr_cap + ip_frazil) * U1[i, j]                      # cap detrainment and frazil, cancel their share of dHdt
@@ -242,6 +243,7 @@ end
     drho_w,
     dy,
     dt,
+    kinks,
 )
     g, C_d, pgf_w, drho_w, dy, dt = _val(g), _val(C_d), _val(pgf_w), _val(drho_w), _val(dy), _val(dt)
     frazil = _val(frazil)
@@ -274,7 +276,7 @@ end
             g * jp_H_dzdy +                                             # pressure: ice-shelf slope
             -half * g * jp_H^2 * (drho[i, jp1] - drho[i, j]) / dy * drho_gate + # pressure: density gradient
             -fv[i, j] * jp_H_Uim +                                             # Coriolis
-            -C_d * V1[i, j] * _safe_sqrt(V1[i, j]^2 + jpimU^2) +             # quadratic drag
+            -C_d * V1[i, j] * _ssqrt(kinks, V1[i, j]^2 + jpimU^2, _kink_width(kinks, :u)) +             # quadratic drag
             lV[i, j] +                                                   # horizontal viscosity
             -detr[i, j] * V1[i, j] +                                   # momentum loss by detrainment
             -(jp_detr_cap + jp_frazil) * V1[i, j]                      # cap detrainment and frazil, cancel their share of dHdt
@@ -338,20 +340,21 @@ function _outflow_rate!(m, ::FluxTracerForm)
         m.vmask,
         m.dx,
         m.dy,
+        m.params.kinks,
     )
     return
 end
 
-@kernel function _outflow_rate_kernel!(out, @Const(H), @Const(U), @Const(V), @Const(umask), @Const(vmask), dx, dy)
+@kernel function _outflow_rate_kernel!(out, @Const(H), @Const(U), @Const(V), @Const(umask), @Const(vmask), dx, dy, kinks)
     dx, dy = _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
-        z = zero(dx)
+        eu = _kink_width(kinks, :u)
         out[i, j] =
             H[i, j] * (
-                (max(V[i, j], z) * vmask[i, j] - min(V[i, j-1], z) * vmask[i, j-1]) / dy +
-                (max(U[i, j], z) * umask[i, j] - min(U[i-1, j], z) * umask[i-1, j]) / dx
+                (_smax0(kinks, V[i, j], eu) * vmask[i, j] - _sneg(kinks, V[i, j-1], eu) * vmask[i, j-1]) / dy +
+                (_smax0(kinks, U[i, j], eu) * umask[i, j] - _sneg(kinks, U[i-1, j], eu) * umask[i-1, j]) / dx
             )
     end
 end
@@ -496,6 +499,7 @@ function step_u_momentum!(m, dt)
         _front_drho_weight(m.front_pressure, m.g),
         m.dx,
         dt,
+        m.params.kinks,
     )
     return
 end
@@ -529,6 +533,7 @@ function step_v_momentum!(m, dt)
         _front_drho_weight(m.front_pressure, m.g),
         m.dy,
         dt,
+        m.params.kinks,
     )
     return
 end
@@ -627,6 +632,7 @@ end
     @inbounds begin
         H[i, j] = _max_layer_thickness(
             max_layer_thickness,
+            ExactKinks(),   # the stepped H sits on its bounds; see `SmoothKinks`
             H[i, j],
             z_draft[i, j],
             z_bed[i, j],
@@ -642,10 +648,12 @@ end
 end
 
 # Tracer bounds inside the domain only; see `leapfrog_step!`.
-@kernel function _clamp_tracer_kernel!(q, @Const(tmask), q_min, q_max)
+# `quantity` is `Val(:T)` or `Val(:S)`, the ε of `SmoothKinks` it takes.
+@kernel function _clamp_tracer_kernel!(q, @Const(tmask), q_min, q_max, kinks, quantity)
     q_min, q_max = _val(q_min), _val(q_max)
     i, j = @index(Global, NTuple)
-    @inbounds q[i, j] = ifelse(tmask[i, j] > 0, clamp(q[i, j], q_min, q_max), q[i, j])
+    @inbounds q[i, j] =
+        ifelse(tmask[i, j] > 0, _sclamp(kinks, q[i, j], q_min, q_max, _kink_width(kinks, quantity)), q[i, j])
 end
 
 @kernel function _nan_on_shelf_kernel!(flag, @Const(arr), @Const(tmask))
@@ -691,11 +699,11 @@ function leapfrog_step!(m, dt, nsteps; check_nans = false, clock = nothing)
     # inactive cell from S = 0 to S_min, breaking the invariant that prognostics are
     # zero outside `tmask` (see `_clamp_thickness!`).
     step_temperature!(m, span)
-    launch!(_clamp_tracer_kernel!, m.T.future, m.tmask, m.T_min, m.T_max)
+    launch!(_clamp_tracer_kernel!, m.T.future, m.tmask, m.T_min, m.T_max, m.params.kinks, Val(:T))
     check_nans && _check_nans_shelf!(m, "T", m.T.future, clock)
 
     step_salinity!(m, span)
-    launch!(_clamp_tracer_kernel!, m.S.future, m.tmask, m.S_min, m.S_max)
+    launch!(_clamp_tracer_kernel!, m.S.future, m.tmask, m.S_min, m.S_max, m.params.kinks, Val(:S))
     check_nans && _check_nans_shelf!(m, "S", m.S.future, clock)
     return
 end
@@ -778,10 +786,13 @@ end
 # terms use (`u_bottom_drag` / `v_bottom_drag` in test/equation_terms.jl).
 # min(1, v_cut / spd).  The divisor of the unused branch is swapped too: reverse-mode
 # AD differentiates it, and at rest (spd = 0) its zero adjoint times 1/spd is NaN.
-@inline _cap_factor(spd, v_cut) =
+# Under `SmoothKinks`, v_cut / max(spd, v_cut) with a smooth max, which is never
+# below v_cut.
+@inline _cap_factor(::ExactKinks, spd, v_cut, ε) =
     ifelse(spd > v_cut, v_cut / ifelse(spd > v_cut, spd, one(spd)), one(spd))
+@inline _cap_factor(k::SmoothKinks, spd, v_cut, ε) = v_cut / _smax(k, spd, v_cut, ε)
 
-@kernel function _speed_scale_kernel!(sU, sV, @Const(U), @Const(V), v_cut)
+@kernel function _speed_scale_kernel!(sU, sV, @Const(U), @Const(V), v_cut, kinks)
     v_cut = _val(v_cut)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
@@ -793,10 +804,11 @@ end
         im1 = i - 1
         Vbar = (V[i, j] + V[i, jm1] + V[ip1, j] + V[ip1, jm1]) / FT(4)   # V at the U-point
         Ubar = (U[i, j] + U[im1, j] + U[i, jp1] + U[im1, jp1]) / FT(4)   # U at the V-point
-        spdU = _safe_sqrt(U[i, j] * U[i, j] + Vbar * Vbar)
-        spdV = _safe_sqrt(V[i, j] * V[i, j] + Ubar * Ubar)
-        sU[i, j] = _cap_factor(spdU, v_cut)
-        sV[i, j] = _cap_factor(spdV, v_cut)
+        eu = _kink_width(kinks, :u)
+        spdU = _ssqrt(kinks, U[i, j] * U[i, j] + Vbar * Vbar, eu)
+        spdV = _ssqrt(kinks, V[i, j] * V[i, j] + Ubar * Ubar, eu)
+        sU[i, j] = _cap_factor(kinks, spdU, v_cut, eu)
+        sV[i, j] = _cap_factor(kinks, spdV, v_cut, eu)
     end
 end
 
@@ -834,6 +846,7 @@ function clamp_velocities!(m)
         m.U.future,
         m.V.future,
         m.v_cut,
+        m.params.kinks,
     )
     launch!(_apply_scale_kernel!, m.U.future, m.V.future, scaleU, scaleV)
     return

@@ -25,18 +25,22 @@ const _GAMMA_T_OVER_S = 35
 # mass of freshwater like the melt) that the heat balance carries on top of it.  `Tf`
 # is the freezing point at the layer salinity, `T - Tf` having the sign of the melt,
 # `Ts` the ice temperature of the forcing.  The ice thickness is the hydrostatic one
-# from the draft; `_safe_div` keeps cells without ice at zero.
+# from the draft; `_safe_div` keeps cells without ice at zero.  The switch of c_i at
+# the freezing point is blended over ε_T under `SmoothKinks`.
 @inline function _ice_conduction(cond, c_i, T, Tf, Ts, z_draft)
-    ci_eff = c_i * ifelse(T > Tf, cond.ci_melt, cond.ci_freeze)
+    k = cond.kinks
+    ci_eff = c_i * _sswitch(k, T - Tf, cond.ci_melt, cond.ci_freeze, _kink_width(k, :T))
     Hi = -z_draft * cond.thick_ratio
     q = _safe_div(cond.k_ice * (Tf - Ts), Hi * cond.rho_fw)
     return ci_eff, q
 end
 
-# The scalars `_ice_conduction` reads, for the kernel launches.
+# The scalars `_ice_conduction` reads, for the kernel launches, and the kink treatment,
+# which the melt kernels take from here.
 function _conduction_args(m)
     ci_melt, ci_freeze, k_ice = _conduction_coefficients(m.params.ice_conduction, m.FT)
-    return (; ci_melt, ci_freeze, k_ice, thick_ratio = m.rho0_seawater / m.rho_ice, rho_fw = m.rho_freshwater)
+    return (; ci_melt, ci_freeze, k_ice, thick_ratio = m.rho0_seawater / m.rho_ice, rho_fw = m.rho_freshwater,
+            kinks = m.params.kinks)
 end
 
 @kernel function _density_kernel!(
@@ -102,8 +106,7 @@ end
             gS * (one(FT) + cp_over_Leff * ci_over_cp * (Tf_depth + l1 * S[i, j]))
         quad_c = cp_over_Leff * gT * gS * (Tf_depth - T_bal + l1 * S[i, j])
         disc = quad_b * quad_b - FT(4) * quad_c
-        disc = ifelse(disc < zero(FT), zero(FT), disc)
-        melt_rate = (-quad_b + _safe_sqrt(disc)) / FT(2)
+        melt_rate = (-quad_b + _ssqrt(cond.kinks, disc, _kink_width(cond.kinks, :w))) / FT(2)
         # Only ice-covered cells melt.  Gap cells (in tmask, not in imask) are ice-free,
         # so they add no meltwater volume and no buoyancy — and their Tb is set to T,
         # which makes the ice-ocean heat exchange -gamT*(T - Tb) in the temperature
@@ -268,20 +271,20 @@ domain, gaps included.
 """
 function update_convection!(m, cs::ClampDensity)
     thr = cs.d_rho_min / m.rho0_seawater
-    launch!(_clamp_density_kernel!, m.convection, m.drho, thr)
+    launch!(_clamp_density_kernel!, m.convection, m.drho, thr, m.params.kinks)
 end
 
 # The convection schemes are pointwise, and run as kernels rather than broadcasts so
 # that they are threaded on the CPU: they run twice per step (see
 # `apply_robert_asselin_filter!`).  Each reads the `drho` of the current T/S.
-@kernel function _clamp_density_kernel!(convection, drho, thr)
+@kernel function _clamp_density_kernel!(convection, drho, thr, kinks)
     thr = _val(thr)
     i, j = @index(Global, NTuple)
     FT = typeof(thr)
     @inbounds begin
         d = drho[i, j]
         convection[i, j] = ifelse(d < 0, one(FT), zero(FT))
-        drho[i, j] = max(d, thr)
+        drho[i, j] = _smax(kinks, d, thr, _kink_width(kinks, :drho))
     end
 end
 
@@ -388,13 +391,14 @@ update_convection!(m) = update_convection!(m, m.convection_scheme)
     PrCorr,
     ScCorr,
     nu0,
+    kinks,
 )
     PrCorr, ScCorr, nu0 = _val(PrCorr), _val(ScCorr), _val(nu0)
     i, j = @index(Global, NTuple)
     FT = typeof(nu0)
     @inbounds begin
         us = ustar[i, j]
-        logterm = FT(2.12) * max(log(us * H[i, j] / nu0 + FT(1e-12)), zero(FT))
+        logterm = FT(2.12) * _smax0(kinks, log(us * H[i, j] / nu0 + FT(1e-12)), _kink_width(kinks, :log))
         active = tmask[i, j] > 0
         gamT[i, j] = ifelse(active, us / (logterm + PrCorr), zero(FT))
         gamS[i, j] = ifelse(active, us / (logterm + ScCorr), zero(FT))
@@ -412,6 +416,7 @@ function _compute_turbulent_transfer_coefficients!(m, mp::TurbulentGamTMelting)
         _log_layer_offset(mp.Pr),
         _log_layer_offset(mp.Sc),
         mp.nu0,
+        m.params.kinks,
     )
 end
 
@@ -675,6 +680,7 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
         m.tmask,
         coeff,
         drho_coeff,
+        m.params.kinks,
     )
 end
 
@@ -706,6 +712,7 @@ function _compute_entrainment!(m, ep::GasparEntrainment)
         m.l1,
         m.l2,
         m.l3,
+        m.params.kinks,
     )
 end
 
@@ -743,6 +750,7 @@ function update_entrainment!(m, dt)
         m.tmask,
         m.frazil,
         m.params.max_layer_thickness,
+        m.params.kinks,
         m.H_min,
         FT(2) * dt,
     )
@@ -763,6 +771,7 @@ end
     @Const(tmask),
     frazil,
     max_layer_thickness,
+    kinks,
     H_min,
     dt2,
 )
@@ -770,22 +779,27 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(H_min)
+        eH = _kink_width(kinks, :H)
         # Frazil formation removes layer water like a sink, so the floor tops it up.
         ent2[i, j] =
-            max(
-                zero(H_min),
+            _smax0(
+                kinks,
                 (H_min - H_past[i, j]) / dt2 -
                 (convH[i, j] + melt[i, j] - _at(frazil, i, j) + entr[i, j] - detr[i, j]),
+                eH / dt2,
             ) * tmask[i, j]
         nentr[i, j] = entr[i, j] + ent2[i, j] - detr[i, j]
         # First guess of the stepped H, then the excess over the cap.  The floor
         # wins where the cap is below H_min, as in `_clamp_thickness_kernel!`.
         # Masked cells may sit under a bed of -Inf, hence the `ifelse`.
         H_star = H_past[i, j] + (convH[i, j] + melt[i, j] - _at(frazil, i, j) + nentr[i, j]) * dt2
-        H_top = max(
-            _max_layer_thickness(max_layer_thickness, H_star, z_draft[i, j], z_bed[i, j], one(FT)),
+        H_top = _smax(
+            kinks,
+            _max_layer_thickness(max_layer_thickness, kinks, H_star, z_draft[i, j], z_bed[i, j], one(FT)),
             H_min,
+            eH,
         )
+        # Not smoothed: H_star - H_top is zero wherever the cap does not bind.
         detr_cap[i, j] =
             ifelse(tmask[i, j] > 0, max(zero(FT), (H_star - H_top) / dt2), zero(FT))
     end
@@ -845,22 +859,23 @@ end
     l1,
     l2,
     l3,
+    kinks,
 )
     prefactor, max_detrainment, drho_floor, eos, l1, l2, l3 =
         _val(prefactor), _val(max_detrainment), _val(drho_floor), _val(eos), _val(l1), _val(l2), _val(l3)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(prefactor)
-        drho_pos = max(drho_floor, drho[i, j])
+        drho_pos = _smax(kinks, drho_floor, drho[i, j], _kink_width(kinks, :drho))
         sb = _freezing_salinity(Tb[i, j], z_draft[i, j], l1, l2, l3)
         db_ij = _drho(S[i, j], sb, T[i, j], Tb[i, j], -z_draft[i, j], eos) * tmask[i, j]
         us3 = ustar[i, j]^3
         e_ij =
             prefactor * _safe_div(us3, H[i, j] * drho_pos) -
             db_ij / drho_pos * melt[i, j] * tmask[i, j]
-        z = zero(FT)
-        entr[i, j] = max(e_ij, z)
-        detr[i, j] = min(max_detrainment, max(-e_ij, z))
+        ew = _kink_width(kinks, :w)
+        entr[i, j] = _smax0(kinks, e_ij, ew)
+        detr[i, j] = _smin(kinks, max_detrainment, _smax0(kinks, -e_ij, ew), ew)
     end
 end
 
@@ -875,6 +890,7 @@ end
     @Const(tmask),
     coeff,
     drho_coeff,
+    kinks,
 )
     coeff, drho_coeff = _val(coeff), _val(drho_coeff)
     i0, j0 = @index(Global, NTuple)
@@ -886,9 +902,8 @@ end
         jm1 = j - 1
         u_im = (U[i, j] + U[im1, j]) * half
         v_jm = (V[i, j] + V[i, jm1]) * half
-        speed_sq =
-            max(zero(FT), u_im * u_im + v_jm * v_jm - drho_coeff * drho[i, j] * H[i, j])
-        entr[i, j] = coeff * _safe_sqrt(speed_sq) * tmask[i, j]
+        speed_sq = u_im * u_im + v_jm * v_jm - drho_coeff * drho[i, j] * H[i, j]
+        entr[i, j] = coeff * _ssqrt(kinks, speed_sq, _kink_width(kinks, :u)) * tmask[i, j]
         detr[i, j] = zero(FT)
     end
 end
@@ -932,6 +947,7 @@ function update_frazil!(m, fz::RelaxedFrazilIce)
         m.l1,
         m.l2,
         m.l3,
+        m.params.kinks,
     )
 end
 
@@ -948,13 +964,14 @@ end
     l1,
     l2,
     l3,
+    kinks,
 )
     relaxation_time, c_p, L, l1, l2, l3 =
         _val(relaxation_time), _val(c_p), _val(L), _val(l1), _val(l2), _val(l3)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(c_p)
-        supercooling = max(zero(FT), l1 * S[i, j] + l2 + l3 * z_draft[i, j] - T[i, j])
+        supercooling = _smax0(kinks, l1 * S[i, j] + l2 + l3 * z_draft[i, j] - T[i, j], _kink_width(kinks, :T))
         frazil[i, j] = imask[i, j] * c_p / L * H[i, j] * supercooling / relaxation_time
     end
 end

@@ -29,6 +29,7 @@ struct Params{
     MA<:AbstractMomentumAdvection,
     TF<:AbstractTracerForm,
     CP<:AbstractCoriolisParameter,
+    KT<:AbstractKinks,
 }
     # Dynamics
     "gravitational acceleration (m s⁻², default `9.81`)"
@@ -123,6 +124,8 @@ struct Params{
     tracer_form::TF
     "Coriolis parameter, an [`AbstractCoriolisParameter`](@ref) (default f-plane at `-1.37e-4` s⁻¹)"
     coriolis::CP
+    "treatment of the kinks (max/min switches, upwinding, √ at zero), an [`AbstractKinks`](@ref) (default exact)"
+    kinks::KT
 end
 
 # Promote a parameterization object's floating-point fields to FT so it stays
@@ -187,6 +190,7 @@ _param_defaults() = (
     momentum_advection = CentredMomentumAdvection(),
     tracer_form = FluxTracerForm(),
     coriolis = CoriolisParameter0D(),
+    kinks = ExactKinks(),
 )
 
 """

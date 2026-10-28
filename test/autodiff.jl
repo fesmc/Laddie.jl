@@ -4,10 +4,10 @@
 # through different kernels: bottom drag (momentum), γ_T (melt) and the entrainment
 # coefficient.  The model is built at the element type of `x`, so `Dual` inputs
 # propagate through the grid, the state and the parameters alike.
-function ad_melt(x; tstep = FixedDt(), output = OutputConfig())
+function ad_melt(x; tstep = FixedDt(), output = OutputConfig(), kinks = ExactKinks())
     T = eltype(x)
     params = Params(; FT = T, C_d = x[1], melting = FixedGamTMelting(x[2]),
-                    entrainment = GasparEntrainment(x[3]))
+                    entrainment = GasparEntrainment(x[3]), kinks)
     sim = build_isomip(CPU(); FT = T, nx = 20, ny = 10, isomipcond = :warm, params,
                        tstep, output)
     run!(sim; days = 2.0, verbose = false)
@@ -40,6 +40,17 @@ ad_gradient(f) = ForwardDiff.gradient(f, AD_X0, AD_CFG, Val(false))
         h = 1e-6 * x0[k]
         e = zeros(length(x0)); e[k] = h
         fd = (ad_melt_loss(x0 .+ e) - ad_melt_loss(x0 .- e)) / 2h
+        @test g[k] ≈ fd rtol = 1e-5
+    end
+end
+
+@testset "ForwardDiff through SmoothKinks matches central differences" begin
+    # With the kinks smoothed, a step a hundred times larger than above still agrees.
+    g = ad_gradient(x -> ad_melt_loss(x; kinks = SmoothKinks()))
+    for k in eachindex(AD_X0)
+        h = 1e-4 * AD_X0[k]
+        e = zeros(length(AD_X0)); e[k] = h
+        fd = (ad_melt_loss(AD_X0 .+ e; kinks = SmoothKinks()) - ad_melt_loss(AD_X0 .- e; kinks = SmoothKinks())) / 2h
         @test g[k] ≈ fd rtol = 1e-5
     end
 end

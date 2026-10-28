@@ -771,3 +771,61 @@ end
     run!(s_l; days = 0.5, verbose = false)
     @test s_l.model.melt != melts[1]
 end
+
+@testset "SmoothKinks: C¹ blends, exact outside the band" begin
+    @test Params().kinks === ExactKinks()
+    @test Params(; FT = Float32, kinks = SmoothKinks()).kinks.H === 0.1f0
+    k, ε = SmoothKinks(), 0.1
+    smax0(x) = Laddie._smax0(k, x, ε)
+    d(f, x) = ForwardDiff.derivative(f, x)
+    # max(x, 0): exact outside [-ε, ε], value and slope continuous at the band edges.
+    @test smax0(-0.5) === 0.0 && smax0(0.5) === 0.5 && smax0(0.0) ≈ ε / 4
+    for x in (-ε, ε)
+        @test smax0(x - 1e-9) ≈ smax0(x + 1e-9) atol = 1e-8
+        @test d(smax0, x - 1e-9) ≈ d(smax0, x + 1e-9) atol = 1e-7
+    end
+    # max/min/clamp follow it, and stay exact next to a much larger operand.
+    @test Laddie._smax(k, 2.0, 0.5, ε) === 2.0 && Laddie._smin(k, 2.0, 0.5, ε) === 0.5
+    @test Laddie._smin(k, 0.5, 0.5, ε) ≈ 0.5 - ε / 4
+    @test Laddie._smin(SmoothKinks(; w = 1f-8), 1f6, 3f-5, 1f-8) === 3f-5
+    @test Laddie._sclamp(k, 7.0, -1.0, 1.0, ε) === 1.0
+    # An infinite bound (a bed of -Inf) neither leaks into the value nor the derivative.
+    @test Laddie._smin(k, 3.0, Inf, ε) === 3.0
+    @test d(h -> Laddie._smin(k, h, Inf, ε), 3.0) === 1.0
+    # The upwind split is conservative, and a zero flux (a wall) carries nothing.
+    for u in (-0.3, -0.05, 0.0, 0.02, 0.4)
+        @test smax0(u) + Laddie._sneg(k, u, ε) ≈ u atol = 1e-15
+    end
+    @test Laddie._supwind(k, 0.0, 1.0, 5.0, ε) === 0.0
+    @test Laddie._supwind(k, 0.5, 1.0, 5.0, ε) === 0.5 && Laddie._supwind(k, -0.5, 1.0, 5.0, ε) === -2.5
+    @test Laddie._sabs(k, -0.5, ε) === 0.5 && Laddie._sabs(k, 0.0, ε) ≈ ε / 2
+    # √max(x, 0): exact above ε², zero below -3ε², slope bounded by 1/2ε.
+    ssqrt(x) = Laddie._ssqrt(k, x, ε)
+    @test ssqrt(0.04) === 0.2 && ssqrt(-0.04) === 0.0
+    @test d(ssqrt, ε^2 - 1e-12) ≈ d(ssqrt, ε^2 + 1e-12) rtol = 1e-6
+    @test maximum(x -> d(ssqrt, x), range(-3ε^2, ε^2; length = 101)) <= 1 / 2ε + 1e-9
+    # The c_i switch at the freezing point, blended over [-ε, ε].
+    sw(x) = Laddie._sswitch(k, x, 1.0, 0.0, ε)
+    @test sw(-0.2) === 0.0 && sw(0.2) === 1.0 && sw(0.0) ≈ 0.5
+    @test abs(d(sw, ε)) < 1e-12
+    # An ε of zero is the exact operation, bit for bit.
+    k0 = SmoothKinks(; H = 0.0)
+    @test Laddie._smax(k0, 0.3, 0.7, 0.0) === 0.7 && Laddie._ssqrt(k0, 0.3, 0.0) === sqrt(0.3)
+end
+
+@testset "SmoothKinks: exact at ε = 0, close to exact at the defaults" begin
+    p = (; entrainment = GasparEntrainment(2.5), melting = TurbulentGamTMelting(),
+         convection_scheme = ClampDensity(0.005), frazil_ice = RelaxedFrazilIce(),
+         max_layer_thickness = AbsoluteMaxLayerThickness(30.0), lateral_viscosity = NonlinearLateralViscosity(0.6),
+         momentum_advection = UpstreamMomentumAdvection(), H_min = 2.0, v_cut = 0.3)
+    zero_eps = SmoothKinks(; H = 0.0, u = 0.0, uH = 0.0, w = 0.0, drho = 0.0, T = 0.0, S = 0.0, log = 0.0)
+    runs = map((ExactKinks(), zero_eps, SmoothKinks())) do kinks
+        s = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = Params(; FT, p..., kinks))
+        run!(s; days = 1.0, verbose = false)
+        (copy(s.model.melt), copy(s.model.H.present), copy(s.model.U.present))
+    end
+    @test runs[2] == runs[1]
+    melt_exact, melt_smooth = runs[1][1], runs[3][1]
+    @test all(isfinite, melt_smooth) && melt_smooth != melt_exact
+    @test sum(melt_smooth) ≈ sum(melt_exact) rtol = 1e-2
+end

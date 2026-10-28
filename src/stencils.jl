@@ -118,6 +118,7 @@ end
     inflow,
     dx,
     dy,
+    kinks,
 )
     inflow, dx, dy = _val(inflow), _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
@@ -139,10 +140,11 @@ end
         var_s = var[i, jm1] * (inflow * tmask[i, jm1] + keep) + inflow * v * ocn[i, jm1]
         var_e = var[ip1, j] * (inflow * tmask[ip1, j] + keep) + inflow * v * ocn[ip1, j]
         var_w = var[im1, j] * (inflow * tmask[im1, j] + keep) + inflow * v * ocn[im1, j]
-        flux_N = -(max(v_n, z) * v + min(v_n, z) * var_n) / dy * vmask[i, j]
-        flux_S = (max(v_s, z) * var_s + min(v_s, z) * v) / dy * vmask[i, jm1]
-        flux_E = -(max(u_e, z) * v + min(u_e, z) * var_e) / dx * umask[i, j]
-        flux_W = (max(u_w, z) * var_w + min(u_w, z) * v) / dx * umask[im1, j]
+        eu = _kink_width(kinks, :u)
+        flux_N = -(_smax0(kinks, v_n, eu) * v + _sneg(kinks, v_n, eu) * var_n) / dy * vmask[i, j]
+        flux_S = (_smax0(kinks, v_s, eu) * var_s + _sneg(kinks, v_s, eu) * v) / dy * vmask[i, jm1]
+        flux_E = -(_smax0(kinks, u_e, eu) * v + _sneg(kinks, u_e, eu) * var_e) / dx * umask[i, j]
+        flux_W = (_smax0(kinks, u_w, eu) * var_w + _sneg(kinks, u_w, eu) * v) / dx * umask[im1, j]
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -169,6 +171,7 @@ _inflow_weight(::NoInflow, FT) = zero(FT)
     slip_land,
     dx,
     dy,
+    kinks,
 )
     slip_gl, slip_land, dx, dy = _val(slip_gl), _val(slip_land), _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
@@ -203,13 +206,13 @@ _inflow_weight(::NoInflow, FT) = zero(FT)
         H_E = He + ocn_e * H0
         H_W = H0 + ocn[i, j] * He
         u = U[i, j]
-        sU = sign(u)
+        absu = _sabs(kinks, u, _kink_width(kinks, :u))   # sign(u)·u
         wallN = _slip(slip_gl, slip_land, glN, lndN, i, j)
         wallS = _slip(slip_gl, slip_land, glS, lndS, i, j)
         flux_N = -H_N * Vip * (Ujp - wallN * u) / dy
         flux_S = H_S * Vip_jm * (Ujm - wallS * u) / dy
-        flux_E = -H_E * Uip * (Uip - (one(FT) - sU) * u * ocn_e) / dx
-        flux_W = H_W * Uim * (Uim - sU * u * ocn[i, j]) / dx
+        flux_E = -H_E * Uip * (Uip - (u - absu) * ocn_e) / dx
+        flux_W = H_W * Uim * (Uim - absu * ocn[i, j]) / dx
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -232,6 +235,7 @@ end
     slip_land,
     dx,
     dy,
+    kinks,
 )
     slip_gl, slip_land, dx, dy = _val(slip_gl), _val(slip_land), _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
@@ -266,9 +270,9 @@ end
         H_N = Hn + ocn_n * H0
         H_S = H0 + ocn[i, j] * Hn
         v = V[i, j]
-        sV = sign(v)
-        flux_N = -H_N * Vjp * (Vjp - (one(FT) - sV) * v * ocn_n) / dy
-        flux_S = H_S * Vjm * (Vjm - sV * v * ocn[i, j]) / dy
+        absv = _sabs(kinks, v, _kink_width(kinks, :u))   # sign(v)·v
+        flux_N = -H_N * Vjp * (Vjp - (v - absv) * ocn_n) / dy
+        flux_S = H_S * Vjm * (Vjm - absv * ocn[i, j]) / dy
         wallE = _slip(slip_gl, slip_land, glE, lndE, i, j)
         wallW = _slip(slip_gl, slip_land, glW, lndW, i, j)
         flux_E = -H_E * Ujp * (Vip - wallE * v) / dx
@@ -400,6 +404,7 @@ end
     visc_y,
     dx2,
     dy2,
+    kinks,
 )
     slip_gl, slip_land, A_h_wall, visc_x, visc_y, dx2, dy2 = _val(slip_gl),
     _val(slip_land), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
@@ -419,16 +424,17 @@ end
         jpH = _safe_div(HU + Hface[i, jp1], tmask[i, j] + tmask[i, jp1])
         jmH = _safe_div(HU + Hface[i, jm1], tmask[i, j] + tmask[i, jm1])
         ov = other[i, j]
+        eu = _kink_width(kinks, :u)
         dN = var[i, jp1] - v
         dS = var[i, jm1] - v
         dE = var[ip1, j] - v
         dW = var[im1, j] - v
         # |Δu| across each face: this component's difference combined with the
         # cross-component's difference over the same displacement.
-        aN = _safe_sqrt(dN * dN + (other[i, jp1] - ov)^2)
-        aS = _safe_sqrt(dS * dS + (other[i, jm1] - ov)^2)
-        aE = _safe_sqrt(dE * dE + (other[ip1, j] - ov)^2)
-        aW = _safe_sqrt(dW * dW + (other[im1, j] - ov)^2)
+        aN = _ssqrt(kinks, dN * dN + (other[i, jp1] - ov)^2, eu)
+        aS = _ssqrt(kinks, dS * dS + (other[i, jm1] - ov)^2, eu)
+        aE = _ssqrt(kinks, dE * dE + (other[ip1, j] - ov)^2, eu)
+        aW = _ssqrt(kinks, dW * dW + (other[im1, j] - ov)^2, eu)
         flux_N = visc_y * aN * jpH * dN / dy2 * (o - ocn[i, jp1]) - dragN
         flux_S = visc_y * aS * jmH * dS / dy2 * (o - ocn[i, jm1]) - dragS
         flux_E = visc_x * aE * H0[ip1, j] * dE / dx2 * (o - ocn[ip1, j])
@@ -456,6 +462,7 @@ end
     visc_y,
     dx2,
     dy2,
+    kinks,
 )
     slip_gl, slip_land, A_h_wall, visc_x, visc_y, dx2, dy2 = _val(slip_gl),
     _val(slip_land), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
@@ -475,15 +482,16 @@ end
         ipH = _safe_div(HV + Hface[ip1, j], tmask[i, j] + tmask[ip1, j])
         imH = _safe_div(HV + Hface[im1, j], tmask[i, j] + tmask[im1, j])
         ov = other[i, j]
+        eu = _kink_width(kinks, :u)
         dN = var[i, jp1] - v
         dS = var[i, jm1] - v
         dE = var[ip1, j] - v
         dW = var[im1, j] - v
         # See _nonlinear_laplace_U_kernel! for the |Δu| composition.
-        aN = _safe_sqrt(dN * dN + (other[i, jp1] - ov)^2)
-        aS = _safe_sqrt(dS * dS + (other[i, jm1] - ov)^2)
-        aE = _safe_sqrt(dE * dE + (other[ip1, j] - ov)^2)
-        aW = _safe_sqrt(dW * dW + (other[im1, j] - ov)^2)
+        aN = _ssqrt(kinks, dN * dN + (other[i, jp1] - ov)^2, eu)
+        aS = _ssqrt(kinks, dS * dS + (other[i, jm1] - ov)^2, eu)
+        aE = _ssqrt(kinks, dE * dE + (other[ip1, j] - ov)^2, eu)
+        aW = _ssqrt(kinks, dW * dW + (other[im1, j] - ov)^2, eu)
         flux_N = visc_y * aN * H0[i, jp1] * dN / dy2 * (o - ocn[i, jp1])
         flux_S = visc_y * aS * H0[i, j] * dS / dy2 * (o - ocn[i, j])
         flux_E = visc_x * aE * ipH * dE / dx2 * (o - ocn[ip1, j]) - dragE
@@ -506,6 +514,7 @@ function upwind_advection_T(out, m, var)
         _inflow_weight(m.boundary.open_ocean, m.FT),
         m.dx,
         m.dy,
+        m.params.kinks,
     )
     return out
 end
@@ -527,37 +536,39 @@ end
 # T(i+1, j).  Zero-gradient thickness when the donor side is open ocean.  `ifelse`,
 # not a branch: the read at `ip1` wraps on the last column, and Reactant raises a
 # wrapped read inside a branch to a gather (an all-gather when sharded).
-@inline function _face_mass_x(U, H, tmask, ocn, umask, i, j, Nx)
+@inline function _face_mass_x(U, H, tmask, ocn, umask, i, j, Nx, kinks)
     @inbounds begin
         ip1 = _xp1(i, Nx)
-        u = U[i, j]
-        Hd = ifelse(
-            u > zero(u),
+        Hd = _supwind(
+            kinks,
+            U[i, j],
             H[i, j] * tmask[i, j] + H[ip1, j] * ocn[i, j],
             H[ip1, j] * tmask[ip1, j] + H[i, j] * ocn[ip1, j],
+            _kink_width(kinks, :u),
         )
-        return umask[i, j] * u * Hd
+        return umask[i, j] * Hd
     end
 end
 
 # Mass flux through the y-face at v-point (i, j), between T(i, j) and T(i, j+1).
-@inline function _face_mass_y(V, H, tmask, ocn, vmask, i, j, Ny)
+@inline function _face_mass_y(V, H, tmask, ocn, vmask, i, j, Ny, kinks)
     @inbounds begin
         jp1 = _yp1(j, Ny)
-        v = V[i, j]
-        Hd = ifelse(
-            v > zero(v),
+        Hd = _supwind(
+            kinks,
+            V[i, j],
             H[i, j] * tmask[i, j] + H[i, jp1] * ocn[i, j],
             H[i, jp1] * tmask[i, jp1] + H[i, j] * ocn[i, jp1],
+            _kink_width(kinks, :u),
         )
-        return vmask[i, j] * v * Hd
+        return vmask[i, j] * Hd
     end
 end
 
-# Upstream velocity on a face, with a zero-gradient fallback when the donor
-# point is inactive (ice front); at a wall the flux is zero anyway.
-@inline _donor(q_own, q_nb, mask_nb, take_own) =
-    take_own ? q_own : (mask_nb > zero(mask_nb) ? q_nb : q_own)
+# The neighbour's velocity on a face, for when it is upstream, with a zero-gradient
+# fallback when that point is inactive (ice front); at a wall the flux is zero
+# anyway.  `_supwind` picks the upstream side from the sign of the mass flux.
+@inline _donor(q_own, q_nb, mask_nb) = mask_nb > zero(mask_nb) ? q_nb : q_own
 
 @kernel function _upstream_advection_U_kernel!(
     out,
@@ -572,6 +583,7 @@ end
     dy,
     Nx,
     Ny,
+    kinks,
 )
     dx, dy = _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
@@ -587,30 +599,30 @@ end
         # north and south on corners, each the mean of the two T-cell faces there.
         MxE =
             half * (
-                _face_mass_x(U, H, tmask, ocn, umask, i, j, Nx) +
-                _face_mass_x(U, H, tmask, ocn, umask, ip1, j, Nx)
+                _face_mass_x(U, H, tmask, ocn, umask, i, j, Nx, kinks) +
+                _face_mass_x(U, H, tmask, ocn, umask, ip1, j, Nx, kinks)
             )
         MxW =
             half * (
-                _face_mass_x(U, H, tmask, ocn, umask, im1, j, Nx) +
-                _face_mass_x(U, H, tmask, ocn, umask, i, j, Nx)
+                _face_mass_x(U, H, tmask, ocn, umask, im1, j, Nx, kinks) +
+                _face_mass_x(U, H, tmask, ocn, umask, i, j, Nx, kinks)
             )
         MyN =
             half * (
-                _face_mass_y(V, H, tmask, ocn, vmask, i, j, Ny) +
-                _face_mass_y(V, H, tmask, ocn, vmask, ip1, j, Ny)
+                _face_mass_y(V, H, tmask, ocn, vmask, i, j, Ny, kinks) +
+                _face_mass_y(V, H, tmask, ocn, vmask, ip1, j, Ny, kinks)
             )
         MyS =
             half * (
-                _face_mass_y(V, H, tmask, ocn, vmask, i, jm1, Ny) +
-                _face_mass_y(V, H, tmask, ocn, vmask, ip1, jm1, Ny)
+                _face_mass_y(V, H, tmask, ocn, vmask, i, jm1, Ny, kinks) +
+                _face_mass_y(V, H, tmask, ocn, vmask, ip1, jm1, Ny, kinks)
             )
-        z = zero(u)
-        qE = _donor(u, U[ip1, j], umask[ip1, j], MxE > z)
-        qW = _donor(u, U[im1, j], umask[im1, j], MxW <= z)
-        qN = _donor(u, U[i, jp1], umask[i, jp1], MyN > z)
-        qS = _donor(u, U[i, jm1], umask[i, jm1], MyS <= z)
-        out[i, j] = -((MxE * qE - MxW * qW) / dx + (MyN * qN - MyS * qS) / dy)
+        eM = _kink_width(kinks, :uH)
+        FE = _supwind(kinks, MxE, u, _donor(u, U[ip1, j], umask[ip1, j]), eM)
+        FW = _supwind(kinks, MxW, _donor(u, U[im1, j], umask[im1, j]), u, eM)
+        FN = _supwind(kinks, MyN, u, _donor(u, U[i, jp1], umask[i, jp1]), eM)
+        FS = _supwind(kinks, MyS, _donor(u, U[i, jm1], umask[i, jm1]), u, eM)
+        out[i, j] = -((FE - FW) / dx + (FN - FS) / dy)
     end
 end
 
@@ -627,6 +639,7 @@ end
     dy,
     Nx,
     Ny,
+    kinks,
 )
     dx, dy = _val(dx), _val(dy)
     i0, j0 = @index(Global, NTuple)
@@ -640,30 +653,30 @@ end
         half = one(v) / 2
         MyN =
             half * (
-                _face_mass_y(V, H, tmask, ocn, vmask, i, j, Ny) +
-                _face_mass_y(V, H, tmask, ocn, vmask, i, jp1, Ny)
+                _face_mass_y(V, H, tmask, ocn, vmask, i, j, Ny, kinks) +
+                _face_mass_y(V, H, tmask, ocn, vmask, i, jp1, Ny, kinks)
             )
         MyS =
             half * (
-                _face_mass_y(V, H, tmask, ocn, vmask, i, jm1, Ny) +
-                _face_mass_y(V, H, tmask, ocn, vmask, i, j, Ny)
+                _face_mass_y(V, H, tmask, ocn, vmask, i, jm1, Ny, kinks) +
+                _face_mass_y(V, H, tmask, ocn, vmask, i, j, Ny, kinks)
             )
         MxE =
             half * (
-                _face_mass_x(U, H, tmask, ocn, umask, i, j, Nx) +
-                _face_mass_x(U, H, tmask, ocn, umask, i, jp1, Nx)
+                _face_mass_x(U, H, tmask, ocn, umask, i, j, Nx, kinks) +
+                _face_mass_x(U, H, tmask, ocn, umask, i, jp1, Nx, kinks)
             )
         MxW =
             half * (
-                _face_mass_x(U, H, tmask, ocn, umask, im1, j, Nx) +
-                _face_mass_x(U, H, tmask, ocn, umask, im1, jp1, Nx)
+                _face_mass_x(U, H, tmask, ocn, umask, im1, j, Nx, kinks) +
+                _face_mass_x(U, H, tmask, ocn, umask, im1, jp1, Nx, kinks)
             )
-        z = zero(v)
-        qE = _donor(v, V[ip1, j], vmask[ip1, j], MxE > z)
-        qW = _donor(v, V[im1, j], vmask[im1, j], MxW <= z)
-        qN = _donor(v, V[i, jp1], vmask[i, jp1], MyN > z)
-        qS = _donor(v, V[i, jm1], vmask[i, jm1], MyS <= z)
-        out[i, j] = -((MxE * qE - MxW * qW) / dx + (MyN * qN - MyS * qS) / dy)
+        eM = _kink_width(kinks, :uH)
+        FE = _supwind(kinks, MxE, v, _donor(v, V[ip1, j], vmask[ip1, j]), eM)
+        FW = _supwind(kinks, MxW, _donor(v, V[im1, j], vmask[im1, j]), v, eM)
+        FN = _supwind(kinks, MyN, v, _donor(v, V[i, jp1], vmask[i, jp1]), eM)
+        FS = _supwind(kinks, MyS, _donor(v, V[i, jm1], vmask[i, jm1]), v, eM)
+        out[i, j] = -((FE - FW) / dx + (FN - FS) / dy)
     end
 end
 
@@ -687,6 +700,7 @@ function _advect_U(m, ::UpstreamMomentumAdvection)
         m.dy,
         nx,
         ny,
+        m.params.kinks,
     )
     return m.adv
 end
@@ -707,6 +721,7 @@ function _advect_V(m, ::UpstreamMomentumAdvection)
         m.dy,
         nx,
         ny,
+        m.params.kinks,
     )
     return m.adv
 end
@@ -725,6 +740,7 @@ function _advect_U(m, ::CentredMomentumAdvection)
         _u_walls(m, _advection_slips(m))...,
         m.dx,
         m.dy,
+        m.params.kinks,
     )
     return m.adv
 end
@@ -742,6 +758,7 @@ function _advect_V(m, ::CentredMomentumAdvection)
         _v_walls(m, _advection_slips(m))...,
         m.dx,
         m.dy,
+        m.params.kinks,
     )
     return m.adv
 end
@@ -826,6 +843,7 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
         lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
+        m.params.kinks,
     )
     return m.lap
 end
@@ -852,6 +870,7 @@ function laplace_V(m, lv::NonlinearLateralViscosity)
         lv.C_visc * m.dy / 100,
         m.dx^2,
         m.dy^2,
+        m.params.kinks,
     )
     return m.lap
 end

@@ -17,7 +17,8 @@ Advective fluxes of volume, heat and salt are computed with a flux-form
 weighted by the layer thickness. All operators are nearest-neighbour stencils written
 as fused KernelAbstractions kernels, one pass per term, with the masks applied
 inside. How momentum is advected, and in which form the tracer equations are stepped,
-are choices of their own.
+are choices of their own. The upwind switches, floors and caps can be smoothed for
+gradient-based work; see [Kinks](kinks.md).
 
 ## Time integration
 

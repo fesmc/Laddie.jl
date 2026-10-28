@@ -4,10 +4,8 @@ Laddie.jl is a Julia implementation of LADDIE ([Lambert et al. (2023)](@cite lam
 [Lambert et al. (2026)](@cite lambert_one-layer_2026)), a model of the **basal melt rate beneath an ice
 shelf**. It treats the thin, buoyant meltwater layer in the cavity as a depth-averaged circulation,
 and runs on CPUs and GPUs through [KernelAbstractions](https://github.com/JuliaGPU/KernelAbstractions.jl).
-[Reactant.jl](https://github.com/EnzymeAD/Reactant.jl) compiles the whole time loop with XLA to
-accelerate GPU runs, and the model is differentiable: a run can be differentiated with ForwardDiff.jl
-on the CPU and CUDA, and with Reactant and Enzyme for gradients at a cost that does not grow with the
-number of parameters.
+It ships a [Reactant.jl](https://github.com/EnzymeAD/Reactant.jl) extension so that the time loop can be compiled with XLA to
+accelerate GPU runs. This also unlocks automatic differentiation with Enzyme, both forward and reverse mode. Laddie.jl additionally includes a ForwardDiff.jl extension as reference to validate the Enzyme extension.
 
 The physics is that of LADDIE v2 on the grid of LADDIE v1; see [LADDIE versions](versions.md) for
 how the two differ and which choice each option makes.
@@ -34,13 +32,13 @@ Geometry and forcing go in, the one-layer plume model integrates them, and field
   <div class="column">
     <div class="notification is-link is-light">
       <p class="is-size-7 is-uppercase has-text-link has-text-weight-semibold">Model</p>
-      <p><strong>One layer under the ice.</strong> A single layer of thickness <code>H</code> carries depth-averaged velocities <code>U</code>, <code>V</code> and tracers <code>T</code>, <code>S</code>.</p>
+      <p><strong>One layer under the ice.</strong> A single layer of thickness <code class="has-text-success-dark">H</code> carries depth-averaged velocities <code class="has-text-success-dark">U</code>, <code class="has-text-success-dark">V</code> and tracers <code class="has-text-success-dark">T</code>, <code class="has-text-success-dark">S</code>.</p>
       <div class="tags">
-        <span class="tag is-light has-text-success-dark is-family-monospace">H</span>
-        <span class="tag is-light has-text-success-dark is-family-monospace">U</span>
-        <span class="tag is-light has-text-success-dark is-family-monospace">V</span>
-        <span class="tag is-light has-text-success-dark is-family-monospace">T</span>
-        <span class="tag is-light has-text-success-dark is-family-monospace">S</span>
+        <span class="tag is-light is-family-monospace">H</span>
+        <span class="tag is-light is-family-monospace">U</span>
+        <span class="tag is-light is-family-monospace">V</span>
+        <span class="tag is-light is-family-monospace">T</span>
+        <span class="tag is-light is-family-monospace">S</span>
       </div>
       <p>Melt, entrainment and density are set from the state at each step. The melt rate at the ice base is the main output.</p>
     </div>

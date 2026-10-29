@@ -23,7 +23,7 @@ LaddieReactantExt = ["Reactant", "CUDA"]
 
 [compat]
 CUDA = "6.2"
-DocStringExtensions = "0.9.5"
+DocStringExtensions = "0.9.5, 0.10"
 ForwardDiff = "1"
 JLD2 = "0.6.4"
 KernelAbstractions = "0.9.41"

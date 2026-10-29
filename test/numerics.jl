@@ -21,6 +21,14 @@
                max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0))),
         Params(; FT, tracer_form = FluxTracerForm(), frazil_ice = RelaxedFrazilIce(FT(3600.0)),
                convection_scheme = ClampDensity(FT(0.005))),
+        Params(; FT, momentum_form = FluxMomentumForm(), max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0)),
+               frazil_ice = RelaxedFrazilIce(FT(3600.0)), convection_scheme = ClampDensity(FT(0.005))),
+        Params(; FT, closure_level = PastClosures(),
+               melting = TurbulentGamTMelting(FT(13.8), FT(2432.0), FT(1.95e-6)),
+               entrainment  = HollandEntrainment(FT(0.01775))),
+        Params(; FT, momentum_form = FluxMomentumForm(), closure_level = PastClosures()),
+        Params(; FT, momentum_form = FluxMomentumForm(), momentum_advection = UpstreamMomentumAdvection(),
+               max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0))),
     )
     for params in configs
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
@@ -32,21 +40,17 @@
         Laddie.step_thickness!(m.model, dt)
         Laddie.precompute_integration_terms!(m.model, m.clock.dt)
 
-        rhs_U = .- u_thickness_tendency(m.model) .+ u_advection(m.model) .-
+        rhs_U =    u_advection(m.model) .-
                    u_pressure_depth(m.model)     .+ u_pressure_slope(m.model) .-
-                   u_pressure_density(m.model)   .+ u_coriolis(m.model) .-
-                   u_bottom_drag(m.model)        .+ u_diffusion(m.model) .-
-                   u_detrainment(m.model)
-        U_ref = m.model.U.past .+
-            Laddie.div0(rhs_U, Laddie.ip_t(m.model, m.model.H.present)) .* m.model.umask .* dt
+                   u_pressure_density(m.model)   .+ u_coriolis(m.model) .+
+                   u_diffusion(m.model)
+        U_ref = u_momentum_step(m.model, rhs_U, dt)
 
-        rhs_V = .- v_thickness_tendency(m.model) .+ v_advection(m.model) .-
+        rhs_V =    v_advection(m.model) .-
                    v_pressure_depth(m.model)     .+ v_pressure_slope(m.model) .-
-                   v_pressure_density(m.model)   .- v_coriolis(m.model) .-
-                   v_bottom_drag(m.model)        .+ v_diffusion(m.model) .-
-                   v_detrainment(m.model)
-        V_ref = m.model.V.past .+
-            Laddie.div0(rhs_V, Laddie.jp_t(m.model, m.model.H.present)) .* m.model.vmask .* dt
+                   v_pressure_density(m.model)   .- v_coriolis(m.model) .+
+                   v_diffusion(m.model)
+        V_ref = v_momentum_step(m.model, rhs_V, dt)
 
         rhs_T =    tracer_advection(m.model, m.model.T.present) .+
                    tracer_entrainment(m.model, m.model.Ta) .-

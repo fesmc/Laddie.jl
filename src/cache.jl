@@ -67,7 +67,7 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,Frz,PM}
     adv::A
     "Laplacian term of the equation being stepped (work buffer)"
     lap::A
-    "advected tracer content `H * q` of the equation being stepped, then its outflow rate under `FluxTracerForm` (work buffer)"
+    "advected tracer content `H * q` of the equation being stepped, then its outflow rate under `FluxTracerForm`; the momentum outflow rate under `FluxMomentumForm` with `UpstreamMomentumAdvection` (work buffer)"
     Hq::A
     "scratch for host-side diagnostics (CFL, melt statistics)"
     diag::A

@@ -115,6 +115,8 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  lap. weights   = ", p.laplacian_weights)
     println(io, "  front pressure = ", p.front_pressure)
     println(io, "  tracer form    = ", p.tracer_form)
+    println(io, "  momentum form  = ", p.momentum_form)
+    println(io, "  closure level  = ", p.closure_level)
     println(io, "  coriolis       = ", p.coriolis)
     print(io, "  kinks          = ", p.kinks)
 end

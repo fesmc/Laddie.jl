@@ -90,6 +90,7 @@ makedocs(;
             "Overview" => "numerics/index.md",
             "Momentum advection" => "numerics/momentum_advection.md",
             "Tracer form" => "numerics/tracer_form.md",
+            "Momentum form and closure level" => "numerics/momentum_form.md",
             "Laplacian weights" => "numerics/laplacian_weights.md",
             "Time stepping" => "numerics/time_stepping.md",
             "CFL number" => "numerics/cfl.md",

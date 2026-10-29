@@ -65,10 +65,11 @@ using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, 
     _drho_gate(m, ip_count(m.tmask))
 # f·H̄·V  (Coriolis)
 @inline u_coriolis(m) = m.fu .* ip_t(m, m.H.present .* jm_v(m, m.V.present))
+# |u| on the U points, at the level of `Params.closure_level`
+@inline u_drag_speed(m) =
+    _safe_sqrt.(closure_level(m, m.U) .^ 2 .+ ip_half(jm_half(closure_level(m, m.V))) .^ 2)
 # Cd·U·|u|  (quadratic bottom drag)
-@inline u_bottom_drag(m) =
-    m.C_d .* m.U.present .*
-    _safe_sqrt.(m.U.present .^ 2 .+ ip_half(jm_half(m.V.present)) .^ 2)
+@inline u_bottom_drag(m) = m.C_d .* m.U.present .* u_drag_speed(m)
 # Ah·∇²(HU)  (lateral diffusion; the A_h/shear scaling is applied inside
 # laplace_U, since it dispatches on `Params.lateral_viscosity`)
 @inline u_diffusion(m) = copy(laplace_U(m))
@@ -93,15 +94,46 @@ using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, 
     _drho_gate(m, jp_count(m.tmask))
 # f·H̄·U  (Coriolis)
 @inline v_coriolis(m) = m.fv .* jp_t(m, m.H.present .* im_u(m, m.U.present))
+# |u| on the V points, at the level of `Params.closure_level`
+@inline v_drag_speed(m) =
+    _safe_sqrt.(closure_level(m, m.V) .^ 2 .+ jp_half(im_half(closure_level(m, m.U))) .^ 2)
 # Cd·V·|u|  (quadratic bottom drag)
-@inline v_bottom_drag(m) =
-    m.C_d .* m.V.present .*
-    _safe_sqrt.(m.V.present .^ 2 .+ jp_half(im_half(m.U.present)) .^ 2)
+@inline v_bottom_drag(m) = m.C_d .* m.V.present .* v_drag_speed(m)
 # Ah·∇²(HV)  (lateral diffusion; the A_h/shear scaling is applied inside
 # laplace_V, since it dispatches on `Params.lateral_viscosity`)
 @inline v_diffusion(m) = copy(laplace_V(m))
 # ė·V  (detrainment momentum loss)
 @inline v_detrainment(m) = (m.detr .+ jp_t(m, m.detr_cap) .+ jp_t(m, frazil_field(m))) .* m.V.present
+
+# The prognostic level the closures read (`Params.closure_level`).
+closure_level(m, v) = m.params.closure_level isa PastClosures ? v.past : v.present
+
+# One momentum step of U from `rhs`, the momentum terms without U·∂H/∂t, drag and
+# detrainment, in the model's `momentum_form`: the advective form adds those terms
+# at the present level and divides by H̄; the flux form steps H̄U, divides by the new
+# face thickness, and takes the detrainments, frazil and drag at the new level.
+u_momentum_step(m, rhs, dt) = momentum_step(m.params.momentum_form, m, m.U, rhs, dt, ip_t, m.umask,
+    u_thickness_tendency(m), u_bottom_drag(m), u_detrainment(m), u_drag_speed(m))
+v_momentum_step(m, rhs, dt) = momentum_step(m.params.momentum_form, m, m.V, rhs, dt, jp_t, m.vmask,
+    v_thickness_tendency(m), v_bottom_drag(m), v_detrainment(m), v_drag_speed(m))
+momentum_step(::AdvectiveMomentumForm, m, U, rhs, dt, face, mask, tendency, drag, detrainment, _) =
+    U.past .+ Laddie.div0(rhs .- tendency .- drag .- detrainment, face(m, m.H.present)) .* mask .* dt
+# The outflow rate of the upstream advection, which the flux form takes at the new
+# level; zero under centred advection.  (Its formula is tested on its own.)
+function momentum_outflow(m, advect)
+    m.momentum_advection isa UpstreamMomentumAdvection || return zero(m.U.present)
+    buf = zero(m.U.present)
+    advect(m, buf)
+    return buf
+end
+# Divides by the stepped thickness, before `_clamp_thickness!`; the kernel's
+# max(H⁺, H*) is H⁺ here.
+function momentum_step(::FluxMomentumForm, m, U, rhs, dt, face, mask, _, _, _, speed)
+    outflow = momentum_outflow(m, U === m.U ? Laddie.momentum_advection_U : Laddie.momentum_advection_V)
+    sink = face(m, m.detr) .+ face(m, m.detr_cap) .+ face(m, frazil_field(m)) .+ m.C_d .* speed .+ outflow
+    transport = face(m, m.H.past) .* U.past .+ (rhs .+ outflow .* U.present) .* dt
+    return ifelse.(mask .> 0, Laddie.div0(transport, face(m, m.H.future) .+ sink .* dt), U.past)
+end
 
 # -- Tracer terms (Eqs. 4–5) -------------------------------------------------
 

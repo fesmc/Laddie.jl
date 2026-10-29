@@ -141,9 +141,70 @@ end
     @inbounds out[i, j] = ifelse(
         iszero(tmask[i, j]),
         H0[i, j],
-        H0[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j] - detr_cap[i, j] - _at(frazil, i, j)) * dt,
+        _unclamped_thickness(H0, convH, melt, nentr, detr_cap, frazil, i, j, dt),
     )
 end
+
+# The thickness the thickness step forms before `_clamp_thickness!`, the `H*` of the
+# flux forms (see `FluxTracerForm`, `FluxMomentumForm`).
+@inline _unclamped_thickness(H_past, convH, melt, nentr, detr_cap, frazil, i, j, dt) =
+    @inbounds H_past[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j] - detr_cap[i, j] - _at(frazil, i, j)) * dt
+
+# The two `momentum_form`s (see `AbstractMomentumForm`).  The advective form steps U
+# with `-U ∂H/∂t` and all sinks in its rhs, at the present level.  The flux form steps
+# the transport H̄U: `-U ∂H/∂t` drops out, and the terms that remove momentum at the
+# layer's own U — detrainment, cap detrainment, frazil and drag — leave the rhs for
+# the denominator, at the new level.  Its face thicknesses are those of the past level
+# and of the new one, `max(H⁺, H*)` (see `FluxMomentumForm`); the advective form
+# needs neither and reads no array for them.
+@inline _momentum_thickness_tendency(::AdvectiveMomentumForm, U, dHdt) = -U * dHdt
+@inline _momentum_thickness_tendency(::FluxMomentumForm, U, dHdt) = zero(U)
+@inline _explicit_sink(::AdvectiveMomentumForm, x) = x
+@inline _explicit_sink(::FluxMomentumForm, x) = zero(x)
+
+@inline function _momentum_flux_terms(::AdvectiveMomentumForm, H_past, H_future, convH, melt, nentr, detr,
+                                      detr_cap, frazil, tmask, i, j, i2, j2, tm, dt)
+    z = zero(dt)
+    return z, z, z
+end
+@inline function _momentum_flux_terms(::FluxMomentumForm, H_past, H_future, convH, melt, nentr, detr,
+                                      detr_cap, frazil, tmask, i, j, i2, j2, tm, dt)
+    @inbounds begin
+        H_old = _safe_div(H_past[i, j] + H_past[i2, j2], tm)
+        H_new = _safe_div(
+            _new_thickness(H_past, H_future, convH, melt, nentr, detr_cap, frazil, tmask, i, j, dt) +
+            _new_thickness(H_past, H_future, convH, melt, nentr, detr_cap, frazil, tmask, i2, j2, dt),
+            tm,
+        )
+        sink = _safe_div(
+            detr[i, j] + detr[i2, j2] + detr_cap[i, j] + detr_cap[i2, j2] + _at(frazil, i, j) + _at(frazil, i2, j2),
+            tm,
+        )
+        return H_old, H_new, sink
+    end
+end
+@inline _new_thickness(H_past, H_future, convH, melt, nentr, detr_cap, frazil, tmask, i, j, dt) =
+    @inbounds max(H_future[i, j], _unclamped_thickness(H_past, convH, melt, nentr, detr_cap, frazil, i, j, dt)) *
+              tmask[i, j]
+
+# `sink` is the rate (m s⁻¹) at which the flux form removes momentum at the new level.
+# `outflow` is the advective part of it, the rate at which the point's own velocity
+# leaves through the faces of its control volume (upstream advection only, else
+# zero): `rhs` carries it at the present level, `- outflow·U_present`, so it is added
+# back and moved into the denominator, as `_tracer_update` does with the outflow.
+@inline _momentum_update(::AdvectiveMomentumForm, U_past, U_present, rhs, H1, H_old, H_new, sink, outflow, mask, dt) =
+    U_past + _safe_div(rhs, H1) * mask * dt
+@inline _momentum_update(::FluxMomentumForm, U_past, U_present, rhs, H1, H_old, H_new, sink, outflow, mask, dt) =
+    ifelse(mask > 0, _safe_div(H_old * U_past + (rhs + outflow * U_present) * dt, H_new + (sink + outflow) * dt), U_past)
+
+# The buffer the upstream momentum advection writes its outflow rate into, or
+# `nothing`: only the flux form with upstream advection takes it at the new level.
+# `Hq` is free once the Laplacian has used it (see `Cache`).
+_momentum_outflow(m) = _momentum_outflow(m, m.params.momentum_form, m.momentum_advection)
+_momentum_outflow(m, ::FluxMomentumForm, ::UpstreamMomentumAdvection) = m.Hq
+_momentum_outflow(m, ::AbstractMomentumForm, ::AbstractMomentumAdvection) = nothing
+_or_zero(x, FT) = x
+_or_zero(::Nothing, FT) = zero(FT)
 
 @kernel function _step_u_momentum_kernel!(
     out,
@@ -163,6 +224,14 @@ end
     @Const(umask),
     @Const(vmask),
     @Const(fu),
+    @Const(Ud),
+    @Const(Vd),
+    @Const(H_past),
+    @Const(H_future),
+    @Const(convH),
+    @Const(melt),
+    @Const(nentr),
+    outflow,
     frazil,
     g,
     C_d,
@@ -171,6 +240,7 @@ end
     dx,
     dt,
     kinks,
+    momentum_form,
 )
     g, C_d, pgf_w, drho_w, dx, dt = _val(g), _val(C_d), _val(pgf_w), _val(drho_w), _val(dx), _val(dt)
     frazil = _val(frazil)
@@ -191,7 +261,9 @@ end
         Vjm = _face_avg(V1, vmask, i, j, i, jm1)
         Vjm_ip = _face_avg_ring0(V1, vmask, ip1, j, 0, -1)
         ip_H_Vjm = _safe_div(H1[i, j] * Vjm + H1[ip1, j] * Vjm_ip, tmip)
-        ipjmV = half * (half * (V1[i, j] + V1[i, jm1]) + half * (V1[ip1, j] + V1[ip1, jm1]))
+        # The drag speed, at the level of `Params.closure_level` (Ud, Vd).
+        ipjmV = half * (half * (Vd[i, j] + Vd[i, jm1]) + half * (Vd[ip1, j] + Vd[ip1, jm1]))
+        speed = _ssqrt(kinks, Ud[i, j]^2 + ipjmV^2, _kink_width(kinks, :u))
         # tmip is 2 at a fully-interior face (both neighbours active) and 1 at a
         # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where the
         # masked neighbour thickness is a zero stand-in rather than a real one.
@@ -203,18 +275,24 @@ end
         pgf_gate = one(FT) + pgf_w * (tmip - FT(2))
         drho_gate = one(FT) + drho_w * (tmip - FT(2))
         H_next = H1[ip1, j] * tmask[ip1, j]
+        f = momentum_form
         rhs =
-            -U1[i, j] * ip_dHdt +                                      # thickness-tendency correction
+            _momentum_thickness_tendency(f, U1[i, j], ip_dHdt) +       # thickness-tendency correction
             cU[i, j] +                                                  # horizontal advection
             -g * ip_H_drho * (H_next - H1[i, j]) / dx * pgf_gate +     # pressure: H gradient
             g * ip_H_dzdx +                                             # pressure: ice-shelf slope
             -half * g * ip_H^2 * (drho[ip1, j] - drho[i, j]) / dx * drho_gate + # pressure: density gradient
             fu[i, j] * ip_H_Vjm +                                              # Coriolis
-            -C_d * U1[i, j] * _ssqrt(kinks, U1[i, j]^2 + ipjmV^2, _kink_width(kinks, :u)) +             # quadratic drag
+            _explicit_sink(f, -C_d * U1[i, j] * speed) +               # quadratic drag
             lU[i, j] +                                                   # horizontal viscosity
-            -detr[i, j] * U1[i, j] +                                   # momentum loss by detrainment
-            -(ip_detr_cap + ip_frazil) * U1[i, j]                      # cap detrainment and frazil, cancel their share of dHdt
-        out[i, j] = Up[i, j] + _safe_div(rhs, ip_H) * umask[i, j] * dt
+            _explicit_sink(f, -detr[i, j] * U1[i, j]) +                # momentum loss by detrainment
+            _explicit_sink(f, -(ip_detr_cap + ip_frazil) * U1[i, j])   # cap detrainment and frazil, cancel their share of dHdt
+        H_old, H_new, sink = _momentum_flux_terms(
+            f, H_past, H_future, convH, melt, nentr, detr, detr_cap, frazil, tmask, i, j, ip1, j, tmip, dt,
+        )
+        out[i, j] = _momentum_update(
+            f, Up[i, j], U1[i, j], rhs, ip_H, H_old, H_new, sink + C_d * speed, _at(outflow, i, j), umask[i, j], dt,
+        )
     end
 end
 
@@ -236,6 +314,14 @@ end
     @Const(vmask),
     @Const(umask),
     @Const(fv),
+    @Const(Vd),
+    @Const(Ud),
+    @Const(H_past),
+    @Const(H_future),
+    @Const(convH),
+    @Const(melt),
+    @Const(nentr),
+    outflow,
     frazil,
     g,
     C_d,
@@ -244,6 +330,7 @@ end
     dy,
     dt,
     kinks,
+    momentum_form,
 )
     g, C_d, pgf_w, drho_w, dy, dt = _val(g), _val(C_d), _val(pgf_w), _val(drho_w), _val(dy), _val(dt)
     frazil = _val(frazil)
@@ -264,23 +351,31 @@ end
         Uim = _face_avg(U1, umask, i, j, im1, j)
         Uim_jp = _face_avg_ring0(U1, umask, i, jp1, -1, 0)
         jp_H_Uim = _safe_div(H1[i, j] * Uim + H1[i, jp1] * Uim_jp, tmjp)
-        jpimU = half * (half * (U1[i, j] + U1[im1, j]) + half * (U1[i, jp1] + U1[im1, jp1]))
+        # The drag speed, at the level of `Params.closure_level` (Vd, Ud).
+        jpimU = half * (half * (Ud[i, j] + Ud[im1, j]) + half * (Ud[i, jp1] + Ud[im1, jp1]))
+        speed = _ssqrt(kinks, Vd[i, j]^2 + jpimU^2, _kink_width(kinks, :u))
         # See _step_u_momentum_kernel! for the ice-front gates.
         pgf_gate = one(FT) + pgf_w * (tmjp - FT(2))
         drho_gate = one(FT) + drho_w * (tmjp - FT(2))
         H_next = H1[i, jp1] * tmask[i, jp1]
+        f = momentum_form
         rhs =
-            -V1[i, j] * jp_dHdt +                                      # thickness-tendency correction
+            _momentum_thickness_tendency(f, V1[i, j], jp_dHdt) +       # thickness-tendency correction
             cV[i, j] +                                                  # horizontal advection
             -g * jp_H_drho * (H_next - H1[i, j]) / dy * pgf_gate +     # pressure: H gradient
             g * jp_H_dzdy +                                             # pressure: ice-shelf slope
             -half * g * jp_H^2 * (drho[i, jp1] - drho[i, j]) / dy * drho_gate + # pressure: density gradient
             -fv[i, j] * jp_H_Uim +                                             # Coriolis
-            -C_d * V1[i, j] * _ssqrt(kinks, V1[i, j]^2 + jpimU^2, _kink_width(kinks, :u)) +             # quadratic drag
+            _explicit_sink(f, -C_d * V1[i, j] * speed) +               # quadratic drag
             lV[i, j] +                                                   # horizontal viscosity
-            -detr[i, j] * V1[i, j] +                                   # momentum loss by detrainment
-            -(jp_detr_cap + jp_frazil) * V1[i, j]                      # cap detrainment and frazil, cancel their share of dHdt
-        out[i, j] = Vp[i, j] + _safe_div(rhs, jp_H) * vmask[i, j] * dt
+            _explicit_sink(f, -detr[i, j] * V1[i, j]) +                # momentum loss by detrainment
+            _explicit_sink(f, -(jp_detr_cap + jp_frazil) * V1[i, j])   # cap detrainment and frazil, cancel their share of dHdt
+        H_old, H_new, sink = _momentum_flux_terms(
+            f, H_past, H_future, convH, melt, nentr, detr, detr_cap, frazil, tmask, i, j, i, jp1, tmjp, dt,
+        )
+        out[i, j] = _momentum_update(
+            f, Vp[i, j], V1[i, j], rhs, jp_H, H_old, H_new, sink + C_d * speed, _at(outflow, i, j), vmask[i, j], dt,
+        )
     end
 end
 
@@ -401,7 +496,7 @@ end
             -(T_past[i, j] - Ta[i, j]) * _at(conv2, i, j) + # convective restoring to ambient
             _at(frazil, i, j) * (L / c_p - T_present[i, j]) # frazil: latent heat in, water out at T
         # The unclamped thickness, exactly as `_step_thickness_kernel!` forms it.
-        H_star = H_past[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j] - detr_cap[i, j] - _at(frazil, i, j)) * dt
+        H_star = _unclamped_thickness(H_past, convH, melt, nentr, detr_cap, frazil, i, j, dt)
         # Frazil removes layer water at T, so it is part of the sink.
         out[i, j] = _tracer_update(
             tracer_form, T_past[i, j], T_present[i, j], rhs,
@@ -446,7 +541,7 @@ end
             -(S_past[i, j] - Sa[i, j]) * _at(conv2, i, j)   # convective restoring to ambient
         # No frazil term, and no frazil in the sink: frazil leaves its salt behind,
         # which the thinner layer then holds (brine rejection).
-        H_star = H_past[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j] - detr_cap[i, j] - _at(frazil, i, j)) * dt
+        H_star = _unclamped_thickness(H_past, convH, melt, nentr, detr_cap, frazil, i, j, dt)
         out[i, j] = _tracer_update(
             tracer_form, S_past[i, j], S_present[i, j], rhs, outflow[i, j] + detr_cap[i, j],
             H1[i, j], H_past[i, j], H_future[i, j], H_star, Sa[i, j], tmask[i, j], dt,
@@ -472,7 +567,8 @@ end
 function step_u_momentum!(m, dt)
     # Laplacian first: NonlinearLateralViscosity uses `adv` as scratch.
     laplace_U(m)
-    momentum_advection_U(m)
+    outflow = _momentum_outflow(m)
+    momentum_advection_U(m, outflow)
     launch_interior!(
         _step_u_momentum_kernel!,
         m.U.future,
@@ -492,6 +588,14 @@ function step_u_momentum!(m, dt)
         m.umask,
         m.vmask,
         m.fu,
+        _closure_level(m.U, m.params.closure_level),
+        _closure_level(m.V, m.params.closure_level),
+        m.H.past,
+        m.H.future,
+        m.convH,
+        m.melt,
+        m.nentr,
+        _or_zero(outflow, m.FT),
         m.frazil,
         m.g,
         m.C_d,
@@ -500,13 +604,15 @@ function step_u_momentum!(m, dt)
         m.dx,
         dt,
         m.params.kinks,
+        m.params.momentum_form,
     )
     return
 end
 function step_v_momentum!(m, dt)
     # Laplacian first, as in step_u_momentum!.
     laplace_V(m)
-    momentum_advection_V(m)
+    outflow = _momentum_outflow(m)
+    momentum_advection_V(m, outflow)
     launch_interior!(
         _step_v_momentum_kernel!,
         m.V.future,
@@ -526,6 +632,14 @@ function step_v_momentum!(m, dt)
         m.vmask,
         m.umask,
         m.fv,
+        _closure_level(m.V, m.params.closure_level),
+        _closure_level(m.U, m.params.closure_level),
+        m.H.past,
+        m.H.future,
+        m.convH,
+        m.melt,
+        m.nentr,
+        _or_zero(outflow, m.FT),
         m.frazil,
         m.g,
         m.C_d,
@@ -534,6 +648,7 @@ function step_v_momentum!(m, dt)
         m.dy,
         dt,
         m.params.kinks,
+        m.params.momentum_form,
     )
     return
 end

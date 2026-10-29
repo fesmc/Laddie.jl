@@ -28,6 +28,8 @@ struct Params{
     FP<:AbstractFrontPressure,
     MA<:AbstractMomentumAdvection,
     TF<:AbstractTracerForm,
+    MF<:AbstractMomentumForm,
+    CL<:AbstractClosureLevel,
     CP<:AbstractCoriolisParameter,
     KT<:AbstractKinks,
 }
@@ -122,6 +124,10 @@ struct Params{
     momentum_advection::MA
     "form of the tracer equations, an [`AbstractTracerForm`](@ref) (default flux form, as in v2)"
     tracer_form::TF
+    "form of the momentum equations, an [`AbstractMomentumForm`](@ref) (default advective form, as in v1.x)"
+    momentum_form::MF
+    "time level of `u★`, the entrainment thickness and the drag speed, an [`AbstractClosureLevel`](@ref) (default present)"
+    closure_level::CL
     "Coriolis parameter, an [`AbstractCoriolisParameter`](@ref) (default f-plane at `-1.37e-4` s⁻¹)"
     coriolis::CP
     "treatment of the kinks (max/min switches, upwinding, √ at zero), an [`AbstractKinks`](@ref) (default exact)"
@@ -189,6 +195,8 @@ _param_defaults() = (
     front_pressure = FullDepthGradient(),
     momentum_advection = CentredMomentumAdvection(),
     tracer_form = FluxTracerForm(),
+    momentum_form = AdvectiveMomentumForm(),
+    closure_level = PresentClosures(),
     coriolis = CoriolisParameter0D(),
     kinks = ExactKinks(),
 )

@@ -99,6 +99,8 @@ export AbstractWallAdvection, SlipScaledWallAdvection, NoWallAdvection
 export AbstractLateralViscosity, PrescribedLateralViscosity, NonlinearLateralViscosity
 export AbstractMomentumAdvection, CentredMomentumAdvection, UpstreamMomentumAdvection
 export AbstractTracerForm, AdvectiveTracerForm, FluxTracerForm
+export AbstractMomentumForm, AdvectiveMomentumForm, FluxMomentumForm
+export AbstractClosureLevel, PresentClosures, PastClosures
 export AbstractLaplacianWeights, PresentLaplacianWeights, PastLaplacianWeights
 export AbstractFrontPressure, FullDepthGradient, TruncatedDepthGradient, ZeroGradientFront
 export AbstractIceSlopeGradient, PyGradient, JlGradient

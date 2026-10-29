@@ -71,6 +71,8 @@ describe one family each:
 |------|---------------|---------------|---------|
 | [Momentum advection](momentum_advection.md) | [`AbstractMomentumAdvection`](@ref) | `Params(; momentum_advection)` | `CentredMomentumAdvection()` |
 | [Tracer form](tracer_form.md) | [`AbstractTracerForm`](@ref) | `Params(; tracer_form)` | `FluxTracerForm()` |
+| [Momentum form](momentum_form.md) | [`AbstractMomentumForm`](@ref) | `Params(; momentum_form)` | `AdvectiveMomentumForm()` |
+| [Closure level](momentum_form.md) | [`AbstractClosureLevel`](@ref) | `Params(; closure_level)` | `PresentClosures()` |
 | [Laplacian weights](laplacian_weights.md) | [`AbstractLaplacianWeights`](@ref) | `Params(; laplacian_weights)` | `PresentLaplacianWeights()` |
 | [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; tstep)` | `FixedDt()` |
 | [CFL number](cfl.md) | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `ExactCFL()` |

@@ -669,14 +669,15 @@ alternative to the buoyancy-flux form of Lambert et al. (2023, Eq. 14).
 function _compute_entrainment!(m, ep::HollandEntrainment)
     coeff = ep.cl * m.K_h / m.A_h^2
     drho_coeff = m.g * m.K_h / m.A_h
+    level = m.params.closure_level
     launch_interior!(
         _holland_entrainment_kernel!,
         m.entr,
         m.detr,
-        m.U.present,
-        m.V.present,
+        _closure_level(m.U, level),
+        _closure_level(m.V, level),
         m.drho,
-        m.H.present,
+        _closure_level(m.H, level),
         m.tmask,
         coeff,
         drho_coeff,
@@ -701,7 +702,7 @@ function _compute_entrainment!(m, ep::GasparEntrainment)
         m.Tb,
         m.z_draft,
         m.ustar,
-        m.H.present,
+        _closure_level(m.H, m.params.closure_level),
         m.drho,
         m.melt,
         m.tmask,
@@ -806,13 +807,14 @@ end
 end
 
 # Friction velocity at the T-point: u★ = √(C_d_top · (im_half(U)² + jm_half(V)² + u_tide²))
-# im_half(U)[i,j] = (U[i,j] + U[i−1,j]) / 2,  jm_half(V)[i,j] = (V[i,j] + V[i,j−1]) / 2
+# im_half(U)[i,j] = (U[i,j] + U[i−1,j]) / 2,  jm_half(V)[i,j] = (V[i,j] + V[i,j−1]) / 2,
+# at the level of `Params.closure_level`.
 function update_ustar!(m)
     launch_interior!(
         _ustar_kernel!,
         m.ustar,
-        m.U.present,
-        m.V.present,
+        _closure_level(m.U, m.params.closure_level),
+        _closure_level(m.V, m.params.closure_level),
         m.tmask,
         m.C_d_top,
         m.u_tide,

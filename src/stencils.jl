@@ -570,8 +570,20 @@ end
 # anyway.  `_supwind` picks the upstream side from the sign of the mass flux.
 @inline _donor(q_own, q_nb, mask_nb) = mask_nb > zero(mask_nb) ? q_nb : q_own
 
+# The rate (m s⁻¹) at which the control volume's own velocity leaves through its faces:
+# the mass fluxes of the terms of `_upstream_advection_U_kernel!` whose donor is the
+# point itself.  Only `FluxMomentumForm` reads it (`_momentum_update`), and only then
+# is `outflow` an array.
+@inline _store_outflow!(::Nothing, i, j, kinks, MxE, MxW, MyN, MyS, dx, dy, ε) = nothing
+@inline function _store_outflow!(outflow, i, j, kinks, MxE, MxW, MyN, MyS, dx, dy, ε)
+    @inbounds outflow[i, j] =
+        (_smax0(kinks, MxE, ε) - _sneg(kinks, MxW, ε)) / dx + (_smax0(kinks, MyN, ε) - _sneg(kinks, MyS, ε)) / dy
+    return nothing
+end
+
 @kernel function _upstream_advection_U_kernel!(
     out,
+    outflow,
     @Const(H),
     @Const(U),
     @Const(V),
@@ -623,11 +635,13 @@ end
         FN = _supwind(kinks, MyN, u, _donor(u, U[i, jp1], umask[i, jp1]), eM)
         FS = _supwind(kinks, MyS, _donor(u, U[i, jm1], umask[i, jm1]), u, eM)
         out[i, j] = -((FE - FW) / dx + (FN - FS) / dy)
+        _store_outflow!(outflow, i, j, kinks, MxE, MxW, MyN, MyS, dx, dy, eM)
     end
 end
 
 @kernel function _upstream_advection_V_kernel!(
     out,
+    outflow,
     @Const(H),
     @Const(U),
     @Const(V),
@@ -677,18 +691,21 @@ end
         FN = _supwind(kinks, MyN, v, _donor(v, V[i, jp1], vmask[i, jp1]), eM)
         FS = _supwind(kinks, MyS, _donor(v, V[i, jm1], vmask[i, jm1]), v, eM)
         out[i, j] = -((FE - FW) / dx + (FN - FS) / dy)
+        _store_outflow!(outflow, i, j, kinks, MxE, MxW, MyN, MyS, dx, dy, eM)
     end
 end
 
-# Dispatch on `Params.momentum_advection`; the centred path is v1.x's.
-momentum_advection_U(m) = _advect_U(m, m.momentum_advection)
-momentum_advection_V(m) = _advect_V(m, m.momentum_advection)
+# Dispatch on `Params.momentum_advection`; the centred path is v1.x's.  `outflow`, an
+# array or `nothing`, receives the upstream scheme's outflow rate (`_momentum_outflow`).
+momentum_advection_U(m, outflow = nothing) = _advect_U(m, m.momentum_advection, outflow)
+momentum_advection_V(m, outflow = nothing) = _advect_V(m, m.momentum_advection, outflow)
 
-function _advect_U(m, ::UpstreamMomentumAdvection)
+function _advect_U(m, ::UpstreamMomentumAdvection, outflow)
     nx, ny = size(m.U.present)
     launch_interior!(
         _upstream_advection_U_kernel!,
         m.adv,
+        outflow,
         m.H.present,
         m.U.present,
         m.V.present,
@@ -705,11 +722,12 @@ function _advect_U(m, ::UpstreamMomentumAdvection)
     return m.adv
 end
 
-function _advect_V(m, ::UpstreamMomentumAdvection)
+function _advect_V(m, ::UpstreamMomentumAdvection, outflow)
     nx, ny = size(m.V.present)
     launch_interior!(
         _upstream_advection_V_kernel!,
         m.adv,
+        outflow,
         m.H.present,
         m.U.present,
         m.V.present,
@@ -726,7 +744,8 @@ function _advect_V(m, ::UpstreamMomentumAdvection)
     return m.adv
 end
 
-function _advect_U(m, ::CentredMomentumAdvection)
+# Centred advection has no outflow taken at the new level: `_momentum_outflow` is zero.
+function _advect_U(m, ::CentredMomentumAdvection, _)
     launch_interior!(
         _upwind_advection_U_kernel!,
         m.adv,
@@ -744,7 +763,7 @@ function _advect_U(m, ::CentredMomentumAdvection)
     )
     return m.adv
 end
-function _advect_V(m, ::CentredMomentumAdvection)
+function _advect_V(m, ::CentredMomentumAdvection, _)
     launch_interior!(
         _upwind_advection_V_kernel!,
         m.adv,

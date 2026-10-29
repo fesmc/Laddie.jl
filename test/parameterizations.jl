@@ -445,6 +445,55 @@ end
           (4.0 * 2.0 + 0.5 * 2.0) / 4.5
 end
 
+@testset "Flux momentum form: dilution and sinks at the new level" begin
+    @test Params().momentum_form isa AdvectiveMomentumForm
+    @test Params().closure_level isa PresentClosures
+    @test Params(; FT, momentum_form = FluxMomentumForm(), closure_level = PastClosures()).closure_level isa
+          PastClosures
+    upd(rhs, H_old, H_new, sink; U = 0.3, mask = 1.0, dt = 800.0) =
+        Laddie._momentum_update(FluxMomentumForm(), U, U, rhs, NaN, H_old, H_new, sink, 0.0, mask, dt)
+    # Entrainment of water at rest: U scaled by H⁻/H⁺, whatever the rate.
+    @test upd(0.0, 2.0, 2.0 + 1e-2 * 800, 0.0) ≈ 0.3 * 2 / 10
+    # Water leaving at U (detrainment, cap, frazil): U unchanged.
+    s = 2e-3
+    @test upd(0.0, 4.0, 4.0 - s * 800, s) ≈ 0.3
+    # A damping rate s far beyond the leapfrog's limit (s·2Δt/H = 5) decays U
+    # monotonically; the explicit update overshoots to the opposite sign.
+    H, s = 1.0, 5 / 800
+    @test 0 < upd(0.0, H, H, s) < 0.3
+    @test 0.3 - s * 800 / H * 0.3 < 0
+    # Masked faces keep U⁻; the advective form is the explicit update.
+    @test upd(1.0, 1.0, 1.0, 0.0; mask = 0.0) == 0.3
+    @test Laddie._momentum_update(AdvectiveMomentumForm(), 0.3, NaN, 0.5, 2.0, NaN, NaN, NaN, NaN, 1.0, 4.0) ≈
+          0.3 + 0.5 / 2 * 4
+    # A 1 m face flushed 50 times over per step by water at rest (inflow = outflow,
+    # H unchanged): U⁺ is the volume-weighted mean, where explicit it changes sign.
+    o, dt = 50.0, 1.0
+    @test Laddie._momentum_update(FluxMomentumForm(), 0.3, 0.3, -o * 0.3, NaN, 1.0, 1.0, 0.0, o, 1.0, dt) ≈
+          0.3 / (1 + o * dt)
+    @test 0.3 + (-o * 0.3) * dt < 0
+end
+
+@testset "Upstream momentum advection: outflow rate of the control volume" begin
+    # Uniform eastward flow: the U control volume loses its own momentum through
+    # its east face only, at the mass flux there over dx.
+    sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                       params = Params(; FT, momentum_advection = UpstreamMomentumAdvection()))
+    m = sim.model
+    u0 = FT(0.1)
+    m.U.present .= u0 .* m.umask
+    m.V.present .= 0
+    out = zero(m.U.present)
+    Laddie.momentum_advection_U(m, out)
+    i, j = 15, 6
+    @test m.umask[i - 1, j] > 0 && m.umask[i, j] > 0 && m.umask[i + 1, j] > 0
+    H = m.H.present
+    @test out[i, j] ≈ (H[i, j] + H[i + 1, j]) / 2 * u0 / m.dx
+    @test all(>=(0), out)
+    # The advection term itself is unchanged by the extra output.
+    @test Laddie.momentum_advection_U(m) == Laddie.momentum_advection_U(m, zero(m.U.present))
+end
+
 @testset "Momentum advection: centred (v1) vs upstream (v2)" begin
     @test Params().momentum_advection isa CentredMomentumAdvection
     @test Params(; FT, momentum_advection = UpstreamMomentumAdvection()).momentum_advection isa

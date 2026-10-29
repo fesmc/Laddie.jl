@@ -24,6 +24,62 @@ the friction velocity ``u_\star`` (hence melt and entrainment), the thickness in
 entrainment rate and the drag speed ``|\mathbf{u}|``, either [`PresentClosures`](@ref)
 (the default) or [`PastClosures`](@ref).
 
+## Equations
+
+The continuous system is the same under both forms.  Melt ``\dot m`` and entrainment
+``\dot e`` bring in water at rest, so they carry no momentum and only dilute ``U``
+through ``H``.  Detrainment ``\dot d``, cap detrainment ``\dot d_\mathrm{cap}`` and frazil
+formation ``\dot f`` remove water at the layer's own velocity.  Together with the quadratic
+drag they form one rate ``s`` acting on ``U``:
+```math
+\begin{aligned}
+&\frac{\partial H}{\partial t} + \nabla\cdot(H\mathbf{u})
+  = \dot m + \dot e - \dot d - \dot d_\mathrm{cap} - \dot f, \\
+&\frac{\partial (HU)}{\partial t} + \nabla\cdot(H\mathbf{u}U) - fHV
+  = P_x + \nabla\cdot(A_h H\nabla U) - s\,U, \\
+&\frac{\partial (HV)}{\partial t} + \nabla\cdot(H\mathbf{u}V) + fHU
+  = P_y + \nabla\cdot(A_h H\nabla V) - s\,V, \\
+&s = \dot d + \dot d_\mathrm{cap} + \dot f + C_d\,|\mathbf{u}|,
+\end{aligned}
+```
+with the pressure gradient
+``P_x = -\frac{gH^2}{2\rho_0}\partial_x\Delta\rho_a + g_a' H\,\partial_x(H_{ib} - H)``.
+In the code, ``\dot e - \dot d`` is `nentr`.
+
+In the leapfrog, ``n-1`` is the filtered past level.  Let ``R^n`` collect the advection,
+Coriolis, pressure and viscosity terms at the present level, and let ``\bar H`` be the
+face average of ``H``.  The advective form applies the product rule and takes every
+term at level ``n``:
+```math
+U^{n+1} = U^{n-1} + \frac{2\Delta t}{\bar H^{n}}
+  \Big[R^{n} - U^{n}\,\overline{\partial_t H}^{\,n} - s^{n}\,U^{n}\Big],
+\qquad \partial_t H^{\,n} = \frac{H^{n+1} - H^{n-1}}{2\Delta t}.
+```
+The flux form steps the transport, and the sinks act on ``U^{n+1}``:
+```math
+\bar H_\ast^{\,n+1}\,U^{n+1} = \bar H^{\,n-1}\,U^{n-1} + 2\Delta t\,\big[R^{n} - s\,U^{n+1}\big]
+\quad\Longrightarrow\quad
+U^{n+1} = \frac{\bar H^{\,n-1}\,U^{n-1} + 2\Delta t\,R^{n}}{\bar H_\ast^{\,n+1} + 2\Delta t\,s},
+```
+where ``\bar H_\ast^{\,n+1}`` is the face average of ``\max(H^{n+1}, H^\ast)`` and ``H^\ast``
+is the thickness before the clamp.  Under [`UpstreamMomentumAdvection`](@ref), the
+advection in ``R^n`` contains the face's own outflow ``-o\,U^n``.  It is moved to the new
+level as well:
+```math
+U^{n+1} = \frac{\bar H^{\,n-1}\,U^{n-1} + 2\Delta t\,\big(R^{n} + o\,U^{n}\big)}
+               {\bar H_\ast^{\,n+1} + 2\Delta t\,(s + o)}.
+```
+Since ``R^n + o\,U^n`` holds only the inflow, ``U^{n+1}`` is a weighted mean of ``U^{n-1}``
+and the momentum coming in.  Under [`PastClosures`](@ref), ``s`` and the ``u_\star`` in
+``\dot m`` and ``\dot e`` are evaluated at ``n-1``.
+
+The advective form takes ``\dot d`` at the tracer point ``(i, j)`` and does not average it
+onto the face, as Python LADDIE v1.x does (`-detr * U` in `intU`/`intV`).  The term is
+therefore shifted half a cell: a ``U`` face sees only the detrainment of the cell to its
+west, and a ``V`` face only that of the cell to its south.  It is kept that way so that the default stays bit-identical to v1.x.  The flux
+form averages ``\dot d`` onto the face, as it does ``\dot d_\mathrm{cap}`` and ``\dot f``
+under both forms.
+
 ## Why
 
 A term that damps the state it is computed from is unstable in the leapfrog at the centred

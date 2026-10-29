@@ -3,10 +3,10 @@
 Where the layer is supercooled, ``T < T_f(S, z_b)``, ice crystals grow in the water
 column. The three-equation melt can already freeze directly at the interface, but in real
 Ice Shelf Water plumes most of the supercooling is released by frazil instead (Jenkins &
-Bombosch 1995; Smedsrud & Jenkins 2004). The treatment is selected with
+Bombosch 1995; [Smedsrud & Jenkins 2004](@cite smedsrud_frazil_2004)). The treatment is selected with
 `Params(; frazil_ice = ...)`:
 
-- [`NoFrazilIce`](@ref), the default and the behaviour of LADDIE v1 and v2: supercooling
+- [`NoFrazilIce`](@ref), the default and the behaviour of [LADDIE v1 and v2](../versions.md): supercooling
   is released only by basal freezing in the melt parameterization.
 - [`RelaxedFrazilIce`](@ref): the supercooling relaxes toward zero over a time ``\tau`` by
   forming frazil ice, which is deposited on the ice base at once.
@@ -36,9 +36,9 @@ The supercooling is read at the past leapfrog level, like the convective relaxat
 overshoot ``T_f`` for ``\tau > 2\Delta t``.
 
 The default ``\tau`` = 1 h is an order-of-magnitude choice; the literature has no
-relaxation time for a depth-integrated plume. Rees Jones & Wells (2018) find that frazil
+relaxation time for a depth-integrated plume. [Rees Jones & Wells (2018)](@cite rees_jones_frazil-ice_2018) find that frazil
 adjusts to its forcing over a few hundred seconds in a 1 m layer, a time proportional to
-the layer depth, which gives about an hour for a 10 m layer. Smedsrud & Jenkins (2004)
+the layer depth, which gives about an hour for a 10 m layer. [Smedsrud & Jenkins (2004)](@cite smedsrud_frazil_2004)
 find a residual supercooling of ~0.02 °C that frazil growth leaves in place for up to a
 day. Ocean models often remove the supercooling within one step (``\tau \to \Delta t``).
 

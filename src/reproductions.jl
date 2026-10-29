@@ -1,5 +1,5 @@
 # ============================================================================
-# Reproductions of published LADDIE v1 (Python) and v2 (Fortran/UPSY) setups.
+# Reproductions of published LADDIE v1 and v2 setups.
 #
 # Two levels per experiment:
 #   - `Params<Setup>v1|v2(; FT, kwargs...)` returns the `Params` of the run; any
@@ -141,7 +141,7 @@ end
 const _V1_WARNING = """
 !!! warning "Paper differs"
     The entrainment parameter is μ = 2.5 here, as in every bundled v1 config;
-    Lambert et al. (2023, Table 1) state μ = 0.5.  The layer starts at the ambient
+    [Lambert et al. (2023, Table 1)](@cite lambert_modelling_2023) state μ = 0.5.  The layer starts at the ambient
     temperature (`dT_init = 0`, as in the configs); the paper starts it 0.1 °C
     below.  `max_detrainment = 0.5` and `v_cut = 1.414` are code values the paper
     does not mention.
@@ -150,9 +150,9 @@ const _V1_WARNING = """
 """
     ParamsCrossonDotsonv1(; FT = Float64, kwargs...)
 
-`Params` of the Crosson–Dotson run of LADDIE v1.0 (Lambert et al. 2023, Table 2:
+`Params` of the Crosson–Dotson run of LADDIE v1.0 ([Lambert et al. 2023](@cite lambert_modelling_2023), Table 2:
 Δx = 500 m), with any field overridden by `kwargs`.  `A_h = K_h = 25`, `H_min = 2.8`,
-`u_tide = 0.01`, `C_d_top = 1.1e-3`, Jenkins (1991) transfer coefficients.
+`u_tide = 0.01`, `C_d_top = 1.1e-3`, [Jenkins (1991)](@cite jenkins_onedimensional_1991) transfer coefficients.
 
 $_V1_WARNING
 See also [`SimulationCrossonDotsonv1`](@ref).
@@ -163,7 +163,7 @@ ParamsCrossonDotsonv1(; FT = Float64, kwargs...) =
 """
     ParamsFRISv1(; FT = Float64, kwargs...)
 
-`Params` of the Filchner–Ronne run of LADDIE v1.0 (Lambert et al. 2023, Table 2:
+`Params` of the Filchner–Ronne run of LADDIE v1.0 ([Lambert et al. 2023](@cite lambert_modelling_2023), Table 2:
 Δx = 1 km), with any field overridden by `kwargs`.  `A_h = K_h = 50`, `H_min = 4.4`,
 `u_tide = 0.1`, otherwise as [`ParamsCrossonDotsonv1`](@ref).
 
@@ -176,7 +176,7 @@ ParamsFRISv1(; FT = Float64, kwargs...) =
 """
     ParamsPIGv1(; FT = Float64, kwargs...)
 
-`Params` of the Pine Island run of LADDIE v1.0 (Lambert et al. 2023, App. C: "the
+`Params` of the Pine Island run of LADDIE v1.0 ([Lambert et al. 2023](@cite lambert_modelling_2023), App. C: "the
 same model tuning as Crosson–Dotson", Δx = 500 m), i.e. those of
 [`ParamsCrossonDotsonv1`](@ref).
 
@@ -188,12 +188,12 @@ ParamsPIGv1(; FT = Float64, kwargs...) = ParamsCrossonDotsonv1(; FT, kwargs...)
 """
     ParamsASEv1(; FT = Float64, kwargs...)
 
-`Params` of the LADDIE v1 Amundsen Sea run that Lambert et al. (2026, Sect. 3.1)
+`Params` of the LADDIE v1 Amundsen Sea run that [Lambert et al. (2026, Sect. 3.1)](@cite lambert_one-layer_2026)
 compare v2 against, from its config (`results/laddie1/ASE/config_ASE.toml`):
 `A_h = 20`, `K_h = 4`, `H_min = 1`, `u_tide = 0.01`, `C_d_top = 1.1e-3`.
 
 !!! warning "Paper differs"
-    The config sets f = −1.37 × 10⁻⁴ s⁻¹; Lambert et al. (2026) state
+    The config sets f = −1.37 × 10⁻⁴ s⁻¹; [Lambert et al. (2026)](@cite lambert_one-layer_2026) state
     −1.34 × 10⁻⁴ s⁻¹ for both model versions.  The paper gives no viscosity or
     diffusivity for this run.
 
@@ -205,7 +205,7 @@ ParamsASEv1(; FT = Float64, kwargs...) =
 """
     SimulationCrossonDotsonv1(backend = CPU(); FT = Float64, datadir, params, simulation_kwargs...)
 
-The Crosson–Dotson run of LADDIE v1.0 (Lambert et al. 2023), on the 500 m domain
+The Crosson–Dotson run of LADDIE v1.0 ([Lambert et al. 2023](@cite lambert_modelling_2023)), on the 500 m domain
 stored in `datadir/lambert-2023/data/CrossDots_0.5_tanh_Tdeep0.4_ztcl-500_050.nc`.
 
 - forcing: v1 'tanh' profile, T from the surface freezing point (S0 = 34) to 0.4 °C,
@@ -238,7 +238,7 @@ end
 """
     SimulationFRISv1(backend = CPU(); FT = Float64, datadir, params, simulation_kwargs...)
 
-The Filchner–Ronne run of LADDIE v1.0 (Lambert et al. 2023), on the 1 km domain stored
+The Filchner–Ronne run of LADDIE v1.0 ([Lambert et al. 2023](@cite lambert_modelling_2023)), on the 1 km domain stored
 in `datadir/lambert-2023/data/FRIS_1.0_linear_S134.8_T1-2.3_720.nc`.
 
 - forcing: v1 'linear' profile, T from the surface freezing point to −2.3 °C and S from
@@ -272,7 +272,7 @@ end
 """
     SimulationPIGv1(backend = CPU(); FT = Float64, datadir, params, simulation_kwargs...)
 
-The Pine Island run of LADDIE v1.0 (Lambert et al. 2023, App. C), on the 500 m domain
+The Pine Island run of LADDIE v1.0 ([Lambert et al. 2023](@cite lambert_modelling_2023), App. C), on the 500 m domain
 stored in `datadir/lambert-2023/data/PIG.nc`.
 
 - geometry: the file holds no mask, so it is rebuilt from the stored ice thickness
@@ -324,7 +324,7 @@ end
 """
     SimulationASEv1(backend = CPU(); FT = Float64, datadir, params, simulation_kwargs...)
 
-The LADDIE v1 Amundsen Sea run of Lambert et al. (2026, Sect. 3.1) **as it was run**,
+The LADDIE v1 Amundsen Sea run of [Lambert et al. (2026, Sect. 3.1)](@cite lambert_one-layer_2026) **as it was run**,
 on the 1 km domain stored in `datadir/lambert-2026/results/laddie1/ASE/output_000020.nc`.
 
 The config reads a 500 m geometry with `coarsen = 2`, but the v1 code sets the grid
@@ -350,7 +350,7 @@ SimulationASEv1(
 """
     SimulationASEv1Theoretical(backend = CPU(); FT = Float64, datadir, params, simulation_kwargs...)
 
-The LADDIE v1 Amundsen Sea run of Lambert et al. (2026, Sect. 3.1) **as it was meant to
+The LADDIE v1 Amundsen Sea run of [Lambert et al. (2026, Sect. 3.1)](@cite lambert_one-layer_2026) **as it was meant to
 run**: as [`SimulationASEv1`](@ref), but with the grid spacing consistent with the 1 km
 cells.
 """
@@ -488,7 +488,7 @@ const _V2_WARNING = """
 """
     ParamsISOMIPv2(; FT = Float64, kwargs...)
 
-`Params` of the ISOMIP+ Ocean1 run of LADDIE v2.0 (Lambert et al. 2026, Sect. 3.2.1),
+`Params` of the ISOMIP+ Ocean1 run of LADDIE v2.0 ([Lambert et al. 2026](@cite lambert_one-layer_2026), Sect. 3.2.1),
 from its config (`results/isomip_ocean1/isomip_ocean1.cfg`): uniform transfer
 coefficient Γ_T = 2.78 × 10⁻² ([`UStarGamTMelting`](@ref)), `C_d_top = 2.5e-3`,
 viscosity coefficient 0.1, `K_h = 1`, `H_min = H_init = 1`, `v_cut = 1`, `H ≤ 1500` m.
@@ -519,9 +519,9 @@ ParamsISOMIPv2(; FT = Float64, kwargs...) = _reproduction_params(
 """
     ParamsAISv2(; FT = Float64, kwargs...)
 
-`Params` of the pan-Antarctic run of LADDIE v2.0 (Lambert et al. 2026, Sect. 3.2.2),
+`Params` of the pan-Antarctic run of LADDIE v2.0 ([Lambert et al. 2026](@cite lambert_one-layer_2026), Sect. 3.2.2),
 from `laddie2-description-main/Antarctica.cfg` (the run left no config of its own;
-this is the one whose 3 km triangles match the paper): Jenkins (1991) transfer
+this is the one whose 3 km triangles match the paper): [Jenkins (1991)](@cite jenkins_onedimensional_1991) transfer
 coefficients, `C_d_top = 1.1e-3`, viscosity coefficient 0.1, `K_h = 1`, `H_min = 1`,
 `H_init = 4`, `v_cut = 1`, `H ≤ 10000` m, buoyancy floor 0.02 kg m⁻³.
 
@@ -552,8 +552,8 @@ ParamsAISv2(; FT = Float64, kwargs...) = _reproduction_params(
 """
     ParamsASEv2(; FT = Float64, kwargs...)
 
-`Params` of the Amundsen Sea run of LADDIE v2.0 (Lambert et al. 2026, Sect. 3.1), from
-its config (`results/ASE/ASE.cfg`): Jenkins (1991) transfer coefficients,
+`Params` of the Amundsen Sea run of LADDIE v2.0 ([Lambert et al. 2026](@cite lambert_one-layer_2026), Sect. 3.1), from
+its config (`results/ASE/ASE.cfg`): [Jenkins (1991)](@cite jenkins_onedimensional_1991) transfer coefficients,
 `C_d_top = 1.1e-3`, viscosity coefficient 1, `K_h = 4`, `H_min = H_init = 1`,
 `v_cut = 1.4`, `H ≤ 1500` m.
 
@@ -582,8 +582,8 @@ ParamsASEv2(; FT = Float64, kwargs...) = _reproduction_params(
 """
     ParamsPIGv2(; FT = Float64, kwargs...)
 
-`Params` of the 120 m Pine Island run of LADDIE v2.0 (Lambert et al. 2026,
-Sect. 3.3.2), from its config (`results/PIG_rema3/PIG.cfg`): Jenkins (1991) transfer
+`Params` of the 120 m Pine Island run of LADDIE v2.0 ([Lambert et al. 2026](@cite lambert_one-layer_2026),
+Sect. 3.3.2), from its config (`results/PIG_rema3/PIG.cfg`): [Jenkins (1991)](@cite jenkins_onedimensional_1991) transfer
 coefficients, `C_d_top = 1.1e-3`, viscosity coefficient 0.1, `K_h = 0.1`,
 `H_min = H_init = 1`, `v_cut = 1.4`, `H ≤ 1500` m.
 
@@ -613,7 +613,7 @@ ParamsPIGv2(; FT = Float64, kwargs...) = _reproduction_params(
 """
     ParamsMISOMIPv2(; FT = Float64, kwargs...)
 
-`Params` of the coupled UFEMISM–LADDIE MISOMIP+ run of Lambert et al. (2026, Sect. 4),
+`Params` of the coupled UFEMISM–LADDIE MISOMIP+ run of [Lambert et al. (2026, Sect. 4)](@cite lambert_one-layer_2026),
 from its config (`results/misomip_laddie/misomip_laddie.cfg`): Γ_T = 2.03 × 10⁻²
 ([`UStarGamTMelting`](@ref)), `C_d_top = 2.5e-3`, viscosity coefficient 0.1,
 `K_h = 1`, `H_min = H_init = 1`, `v_cut = 1`, `H ≤ 1500` m.  Laddie.jl runs it
@@ -641,11 +641,11 @@ ParamsMISOMIPv2(; FT = Float64, kwargs...) = _reproduction_params(
 """
     ParamsMISOMIPGapsv2(; FT = Float64, kwargs...)
 
-`Params` of the coupled UFEMISM–LADDIE 2.0 runs of Jesse et al. (2026), from their
+`Params` of the coupled UFEMISM–LADDIE 2.0 runs of [Jesse et al. (2026)](@cite jesse_ice-sheet_2026), from their
 Table A1 (no run config is bundled): Γ_T = 3 × 10⁻² ([`UStarGamTMelting`](@ref)),
 `C_d_top = 2.5e-3`, viscosity coefficient and `K_h` 10, `H_min = 1`.  The values the
 table leaves out (`H_init = 1`, `v_cut = 1`, `H ≤ 1500` m, buoyancy floor
-0.005 kg m⁻³) are those of the MISOMIP+ run of Lambert et al. (2026), see
+0.005 kg m⁻³) are those of the MISOMIP+ run of [Lambert et al. (2026)](@cite lambert_one-layer_2026), see
 [`ParamsMISOMIPv2`](@ref).  Laddie.jl runs it standalone, as a sanity check.
 
 $_V2_WARNING
@@ -670,7 +670,7 @@ ParamsMISOMIPGapsv2(; FT = Float64, kwargs...) = _reproduction_params(
 """
     SimulationISOMIPv2(backend = CPU(); FT = Float64, datadir, params, simulation_kwargs...)
 
-The ISOMIP+ Ocean1 run of LADDIE v2.0 (Lambert et al. 2026, Sect. 3.2.1), on the 2 km
+The ISOMIP+ Ocean1 run of LADDIE v2.0 ([Lambert et al. 2026](@cite lambert_one-layer_2026), Sect. 3.2.1), on the 2 km
 Ocean1 geometry remapped to a regular grid in
 `datadir/lambert-2026/results/isomip_ocean1/laddie_output_grid.nc`; the shelf is the
 ice that floats there.
@@ -698,7 +698,7 @@ end
 """
     SimulationASEv2(backend = CPU(); FT = Float64, datadir, params, simulation_kwargs...)
 
-The Amundsen Sea run of LADDIE v2.0 (Lambert et al. 2026, Sect. 3.1), on its geometry
+The Amundsen Sea run of LADDIE v2.0 ([Lambert et al. 2026](@cite lambert_one-layer_2026), Sect. 3.1), on its geometry
 remapped to the regular 1 km grid in `datadir/lambert-2026/results/ASE/laddie_output_grid.nc`
 (the run used 1.2 km triangles); the shelf is the ice that floats there.
 
@@ -741,8 +741,8 @@ end
 """
     SimulationMISOMIPv2(backend = CPU(); FT = Float64, datadir, params, simulation_kwargs...)
 
-The initial LADDIE spin-up of the coupled MISOMIP+ run of Lambert et al. (2026,
-Sect. 4), standalone on the spun-up ice geometry (last slice of
+The initial LADDIE spin-up of the coupled MISOMIP+ run of [Lambert et al. (2026,
+Sect. 4)](@cite lambert_one-layer_2026), standalone on the spun-up ice geometry (last slice of
 `datadir/lambert-2026/results/misomip_spinup_1/main_output_ANT_grid.nc`, 2 km; the
 coupled run used 1 km triangles on the shelf).  A sanity check, not a coupled run.
 
@@ -776,9 +776,9 @@ const _JESSE_DEEP_T = (ocean1 = -1.0, ocean2 = 0.0, ocean3 = 1.0)
     SimulationMISOMIPGapsv2(backend = CPU(); ocean = :ocean3, gaps = SinkGapsBC(), FT = Float64,
                             datadir, params, simulation_kwargs...)
 
-The initial LADDIE spin-up of the coupled runs of Jesse et al. (2026), standalone, as a
-sanity check.  Jesse et al.'s spun-up geometry is not bundled (their output is on the
-mesh only); this uses the MISOMIP+ spin-up of Lambert et al. (2026) instead, as in
+The initial LADDIE spin-up of the coupled runs of [Jesse et al. (2026)](@cite jesse_ice-sheet_2026), standalone, as a
+sanity check.  [Jesse et al.](@cite jesse_ice-sheet_2026)'s spun-up geometry is not bundled (their output is on the
+mesh only); this uses the MISOMIP+ spin-up of [Lambert et al. (2026)](@cite lambert_one-layer_2026) instead, as in
 [`SimulationMISOMIPv2`](@ref), whose grounding line also sits near x = 450 km.
 
 - `ocean`: `:ocean1`, `:ocean2` or `:ocean3`, deep temperature −1, 0 or 1 °C under a

@@ -7,14 +7,14 @@ available through `Params(; melting = ...)`:
 | scheme | equations | transfer coefficients |
 |---|---|---|
 | [`FixedGamTMelting`](@ref) (default) | three-equation | ``\gamma_T`` constant, ``\gamma_S = \gamma_T/35`` |
-| [`TurbulentGamTMelting`](@ref) | three-equation | log-layer functions of ``u_\star`` (Holland & Jenkins 1999) |
+| [`TurbulentGamTMelting`](@ref) | three-equation | log-layer functions of ``u_\star`` ([Holland & Jenkins 1999](@cite holland_modeling_1999)) |
 | [`UStarGamTMelting`](@ref) | three-equation | ``\gamma_T = \Gamma_T u_\star``, ``\gamma_S = \gamma_T/r`` |
 | [`TwoEquationMelting`](@ref) | two-equation, experimental | ``\gamma_{TS} = \Gamma_{TS} u_\star`` |
 | [`PrescribedMelting`](@ref) | none, ``\dot m`` given | equivalent ``\gamma_T`` diagnosed |
 
 ## Three-equation melt
 
-Three constraints hold simultaneously at the ice–ocean interface (Jenkins 1991):
+Three constraints hold simultaneously at the ice–ocean interface ([Jenkins (1991)](@cite jenkins_onedimensional_1991)):
 
 ```math
 c_p\,\gamma_T\,(T - T_b) = L_\text{eff}\,\dot{m}
@@ -72,13 +72,12 @@ The three schemes that solve it differ only in ``\gamma_T`` and ``\gamma_S``:
 - [`FixedGamTMelting`](@ref): ``\gamma_T`` is a prescribed constant and
   ``\gamma_S = \gamma_T / 35``. The ISOMIP+ default.
 - [`TurbulentGamTMelting`](@ref): both are computed from ``u_\star`` via a log-layer
-  formulation (Holland & Jenkins 1999; Lambert et al. 2023, Eqs. 11–12).
+  formulation ([Holland & Jenkins 1999](@cite holland_modeling_1999); [Lambert et al. (2023), Eqs. 11–12](@cite lambert_modelling_2023)).
 - [`UStarGamTMelting`](@ref): ``\gamma_T = \Gamma_T u_\star`` and ``\gamma_S = \gamma_T / r``
-  with ``r`` = 35 by default. This is LADDIE v2's `'uniform'` option and what the ISOMIP+
-  protocol tunes. A `ratio` other than 35 (e.g. 70) is experimental; McPhee et al. (2008)
-  give 35–70 for a melting base.
+  with ``r`` = 35 by default. This is [LADDIE v2](../versions.md)'s `'uniform'` option and what the
+  ISOMIP+ protocol tunes. A `ratio` other than 35 (e.g. 70) is experimental.
 
-Jenkins et al. (2010) tested these parameterizations against the thinning of the Ronne Ice
+[Jenkins et al. (2010)](@cite jenkins_observation_2010) tested these parameterizations against the thinning of the Ronne Ice
 Shelf measured by radar, and give ``C_d^{1/2}\Gamma_T = 1.1\times10^{-3}`` and
 ``C_d^{1/2}\Gamma_S = 3.1\times10^{-5}`` for the three-equation form. Since ``\Gamma`` multiplies
 the ``u_\star`` of this model, which uses `C_d_top`, divide by ``\sqrt{C_d^\text{top}}``: that gives
@@ -88,7 +87,7 @@ the ``u_\star`` of this model, which uses `C_d_top`, divide by ``\sqrt{C_d^\text
 ## Two-equation melt
 
 The same data are fit equally well by the **two-equation** form
-([`TwoEquationMelting`](@ref); McPhee 1992), which drops the salt balance and sets the
+([`TwoEquationMelting`](@ref); [McPhee 1992](@cite mcphee_turbulent_1992)), which drops the salt balance and sets the
 interface at the freezing point of the layer salinity, ``T_b = T_f(S, z_b)``:
 
 ```math
@@ -101,7 +100,7 @@ linear in ``\dot m``, with ``\gamma_{TS} = \Gamma_{TS}\,u_\star`` and
 ``C_d^{1/2}\Gamma_{TS} = 5.9\times10^{-4}`` (default ``\Gamma_{TS} = 0.0178``, for the default
 `C_d_top`; change it along with `C_d_top`). The two forms agree when ``\gamma_S \to \infty``,
 and differ under strong thermal forcing, where the interface salinity departs from the layer's.
-Jenkins et al. expect the three-equation form to be the more general.
+[Jenkins et al.](@cite jenkins_observation_2010) expect the three-equation form to be the more general.
 
 !!! warning "Experimental"
     `TwoEquationMelting` and a `UStarGamTMelting` ratio other than 35 are experimental and
@@ -130,7 +129,7 @@ ice above the thin thermal boundary layer at the base — the surface temperatur
 steady ice shelf, or the temperature 50–100 m above the base from an ice sheet model.
 Colder ice absorbs more heat per unit melt — ``L_\text{eff}`` runs from
 3.34e5 J kg⁻¹ at 0 °C to 3.84e5 at −25 °C — so it acts as a direct brake on melting.
-How that heat enters the balance is the [ice-conduction](ice_conduction.md) closure.
+How that heat enters the balance is the [ice-conduction](ice_conduction.md) parameterisation.
 
 ## API
 

@@ -49,7 +49,7 @@ struct OceanForcing1D{FT,V<:AbstractVector} <: AbstractOceanForcing
 end
 
 """
-Ambient T/S profiles for the ISOMIP+ protocol (Asay-Davis et al. 2016), returned
+Ambient T/S profiles for the ISOMIP+ protocol ([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)), returned
 as an [`OceanForcing1D`](@ref).  Profiles are linear from the surface
 (T = −1.9 °C, S = 33.8 psu) to 720 m depth.
 
@@ -256,7 +256,7 @@ Base.show(io::IO, f::PerBasinOceanForcing1D) = print(
 """
 Supertype of every ice forcing: the state of the ice above the layer.  Subtypes
 must provide `T_ice_base` (°C, ≤ 0), the ice temperature ``T_i`` that the
-[`AbstractIceConduction`](@ref) closure uses for the heat conducted into the ice;
+[`AbstractIceConduction`](@ref) parameterisation uses for the heat conducted into the ice;
 see [`PrescribedIceForcing`](@ref) for what it is and is not.
 """
 abstract type AbstractIceForcing end
@@ -269,10 +269,10 @@ Ice temperature ``T_i`` held fixed for the whole run.
 Despite its name, `T_ice_base` is **not** the temperature at the ice base: the base
 is at the interface temperature ``T_b``, the freezing point, which the melt solve
 computes every step.  The ice column is not resolved; the heat conducted into the ice
-is a closure ([`AbstractIceConduction`](@ref)), and ``T_i`` is the temperature of the
+is a parameterisation ([`AbstractIceConduction`](@ref)), and ``T_i`` is the temperature of the
 ice *above* the thin thermal boundary layer at the base, into which the ice is advected
-as it melts.  For the default [`HollandJenkinsConduction`](@ref) (Holland & Jenkins
-1999), a steady ice column, that is the ice-shelf **surface temperature** (Wiskandt &
+as it melts.  For the default [`HollandJenkinsConduction`](@ref) ([Holland & Jenkins
+1999](@cite holland_modeling_1999)), a steady ice column, that is the ice-shelf **surface temperature** (Wiskandt &
 Jourdain 2025 use the 1980–2019 mean snow-surface temperature).  With an ice sheet
 model at hand, the ice temperature 50–100 m above the base, as a 2D field, carries the
 transient and upstream-advected state of the ice instead.  Were ``T_i`` the basal

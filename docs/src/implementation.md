@@ -89,7 +89,7 @@ To reproduce these numbers on your own hardware, run `benchmark/gpu_vs_cpu.jl`
 julia --project=benchmark benchmark/gpu_vs_cpu.jl
 ```
 
-## Validation against the Python reference
+## Validation against LADDIE v1
 
 After a 1-day warm ISOMIP+ run from identical initial conditions:
 
@@ -101,9 +101,9 @@ After a 1-day warm ISOMIP+ run from identical initial conditions:
 | U (mm s⁻¹) | 0.11 | 0.44 % |
 | V (mm s⁻¹) | 0.089 | 0.04 % |
 
-End-state melt: **Julia 24.43 m yr⁻¹ / Python log 24.42 m yr⁻¹** (4 sig. figs.).
+End-state melt: **Julia 24.43 m yr⁻¹ / v1 log 24.42 m yr⁻¹** (4 sig. figs.).
 The residuals are consistent with floating-point rounding between NumPy and
-Julia — not physics discrepancies. See the [Python validation](generated/isomip.md#Validation-against-the-Python-code)
+Julia — not physics discrepancies. See the [LADDIE v1 validation](generated/isomip.md#Validation-against-LADDIE-v1)
 page for spatial maps.
 
 ## The ISOMIP+ test case

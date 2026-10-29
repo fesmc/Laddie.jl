@@ -1,43 +1,80 @@
-# Laddie.jl
+<h1 align="center">Laddie.jl</h1>
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://fesmc.github.io/Laddie.jl/stable/)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://fesmc.github.io/Laddie.jl/dev/)
-[![Build Status](https://github.com/fesmc/Laddie.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/fesmc/Laddie.jl/actions/workflows/CI.yml?query=branch%3Amain)
-[![Coverage](https://codecov.io/gh/fesmc/Laddie.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/fesmc/Laddie.jl)
+<p align="center">
+  <b>Fast, differentiable basal melt beneath Antarctic ice shelves, on CPUs and GPUs.</b>
+</p>
 
-A Julia implementation of **LADDIE** — the one-**L**ayer **A**ntarctic model for
+<p align="center">
+  <a href="https://fesmc.github.io/Laddie.jl/dev/"><img alt="Docs" src="https://img.shields.io/badge/docs-dev-blue.svg"></a>
+  <a href="https://github.com/fesmc/Laddie.jl/actions/workflows/CI.yml?query=branch%3Amain"><img alt="Build Status" src="https://github.com/fesmc/Laddie.jl/actions/workflows/CI.yml/badge.svg?branch=main"></a>
+  <a href="https://codecov.io/gh/fesmc/Laddie.jl"><img alt="Coverage" src="https://codecov.io/gh/fesmc/Laddie.jl/branch/main/graph/badge.svg"></a>
+</p>
+
+<p align="center">
+  <img src="docs/src/assets/lambert-ase.png" alt="Ocean speed and basal melt rate beneath the Amundsen Sea ice shelves, LADDIE v2 next to Laddie.jl" width="85%">
+  <br>
+  <sub>Amundsen Sea Embayment at 1 km: LADDIE v2 next to Laddie.jl.</sub>
+</p>
+
+Laddie.jl is a Julia implementation of **LADDIE**, the one-**L**ayer **A**ntarctic model for
 **D**ynamical **D**ownscaling of **I**ce-ocean **E**xchanges
-([Lambert et al., 2023](https://doi.org/10.5194/tc-17-3203-2023)).
-LADDIE solves depth-integrated conservation equations for a buoyant meltwater
-plume under an ice shelf and returns high-resolution basal melt-rate fields
-from an ambient temperature/salinity profile and the cavity geometry.
+([Lambert et al., 2023](https://doi.org/10.5194/tc-17-3203-2023);
+[Lambert et al., 2026](https://egusphere.copernicus.org/preprints/2026/egusphere-2026-930/)).
+It treats the buoyant meltwater layer under an ice shelf as a depth-averaged circulation and returns
+high-resolution basal melt-rate fields from the cavity geometry and an ambient temperature and
+salinity profile.
 
-Laddie.jl is a from-scratch port of the
-[Python reference implementation](https://github.com/erwinlambert/laddie) with:
+## Highlights
 
-- **CPU and GPU execution** from the same code via
-  [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl)
-  (`CUDABackend`, `ROCBackend`, `MetalBackend`),
-- **`Float64` or `Float32`** precision throughout,
-- a **verification test** against the Python LADDIE end state on the warm
-  ISOMIP+ configuration, and a reproduction of the published Crosson–Dotson run,
-- NetCDF output, JLD2 restarts, and a TOML provenance record for every run.
+- **CPU and GPU** from the same code, through
+  [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) (CUDA, ROCm, Metal),
+  in `Float64` or `Float32`.
+- **Reactant.jl** compiles the whole time loop with XLA to accelerate GPU runs.
+- **Differentiable**: ForwardDiff.jl on CPU and CUDA, and Enzyme through Reactant for gradients at a
+  cost that does not grow with the number of parameters.
+- **v2 physics on the v1 grid**: the physical choices of LADDIE v2 on the structured C-grid of v1,
+  every difference an option.
+- **Validated**: end-state agreement with LADDIE v1, and reproductions of the published Crosson–Dotson
+  and Amundsen Sea runs.
+- **Ice-shelf gaps**: sink and connected treatments, to quantify what happens where shelves thin
+  through.
+- NetCDF output, JLD2 restarts and a TOML provenance record for every run.
 
-**We'd like to acknowledge** that Laddie.jl would not have been possible
-without the excellent model description paper and the clear, open-source
-Python implementation!
+## Gallery
 
-The authors of LADDIE (not us!) have worked hard on v2.0, including another [great description paper](https://egusphere.copernicus.org/preprints/2026/egusphere-2026-930/), which is currently in revision, and [an open-source code](https://github.com/UPSY-group/UPSY-models). This unlocked:
-1. parallelization and performance improvements
-2. unstructured grids and more flexible domain geometries
-3. an improved time stepping scheme
-4. modified boundary conditions at the grounding line (better match with observation)
-5. running pan-Antarctic domains with evolving geometry
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/src/assets/crosson-dotson.png" alt="Crosson–Dotson melt and layer thickness, Laddie.jl against the published run">
+      <br><sub><b>Reproducing a published run.</b> Crosson–Dotson Ice Shelf: Laddie.jl, the reference, and their difference.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/src/assets/jesse-v2.png" alt="Melt and layer speed for small and large ice-shelf gaps, LADDIE v2 and Laddie.jl">
+      <br><sub><b>Ice-shelf gaps.</b> Melt and layer speed on the geometries of
+      <a href="https://doi.org/10.5194/egusphere-2026-4237">Jesse et al. (2026)</a>.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="docs/src/assets/inverse-problems.png" alt="Parameter estimates and misfit recovered with ForwardDiff and Reactant" width="70%">
+      <br><sub><b>Inverse problems.</b> Recovering model parameters from a melt field with gradients from
+      ForwardDiff.jl and Reactant.jl.</sub>
+    </td>
+  </tr>
+</table>
 
-Laddie.jl is a port of the original LADDIE.py v1. A few v2.0 options are available
-(no-slip walls, a shear-scaled lateral viscosity, the truncated ice-front pressure
-gradient), but a full port of v2.0 is not a target: the Julia version focuses on
-developing other capabilities, such as GPU execution and connected ice-shelf gaps.
+## Documentation
+
+The [documentation](https://fesmc.github.io/Laddie.jl/dev/) has the full story: how to run a model,
+the physics and numerics one page per choice, worked examples with data, and the API.
+
+| | |
+|---|---|
+| [**LADDIE versions**](https://fesmc.github.io/Laddie.jl/dev/versions/) | v1, v2 and Laddie.jl side by side |
+| [**Physics**](https://fesmc.github.io/Laddie.jl/dev/physics/) | the governing equations and every parameterisation |
+| [**Numerics**](https://fesmc.github.io/Laddie.jl/dev/numerics/) | grid, time stepping, boundaries and stability |
+| [**Examples**](https://fesmc.github.io/Laddie.jl/dev/generated/isomip/) | ISOMIP+, Crosson–Dotson, Amundsen Sea, gaps and inverse problems |
+| [**Reactant backend**](https://fesmc.github.io/Laddie.jl/dev/reactant/) | compiled GPU runs and automatic differentiation |
 
 ## Installation
 
@@ -48,105 +85,13 @@ using Pkg
 Pkg.add(url = "https://github.com/fesmc/Laddie.jl")
 ```
 
-## Quickstart: ISOMIP+ cavity
+## Acknowledgements
 
-```julia
-using Laddie
-
-sim = build_isomip(; isomipcond = :warm)   # 240×40 idealised channel, 2 km cells
-run!(sim; days = 30)
-stats = meltstats(sim)   # max/mean melt (m/yr), max speed (m/s), total melt (Gt/yr)
-```
-
-`build_isomip` returns a `Simulation`: a `Model` (geometry, physics, state —
-`sim.model`) plus its time integration (`sim.clock`, the time stepper, output).
-
-## Realistic geometry
-
-Build the domain mask and ice draft from BedMachine-style arrays, and the
-ambient forcing from any T/S profile data:
-
-```julia
-using Laddie, NCDatasets
-
-ds  = NCDataset("BedMachineAntarctica-v3.nc")
-bed = Float64.(Array(ds["bed"][i1:i2, j1:j2]))
-h   = Float64.(Array(ds["thickness"][i1:i2, j1:j2]))
-x, y = ds["x"][i1-1:i2+1], ds["y"][j1-1:j2+1]   # cell centres, border ring included
-close(ds)
-
-mask    = build_laddie_mask(bed, h)         # 0 ocean / 1 land / 2 grounded / 3 shelf
-zb      = ice_base_depth(bed, h)            # ice-base depth (m, negative)
-ocean   = OceanForcing1D(Tz, Sz, z)         # T (°C), S (psu), z (m) vectors
-
-grid  = Grid(mask, zb; x, y)                # geometry: where the cells are (dx, dy from x, y)
-model = Model(grid; forcing = ocean)        # physics on that grid
-sim   = Simulation(model; dt = 120.0)       # time integration and output
-run!(sim; days = 90)
-```
-
-All 2D fields — mask, draft, bed, and every diagnostic — are stored `[x, y]`: the
-first index runs along x, the second along y, matching what NCDatasets hands back
-when reading a NetCDF file and what `heatmap` expects. Output files are written in
-the CF layout (`melt(time, y, x)` in `ncdump`), so ncview renders them the usual way
-round. Note that x and y are grid axes, not compass directions: a projected polar
-domain rotates them relative to true east/north.
-
-This is the grid → model → simulation → `run!` split shared by Oceananigans,
-SpeedyWeather and FastIsostasy. The `Grid` holds only what is independent of any
-modelling choice (mask, draft, bed, spacing); the `Model` derives the active-cell
-masks, ice-base slope and Coriolis field from it, so one grid can drive several
-models — e.g. both gap treatments.
-
-A model is driven by a `CavityForcing` — an ocean forcing plus an ice forcing.
-Passing the ocean forcing alone, as above, pairs it with a uniform ice
-temperature `T_ice_base` of −25 °C (the temperature of the ice above its base,
-typically the surface temperature; the base itself is at the freezing point). Supply the ice explicitly to vary it in space:
-
-```julia
-forcing = CavityForcing(ocean, PrescribedIceForcing(T_ice_base))  # same size as mask
-```
-
-Physical parameters and parameterization choices live in a single typed
-`Params` object, boundary conditions in a `BoundaryConditions`, and everything
-about time integration is a `Simulation` option:
-
-```julia
-params   = Params(; A_h = 25.0,
-                  melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
-                  convection_scheme = RelaxToAmbient(10000.0))
-boundary = BoundaryConditions(; land = FreeSlipLand(), gaps = ConnectedGapsBC())
-model    = Model(grid; forcing = ocean, params, boundary)
-sim      = Simulation(model; dt = 120.0, tstep = AdaptiveDt(),
-                      stop = FixedSimulationEnd(t_end = 90.0))
-run!(sim)
-```
-
-The defaults follow Python LADDIE v1 except at the walls, which are no-slip; its
-single partial-slip factor is
-`BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))`.
-
-## GPU
-
-```julia
-using CUDA
-sim = build_isomip(CUDABackend(); FT = Float32, isomipcond = :warm)
-run!(sim; days = 30)
-```
-
-## Output and restarts
-
-```julia
-output = OutputConfig(name = "warm0", saveday = 1.0, restday = 30.0)
-sim = build_isomip(; isomipcond = :warm, output)
-run!(sim)
-```
-
-This writes time-averaged NetCDF fields, JLD2 restart files, a log, and a
-`run_metadata.toml` provenance record (parameters, time integration, forcing,
-grid, versions) to `./output/warm0/`. Successive `run!` calls continue the same
-clock. Continue from a restart file with
-`Simulation(model; restart = ".../restart_latest.jld2", ...)`.
+Laddie.jl would not have been possible without the excellent model description papers and the clear,
+open-source LADDIE codes: [v1](https://github.com/erwinlambert/laddie) and
+[v2](https://github.com/UPSY-group/UPSY-models). Their authors are not involved in this port. Laddie.jl
+does not aim to port v2's unstructured meshes; it focuses on other capabilities, such as GPU execution,
+automatic differentiation and connected ice-shelf gaps.
 
 ## Citing
 
@@ -161,4 +106,4 @@ and the software itself via [CITATION.bib](CITATION.bib).
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE).
+GPL-3.0, see [LICENSE](LICENSE).

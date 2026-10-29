@@ -14,10 +14,10 @@ abstract type AbstractIceSlopeGradient end
 """
     PyGradient()
 
-Python-ported centred-difference gradient: `(zb[i+1] − zb[i−1]) / (2 dx)` applied
-uniformly over all cells with no mask awareness.  Matches the Python LADDIE
-v1.1 stencil exactly and should be used when comparing against the Python
-reference output.
+v1-ported centred-difference gradient: `(zb[i+1] − zb[i−1]) / (2 dx)` applied
+uniformly over all cells with no mask awareness.  Matches the LADDIE v1
+v1.1 stencil exactly and should be used when comparing against the LADDIE v1
+code output.
 """
 struct PyGradient <: AbstractIceSlopeGradient end
 

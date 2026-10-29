@@ -3,7 +3,7 @@
 #############################
 
 """
-Abstract supertype for lateral (horizontal) momentum viscosity closures.
+Abstract supertype for lateral (horizontal) momentum viscosity parameterisations.
 Pass a concrete instance as `Params(; lateral_viscosity = ...)`:
 [`PrescribedLateralViscosity`](@ref) (constant coefficient, the default) or
 [`NonlinearLateralViscosity`](@ref) (shear-scaled, as in LADDIE v2).
@@ -17,7 +17,7 @@ $(TYPEDEF)
 
 Constant-coefficient Laplacian lateral viscosity (the default): the diffusive
 flux at every interior face is `Params.A_h * ΔU / dy` (or `ΔV / dx`), i.e. a
-plain Laplacian with a single global coefficient, matching Python LADDIE v1.x.
+plain Laplacian with a single global coefficient, matching LADDIE v1.
 
 Grounding-line/land wall friction also scales with `Params.A_h`, unaffected
 by the choice of `lateral_viscosity` — see [`NonlinearLateralViscosity`](@ref).
@@ -29,7 +29,7 @@ struct PrescribedLateralViscosity <: AbstractLateralViscosity end
 """
 $(TYPEDEF)
 
-Shear-scaled lateral viscosity, as used by the reference LADDIE v2 Fortran
+Shear-scaled lateral viscosity, as used by LADDIE v2
 implementation (`laddie_velocity.f90:260`). Instead of a constant coefficient,
 the viscosity at each interior face is
 
@@ -42,7 +42,7 @@ north/south) and ``\\lVert\\delta\\mathbf{u}\\rVert = \\sqrt{\\delta U^2 + \\del
 the magnitude of the full velocity-difference *vector* across it — the
 reference's `dUabs`, so one isotropic coefficient serves both momentum
 components on a face. The flux of each component then goes as
-``\\lVert\\delta\\mathbf{u}\\rVert\\,\\delta U``. This is a Smagorinsky-type closure — near-zero viscosity in
+``\\lVert\\delta\\mathbf{u}\\rVert\\,\\delta U``. This is a Smagorinsky-type parameterisation — near-zero viscosity in
 smooth flow, large viscosity where shear is strong — rather than the plain
 Laplacian of [`PrescribedLateralViscosity`](@ref).
 
@@ -105,7 +105,7 @@ struct PresentLaplacianWeights <: AbstractLaplacianWeights end
 $(TYPEDEF)
 
 Weight the Laplacians with the lagged, filtered `H.past`, so the thickness weight sits on
-the same time level as the diffused field. This is what the Python LADDIE v1.x code does.
+the same time level as the diffused field. This is what the LADDIE v1 code does.
 """
 struct PastLaplacianWeights <: AbstractLaplacianWeights end
 

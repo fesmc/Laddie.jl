@@ -5,9 +5,9 @@ carried through the faces of a velocity control volume, is a choice,
 `Params(; momentum_advection = ...)`:
 
 - [`CentredMomentumAdvection`](@ref), the default, evaluates the advected
-  velocity as the average of the two either side of the face, as Python LADDIE
-  v1.x does. It adds no numerical viscosity of its own.
-- [`UpstreamMomentumAdvection`](@ref) is flux-form donor cell, as LADDIE v2:
+  velocity as the average of the two either side of the face, as LADDIE v1 does. It adds
+  no numerical viscosity of its own.
+- [`UpstreamMomentumAdvection`](@ref) is flux-form donor cell, as [LADDIE v2](../versions.md):
   the momentum rides on the thickness equation's own mass fluxes, averaged onto
   the staggered faces, and is taken from the upstream side. Its implicit
   viscosity is of order ``|u|\,\Delta/2`` — ≈ 50 m² s⁻¹ at 1 km and

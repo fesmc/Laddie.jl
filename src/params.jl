@@ -124,7 +124,7 @@ struct Params{
     momentum_advection::MA
     "form of the tracer equations, an [`AbstractTracerForm`](@ref) (default flux form, as in v2)"
     tracer_form::TF
-    "form of the momentum equations, an [`AbstractMomentumForm`](@ref) (default advective form, as in v1.x)"
+    "form of the momentum equations, an [`AbstractMomentumForm`](@ref) (default advective form, as in LADDIE v1)"
     momentum_form::MF
     "time level of `u★`, the entrainment thickness and the drag speed, an [`AbstractClosureLevel`](@ref) (default present)"
     closure_level::CL

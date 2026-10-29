@@ -3,7 +3,8 @@
 Where melting thins a shelf all the way through, an ice-free **gap** opens inside the
 domain. There is no ice base there, so no melt — but what happens to the meltwater layer
 arriving from upstream is genuinely uncertain, and the two defensible answers bracket a
-large range of coupled ice-sheet response (Jesse et al., 2026). LADDIE.jl offers both as
+large range of coupled ice-sheet response ([Jesse et al. (2026)](@cite jesse_ice-sheet_2026)).
+Laddie.jl offers both as
 `BoundaryConditions(; gaps = ...)`, selected on the same input mask:
 
 | | [`SinkGapsBC`](@ref) (default) | [`ConnectedGapsBC`](@ref) |
@@ -16,7 +17,7 @@ large range of coupled ice-sheet response (Jesse et al., 2026). LADDIE.jl offers
 Real gaps are full of sea ice, mélange and bergs, so neither end-member is right on its
 own; running both is how the uncertainty is quantified. The
 [ice-shelf gaps example](../generated/jesse-gaps.md) runs both on the paper's own geometries
-and compares them with LADDIE v2.
+and compares them with [LADDIE v2](../versions.md).
 
 Gap cells are those marked `4` in the mask. Mark them directly, or from a reference ice
 footprint with [`MarkGapsPreprocess`](@ref) (see

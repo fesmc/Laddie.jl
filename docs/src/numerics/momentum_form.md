@@ -5,7 +5,7 @@ and can be stepped in two forms, `Params(; momentum_form = ...)`, the momentum c
 the [tracer form](tracer_form.md):
 
 - [`AdvectiveMomentumForm`](@ref), the default, steps ``U`` itself with the product-rule term
-  ``-U\,\partial_t H`` and every term at the present level, as Python LADDIE v1.x does:
+  ``-U\,\partial_t H`` and every term at the present level, as LADDIE v1 does:
   ```math
   U^{+} = U^{-} + 2\Delta t\,\frac{\mathrm{rhs} - U\,\partial_t H - s\,U}{\bar H^{n}}.
   ```
@@ -74,9 +74,9 @@ and the momentum coming in.  Under [`PastClosures`](@ref), ``s`` and the ``u_\st
 ``\dot m`` and ``\dot e`` are evaluated at ``n-1``.
 
 The advective form takes ``\dot d`` at the tracer point ``(i, j)`` and does not average it
-onto the face, as Python LADDIE v1.x does (`-detr * U` in `intU`/`intV`).  The term is
+onto the face, as LADDIE v1 does (`-detr * U` in `intU`/`intV`).  The term is
 therefore shifted half a cell: a ``U`` face sees only the detrainment of the cell to its
-west, and a ``V`` face only that of the cell to its south.  It is kept that way so that the default stays bit-identical to v1.x.  The flux
+west, and a ``V`` face only that of the cell to its south.  It is kept that way so that the default stays bit-identical to LADDIE v1.  The flux
 form averages ``\dot d`` onto the face, as it does ``\dot d_\mathrm{cap}`` and ``\dot f``
 under both forms.
 
@@ -97,7 +97,7 @@ The two switches remove the two parts of that rate.  Under [`FluxMomentumForm`](
 dilution acts through ``\bar H^{+}``, the factor ``\bar H^{-}/\bar H^{+} \le 1``, and drag and
 detrainment through the denominator: unconditionally stable for a frozen rate.  Under
 [`PastClosures`](@ref) the dependence of the rates on the state, ``e(u_\star, H)`` and
-``|\mathbf{u}|``, comes from the lagged level, as Python LADDIE v1.x lags the diffusion and
+``|\mathbf{u}|``, comes from the lagged level, as LADDIE v1 lags the diffusion and
 the convective relaxation.  For the scalar model ``y' = -\lambda y`` with the rate split as in
 ``e(U)\,U``, the stability limit moves from ``\lambda\Delta t = 0.57`` to ``1.15`` under the flux form
 alone, and beyond ``20`` with both.

@@ -3,10 +3,10 @@
 This page is the **canonical equation reference** for Laddie.jl. Equation
 numbers `(1)`–`(14)` follow the description paper
 
-> Lambert, E., Jüling, A., van de Wal, R. S. W., and Holland, P. R. (2023):
-> Modelling Antarctic ice shelf basal melt patterns using the one-layer
-> Eulerian ocean model LADDIE, *The Cryosphere*, 17, 3203–3228,
-> [doi:10.5194/tc-17-3203-2023](https://doi.org/10.5194/tc-17-3203-2023).
+> [Lambert et al. (2023)](@cite lambert_modelling_2023): Modelling Antarctic ice shelf
+> basal melt patterns using the one-layer Eulerian ocean model LADDIE, *The Cryosphere*, 17,
+> 3203–3228. The equations are those of [LADDIE v1](../versions.md); the changes made for
+> [LADDIE v2](@cite lambert_one-layer_2026) are noted where they apply.
 
 For each equation we give the form **as published** and, where the kernels in
 [`src/numerics.jl`](https://github.com/fesmc/Laddie.jl) and
@@ -29,12 +29,13 @@ kernels in `src/numerics.jl` are asserted equal to it by the test suite.
 
 ## Notation
 
-The layer thickness is ``H``, as in LADDIE v2 (Lambert et al. 2026). Lambert et al.
-(2023) and the Python v1 code call it ``D``; the equations below are written with ``H``.
+The layer thickness is ``H``, as in [LADDIE v2](@cite lambert_one-layer_2026).
+[Lambert et al. (2023)](@cite lambert_modelling_2023) and the v1 code call it ``D``; the
+equations below are written with ``H``.
 
 | symbol | code | meaning | units |
 |--------|------|---------|-------|
-| ``H`` | `m.H` | layer thickness (``D`` in Lambert et al. 2023) | m |
+| ``H`` | `m.H` | layer thickness (``D`` in [Lambert et al. (2023)](@cite lambert_modelling_2023)) | m |
 | ``U, V`` | `m.U`, `m.V` | depth-averaged velocity (C-grid faces) | m s⁻¹ |
 | ``T, S`` | `m.T`, `m.S` | depth-averaged temperature / salinity | °C / psu |
 | ``\dot m`` | `m.melt` | basal melt rate (``>0`` = melting) | m s⁻¹ |
@@ -123,19 +124,18 @@ At a **one-sided face** — the ice front, or a `SinkGapsBC` gap-sink edge — t
 needed for ``H_{x-1}`` is not part of the active domain, and masking pins its stored
 thickness to `0`. The depth-gradient term ``g\,\overline{H\delta\rho}\,(H_{x-1}-H)/\Delta x``
 is then a full one-sided gradient, as if ``H`` collapsed to zero across one grid cell.
-The two reference implementations disagree on what to do about this, so
+LADDIE v1 and v2 disagree on what to do about this, so
 [`AbstractFrontPressure`](@ref) makes it a choice:
 
-- [`FullDepthGradient`](@ref) (**default**) keeps the term, reproducing Python LADDIE
-  v1.x, which Laddie.jl is ported from and validated against.
-- [`TruncatedDepthGradient`](@ref) drops it, as the LADDIE v2 Fortran reference does at
-  calving-front faces. Measured on a warm ISOMIP+ run, the term is ~150× larger at the
+- [`FullDepthGradient`](@ref) (**default**) keeps the term, reproducing LADDIE v1, which
+  Laddie.jl is ported from and validated against.
+- [`TruncatedDepthGradient`](@ref) drops it, as the LADDIE v2 code does at calving-front faces. Measured on a warm ISOMIP+ run, the term is ~150× larger at the
   ice front than in the interior under the default.
 - [`ZeroGradientFront`](@ref) drops it and the density-gradient term
   ``\tfrac12 g\,\bar H^2\,(\delta\rho_{x-1}-\delta\rho)/\Delta x`` as well, whose
   neighbour ``\delta\rho`` is likewise masked to `0` there. This is the zero lateral
-  gradient at the calving front stated in the LADDIE v2 description paper; the v2
-  Fortran keeps the density term.
+  gradient at the calving front stated in the [LADDIE v2 description paper](@cite lambert_one-layer_2026);
+  the v2 code keeps the density term.
 
 Neither affects the grounding line, where no momentum equation is solved.
 
@@ -175,7 +175,7 @@ term ``\dot f\,(L/c_p - T)`` (zero unless `frazil_ice = RelaxedFrazilIce`, see
 ```
 
 with `cT` ``=-\nabla\!\cdot(H\mathbf{U}T)``, then ``T^{+} = T^{p} + (\mathrm{rhs}/H)\,\Delta t``.
-That is [`AdvectiveTracerForm`](@ref), the form of the paper and of Python v1.x. Under
+That is [`AdvectiveTracerForm`](@ref), the form of the paper and of LADDIE v1. Under
 [`FluxTracerForm`](@ref), the default, the ``-T\,\partial_t H`` term is left out of `rhs`
 and the content is stepped instead, ``T^{+} = (H^{p}T^{p} + \mathrm{rhs}\,\Delta t)/H^{+}``.
 
@@ -192,7 +192,7 @@ ice–ocean exchange term (ice is salt-free), plus the same optional `conv2`
 relaxation toward ``S_a``. Frazil adds no term: the ice is salt-free, so its salt stays in
 the layer, and ``-S\,\partial_t H`` concentrates it as the layer thins.
 
-## Closures
+## Parameterisations
 
 ### (6) Reduced gravity & (7) equation of state
 
@@ -280,16 +280,17 @@ T-point: ``U \to \tfrac12(U_{i,j}+U_{i,j-1})``, ``V \to \tfrac12(V_{i,j}+V_{i-1,
 
 ### (14) Entrainment / detrainment
 
-The paper's mechanical-energy balance (Gaspar 1988; Gladish et al. 2012) is
+The paper's mechanical-energy balance ([Gaspar (1988)](@cite gaspar_modeling_1988);
+[Gladish et al. (2012)](@cite gladish_ice-shelf_2012)) is
 
 ```math
 \frac{H}{2}\, g_b'\,\dot m + \frac{H}{2}\, g_a'\,\dot e = \mu\,u_\star^3, \tag{14}
 ```
 
-(Eq. 13 in Lambert et al. 2026), where ``g_b' = g\,\delta\rho_b`` uses the **plume–interface** density contrast
+(Eq. 13 in [Lambert et al. (2026)](@cite lambert_one-layer_2026)), where ``g_b' = g\,\delta\rho_b`` uses the **plume–interface** density contrast
 ``\delta\rho_b = \beta(S - S_b) - \alpha(T - T_b)`` (computed in `_buoyancy_entrainment_kernel!`, not stored).
 With ``\delta\rho^{+} = \max(\mathrm{drho\_floor}, \delta\rho)`` this is solved for ``\dot e``
-(`GasparEntrainment`, the default — the reference LADDIE v1 `'Gaspar'` and v2 `'Gaspar1988'`):
+(`GasparEntrainment`, the default — the LADDIE v1 `'Gaspar'` and v2 `'Gaspar1988'` option):
 
 ```math
 \dot e
@@ -303,10 +304,10 @@ and split into ``\mathrm{entr} = \max(\dot e,0)``,
 !!! note "Reading Eq. (14)"
     The ``H/2`` factors are easy to misread as ``H^2`` in the typeset PDF. The ``2\mu``
     prefactor and single power of ``H`` above follow from ``H/2``, and match both
-    reference implementations bit-for-bit.
+    LADDIE v1 and v2 bit-for-bit.
 
 **Alternative (`entrainment = HollandEntrainment`)** — shear entrainment after
-Holland & Jenkins (1999), *not* a Lambert et al. equation:
+[Holland & Jenkins (1999)](@cite holland_modeling_1999), *not* a [Lambert et al. (2023)](@cite lambert_modelling_2023) equation:
 
 ```math
 \mathrm{entr} = \frac{c_l K_h}{A_h^2}\,
@@ -319,7 +320,7 @@ kernel `_holland_entrainment_kernel!`.
 ## Laddie.jl extensions (not in the paper)
 
 These terms are zero/identity in the configuration that reproduces the paper, so
-the Python-LADDIE verification stays valid.
+the LADDIE v1 verification stays valid.
 
 ### Minimum-thickness correction
 

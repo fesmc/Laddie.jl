@@ -1,7 +1,7 @@
 #=
-# Ice-shelf gaps: sink vs connected (Jesse et al., 2026)
+# Ice-shelf gaps: sink vs connected
 
-[Jesse et al. (2026)](https://doi.org/10.5194/egusphere-2026-4237) couple LADDIE v2 to the
+[Jesse et al. (2026)](@cite jesse_ice-sheet_2026) couple LADDIE v2 to the
 ice-sheet model UFEMISM on a MISMIP+ geometry. As the northern shear margin thins, gaps melt
 through the shelf. The paper compares two treatments of the meltwater layer in such a gap:
 
@@ -152,7 +152,7 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 #     thermodynamics uses the latent heat alone. The Laddie.jl default of −25 °C melts
 #     about 20 % less;
 #   * [`NonlinearLateralViscosity`](@ref): v2's shear-scaled viscosity. Its
-#     `laddie_viscosity` (`Ah` in Table A1, 10) is the coefficient of that closure in the
+#     `laddie_viscosity` (`Ah` in Table A1, 10) is the coefficient of that parameterisation in the
 #     interior — not a viscosity in m² s⁻¹ — but v2's *wall* term uses the same number as a
 #     plain viscosity, which is `A_h` here;
 #   * [`TruncatedDepthGradient`](@ref): v2's pressure gradient at the ice front;

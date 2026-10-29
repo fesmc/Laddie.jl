@@ -104,11 +104,11 @@ end
     end
 end
 
-# `dt` is the base time step.  dH/dt is always taken over 2·dt, as in Python LADDIE
+# `dt` is the base time step.  dH/dt is always taken over 2·dt, as in LADDIE v1
 # v1 (`prepare_integrate`), although `H.future` and `H.past` are only dt apart in
 # the bootstrap step, which therefore sees half the thickness tendency.  Dividing
 # by the true step length instead is not a free fix: the ISOMIP+ spin-up is
-# sensitive to that one step, and the 1-day Python verification then fails
+# sensitive to that one step, and the 1-day LADDIE v1 verification then fails
 # (max |ΔH| 3 → 35 m, mean melt −3 %).
 function precompute_integration_terms!(m, dt)
     launch!(
@@ -267,8 +267,8 @@ _or_zero(::Nothing, FT) = zero(FT)
         # tmip is 2 at a fully-interior face (both neighbours active) and 1 at a
         # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where the
         # masked neighbour thickness is a zero stand-in rather than a real one.
-        # pgf_w selects what happens there: 0 (FullDepthGradient, the Python
-        # v1.x behaviour) keeps the term and leaves this an exact multiply by
+        # pgf_w selects what happens there: 0 (FullDepthGradient, the LADDIE v1
+        # behaviour) keeps the term and leaves this an exact multiply by
         # 1.0; 1 (TruncatedDepthGradient) drops it, as LADDIE v2 does at
         # mask_cf_b faces.  drho_w gates the density-gradient term the same
         # way, 1 only under ZeroGradientFront.  See AbstractFrontPressure.
@@ -874,7 +874,7 @@ function apply_robert_asselin_filter!(m, nu)
             nu,
         )
     end
-    # Refresh density and convection on the filtered level, as Python LADDIE v1
+    # Refresh density and convection on the filtered level, as LADDIE v1
     # does.  The next `advance_leapfrog!` recomputes both on the rotated level, but
     # this call is not redundant: under ResetToAmbient it resets the filtered T/S,
     # which become `past`, and for every scheme it is the `drho` and `convection`

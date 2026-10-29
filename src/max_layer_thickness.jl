@@ -20,7 +20,7 @@ tracers or momentum.  A clamp after the step remains as a safety net.
     binds. Both findings predate the detrainment form and have not been re-measured
     with it.
 
-    Python LADDIE v1 has no upper bound at all (its `maxD = 3000 m` never binds),
+    LADDIE v1 has no upper bound at all (its `maxD = 3000 m` never binds),
     and LADDIE v2's Antarctic setup uses a fixed `Hmax` of 10 000 m that never binds
     either. Prefer the default, and reach for a cap only as a stability measure.
 """
@@ -30,12 +30,12 @@ abstract type AbstractMaxLayerThickness end
 $(TYPEDEF)
 
 Leave the layer thickness unbounded from above (the default): `H` is set by the
-volume budget alone, exactly as in Python LADDIE v1, and only the `H_min` floor
+volume budget alone, exactly as in LADDIE v1, and only the `H_min` floor
 applies.
 
 The layer is then free to exceed the local water column where the budget takes it
 there — as it does in the published Crosson–Dotson run, in 10 % of the shelf cells.
-That is a known limitation of a one-layer model; see the warning on
+That is a known limitation of a depth-averaged model; see the warning on
 [`AbstractMaxLayerThickness`](@ref) before capping it.
 
 Select via `Params(; max_layer_thickness = NoMaxLayerThickness())` (the default).

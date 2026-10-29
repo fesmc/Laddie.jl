@@ -4,8 +4,8 @@ The momentum equations carry a lateral viscous term, a thickness-weighted Laplac
 the velocity. Its coefficient is selected with `Params(; lateral_viscosity = ...)`:
 
 - [`PrescribedLateralViscosity`](@ref), the default: one global coefficient
-  `Params.A_h` (6 m² s⁻¹ by default), as Python LADDIE v1.x does.
-- [`NonlinearLateralViscosity`](@ref): a Smagorinsky-type coefficient, as LADDIE v2
+  `Params.A_h` (6 m² s⁻¹ by default), as [LADDIE v1](../versions.md) does.
+- [`NonlinearLateralViscosity`](@ref): a Smagorinsky-type coefficient, as [LADDIE v2](../versions.md)
   does, which is near zero in smooth flow and large where the shear is strong. At each
   interior face it is
   ```math

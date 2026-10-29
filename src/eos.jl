@@ -16,7 +16,7 @@ All contrasts have the form
 
 with ``Z`` the depth of the layer mid-point (positive downward), so that the thermal expansion
 ``\\alpha = a_0 + a_T \\bar T + a_Z Z`` is linear in temperature (cabbeling) and depth
-(thermobaricity).  The closures differ only in the four coefficients, which are scalars
+(thermobaricity).  The parameterisations differ only in the four coefficients, which are scalars
 computed where the kernels are launched.
 """
 abstract type AbstractEquationOfState end
@@ -32,7 +32,7 @@ struct LinearEOS <: AbstractEquationOfState end
 """
 $(TYPEDEF)
 
-The simplified polynomial equation of state of Roquet et al. (2015, their Eq. 17),
+The simplified polynomial equation of state of [Roquet et al. (2015, their Eq. 17)](@cite roquet_defining_2015),
 
 ```math
 \\rho' = -\\frac{C_b}{2}\\,(\\Theta - \\Theta_0)^2 - T_h\\,Z\\,\\Theta + b_0\\,S_A,
@@ -50,7 +50,7 @@ rescaled by ``\\rho_0`` (`Params.rho0_seawater`) to the reduced contrast of the 
 `Params.alpha` and `Params.beta` are not used by this equation of state.
 
 !!! warning "Experimental"
-    Constructing a `RoquetEOS` logs a warning.  Roquet et al. (2015) fit it to the open ocean
+    Constructing a `RoquetEOS` logs a warning.  [Roquet et al. (2015)](@cite roquet_defining_2015) fit it to the open ocean
     (``\\Theta`` down to −1.9 °C, ``S_A`` ≈ 34–35 g kg⁻¹, ``Z`` to 5000 m) and in Conservative
     Temperature and Absolute Salinity, which this model takes as its temperature and salinity.
     Since ``b_0`` is constant, only salinity differences enter and the offset between Absolute and

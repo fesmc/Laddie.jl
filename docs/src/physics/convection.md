@@ -1,6 +1,6 @@
 # Convection
 
-A one-layer model has no vertical structure to overturn. Where the layer becomes denser
+A depth-averaged model has no vertical structure to overturn. Where the layer becomes denser
 than the ambient water beneath it, ``\delta\rho < 0``, it is convectively unstable and
 would in reality mix away; the model has to say what happens instead. The treatment is
 selected with `Params(; convection_scheme = ...)`:
@@ -13,7 +13,7 @@ selected with `Params(; convection_scheme = ...)`:
 
 The thresholds `d_rho_min` are dimensional contrasts ``\rho_a - \rho`` in kg m⁻³, divided
 by `Params.rho0_seawater` to compare with the reduced contrast ``\delta\rho``: the default
-0.005 kg m⁻³ is ``\delta\rho \approx 4.9\times10^{-6}``, the buoyancy floor of LADDIE v2.
+0.005 kg m⁻³ is ``\delta\rho \approx 4.9\times10^{-6}``, the buoyancy floor of [LADDIE v2](../versions.md).
 `ClampDensity` and `ResetToAmbient` act wherever ``\delta\rho`` is below that threshold,
 so on marginally stable cells as well as unstable ones. Only the unstable cells,
 ``\delta\rho < 0``, are flagged in `model.convection`. The salinity offset of the reset
@@ -40,8 +40,8 @@ therefore restricted to ice-covered cells: resetting a gap cell towards surface 
 would erase the temperature and salinity anomaly the layer is carrying and quietly rebuild
 the meltwater sink that [`ConnectedGapsBC`](@ref) exists to remove. [`ClampDensity`](@ref) is
 *not* restricted — a buoyancy floor keeps the layer lighter than ambient without
-overwriting its tracers, and it is the one convection treatment the reference
-implementation also applies over its whole active domain.
+overwriting its tracers, and it is the one convection treatment that [LADDIE v2](../versions.md)
+also applies over its whole active domain.
 
 ## API
 

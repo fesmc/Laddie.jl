@@ -59,8 +59,8 @@ equations below are written with ``H``.
     The momentum equations below write lateral viscosity as ``A_h\nabla^2\mathbf{u}``,
     which is [`PrescribedLateralViscosity`](@ref), the default. Under
     [`NonlinearLateralViscosity`](@ref) the coefficient becomes the shear-dependent
-    ``(C_\mathrm{visc}/100)\,\Delta\,|\delta u|`` instead, and `m.A_h` retains only its
-    wall-drag role in the grounding-line/land slip terms (it also always sets the
+    ``(C_\mathrm{visc}/100)\,\Delta\,|\delta u|`` instead, at the grounding-line/land
+    walls too, and `m.A_h` is not used by the momentum equations (it still sets the
     entrainment length scale in [`HollandEntrainment`](@ref), independent of either
     choice). Note that `dt` control (`_cfl_number`) accounts for advection and gravity
     waves only — there is no viscous stability constraint, so a large viscosity on a

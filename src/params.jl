@@ -40,7 +40,7 @@ struct Params{
     C_d::FT
     "drag coefficient in the friction velocity u★ that drives melt and entrainment (–, default `1.1e-3`)"
     C_d_top::FT
-    "lateral momentum viscosity, and the wall-drag coefficient under every viscosity scheme (m² s⁻¹, default `6`)"
+    "lateral momentum viscosity under `PrescribedLateralViscosity`, walls included; also enters `HollandEntrainment` (m² s⁻¹, default `6`)"
     A_h::FT
     "lateral tracer diffusivity (m² s⁻¹, default `1`)"
     K_h::FT

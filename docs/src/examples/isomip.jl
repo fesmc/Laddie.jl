@@ -15,7 +15,7 @@ line (west). [`build_isomip`](@ref) sets it up with these defaults:
 | ``\gamma_T`` | ``1.8\times10^{-4}`` | turbulent heat exchange (fixed) |
 | ``\mu`` | 2.5 | entrainment parameter |
 | ``H_\min`` | 1 m | minimum layer thickness |
-| wall slip | 2 (no slip) | grounding line and land |
+| wall slip | 1 (LADDIE v2) | grounding line and land |
 
 This page walks through the forcing, a warm run, the validation against the LADDIE v1
 code, the spin-up, and the contrast between the warm and cold cavities.
@@ -85,11 +85,13 @@ println("mean melt $(round(mean_melt; digits = 2)) m/yr, max melt $(round(max_me
 # The same warm configuration, run for one day by the original LADDIE v1 code
 # (`runladdie.py config_isomip_compare.toml`, geometry from `gen_isomip_geom.py`), is stored
 # in `docs/assets/restart_000001.nc`. Laddie.jl repeats the day with the v1 ice-base
-# slope (`PyGradient`), the v1 wall condition (one partial-slip factor of 1 on
-# every wall) and the v1 tracer step (`AdvectiveTracerForm`), and the two end states
-# are compared cell by cell.
+# slope (`PyGradient`), the v1 walls (its `slip = 1`: no slip in the viscosity,
+# [`V1WallAdvection`](@ref) in the advection; see [Wall slip](../numerics/walls.md)) and
+# the v1 tracer step (`AdvectiveTracerForm`), and the two end states are compared cell
+# by cell.
 
-v1_walls = BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
+v1_walls = BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
+                              wall_advection = V1WallAdvection())
 sim_py = build_isomip(; isomipcond = :warm, gradient = PyGradient(), boundary = v1_walls,
                       params = Params(; tracer_form = AdvectiveTracerForm()))
 run!(sim_py; days = 1.0, verbose = false)

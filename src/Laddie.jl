@@ -95,7 +95,7 @@ export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow
 export AbstractGroundingLineBC, NoSlipGL, FreeSlipGL, PartialSlipGL
 export AbstractLandBC, NoSlipLand, FreeSlipLand, PartialSlipLand
 export AbstractGapsBC, SinkGapsBC, ConnectedGapsBC
-export AbstractWallAdvection, SlipScaledWallAdvection, NoWallAdvection
+export AbstractWallAdvection, SlipScaledWallAdvection, NoWallAdvection, V1WallAdvection
 export AbstractLateralViscosity, PrescribedLateralViscosity, NonlinearLateralViscosity
 export AbstractMomentumAdvection, CentredMomentumAdvection, UpstreamMomentumAdvection
 export AbstractTracerForm, AdvectiveTracerForm, FluxTracerForm

@@ -69,12 +69,14 @@ _v1_params(; A_h, K_h, H_min, u_tide) = (
     coriolis = CoriolisParameter0D(-1.37e-4),
 )
 
-# One partial-slip factor of 1 on every wall (`slip = 1`), zero-gradient inflow at
-# the ice front (`boundop = 1`).
+# v1's `slip = 1` on every wall: no slip in the viscosity, a zero ghost in the
+# advection (v1 adds `slip` to a viscous stencil that already holds one unit of wall
+# stress; see `V1WallAdvection`).  Zero-gradient inflow at the ice front (`boundop = 1`).
 _v1_boundary() = BoundaryConditions(;
     open_ocean = ZeroGradientInflow(),
-    grounding_line = PartialSlipGL(1.0),
-    land = PartialSlipLand(1.0),
+    grounding_line = NoSlipGL(),
+    land = NoSlipLand(),
+    wall_advection = V1WallAdvection(),
 )
 
 # v1 `forcing.py`, option 'tanh': a smooth thermocline between the surface freezing
@@ -212,7 +214,7 @@ stored in `datadir/lambert-2023/data/CrossDots_0.5_tanh_Tdeep0.4_ztcl-500_050.nc
   thermocline at −500 m with scale 250 m, `drho0 = 0.01` (fitted to the file's
   ambient fields to 1e−4 °C); `T_ice_base = -25 °C`
 - `dt = 120` s, 50 days, Robert–Asselin `nu = 0.8`
-- v1 walls (partial slip 1), the v1 ice-slope stencil [`PyGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), the v1 ice-slope stencil [`PyGradient`](@ref)
 
 `params` defaults to [`ParamsCrossonDotsonv1`](@ref); other keywords go to
 [`Simulation`](@ref) and override `dt`, `nu` and `stop`.
@@ -245,7 +247,7 @@ in `datadir/lambert-2023/data/FRIS_1.0_linear_S134.8_T1-2.3_720.nc`.
   34.5 to 34.8 psu at −2000 m (matches the file's ambient fields to round-off);
   `T_ice_base = -25 °C`
 - `dt = 240` s, 720 days, Robert–Asselin `nu = 0.8`
-- v1 walls (partial slip 1), [`PyGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`PyGradient`](@ref)
 
 `params` defaults to [`ParamsFRISv1`](@ref); other keywords go to [`Simulation`](@ref).
 
@@ -280,7 +282,7 @@ stored in `datadir/lambert-2023/data/PIG.nc`.
 - forcing: v1 'tanh' as Crosson–Dotson, but 1.0 °C at depth and the thermocline at
   −450 m; `T_ice_base = -25 °C`
 - `dt = 120` s, 30 days, Robert–Asselin `nu = 0.8`
-- v1 walls (partial slip 1), [`PyGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`PyGradient`](@ref)
 
 `params` defaults to [`ParamsPIGv1`](@ref); other keywords go to [`Simulation`](@ref).
 
@@ -335,7 +337,7 @@ the 1 km cells.  [`SimulationASEv1Theoretical`](@ref) is the consistent 1 km run
 - forcing: v1 'tanh', surface freezing point (S0 = 34) to 1.0 °C, thermocline at
   −450 m with scale 100 m, `drho0 = 0.01`; `T_ice_base = -25 °C`
 - `dt = 30` s, 20 days, Robert–Asselin `nu = 0.8`
-- v1 walls (partial slip 1), [`PyGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`PyGradient`](@ref)
 
 `params` defaults to [`ParamsASEv1`](@ref); other keywords go to [`Simulation`](@ref).
 """
@@ -366,8 +368,9 @@ SimulationASEv1Theoretical(
 # LADDIE v2: values shared by every v2 run config (`results/<run>/*.cfg` of
 # Lambert 2026) and UPSY's hard-wired constants (`UPSY/basic/parameters.f90`).
 #
-# v2's `laddie_viscosity` is the coefficient of its shear-scaled viscosity, and the
-# linear wall friction uses the same number, hence `A_h = C_visc`.  v2 floors the
+# v2's `laddie_viscosity` is the coefficient of its shear-scaled viscosity, at grounded
+# and land neighbours too; only the border of its mesh uses the bare number as a
+# constant, hence `A_h = C_visc`, which `NonlinearLateralViscosity` does not read.  v2 floors the
 # density contrast of its entrainment at the same buoyancy minimum as its convection,
 # and caps detrainment at 1e-3 m s⁻¹ (`laddie_physics.f90`, `maxdetr`).
 # ----------------------------------------------------------------------------
@@ -411,9 +414,14 @@ _v2_params(; C_d_top, melting, C_visc, K_h, H_min, H_init, v_cut, H_max, buoyanc
     coriolis = CoriolisParameter0D(-1.37e-4),
 )
 
-# No slip on every wall, no momentum across walls.
-_v2_boundary(; gaps = SinkGapsBC()) =
-    BoundaryConditions(; gaps, wall_advection = NoWallAdvection())
+# Zero velocity one grid spacing behind every wall (v2's "no slip"), no momentum
+# across walls: the defaults, spelled out.
+_v2_boundary(; gaps = SinkGapsBC()) = BoundaryConditions(;
+    gaps,
+    grounding_line = PartialSlipGL(1.0),
+    land = PartialSlipLand(1.0),
+    wall_advection = NoWallAdvection(),
+)
 
 # v2 samples its idealised profiles on the ocean vertical grid (0:dz:depth_max, m
 # below sea level) and interpolates linearly between levels, flat beyond them.
@@ -677,7 +685,7 @@ ice that floats there.
 
 - forcing: ISOMIP+ warm, sampled every 100 m as v2 does; `T_ice_base = -3.15 °C`
 - `dt = 90` s, 20 days
-- v2 walls (no slip, no momentum across walls)
+- v2 walls (the defaults: slip factor 1, no momentum across walls)
 
 `params` defaults to [`ParamsISOMIPv2`](@ref); other keywords go to [`Simulation`](@ref).
 Laddie.jl integrates with leapfrog on a C-grid, not v2's FB-RK3 on a mesh.
@@ -705,7 +713,7 @@ remapped to the regular 1 km grid in `datadir/lambert-2026/results/ASE/laddie_ou
 - forcing: UFEMISM 'TANH', surface freezing point to 1.0 °C, thermocline at 450 m with
   scale 100 m, sampled every 100 m; `T_ice_base = -3.15 °C`
 - `dt = 30` s, 20 days
-- v2 walls (no slip, no momentum across walls)
+- v2 walls (the defaults: slip factor 1, no momentum across walls)
 
 `params` defaults to [`ParamsASEv2`](@ref); other keywords go to [`Simulation`](@ref).
 Its v1 counterpart is [`SimulationASEv1`](@ref).
@@ -749,7 +757,7 @@ coupled run used 1 km triangles on the shelf).  A sanity check, not a coupled ru
 - forcing: UFEMISM 'TANH', surface freezing point to 1.5 °C, thermocline at 450 m with
   scale 100 m, sampled every 100 m; `T_ice_base = -3.15 °C`
 - `dt = 60` s, 10 days (the config's initial LADDIE run)
-- v2 walls (no slip, no momentum across walls)
+- v2 walls (the defaults: slip factor 1, no momentum across walls)
 
 `params` defaults to [`ParamsMISOMIPv2`](@ref); other keywords go to [`Simulation`](@ref).
 

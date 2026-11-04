@@ -107,7 +107,7 @@ params = Params(; FT,
     seconds_per_year = 365 * 86400.0,
 )
 boundary = BoundaryConditions(;
-    grounding_line = NoSlipGL(), land = NoSlipLand(),
+    grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0),
     open_ocean = ZeroGradientInflow(), wall_advection = NoWallAdvection(),
 )
 

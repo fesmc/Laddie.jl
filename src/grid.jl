@@ -219,8 +219,8 @@ function Geometry(
     # `slip_gl*gl?? + slip_land*lnd??`, so the indicators must *partition* the wall
     # faces rather than overlap: a face whose two-cell stencil touches both
     # grounded ice and exposed rock (a coastline corner, ubiquitous in real
-    # geometry) would otherwise receive both factors and end up at slip 4 under
-    # NoSlipGL + NoSlipLand.  Grounding line takes precedence there, so that
+    # geometry) would otherwise receive both factors and end up at twice the
+    # extra wall drag under NoSlipGL + NoSlipLand.  Grounding line takes precedence there, so that
     # gl?? + lnd?? is exactly the wall-face indicator of the whole wall `grd`.
     lw = map((l, g) -> l .* (o .- g), _wall_faces(lnd, o), gl)
     # Ice-front cells: ocean cells with an active neighbour, and the count of

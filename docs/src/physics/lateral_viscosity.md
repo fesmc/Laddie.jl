@@ -17,11 +17,10 @@ the velocity. Its coefficient is selected with `Params(; lateral_viscosity = ...
   not to `A_h`. `C_visc/100` plays the role of a squared Smagorinsky constant; the default
   10 corresponds to ``C_s \approx 0.32``.
 
-Three things are *not* affected by this choice:
+The grounding-line and land walls carry the scheme's own coefficient, as in the v2
+reference; how strongly they brake the flow is the slip factor, set separately (see
+[Wall slip](../numerics/walls.md)). Two things are *not* affected by this choice:
 
-- **Wall drag.** The extra drag at grounding-line and land walls always scales with the
-  global `Params.A_h`, never with `C_visc`, as in the v2 reference. The slip at the walls
-  is set separately; see [Wall slip](../numerics/walls.md).
 - **Tracer diffusion.** The tracer diffusivity `Params.K_h` is always a constant.
 - **Shear entrainment.** [`HollandEntrainment`](@ref) uses `A_h` and `K_h` as its length
   scale either way.

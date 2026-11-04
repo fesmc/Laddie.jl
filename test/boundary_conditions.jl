@@ -1,7 +1,7 @@
 # Boundary conditions: wall slip, ice-shelf gaps, ice-front pressure gradient.
 
-@testset "Wall slip: factors, no-slip default, v1 partial slip" begin
-    # Python LADDIE convention: 0 = free slip, 2 = no slip.
+@testset "Wall slip: factors, v2 default, free slip is stress-free" begin
+    # NEMO convention: ghost (1 − s)·u, 0 = free slip, 1 = LADDIE v2, 2 = no slip.
     @test Laddie._gl_slip(FreeSlipGL(), FT) === zero(FT)
     @test Laddie._gl_slip(NoSlipGL(), FT) === FT(2)
     @test Laddie._gl_slip(PartialSlipGL(0.7), FT) === FT(0.7)
@@ -14,8 +14,8 @@
     @test !hasfield(Params, :slip)                 # no global factor any more
 
     b = BoundaryConditions()
-    @test b.grounding_line isa NoSlipGL && b.land isa NoSlipLand
-    @test b.wall_advection isa SlipScaledWallAdvection
+    @test b.grounding_line == PartialSlipGL(1.0) && b.land == PartialSlipLand(1.0)
+    @test b.wall_advection isa NoWallAdvection
 
     run1(boundary) = (s = build_isomip(CPU(); FT, nx = 20, ny = 10,
                                        isomipcond = :warm, boundary);
@@ -26,16 +26,16 @@
     m_free = run1(bc(FreeSlipGL(), FreeSlipLand()))
     m_p0   = run1(bc(PartialSlipGL(0.0), PartialSlipLand(0.0)))
     m_p2   = run1(bc(PartialSlipGL(2.0), PartialSlipLand(2.0)))
-    m_v1   = run1(bc(PartialSlipGL(1.0), PartialSlipLand(1.0)))
+    m_p1   = run1(bc(PartialSlipGL(1.0), PartialSlipLand(1.0)))
 
-    # The named conditions are exactly their partial-slip factors.
-    @test m_ns.U.present == m_def.U.present && m_ns.melt == m_def.melt
+    # The default and the named conditions are exactly their partial-slip factors.
+    @test m_p1.U.present == m_def.U.present && m_p1.melt == m_def.melt
     @test m_p2.U.present == m_ns.U.present && m_p2.V.present == m_ns.V.present
     @test m_p0.U.present == m_free.U.present && m_p0.V.present == m_free.V.present
     # ...and the factor matters, while every choice stays physical.
     @test m_free.V.present != m_ns.V.present
-    @test m_v1.V.present != m_ns.V.present && m_v1.V.present != m_free.V.present
-    for m in (m_def, m_free, m_v1)
+    @test m_def.V.present != m_ns.V.present && m_def.V.present != m_free.V.present
+    for m in (m_def, m_free, m_ns)
         @test all(isfinite, m.H.present) && all(isfinite, m.melt)
         @test all(m.melt[m.tmask .> 0] .>= 0)
     end
@@ -59,6 +59,35 @@
     @test m_gl.V.present != m_ln.V.present
     @test m_gl.V.present != m_ns.V.present && m_ln.V.present != m_ns.V.present
     @test m_gl.V.present != m_free.V.present && m_ln.V.present != m_free.V.present
+end
+
+@testset "Wall slip: free slip exerts no stress, s scales the wall flux" begin
+    # A velocity uniform over the active u-points: every interior face carries zero
+    # viscous flux, so at a u-point whose only non-zero differences are across N/S
+    # walls the Laplacian is the wall flux alone, −s·(coefficient)·H·u/Δ².
+    for lv in (PrescribedLateralViscosity(), NonlinearLateralViscosity(10.0))
+        lap(gl, ln) = begin
+            m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                             params = Params(; FT, lateral_viscosity = lv),
+                             boundary = BoundaryConditions(; grounding_line = gl, land = ln)).model
+            m.U.past .= FT(0.1) .* m.umask
+            m.V.past .= 0
+            um = m.umask .> 0
+            wall = (m.glNu .+ m.lndNu .+ m.glSu .+ m.lndSu) .> 0
+            sel = wall .& um .& circshift(um, (-1, 0)) .& circshift(um, (1, 0))
+            copy(Laddie.laplace_U(m))[sel]
+        end
+        l0 = lap(FreeSlipGL(), FreeSlipLand())
+        l1 = lap(PartialSlipGL(1.0), PartialSlipLand(1.0))
+        l2 = lap(NoSlipGL(), NoSlipLand())
+        @test !isempty(l0) && all(l1 .< 0)
+        @test all(abs.(l0) .<= 10eps(FT) .* abs.(l1))
+        if lv isa PrescribedLateralViscosity     # linear in s
+            @test l2 ≈ 2 .* l1
+        else                                     # coefficient ∝ |Δu| too: ∝ s²
+            @test l2 ≈ 4 .* l1
+        end
+    end
 end
 
 @testset "Wall slip: gl/land indicators partition mixed coastline corners" begin
@@ -91,11 +120,11 @@ end
     raw_lndNu = 1 .- Laddie.ym1((1 .- g.lnd) .* (1 .- Laddie.xm1(g.lnd)))
     @test count((g.glNu .== 1) .& (raw_lndNu .== 1)) > 0
 
-    # And the composed slip factor is exactly the no-slip value on every wall
-    # face under the default conditions, and zero elsewhere.
+    # And the composed slip factor is exactly the default value on every wall
+    # face, and zero elsewhere.
     slip_gl, slip_land = Laddie._wall_slips(m)
     slipN = slip_gl .* g.glNu .+ slip_land .* g.lndNu
-    @test all(slipN[wall_faces(g).grdNu .== 1] .== 2)
+    @test all(slipN[wall_faces(g).grdNu .== 1] .== 1)
     @test all(slipN[wall_faces(g).grdNu .== 0] .== 0)
 end
 
@@ -464,22 +493,24 @@ end
     @test all(isfinite, m_z.melt)
 end
 
-@testset "Wall advection: slip-scaled (v1) vs none (v2)" begin
-    # The slip factor always scales the viscous wall drag; `wall_advection`
-    # decides whether it also scales the momentum advected across a wall face.
+@testset "Wall advection: none (v2), slip-scaled, v1" begin
+    # The slip factor always sets the viscous wall stress; `wall_advection`
+    # decides which factor forms the momentum advected across a wall face.
     # LADDIE v2 skips grounded neighbours in its advection schemes entirely, so
-    # its no-slip condition lives in `compute_viscUV` alone.
+    # its wall lives in `compute_viscUV` alone.
     mk(wa, gl, ln) = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
         boundary = BoundaryConditions(;
             grounding_line = gl, land = ln, wall_advection = wa)).model
-    m_v1 = mk(SlipScaledWallAdvection(), NoSlipGL(), NoSlipLand())
-    m_v2 = mk(NoWallAdvection(), NoSlipGL(), NoSlipLand())
-    m_fr = mk(NoWallAdvection(), FreeSlipGL(), FreeSlipLand())
+    m_ss = mk(SlipScaledWallAdvection(), NoSlipGL(), NoSlipLand())
+    m_v2 = mk(NoWallAdvection(), PartialSlipGL(1.0), PartialSlipLand(1.0))
+    m_v1 = mk(V1WallAdvection(), NoSlipGL(), NoSlipLand())
 
-    @test Laddie._advection_slips(m_v1) === Laddie._wall_slips(m_v1) === (FT(2), FT(2))
-    # Zeroed in the advection, untouched in the viscous drag.
+    # The viscosity kernels add s − 1 on top of the stored zero.
+    @test Laddie._viscosity_slips(m_ss) === (one(FT), one(FT))
+    @test Laddie._viscosity_slips(m_v2) === (zero(FT), zero(FT))
+    @test Laddie._advection_slips(m_ss) === Laddie._wall_slips(m_ss) === (FT(2), FT(2))
+    # Zeroed in the advection, untouched in the viscosity.
     @test Laddie._advection_slips(m_v2) === (zero(FT), zero(FT))
-    @test Laddie._wall_slips(m_v2) === (FT(2), FT(2))
-    # Free slip is 0 in both terms, so the choice is a no-op there.
-    @test Laddie._advection_slips(m_fr) === Laddie._wall_slips(m_fr) === (zero(FT), zero(FT))
+    # v1: its slip = 1 is no slip in the viscosity and 1 in the advection.
+    @test Laddie._advection_slips(m_v1) === (one(FT), one(FT))
 end

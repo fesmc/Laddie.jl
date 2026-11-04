@@ -133,12 +133,9 @@ end
     @test all(m_nl.model.melt[m_nl.model.tmask .> 0] .>= 0)
     @test m_nl.model.V.present != m_def.model.V.present
 
-    # Decision (a): grounding-line/land wall drag stays linear in the plain
-    # A_h even under the nonlinear interior scheme, so switching grounding_line
-    # away from the no-slip default must still change the solution under
-    # NonlinearLateralViscosity
-    # (i.e. the wall-drag term isn't accidentally zeroed or folded into the
-    # shear-scaled interior term).
+    # The wall slip factor reaches the shear-scaled wall faces too, so switching
+    # grounding_line away from the default must change the solution under
+    # NonlinearLateralViscosity.
     m_nl_ns = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                            params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(10.0))),
                            boundary = BoundaryConditions(; grounding_line = FreeSlipGL()))

@@ -377,9 +377,11 @@ end
 # (the reference's dUabs), not just the component being diffused — hence `other`,
 # the cross-component collocated onto this component's points.  Where
 # visc_x/visc_y = C_visc * dx/100 and C_visc * dy/100 carry the reference's
-# dUabs * triCw / 100 scaling (laddie_velocity.f90:260).  The grounding-line/land
-# wall-drag terms keep the plain, unscaled A_h_wall — mirroring the reference,
-# which never scales its border term by dUabs (laddie_velocity.f90:249-254).
+# dUabs * triCw / 100 scaling (laddie_velocity.f90:260).  A wall face is an ordinary
+# face whose neighbour is the ghost velocity (1 − s)·u: the stored zero plus the
+# extra `slip` = s − 1 of `_viscosity_slips`, inside the shear-scaled coefficient as
+# well, so that free slip (s = 0) is exactly stress-free.  At s = 1 this is v2's
+# grounded neighbour with zero velocity (laddie_velocity.f90:259-267).
 #
 # `other` and `Hface` (H on this component's points, masked) are read from fields
 # that `laplace_U`/`laplace_V` fill first, since each is needed at several stencil
@@ -399,18 +401,17 @@ end
     @Const(lndS),
     slip_gl,
     slip_land,
-    A_h_wall,
     visc_x,
     visc_y,
     dx2,
     dy2,
     kinks,
 )
-    slip_gl, slip_land, A_h_wall, visc_x, visc_y, dx2, dy2 = _val(slip_gl),
-    _val(slip_land), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
+    slip_gl, slip_land, visc_x, visc_y, dx2, dy2 = _val(slip_gl),
+    _val(slip_land), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
-    FT = typeof(A_h_wall)
+    FT = typeof(visc_x)
     @inbounds begin
         jp1 = j + 1
         jm1 = j - 1
@@ -419,14 +420,13 @@ end
         o = one(FT)
         v = var[i, j]
         HU = Hface[i, j]
-        dragN = A_h_wall * _slip(slip_gl, slip_land, glN, lndN, i, j) * HU * v / dy2
-        dragS = A_h_wall * _slip(slip_gl, slip_land, glS, lndS, i, j) * HU * v / dy2
         jpH = _safe_div(HU + Hface[i, jp1], tmask[i, j] + tmask[i, jp1])
         jmH = _safe_div(HU + Hface[i, jm1], tmask[i, j] + tmask[i, jm1])
         ov = other[i, j]
         eu = _kink_width(kinks, :u)
-        dN = var[i, jp1] - v
-        dS = var[i, jm1] - v
+        # Differences to the neighbours; across a wall, to the ghost (1 − s)·u.
+        dN = var[i, jp1] - v - _slip(slip_gl, slip_land, glN, lndN, i, j) * v
+        dS = var[i, jm1] - v - _slip(slip_gl, slip_land, glS, lndS, i, j) * v
         dE = var[ip1, j] - v
         dW = var[im1, j] - v
         # |Δu| across each face: this component's difference combined with the
@@ -435,8 +435,8 @@ end
         aS = _ssqrt(kinks, dS * dS + (other[i, jm1] - ov)^2, eu)
         aE = _ssqrt(kinks, dE * dE + (other[ip1, j] - ov)^2, eu)
         aW = _ssqrt(kinks, dW * dW + (other[im1, j] - ov)^2, eu)
-        flux_N = visc_y * aN * jpH * dN / dy2 * (o - ocn[i, jp1]) - dragN
-        flux_S = visc_y * aS * jmH * dS / dy2 * (o - ocn[i, jm1]) - dragS
+        flux_N = visc_y * aN * jpH * dN / dy2 * (o - ocn[i, jp1])
+        flux_S = visc_y * aS * jmH * dS / dy2 * (o - ocn[i, jm1])
         flux_E = visc_x * aE * H0[ip1, j] * dE / dx2 * (o - ocn[ip1, j])
         flux_W = visc_x * aW * H0[i, j] * dW / dx2 * (o - ocn[i, j])
         out[i, j] = flux_N + flux_S + flux_E + flux_W
@@ -457,16 +457,15 @@ end
     @Const(lndW),
     slip_gl,
     slip_land,
-    A_h_wall,
     visc_x,
     visc_y,
     dx2,
     dy2,
     kinks,
 )
-    slip_gl, slip_land, A_h_wall, visc_x, visc_y, dx2, dy2 = _val(slip_gl),
-    _val(slip_land), _val(A_h_wall), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
-    FT = typeof(A_h_wall)
+    slip_gl, slip_land, visc_x, visc_y, dx2, dy2 = _val(slip_gl),
+    _val(slip_land), _val(visc_x), _val(visc_y), _val(dx2), _val(dy2)
+    FT = typeof(visc_x)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
     @inbounds begin
@@ -477,16 +476,15 @@ end
         o = one(FT)
         v = var[i, j]
         HV = Hface[i, j]
-        dragE = A_h_wall * _slip(slip_gl, slip_land, glE, lndE, i, j) * HV * v / dx2
-        dragW = A_h_wall * _slip(slip_gl, slip_land, glW, lndW, i, j) * HV * v / dx2
         ipH = _safe_div(HV + Hface[ip1, j], tmask[i, j] + tmask[ip1, j])
         imH = _safe_div(HV + Hface[im1, j], tmask[i, j] + tmask[im1, j])
         ov = other[i, j]
         eu = _kink_width(kinks, :u)
+        # Differences to the neighbours; across a wall, to the ghost (1 − s)·v.
         dN = var[i, jp1] - v
         dS = var[i, jm1] - v
-        dE = var[ip1, j] - v
-        dW = var[im1, j] - v
+        dE = var[ip1, j] - v - _slip(slip_gl, slip_land, glE, lndE, i, j) * v
+        dW = var[im1, j] - v - _slip(slip_gl, slip_land, glW, lndW, i, j) * v
         # See _nonlinear_laplace_U_kernel! for the |Δu| composition.
         aN = _ssqrt(kinks, dN * dN + (other[i, jp1] - ov)^2, eu)
         aS = _ssqrt(kinks, dS * dS + (other[i, jm1] - ov)^2, eu)
@@ -494,8 +492,8 @@ end
         aW = _ssqrt(kinks, dW * dW + (other[im1, j] - ov)^2, eu)
         flux_N = visc_y * aN * H0[i, jp1] * dN / dy2 * (o - ocn[i, jp1])
         flux_S = visc_y * aS * H0[i, j] * dS / dy2 * (o - ocn[i, j])
-        flux_E = visc_x * aE * ipH * dE / dx2 * (o - ocn[ip1, j]) - dragE
-        flux_W = visc_x * aW * imH * dW / dx2 * (o - ocn[im1, j]) - dragW
+        flux_E = visc_x * aE * ipH * dE / dx2 * (o - ocn[ip1, j])
+        flux_W = visc_x * aW * imH * dW / dx2 * (o - ocn[im1, j])
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
@@ -806,7 +804,7 @@ function laplace_U(m, ::PrescribedLateralViscosity)
         laplacian_thickness(m),
         m.tmask,
         m.ocn,
-        _u_walls(m, _wall_slips(m))...,
+        _u_walls(m, _viscosity_slips(m))...,
         m.A_h,
         m.dx^2,
         m.dy^2,
@@ -821,7 +819,7 @@ function laplace_V(m, ::PrescribedLateralViscosity)
         laplacian_thickness(m),
         m.tmask,
         m.ocn,
-        _v_walls(m, _wall_slips(m))...,
+        _v_walls(m, _viscosity_slips(m))...,
         m.A_h,
         m.dx^2,
         m.dy^2,
@@ -830,8 +828,8 @@ function laplace_V(m, ::PrescribedLateralViscosity)
 end
 
 # NonlinearLateralViscosity: the shear-scaled coefficient is per-face, so it must
-# be applied inside the kernel rather than as a post-hoc scalar multiply; wall
-# drag keeps using the plain, unscaled m.A_h (see _nonlinear_laplace_U_kernel!).
+# be applied inside the kernel rather than as a post-hoc scalar multiply, at the
+# wall faces too (see _nonlinear_laplace_U_kernel!).
 #
 # The kernel reads the cross-velocity collocated onto the U points (`Hq`) and H on
 # the U points (`adv`), filled here in three passes over the grid.  `adv` is free
@@ -856,8 +854,7 @@ function laplace_U(m, lv::NonlinearLateralViscosity)
         H0,
         m.tmask,
         m.ocn,
-        _u_walls(m, _wall_slips(m))...,
-        m.A_h,
+        _u_walls(m, _viscosity_slips(m))...,
         lv.C_visc * m.dx / 100,
         lv.C_visc * m.dy / 100,
         m.dx^2,
@@ -883,8 +880,7 @@ function laplace_V(m, lv::NonlinearLateralViscosity)
         H0,
         m.tmask,
         m.ocn,
-        _v_walls(m, _wall_slips(m))...,
-        m.A_h,
+        _v_walls(m, _viscosity_slips(m))...,
         lv.C_visc * m.dx / 100,
         lv.C_visc * m.dy / 100,
         m.dx^2,

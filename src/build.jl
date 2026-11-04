@@ -228,7 +228,8 @@ ice-base slope (`gradient`) and the Coriolis field (`params.coriolis`).
 Land (`1`) and grounded ice (`2`) are both walls to the plume and are unioned into
 `grd`, but they stay distinct throughout: only `2` is a grounding line (`gl`, and
 the `boundary.grounding_line` slip condition), while `1` is rock (`lnd`, and
-`boundary.land`).  Both default to no slip and can be set independently.
+`boundary.land`).  Both default to LADDIE v2's wall (slip factor 1) and can be set
+independently.
 
 # Keywords
 - `forcing` (required): a `CavityForcing`, or an ocean forcing alone (e.g.
@@ -238,8 +239,8 @@ the `boundary.grounding_line` slip condition), while `1` is rock (`lnd`, and
 - `params`: a `Params` object with all physical constants and parameterizations
   (default `Params(; FT)` at the grid's precision).  A 2D latitude in
   `params.coriolis` is cropped with the grid, like the ice temperature.
-- `boundary`: a [`BoundaryConditions`](@ref) (default `BoundaryConditions()`: no-slip
-  walls, otherwise the LADDIE v1.x conditions).
+- `boundary`: a [`BoundaryConditions`](@ref) (default `BoundaryConditions()`: LADDIE
+  v2's walls, otherwise the conditions both LADDIE versions share).
 - `gradient`: ice-base slope stencil, [`JlGradient`](@ref) (default) or
   [`PyGradient`](@ref).
 

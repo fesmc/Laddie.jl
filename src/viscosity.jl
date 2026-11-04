@@ -19,8 +19,9 @@ Constant-coefficient Laplacian lateral viscosity (the default): the diffusive
 flux at every interior face is `Params.A_h * ΔU / dy` (or `ΔV / dx`), i.e. a
 plain Laplacian with a single global coefficient, matching LADDIE v1.
 
-Grounding-line/land wall friction also scales with `Params.A_h`, unaffected
-by the choice of `lateral_viscosity` — see [`NonlinearLateralViscosity`](@ref).
+The grounding-line/land wall stress scales with `Params.A_h` too; its strength
+relative to an interior face is the wall slip factor (`BoundaryConditions.grounding_line`
+/ `.land`).
 
 Select via `Params(; lateral_viscosity = PrescribedLateralViscosity())` (the default).
 """
@@ -29,7 +30,7 @@ struct PrescribedLateralViscosity <: AbstractLateralViscosity end
 """
 $(TYPEDEF)
 
-Shear-scaled lateral viscosity, as used by LADDIE v2
+Shear-scaled lateral viscosity, as used by the LADDIE v2
 implementation (`laddie_velocity.f90:260`). Instead of a constant coefficient,
 the viscosity at each interior face is
 
@@ -53,12 +54,14 @@ Because `Δ` is supplied internally, `C_visc` is resolution-independent and
 directly comparable to the reference's config value. It is *not* comparable to
 `Params.A_h`, which is a diffusivity in m² s⁻¹.
 
-Grounding-line/land wall friction is **not** affected by this choice: the
-reference keeps its border term linear in the viscosity coefficient even
-under this scheme (`laddie_velocity.f90:249-254`), and Laddie.jl mirrors that
-by always scaling the grounding-line/land wall-drag terms with the global
-`Params.A_h`, never with `C_visc`. Wall slip itself (free-slip vs no-slip) is
-controlled independently by `BoundaryConditions.grounding_line` / `.land`.
+Wall faces carry the same shear-scaled coefficient, with the neighbour replaced by
+the ghost velocity `(1 - s)·u` of the wall slip factor `s`
+(`BoundaryConditions.grounding_line` / `.land`). With the default `s = 1` the ghost
+is zero, as in the reference, which treats grounded and land neighbours as
+ordinary cells with zero velocity (`laddie_velocity.f90:259-267`). Only at the
+border of its mesh does the reference apply the bare `C%laddie_viscosity` as a
+constant (`laddie_velocity.f90:249-254`), which Laddie.jl has no counterpart of.
+`Params.A_h` plays no part under this scheme.
 
 !!! note "C-grid staggering"
     The reference collocates `U` and `V` at triangle centres, so `dUabs` is a

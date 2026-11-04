@@ -77,8 +77,8 @@ describe one family each:
 | [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; tstep)` | `FixedDt()` |
 | [CFL number](cfl.md) | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `ExactCFL()` |
 | [Simulation end](simulation_end.md) | [`AbstractSimulationEnd`](@ref) | `Simulation(model; stop)`, `run!(sim; until)` | `FixedSimulationEnd()` |
-| [Wall slip](walls.md) | [`AbstractGroundingLineBC`](@ref), [`AbstractLandBC`](@ref) | `BoundaryConditions(; grounding_line, land)` | `NoSlipGL()`, `NoSlipLand()` |
-| [Wall momentum advection](wall_advection.md) | [`AbstractWallAdvection`](@ref) | `BoundaryConditions(; wall_advection)` | `SlipScaledWallAdvection()` |
+| [Wall slip](walls.md) | [`AbstractGroundingLineBC`](@ref), [`AbstractLandBC`](@ref) | `BoundaryConditions(; grounding_line, land)` | `PartialSlipGL(1.0)`, `PartialSlipLand(1.0)` |
+| [Wall momentum advection](wall_advection.md) | [`AbstractWallAdvection`](@ref) | `BoundaryConditions(; wall_advection)` | `NoWallAdvection()` |
 | [Open-ocean boundary](open_ocean.md) | [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `ZeroGradientInflow()` |
 | [Ice-front pressure gradient](front_pressure.md) | [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `FullDepthGradient()` |
 | [Maximum layer thickness](max_layer_thickness.md) | [`AbstractMaxLayerThickness`](@ref) | `Params(; max_layer_thickness)` | `NoMaxLayerThickness()` |

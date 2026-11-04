@@ -207,7 +207,7 @@ $(TYPEDSIGNATURES)
 
 Vertically interpolate the ambient T/S profiles to the depth of each grid cell's
 plume base (z_draft − H), writing results into `m.Ta` and `m.Sa`. This sampling has
-no numbered equation in [Lambert et al. (2023)](@cite lambert_modelling_2023); see `docs/src/equations.md`.
+no numbered equation in [Lambert et al. (2023)](@cite lambert_modelling_2023); see `docs/src/physics/equations.md`.
 """
 update_ambient_fields!(m) = _update_ambient_fields!(m, m.forcing.ocean)
 
@@ -263,7 +263,7 @@ update_density!(m) = launch!(
 $(TYPEDSIGNATURES)
 
 Flag convectively unstable cells and clamp ``\\delta\\rho`` to a minimum positive value
-so the plume remains denser than ambient.
+so the plume remains lighter than ambient.
 
 Applies in gap cells too (`tmask` but not `imask`): the buoyancy floor is the one
 convection treatment LADDIE v2 also has, and it applies there over its whole active
@@ -568,7 +568,7 @@ end
 $(TYPEDSIGNATURES)
 
 Three-equation melt with transfer coefficients proportional to the friction velocity,
-``\\gamma_T = \\Gamma_T u_\\star`` and ``\\gamma_S = \\gamma_T/35``.
+``\\gamma_T = \\Gamma_T u_\\star`` and ``\\gamma_S = \\gamma_T/r``, with `r = mp.ratio` (35 by default).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::UStarGamTMelting)
@@ -690,7 +690,7 @@ $(TYPEDSIGNATURES)
 
 [Gaspar (1988)](@cite gaspar_modeling_1988) mechanical-energy entrainment (see [`GasparEntrainment`](@ref)):
 ``e = 2\\mu u_\\star^3 / (g H \\delta\\rho)`` minus a melt detrainment correction
-([Lambert et al. 2023](@cite lambert_modelling_2023), Eq. 14; see `docs/src/equations.md`).
+([Lambert et al. 2023](@cite lambert_modelling_2023), Eq. 14; see `docs/src/physics/equations.md`).
 """
 function _compute_entrainment!(m, ep::GasparEntrainment)
     launch!(

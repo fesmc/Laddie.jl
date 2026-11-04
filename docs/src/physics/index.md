@@ -62,6 +62,7 @@ the forcing. The pages of this section describe one family each:
 | [`AbstractLateralViscosity`](@ref) | `Params(; lateral_viscosity)` | `PrescribedLateralViscosity()` |
 | [`AbstractCoriolisParameter`](@ref) | `Params(; coriolis)` | `CoriolisParameter0D()` |
 | [`AbstractOceanForcing`](@ref) | `Model(grid; forcing)` | — |
+| [`AbstractIceForcing`](@ref) | `Model(grid; forcing)` | `PrescribedIceForcing(-25)` |
 | [`AbstractGapsBC`](@ref) | `BoundaryConditions(; gaps)` | `SinkGapsBC()` |
 
 Each default is the choice a plain run makes. The [LADDIE versions](../versions.md) page

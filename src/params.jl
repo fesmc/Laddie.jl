@@ -59,7 +59,7 @@ struct Params{
     rho_freshwater::FT
     "reference seawater density ρ₀, which scales δρ (kg m⁻³, default `1028`)"
     rho0_seawater::FT
-    "ice density (kg m⁻³, default `910`); for conversions by the caller, unused by the solver"
+    "ice density (kg m⁻³, default `910`); used by the solver only for the ice thickness of `LinearProfileConduction`, otherwise for conversions by the caller"
     rho_ice::FT
     "latent heat of fusion (J kg⁻¹, default `3.34e5`)"
     L::FT

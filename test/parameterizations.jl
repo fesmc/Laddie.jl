@@ -201,7 +201,7 @@ end
 end
 
 @testset "AbsoluteMaxLayerThickness ignores bathymetry" begin
-    @test AbsoluteMaxLayerThickness().H_max === 100.0f0
+    @test AbsoluteMaxLayerThickness().H_max === 100.0
     @test Params(; max_layer_thickness = AbsoluteMaxLayerThickness()).max_layer_thickness.H_max === 100.0
     mk = zeros(Int, 12, 8)
     mk[1, :] .= 1; mk[end, :] .= 1; mk[:, 1] .= 1; mk[:, end] .= 1

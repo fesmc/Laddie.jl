@@ -115,7 +115,6 @@ makedocs(;
             "Domain cropping" => "numerics/domain_cropping.md",
         ],
         "Reactant backend" => "reactant.md",
-        # "Implementation" => "implementation.md",
         "Examples" => [
             "ISOMIP+" => "generated/isomip.md",
             "Crosson–Dotson" => "generated/crosson-dotson.md",
@@ -132,7 +131,7 @@ makedocs(;
         "References" => "references.md",
     ],
     checkdocs = :exports,
-    warnonly = true,
+    warnonly = [:example_block],
 )
 
 deploydocs(;

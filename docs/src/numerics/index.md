@@ -74,6 +74,7 @@ describe one family each:
 | [Momentum form](momentum_form.md) | [`AbstractMomentumForm`](@ref) | `Params(; momentum_form)` | `AdvectiveMomentumForm()` |
 | [Closure level](momentum_form.md) | [`AbstractClosureLevel`](@ref) | `Params(; closure_level)` | `PresentClosures()` |
 | [Laplacian weights](laplacian_weights.md) | [`AbstractLaplacianWeights`](@ref) | `Params(; laplacian_weights)` | `PresentLaplacianWeights()` |
+| [Kinks](kinks.md) | [`AbstractKinks`](@ref) | `Params(; kinks)` | `ExactKinks()` |
 | [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; tstep)` | `FixedDt()` |
 | [CFL number](cfl.md) | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `ExactCFL()` |
 | [Simulation end](simulation_end.md) | [`AbstractSimulationEnd`](@ref) | `Simulation(model; stop)`, `run!(sim; until)` | `FixedSimulationEnd()` |

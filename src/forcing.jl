@@ -51,7 +51,10 @@ end
 """
 Ambient T/S profiles for the ISOMIP+ protocol ([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)), returned
 as an [`OceanForcing1D`](@ref).  Profiles are linear from the surface
-(T = −1.9 °C, S = 33.8 psu) to 720 m depth.
+(T = −1.9 °C, S = 33.8 psu) to the values below at 720 m depth, the bottom of the
+ISOMIP+ domain.  Below it they keep extrapolating linearly, as in LADDIE v1, so a
+layer whose base reaches below 720 m sees water beyond those values (the warm
+profile is 18 °C at −5000 m).
 
 - `isomipcond = :warm`: T = +1.0 °C, S = 34.7 psu at depth (strong melting).
 - `isomipcond = :cold`: T = −1.9 °C, S = 34.55 psu at depth (near-freezing).

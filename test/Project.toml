@@ -8,4 +8,9 @@ NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
+Aqua = "0.8"
+CUDA = "6"
+ForwardDiff = "1"
+KernelAbstractions = "0.9"
+NCDatasets = "0.14"
 Test = "<0.0.1, 1"

@@ -72,7 +72,7 @@ $(TYPEDFIELDS)
 """
 @kwdef struct AbsoluteMaxLayerThickness{FT} <: AbstractMaxLayerThickness
     "maximum layer thickness (m, default `100`; converted to the model precision by `Params`)"
-    H_max::FT = 100.0f0
+    H_max::FT = 100.0
 end
 
 """

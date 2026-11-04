@@ -172,7 +172,7 @@ function _check_blowup(sim, d, t, nt)
     m = sim.model
     d.finite && return
     error(
-        "Simulation blew up: non-finite values in H/U/V at step $t/$nt " *
+        "Simulation blew up: non-finite values in H/U/V/T/S at step $t/$nt " *
         "(≈ day $(round(_t_days(sim), digits = 2))). Common causes: time step too " *
         "large for this grid (dt = $(_primal(sim.clock.dt)) s, dx = $(m.dx) m) or unstable " *
         "forcing. Reduce dt in Simulation, or check the inputs.",
@@ -392,7 +392,8 @@ _on_host(sim, d) =
 
 # `&`, not `&&`: also evaluated on traced values by the Reactant extension.
 _prognostics_finite(m) =
-    all(isfinite, m.H.present) & all(isfinite, m.U.present) & all(isfinite, m.V.present)
+    all(isfinite, m.H.present) & all(isfinite, m.U.present) & all(isfinite, m.V.present) &
+    all(isfinite, m.T.present) & all(isfinite, m.S.present)
 function _max_active_H(m)
     @. m.diag = ifelse(m.tmask > 0, m.H.present, m.FT(-Inf))
     return maximum(m.diag)
@@ -508,10 +509,11 @@ output fields are accumulated after every step, `savefields!`, `printdiags` and
 the partial averaging window and writing a restart.  When
 `verbose = true`, a progress bar with throughput and ETA is displayed;
 melt/thickness/speed diagnostics attached to the bar refresh every ~5 % of
-steps (they are device reductions, so they are deliberately not per-step).
+steps, and at least once per simulated day (they are device reductions, so they are
+deliberately not per-step).
 
 Before stepping, a warning is emitted if the advective CFL number at the
-velocity cap `v_cut` exceeds 1.  Every ~5 % of steps the prognostic fields are
+velocity cap `v_cut` exceeds 1.  At the same cadence the prognostic fields are
 checked for non-finite values; on blow-up the run aborts with an error
 instead of integrating NaNs.
 
@@ -556,7 +558,8 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     # (independent of run length, so `tol` means the same thing for any cap), and is
     # disabled (next_steady = Inf) unless the criterion needs it.
     next_steady = _needs_melt_sample(until) ? _float64(m.seconds_per_day) : Inf
-    checkint = _check_interval(sim.tstep, nt)
+    steps_per_day = max(1, round(Int, _primal(m.seconds_per_day) / clock.dt))
+    checkint = _check_interval(sim.tstep, nt, steps_per_day)
     r = RunProgress(0, 0.0, _float64(total), checkint, next_steady, NaN, io_on)
     # Time cap (round-half-up rule: round(total/dt) steps for fixed dt); a
     # SteadyStateEnd may break out earlier once the mean melt rate is steady.
@@ -580,7 +583,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
         if sample || sync
             # Device reductions force a GPU sync, so they run only here: once per
             # simulated day for the steady-state sample, and at the check cadence
-            # (~5 %, or every `ncheck` steps under AdaptiveDt) for the blow-up check,
+            # (~5 %, or every `ncheck` steps under AdaptiveDt, and at least daily) for the blow-up check,
             # the CFL monitor, the controller and the progress diagnostics.  All of
             # them see the clean stepped state, before any dt re-bootstrap.
             d = _sync_diagnostics(sim.exec, sim)

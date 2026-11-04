@@ -72,6 +72,13 @@ The diagnosed CFL can also leave the band:
 Before the first step, the controller also checks the initial `dt` against the
 worst-case CFL (see [CFL number](cfl.md)), which can only shrink the step.
 
+!!! warning "Do not sample in many short `run!` calls"
+    Each change of ``\Delta t`` re-bootstraps the leapfrog, which disturbs the fields for a
+    few steps, and the check interval is at most 5 % of the steps of the `run!` call. At a
+    few dozen steps per call, ``\Delta t`` is checked and usually changed nearly every step:
+    sampling a 10-day mean in hourly calls on a 1 km geometry inflated the melt rate by
+    41 %. Use one longer call with time-averaged output instead.
+
 ## API
 
 ```@docs

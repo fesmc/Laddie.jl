@@ -208,3 +208,23 @@ end
     @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), file)
     @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), file; refine = 3)
 end
+
+@testset "Output cadence validation and restart names" begin
+    @test_throws ArgumentError OutputConfig(; saveday = 1.0, restday = 0.0)
+    @test_throws ArgumentError OutputConfig(; saveday = 1.0, diagday = 0.0)
+    @test_throws ArgumentError OutputConfig(; saveday = -1.0)
+    @test OutputConfig().saveday == 0   # saveday = 0 still disables file I/O
+
+    # Whole days keep their name, also when a fixed dt misses the day a little.
+    @test Laddie._restart_filename(1.0) == "restart_000001.jld2"
+    @test Laddie._restart_filename(1.998) == "restart_000002.jld2"
+
+    # Restarts less than a day apart must not overwrite each other.
+    tmp = mktempdir()
+    sim = build_isomip(CPU(); nx = 20, ny = 10,
+                       output = OutputConfig(; name = "subday", resultdir = tmp, saveday = 0.25, restday = 0.25))
+    run!(sim; days = 0.75, verbose = false)
+    files = filter(startswith("restart_0"), readdir(joinpath(tmp, "subday")))
+    @test length(files) == 3
+    @test "restart_000000.250.jld2" in files
+end

@@ -97,6 +97,10 @@ const _STATIC_FIELDS = (:mask, :z_draft)
 # Positional (and keyword) construction converts the intervals to one float type and
 # the field names to a tuple of symbols, and rejects unknown names.
 function OutputConfig(name, saveday, diagday, restday, resultdir, logfilename, fields)
+    saveday >= 0 || throw(ArgumentError("saveday must not be negative (0 disables file I/O), got $saveday"))
+    # A zero interval would never advance its event time, and so fire on every step.
+    diagday > 0 || throw(ArgumentError("diagday must be positive, got $diagday"))
+    restday > 0 || throw(ArgumentError("restday must be positive, got $restday"))
     days = promote(float(saveday), float(diagday), float(restday))
     fields = Tuple(Symbol.(fields))
     known = (keys(_OUTPUT_FIELDS)..., _STATIC_FIELDS...)
@@ -596,9 +600,17 @@ end
 # Restart I/O
 # ============================================================================
 
+# Restart file name: the whole day, or the day to 0.001 d when the time is not within
+# 0.01 d of a whole one (a fixed step rarely lands exactly on the day), so that restarts
+# less than a day apart keep their own files.
+function _restart_filename(t_days)
+    return abs(t_days - round(t_days)) < 0.01 ? @sprintf("restart_%06.0f.jld2", t_days) :
+           @sprintf("restart_%010.3f.jld2", t_days)
+end
+
 function _write_restart!(sim, t_days)
     m = sim.model
-    filename = joinpath(sim.io.rundir, @sprintf("restart_%06.0f.jld2", t_days))
+    filename = joinpath(sim.io.rundir, _restart_filename(t_days))
 
     _v(var) = (
         past = _primal.(Array(var.past)),

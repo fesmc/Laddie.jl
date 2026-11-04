@@ -319,3 +319,19 @@ end
     @test t.model.H.present == r.model.H.present
     @test_throws ArgumentError build_isomip(CPU(); nx = 20, ny = 10, dt = -1.0)
 end
+
+@testset "Blow-up check cadence and fields" begin
+    # At least once per simulated day, however long the run.
+    @test Laddie._check_interval(FixedDt(), 100_000, 400) == 400
+    @test Laddie._check_interval(FixedDt(), 1_000, 400) == 50
+    @test Laddie._check_interval(AdaptiveDt(; ncheck = 1000), 100_000, 400) == 400
+    @test Laddie._check_interval(AdaptiveDt(), 100_000, 400) == 20
+
+    # A non-finite tracer counts as a blow-up, not only H, U and V.
+    for name in (:T, :S)
+        sim = build_isomip(CPU(); nx = 20, ny = 10)
+        @test Laddie._prognostics_finite(sim.model)
+        getproperty(sim.model, name).present[5, 5] = NaN
+        @test !Laddie._prognostics_finite(sim.model)
+    end
+end

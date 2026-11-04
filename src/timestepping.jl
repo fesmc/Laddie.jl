@@ -44,6 +44,12 @@ The adjustment is asymmetric and predictive — it never rejects a step:
 - in between → hold (hysteresis band keeps changes rare, which matters because
   each change re-bootstraps the leapfrog).
 
+Each re-bootstrap disturbs the fields for a few steps, and the check interval is
+at most 5 % of the steps of the `run!` call.  So do not sample a field in many short
+`run!` calls: at a few dozen steps per call, `dt` is checked and usually changed nearly
+every step, which inflated a 10-day mean melt rate by 41 % on a 1 km geometry.  Use
+one longer call with time-averaged output instead.
+
 Select via `Simulation(model; tstep = AdaptiveDt())`; override fields as needed, e.g.
 `AdaptiveDt(; cfl_target = 0.4, ncheck = 10)`.
 
@@ -111,9 +117,11 @@ end
 # Cadence of the shared blow-up/CFL/controller sync point.  FixedDt checks every
 # ~5 % of the run.  AdaptiveDt checks at least every
 # `ncheck` steps, and more often on short runs so a too-large dt0 is caught
-# before it can blow up.
-_check_interval(::AbstractTimeStepper, nt) = max(1, nt ÷ 20)
-_check_interval(ts::AdaptiveDt, nt) = clamp(ts.ncheck, 1, max(1, nt ÷ 20))
+# before it can blow up.  Both check at least once per simulated day, so that the
+# blow-up check does not thin out on long runs.
+_check_interval(::AbstractTimeStepper, nt, steps_per_day) = min(max(1, nt ÷ 20), steps_per_day)
+_check_interval(ts::AdaptiveDt, nt, steps_per_day) =
+    min(clamp(ts.ncheck, 1, max(1, nt ÷ 20)), steps_per_day)
 
 # In-loop hook called at the check cadence from `run!`, with the CFL already
 # measured at the shared sync point.  FixedDt is a pure no-op (the default

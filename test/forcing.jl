@@ -284,6 +284,59 @@ end
     @test_throws ArgumentError front_ocean_forcing(T[1:5, :, :], S, z, mask)
 end
 
+@testset "front_ocean_forcing: FrontBlend" begin
+    # The channel of the previous test set. Source column j (the open-ocean cell of
+    # row j at the front) is a profile plus 0.01 j², so a blend of rows is visible.
+    sim = build_isomip(CPU(); FT, nx = 20, ny = 10, xfront = 30_000.0,
+                       domain_cropping = NoDomainCropping())
+    grid = sim.model.grid
+    mask = grid.mask
+    z = collect(-1000.0:50.0:-50.0)
+    nx, ny = size(mask)
+    T = [mask[i, j] == 0 ? -1.0 + 0.001z[k] + 0.01j^2 : NaN for i = 1:nx, j = 1:ny, k = eachindex(z)]
+    S = [mask[i, j] == 0 ? 34.0 : NaN for i = 1:nx, j = 1:ny, k = eachindex(z)]
+    ifront = findlast(i -> mask[i, 5] == 3, 1:nx)
+    rows = findall(j -> mask[ifront+1, j] == 0, 1:ny)
+    f0 = front_ocean_forcing(T, S, z, mask; FT)
+    profile(f, i, j) = f.Tz[f.basin[i, j], :]
+
+    # Width 0: the unblended forcing, row for row.
+    fz = front_ocean_forcing(T, S, z, mask; FT, blend = FrontBlend(0; dx = 1))
+    @test size(fz.Tz) == size(f0.Tz)
+    @test all(profile(fz, i, j) ≈ profile(f0, i, j) for i = 1:nx, j = 1:ny)
+
+    # Width 2 cells: a front cell takes its own row's source at distance 1 (weight
+    # 3 − 1) and its neighbour rows' at distance 2 (weight 3 − 2), through their
+    # front cells; the rows two away are at d* = 3 and weigh nothing.
+    f2 = front_ocean_forcing(T, S, z, mask; FT, blend = FrontBlend(2000.0; dx = 1000.0))
+    base = -1.0 .+ 0.001z
+    for j in rows[2:end-1]
+        @test profile(f2, ifront, j) ≈ base .+ 0.01(j^2 + 0.5)
+    end
+    j1, j2 = rows[1], rows[2]
+    @test profile(f2, ifront, j1) ≈ base .+ 0.01(2j1^2 + j2^2) / 3 rtol = 1e-6   # one neighbour; weights in Float32
+    # Every cavity cell is a convex blend of the sources, and deeper in the cavity
+    # the rows differ less than at the front.
+    lo, hi = extrema(T[ifront+1, rows, 1])
+    @test all(lo - 1e-6 <= profile(f2, i, j)[1] <= hi + 1e-6 for i = 2:ifront, j in rows)
+    spread(f, i) = -(reverse(extrema(profile(f, i, j)[1] for j in rows))...)
+    @test spread(f2, 2) < spread(f2, ifront) < spread(f0, ifront)
+    @test size(f2.Tz, 1) == length(rows) + count(mask .== 3)   # every shelf cell blends here
+    @test all(1 .<= f2.basin .<= size(f2.Tz, 1))
+    m = Model(grid; forcing = f2)
+    run!(Simulation(m); days = 0.2, verbose = false)
+    @test all(isfinite, m.H.present) && all(isfinite, m.melt)
+
+    # kmax caps the sources per cell, and the blend radius with it.
+    f1 = front_ocean_forcing(T, S, z, mask; FT, blend = FrontBlend(20_000.0; dx = 1000.0, kmax = 1))
+    @test size(f1.Tz) == size(f0.Tz)
+    @test FrontBlend(20e3; dx = 2e3).width == 10
+    @test_throws ArgumentError FrontBlend(-1; dx = 1)
+    @test_throws ArgumentError FrontBlend(1; dx = 0)
+    @test_throws ArgumentError FrontBlend(1; dx = 1, kmax = 0)
+    @test_throws UndefKeywordError FrontBlend(1)
+end
+
 @testset "regrid_ocean and fill_ocean!" begin
     x, y = collect(0.0:8.0:64.0), collect(0.0:8.0:40.0)
     lin(xx, yy, k) = 0.1xx - 0.05yy + k

@@ -4,8 +4,9 @@
 # Ocean models that force ice-sheet models mostly have no ice-shelf cavities, so
 # the meltwater layer should see only water from outside the ice fronts.
 # `front_ocean_forcing` gives every cavity cell the water column of the open-ocean
-# cell at the front that feeds it, as a `PerBasinOceanForcing1D` with one profile
-# per such column.  `regrid_ocean` and `fill_ocean!` bring a coarse ocean grid onto
+# cell at the front that feeds it, or a blend of those of nearby fronts
+# (`FrontBlend`), as a `PerBasinOceanForcing1D` with one profile per such column
+# (and per blended cell).  `regrid_ocean` and `fill_ocean!` bring a coarse ocean grid onto
 # the model's cells, for this or for an `OceanForcing2D`.
 # All of this is host-side preprocessing on CPU arrays.
 # ============================================================================
@@ -97,6 +98,48 @@ Returns the linear index into `mask` of the source of every cavity cell (0
 elsewhere), and the number of cavity cells that took a straight line.
 """
 function front_sources(mask::AbstractMatrix{<:Integer}; wet = trues(size(mask)), depth = nothing)
+    cavity, src, dist = _front_seeds(mask, wet, depth)
+    seeds = ifelse.(dist .== 1, src, 0)
+    fwd, bwd = _CHAMFER
+    function sweep!(order, steps)
+        changed = false
+        for I in order
+            cavity[I] || continue
+            for (a, b, w) in steps
+                J = CartesianIndex(I[1] + a, I[2] + b)
+                if checkbounds(Bool, mask, J) && cavity[J] && dist[J] + w < dist[I]
+                    dist[I], src[I] = dist[J] + w, src[J]
+                    changed = true
+                end
+            end
+        end
+        return changed
+    end
+    # Each pair of sweeps settles every path that turns at most once; a cavity
+    # winding back and forth needs more, so repeat until nothing changes.
+    while true
+        c1 = sweep!(CartesianIndices(mask), fwd)
+        c2 = sweep!(Iterators.reverse(CartesianIndices(mask)), bwd)
+        c1 || c2 || break
+    end
+    lost = cavity .& (src .== 0)
+    if any(lost)
+        nearest, _ = nearest_seed(seeds)
+        src[lost] .= nearest[lost]
+    end
+    return src, count(lost)
+end
+
+# The 8-neighbour chamfer steps of the forward and the backward sweep.
+const _CHAMFER = (
+    ((-1, -1, sqrt(2)), (0, -1, 1.0), (1, -1, sqrt(2)), (-1, 0, 1.0)),
+    ((1, 1, sqrt(2)), (0, 1, 1.0), (-1, 1, sqrt(2)), (1, 0, 1.0)),
+)
+
+# The start of `front_sources`: the cavity (a `BitMatrix`), and the source (linear
+# index of its open-ocean cell, 0 elsewhere) and distance (1, `Inf` elsewhere) of
+# every front cell.
+function _front_seeds(mask, wet, depth)
     nx, ny = size(mask)
     size(wet) == size(mask) || throw(ArgumentError("wet is $(size(wet)) but mask is $(size(mask))"))
     depth === nothing || size(depth) == size(mask) ||
@@ -129,36 +172,132 @@ function front_sources(mask::AbstractMatrix{<:Integer}; wet = trues(size(mask)),
         end
     end
     any(>(0), src) || throw(ArgumentError("no cavity cell borders wet open ocean: the mask has no ice front"))
-    fwd = ((-1, -1, sqrt(2)), (0, -1, 1.0), (1, -1, sqrt(2)), (-1, 0, 1.0))
-    bwd = ((1, 1, sqrt(2)), (0, 1, 1.0), (-1, 1, sqrt(2)), (1, 0, 1.0))
+    return cavity, src, dist
+end
+
+"""
+    FrontBlend(width; dx, kmax = 64)
+
+Blend the front columns that force a cavity cell, for [`front_ocean_forcing`](@ref):
+every cavity cell sees the weighted mean of up to `kmax` open-ocean source columns,
+those whose fronts lie within `width` (m) of its nearest, distances measured through
+the cavity as in [`front_sources`](@ref). `dx` is the cell size (m).
+
+Source ``k`` at distance ``d_k`` takes the weight ``d^* - d_k``, normalised, with
+``d^*`` the distance of the first source left out: the `kmax + 1`-th, or ``d_1 +``
+`width`. A source therefore enters and leaves a cell's blend at zero weight, and the
+forcing has no steps where the nearest front changes. Such steps make one-cell-wide
+lines of convergence and runaway layer thickness in the cavity.
+
+Where fronts are dense, `kmax` rather than `width` sets the blend radius; that radius
+shrinks with the cell size, so raise `kmax` at fine resolution to keep it. At
+`width = 0` every cell takes one nearest front, as without a blend; where two are
+exactly as near, it may be the other one.
+"""
+struct FrontBlend
+    "blend width, in cells"
+    width::Float64
+    "most sources per cell"
+    kmax::Int
+    function FrontBlend(width::Real; dx::Real, kmax::Integer = 64)
+        width >= 0 || throw(ArgumentError("width must be ≥ 0, got $width"))
+        dx > 0 || throw(ArgumentError("dx must be > 0, got $dx"))
+        kmax >= 1 || throw(ArgumentError("kmax must be ≥ 1, got $kmax"))
+        new(Float64(width / dx), Int(kmax))
+    end
+end
+
+Base.show(io::IO, b::FrontBlend) = print(io, "FrontBlend(", _r(b.width, 3), " cells, kmax = ", b.kmax, ")")
+
+# The sources and weights of every cavity cell for `blend`: as the sweep of
+# `front_sources`, but each cell keeps the `kmax + 1` nearest distinct sources
+# within `blend.width` of its nearest, nearest first. Returns `(; cells, src, w,
+# lost)`: the cavity cells, their sources (linear indices, `(kmax, ncells)`, 0 where
+# unused) and weights (summing to 1), and the number of cells no front reaches
+# through the cavity (their nearest front in a straight line, weight 1).
+function _front_blend(mask, cavity, src0, dist0, blend::FrontBlend)
+    cells = findall(cavity)
+    nc, kmax = length(cells), blend.kmax
+    K1 = kmax + 1
+    pos = zeros(Int32, size(mask))
+    foreach(((i, I),) -> pos[I] = i, enumerate(cells))
+    W = Float32(blend.width)
+    D = fill(Inf32, K1, nc)
+    S = zeros(Int32, K1, nc)
+    n = zeros(Int, nc)
+    for (i, I) in enumerate(cells)
+        src0[I] > 0 && (D[1, i] = dist0[I]; S[1, i] = src0[I]; n[i] = 1)
+    end
+    # Merge the list of cell j, `step` away, into that of cell i; true if it changed.
+    # Lists stay sorted; a list's nearest only gets nearer, so what lies beyond its
+    # width now stays beyond it.
+    function merge!(i, j, step)
+        changed = false
+        for e = 1:n[j]
+            c = D[e, j] + step
+            (c > D[1, i] + W || (n[i] == K1 && c >= D[K1, i])) && break
+            s = S[e, j]
+            p = findfirst(==(s), view(S, 1:n[i], i))
+            if !isnothing(p)
+                c < D[p, i] || continue
+                for q = p:(n[i]-1)
+                    D[q, i], S[q, i] = D[q+1, i], S[q+1, i]
+                end
+                n[i] -= 1
+            end
+            q = n[i] < K1 ? n[i] + 1 : K1
+            while q > 1 && D[q-1, i] > c
+                D[q, i], S[q, i] = D[q-1, i], S[q-1, i]
+                q -= 1
+            end
+            D[q, i], S[q, i] = c, s
+            n[i] = min(n[i] + 1, K1)
+            changed = true
+        end
+        return changed
+    end
+    fwd, bwd = map(st -> map(((a, b, w),) -> (a, b, Float32(w)), st), _CHAMFER)
     function sweep!(order, steps)
         changed = false
-        for I in order
-            cavity[I] || continue
+        for i in order
+            I = cells[i]
             for (a, b, w) in steps
                 J = CartesianIndex(I[1] + a, I[2] + b)
-                if checkbounds(Bool, mask, J) && cavity[J] && dist[J] + w < dist[I]
-                    dist[I], src[I] = dist[J] + w, src[J]
-                    changed = true
-                end
+                checkbounds(Bool, mask, J) && pos[J] > 0 && merge!(i, pos[J], w) && (changed = true)
             end
         end
         return changed
     end
-    # Each pair of sweeps settles every path that turns at most once; a cavity
-    # winding back and forth needs more, so repeat until nothing changes.
     while true
-        c1 = sweep!(CartesianIndices(mask), fwd)
-        c2 = sweep!(Iterators.reverse(CartesianIndices(mask)), bwd)
+        c1 = sweep!(1:nc, fwd)
+        c2 = sweep!(nc:-1:1, bwd)
         c1 || c2 || break
     end
-    lost = cavity .& (src .== 0)
-    if any(lost)
-        # Seeds are the front cells (dist == 1), labelled with their source.
-        nearest, _ = nearest_seed(ifelse.(dist .== 1, src, 0))
-        src[lost] .= nearest[lost]
+    src, w = zeros(Int32, kmax, nc), zeros(Float32, kmax, nc)
+    lost = findall(==(0), n)
+    if !isempty(lost)
+        nearest, _ = nearest_seed(ifelse.(dist0 .== 1, src0, 0))
+        for i in lost
+            src[1, i], w[1, i] = nearest[cells[i]], 1
+        end
     end
-    return src, count(lost)
+    for i = 1:nc
+        n[i] == 0 && continue
+        m = count(e -> D[e, i] <= D[1, i] + W, 1:n[i])
+        k = min(m, kmax)
+        dstar = m > kmax ? D[K1, i] : D[1, i] + W
+        for e = 1:k
+            src[e, i], w[e, i] = S[e, i], dstar - D[e, i]
+        end
+        tot = sum(view(w, 1:k, i))
+        if tot > 0
+            w[1:k, i] ./= tot
+        else                     # width 0 and no tie: the nearest alone
+            w[1:k, i] .= 0
+            w[1, i] = 1
+        end
+    end
+    return (; cells, src, w, lost = length(lost))
 end
 
 # Give every level of the column `col` without a value (NaN) that of the nearest
@@ -174,7 +313,7 @@ function _extend_flat!(col)
 end
 
 """
-    front_ocean_forcing(T, S, z, mask; depth = nothing, FT = Float64)
+    front_ocean_forcing(T, S, z, mask; depth = nothing, blend = nothing, FT = Float64)
 
 Ambient forcing from outside the ice fronts only, as an ocean model without
 cavities would give it: every cavity cell of `mask` takes the water column of its
@@ -185,19 +324,38 @@ with water in both can be sources.  `depth` ranks the open-ocean neighbours of a
 front cell, the lowest winning (pass the bed elevation, size of `mask`); without
 it, the column with the most levels of water wins.
 
-Returns a [`PerBasinOceanForcing1D`](@ref) with one profile per source column:
-`n_sources × nz` numbers instead of the full 3D field.  Cells outside the cavities
-take the profile of the nearest cavity cell, so every cell has one.
+With `blend = FrontBlend(width; dx)` ([`FrontBlend`](@ref)), every cavity cell
+takes instead the weighted mean of the source columns of the fronts within `width`
+of its nearest, so the forcing has no steps where the nearest front changes.
+
+Returns a [`PerBasinOceanForcing1D`](@ref) with one profile per source column and,
+blended, one more per cavity cell that blends several: `n_rows × nz` numbers
+instead of the full 3D field.  Cells outside the cavities take the profile of the
+nearest cavity cell, so every cell has one.
 """
-function front_ocean_forcing(T::AbstractArray{<:Real,3}, S::AbstractArray{<:Real,3}, z, mask; depth = nothing, FT = Float64)
+function front_ocean_forcing(
+    T::AbstractArray{<:Real,3},
+    S::AbstractArray{<:Real,3},
+    z,
+    mask;
+    depth = nothing,
+    blend::Union{Nothing,FrontBlend} = nothing,
+    FT = Float64,
+)
     size(T) == size(S) || throw(ArgumentError("T is $(size(T)) but S is $(size(S))"))
     size(T)[1:2] == size(mask) ||
         throw(ArgumentError("T is $(size(T)) but the mask is $(size(mask)); give the full domain"))
     size(T, 3) == length(z) || throw(ArgumentError("T has $(size(T, 3)) levels but z has $(length(z))"))
     wet = dropdims(any(isfinite, T; dims = 3) .& any(isfinite, S; dims = 3); dims = 3)
     rank = depth === nothing ? -Float64.(dropdims(count(isfinite, T; dims = 3); dims = 3)) : depth
-    src, lost = front_sources(mask; wet, depth = rank)
-    sources = unique(filter(>(0), src))
+    if blend === nothing
+        src, lost = front_sources(mask; wet, depth = rank)
+        sources = unique(filter(>(0), src))
+    else
+        b = _front_blend(mask, _front_seeds(mask, wet, rank)..., blend)
+        lost = b.lost
+        sources = Int.(unique(filter(>(0), b.src)))
+    end
     C = CartesianIndices(mask)
     Tz = Matrix{Float64}(undef, length(sources), length(z))
     Sz = similar(Tz)
@@ -208,10 +366,46 @@ function front_ocean_forcing(T::AbstractArray{<:Real,3}, S::AbstractArray{<:Real
         _extend_flat!(view(Sz, n, :))
     end
     profile = Dict(l => n for (n, l) in enumerate(sources))
-    index = [s > 0 ? profile[s] : 0 for s in src]
+    if blend === nothing
+        index = [s > 0 ? profile[s] : 0 for s in src]
+    else
+        index, Tb, Sb = _blend_rows(b, profile, Tz, Sz, size(mask))
+        mixed = size(Tb, 1)
+        nsrc = count(>(0), b.w; dims = 1)
+        @info "front_ocean_forcing: $(length(b.cells)) cavity cells from $(length(sources)) source columns, " *
+              "$mixed blended, $(_r(sum(nsrc) / length(nsrc), 3)) sources per cell (max $(maximum(nsrc)))"
+        Tz, Sz = vcat(Tz, Tb), vcat(Sz, Sb)
+    end
     index, _ = nearest_seed(index)
     lost > 0 && @info "front_ocean_forcing: $lost cavity cells reach no front through the cavity; they take the nearest in a straight line"
     return PerBasinOceanForcing1D(Tz, Sz, z, index; FT)
+end
+
+# The rows of the cells of the blend `b` that blend several sources, a row each,
+# from the source rows `Tz`, `Sz` (row `profile[l]` for the source of linear index
+# `l`), and the row index of every cavity cell: its own, or that of its one source.
+function _blend_rows(b, profile, Tz, Sz, sz)
+    nz = size(Tz, 2)
+    index = zeros(Int, sz)
+    mixed = [i for i in eachindex(b.cells) if count(>(0), view(b.w, :, i)) > 1]
+    Tb, Sb = zeros(length(mixed), nz), zeros(length(mixed), nz)
+    Threads.@threads for r in eachindex(mixed)
+        i = mixed[r]
+        for e in axes(b.src, 1)
+            w = b.w[e, i]
+            w > 0 || continue
+            n = profile[b.src[e, i]]
+            for k = 1:nz
+                Tb[r, k] += w * Tz[n, k]
+                Sb[r, k] += w * Sz[n, k]
+            end
+        end
+        index[b.cells[i]] = size(Tz, 1) + r
+    end
+    for (i, I) in enumerate(b.cells)
+        index[I] == 0 && (index[I] = profile[b.src[argmax(view(b.w, :, i)), i]])
+    end
+    return index, Tb, Sb
 end
 
 """

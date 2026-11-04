@@ -83,11 +83,13 @@ The ocean forcing types are described in [Ocean forcing](physics/ocean_forcing.m
 
 Ocean models that force ice-sheet models mostly have no ice-shelf cavities.
 [`front_ocean_forcing`](@ref) gives every cavity cell the water column at the ice
-front that feeds it; [`regrid_ocean`](@ref) and [`fill_ocean!`](@ref) bring a
+front that feeds it, or with [`FrontBlend`](@ref) a blend of the columns of the
+nearby fronts; [`regrid_ocean`](@ref) and [`fill_ocean!`](@ref) bring a
 coarse ocean grid onto the model's cells.
 
 ```@docs
 front_ocean_forcing
+FrontBlend
 front_sources
 nearest_seed
 regrid_ocean

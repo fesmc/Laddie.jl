@@ -18,6 +18,14 @@ without ice-shelf cavities, [`front_ocean_forcing`](@ref) builds a
 `PerBasinOceanForcing1D` with one profile per ice-front water column, shared by the cavity
 cells behind it.
 
+Neighbouring cavity cells can be fed by different fronts, so this forcing steps where
+the nearest front changes. The steps can line up convergence one cell wide and let the
+layer run away there. `front_ocean_forcing(...; blend = FrontBlend(width; dx))` removes
+them: each cavity cell takes the weighted mean of the columns of the fronts within
+`width` of its nearest, and a column enters and leaves the blend at zero weight. Blended
+cells get a profile each, still in a `PerBasinOceanForcing1D`: ``n_z`` numbers per cavity
+cell, against ``n_z`` per cell of the whole domain for an `OceanForcing2D`.
+
 The basin map of `PerBasinOceanForcing1D` and the per-cell profiles of `OceanForcing2D`
 cover the full domain including the border ring, like a 2D ice temperature, and `Model`
 crops them with the grid. Every cell of the basin map, land and ocean included, must hold

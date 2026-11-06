@@ -8,8 +8,8 @@ every time step.  The physics outputs are read through the model, e.g.
 `A` is the concrete matrix type (matching the grid and state).  The scheme-dependent
 slots are scalars or fields: `GamT` (`gamT`, `gamS`) is a field for
 `TurbulentGamTMelting`, `UStarGamTMelting` and `PrescribedMelting`, `Conv2` (`conv2`) for
-`RelaxToAmbient`, `Frz` (`frazil`) for `RelaxedFrazilIce`, and `PM` (`melt_prescribed`)
-for `PrescribedMelting`.
+`RelaxToAmbient`, `Frz` (`frazil`) for `RelaxedFrazilIce`, `PM` (`melt_prescribed`)
+for `PrescribedMelting`, and `Gap` (`gap_decay`, `gap_rate`) for `LeakyGapsBC`.
 
 `adv`, `lap` and `Hq` are shared by the four stepped equations: U, V, T and S are
 stepped one after another, and each consumes its terms before the next one writes
@@ -22,7 +22,7 @@ never read by the time step, so any host-side diagnostic may overwrite it.
 # Fields
 $(TYPEDFIELDS)
 """
-mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,Frz,PM}
+mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,Frz,PM,Gap}
     "basal melt rate (m s⁻¹)"
     melt::A
     "temperature at the ice–ocean interface (°C)"
@@ -63,6 +63,10 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,Frz,PM}
     gamS::GamT
     "prescribed melt rate under `PrescribedMelting` (m s⁻¹), else an unused scalar"
     melt_prescribed::PM
+    "decay per metre travelled in a gap under `LeakyGapsBC` (m⁻¹, a field, fixed at build), else zero as a scalar"
+    gap_decay::Gap
+    "relaxation rate in gap cells under `LeakyGapsBC` (s⁻¹, a field), else zero as a scalar"
+    gap_rate::Gap
     "advection term of the equation being stepped (work buffer)"
     adv::A
     "Laplacian term of the equation being stepped (work buffer)"
@@ -86,6 +90,8 @@ _conv2_init(FT, _, _, ::Type{<:Union{ClampDensity,ResetToAmbient}}) = zero(FT)
 _conv2_init(FT, nx, ny, ::Type{<:RelaxToAmbient}) = zeros(FT, nx, ny)
 _frazil_init(FT, _, _, ::Type{<:NoFrazilIce}) = zero(FT)
 _frazil_init(FT, nx, ny, ::Type{<:RelaxedFrazilIce}) = zeros(FT, nx, ny)
+_gap_init(FT, _, _, ::Type) = zero(FT)
+_gap_init(FT, nx, ny, ::Type{<:LeakyGapsBC}) = zeros(FT, nx, ny)
 
 """
 $(TYPEDSIGNATURES)
@@ -93,16 +99,19 @@ $(TYPEDSIGNATURES)
 Allocate all scratch matrices for a grid of size `(nx, ny)`.
 `MP` (melt param type) determines whether `gamT`/`gamS` are scalars or arrays and
 whether a prescribed melt field is carried; `CS` (convection scheme type)
-determines whether `conv2` is a scalar or array, and `FZ` (frazil scheme type) the
-same for `frazil`.
+determines whether `conv2` is a scalar or array, `FZ` (frazil scheme type) the
+same for `frazil`, and `GB` (gaps boundary condition type) for `gap_decay` and
+`gap_rate`.
 """
-function Cache(FT::Type, MP::Type, CS::Type, FZ::Type, nx::Int, ny::Int)
+function Cache(FT::Type, MP::Type, CS::Type, FZ::Type, nx::Int, ny::Int, GB::Type = SinkGapsBC)
     special = (
         conv2 = _conv2_init(FT, nx, ny, CS),
         frazil = _frazil_init(FT, nx, ny, FZ),
         gamT = _gamT_init(FT, nx, ny, MP),
         gamS = _gamT_init(FT, nx, ny, MP),
         melt_prescribed = _prescribed_init(FT, nx, ny, MP),
+        gap_decay = _gap_init(FT, nx, ny, GB),
+        gap_rate = _gap_init(FT, nx, ny, GB),
     )
     C = Cache{
         Matrix{FT},
@@ -110,6 +119,7 @@ function Cache(FT::Type, MP::Type, CS::Type, FZ::Type, nx::Int, ny::Int)
         typeof(special.conv2),
         typeof(special.frazil),
         typeof(special.melt_prescribed),
+        typeof(special.gap_decay),
     }
     fields = map(fn -> haskey(special, fn) ? special[fn] : zeros(FT, nx, ny), fieldnames(C))
     return C(fields...)

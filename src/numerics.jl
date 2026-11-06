@@ -122,8 +122,43 @@ function precompute_integration_terms!(m, dt)
         dt,
     )
     _update_conv2!(m, m.convection_scheme)
+    _update_gap_rate!(m, m.gap_rate)
     return
 end
+
+# `LeakyGapsBC`: the relaxation rate r = κ|u| in gap cells, from the cell-centred
+# speed of the present level.  κ is zero outside gaps, so r is too.  Other gap
+# conditions carry `gap_rate` as a scalar zero and skip this.
+_update_gap_rate!(m, ::Number) = nothing
+function _update_gap_rate!(m, ::AbstractArray)
+    launch_interior!(_gap_rate_kernel!, m.gap_rate, m.gap_decay, m.U.present, m.V.present, m.params.kinks)
+    return
+end
+
+@kernel function _gap_rate_kernel!(rate, @Const(decay), @Const(U), @Const(V), kinks)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
+    @inbounds begin
+        FT = eltype(rate)
+        half = FT(0.5)
+        Uc = half * (U[i, j] + U[i-1, j])
+        Vc = half * (V[i, j] + V[i, j-1])
+        rate[i, j] = decay[i, j] * _ssqrt(kinks, Uc^2 + Vc^2, _kink_width(kinks, :u))
+    end
+end
+
+# Backward-Euler relaxation of a stepped value `q` towards `qa` (a field or one value)
+# at the rate `r` (s⁻¹) over the step `dt` — the `LeakyGapsBC` gap sink, operator-split
+# after the update: H towards H_min, T towards Ta, U and V towards rest; S is left
+# alone.  Stable for any rate, and exactly `q` at r = 0.  Without leaky gaps the rate
+# is a scalar zero, and the value passes through untouched.
+@inline _gap_relax(q, qa, ::Number, i, j, dt) = q
+@inline _gap_relax(q, qa, r::AbstractArray, i, j, dt) =
+    @inbounds (q + r[i, j] * dt * _at(qa, i, j)) / (1 + r[i, j] * dt)
+# The same for a velocity, towards rest, at the mean rate of the two cells of its face.
+@inline _gap_damp(U, ::Number, i, j, i2, j2, dt) = U
+@inline _gap_damp(U, r::AbstractArray, i, j, i2, j2, dt) =
+    @inbounds U / (1 + (r[i, j] + r[i2, j2]) / 2 * dt)
 
 @kernel function _step_thickness_kernel!(
     out,
@@ -134,14 +169,19 @@ end
     @Const(detr_cap),
     @Const(tmask),
     frazil,
+    gap_rate,
+    H_min,
     dt,
 )
-    dt, frazil = _val(dt), _val(frazil)
+    dt, frazil, H_min = _val(dt), _val(frazil), _val(H_min)
     i, j = @index(Global, NTuple)
+    # A `LeakyGapsBC` gap detrains towards H_min after the step.  Under the flux
+    # forms the water leaves at the layer's own T, S and velocity: their updates
+    # divide by max(H_future, H*), as for the cap (see `_tracer_update`).
     @inbounds out[i, j] = ifelse(
         iszero(tmask[i, j]),
         H0[i, j],
-        _unclamped_thickness(H0, convH, melt, nentr, detr_cap, frazil, i, j, dt),
+        _gap_relax(_unclamped_thickness(H0, convH, melt, nentr, detr_cap, frazil, i, j, dt), H_min, gap_rate, i, j, dt),
     )
 end
 
@@ -233,6 +273,7 @@ _or_zero(::Nothing, FT) = zero(FT)
     @Const(nentr),
     outflow,
     frazil,
+    gap_rate,
     g,
     C_d,
     pgf_w,
@@ -290,9 +331,10 @@ _or_zero(::Nothing, FT) = zero(FT)
         H_old, H_new, sink = _momentum_flux_terms(
             f, H_past, H_future, convH, melt, nentr, detr, detr_cap, frazil, tmask, i, j, ip1, j, tmip, dt,
         )
-        out[i, j] = _momentum_update(
+        U_new = _momentum_update(
             f, Up[i, j], U1[i, j], rhs, ip_H, H_old, H_new, sink + C_d * speed, _at(outflow, i, j), umask[i, j], dt,
         )
+        out[i, j] = ifelse(umask[i, j] > 0, _gap_damp(U_new, gap_rate, i, j, ip1, j, dt), U_new)
     end
 end
 
@@ -323,6 +365,7 @@ end
     @Const(nentr),
     outflow,
     frazil,
+    gap_rate,
     g,
     C_d,
     pgf_w,
@@ -373,9 +416,10 @@ end
         H_old, H_new, sink = _momentum_flux_terms(
             f, H_past, H_future, convH, melt, nentr, detr, detr_cap, frazil, tmask, i, j, i, jp1, tmjp, dt,
         )
-        out[i, j] = _momentum_update(
+        V_new = _momentum_update(
             f, Vp[i, j], V1[i, j], rhs, jp_H, H_old, H_new, sink + C_d * speed, _at(outflow, i, j), vmask[i, j], dt,
         )
+        out[i, j] = ifelse(vmask[i, j] > 0, _gap_damp(V_new, gap_rate, i, j, i, jp1, dt), V_new)
     end
 end
 
@@ -476,6 +520,7 @@ end
     gamT,
     K_h,
     conv2,
+    gap_rate,
     frazil,
     L,
     c_p,
@@ -498,11 +543,12 @@ end
         # The unclamped thickness, exactly as `_step_thickness_kernel!` forms it.
         H_star = _unclamped_thickness(H_past, convH, melt, nentr, detr_cap, frazil, i, j, dt)
         # Frazil removes layer water at T, so it is part of the sink.
-        out[i, j] = _tracer_update(
+        T_new = _tracer_update(
             tracer_form, T_past[i, j], T_present[i, j], rhs,
             outflow[i, j] + detr_cap[i, j] + _at(frazil, i, j),
             H1[i, j], H_past[i, j], H_future[i, j], H_star, Ta[i, j], tmask[i, j], dt,
         )
+        out[i, j] = ifelse(tmask[i, j] > 0, _gap_relax(T_new, Ta, gap_rate, i, j, dt), T_new)
     end
 end
 
@@ -560,6 +606,8 @@ function step_thickness!(m, dt)
         m.detr_cap,
         m.tmask,
         m.frazil,
+        m.gap_rate,
+        m.H_min,
         dt,
     )
     return
@@ -597,6 +645,7 @@ function step_u_momentum!(m, dt)
         m.nentr,
         _or_zero(outflow, m.FT),
         m.frazil,
+        m.gap_rate,
         m.g,
         m.C_d,
         _front_pgf_weight(m.front_pressure, m.g),
@@ -641,6 +690,7 @@ function step_v_momentum!(m, dt)
         m.nentr,
         _or_zero(outflow, m.FT),
         m.frazil,
+        m.gap_rate,
         m.g,
         m.C_d,
         _front_pgf_weight(m.front_pressure, m.g),
@@ -678,7 +728,7 @@ function step_temperature!(m, dt)
         m.params.tracer_form,
     )
     gamT = first(_exchange_velocities(m))
-    launch!(_step_temperature_kernel!, args..., gamT, m.K_h, m.conv2, m.frazil, m.L, m.c_p, dt)
+    launch!(_step_temperature_kernel!, args..., gamT, m.K_h, m.conv2, m.gap_rate, m.frazil, m.L, m.c_p, dt)
     return
 end
 function step_salinity!(m, dt)

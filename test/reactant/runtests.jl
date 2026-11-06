@@ -27,9 +27,9 @@ function nonfinite_leaves(x, path = "", out = String[])
     return out
 end
 
-# A 40×20 cavity with a melt-through gap (mask 4) under ConnectedGapsBC, and a bed for
-# the relative thickness cap: neither fits `build_isomip`.
-function gaps_sim(; kw...)
+# A 40×20 cavity with a melt-through gap (mask 4), under ConnectedGapsBC unless `gaps`
+# says otherwise, and a bed for the relative thickness cap: neither fits `build_isomip`.
+function gaps_sim(; gaps = ConnectedGapsBC(), kw...)
     mask = zeros(Int, 42, 22)
     mask[[1, end], :] .= 1
     mask[:, [1, end]] .= 1
@@ -42,7 +42,7 @@ function gaps_sim(; kw...)
                 domain_cropping = NoDomainCropping())
     model = Model(grid; forcing = ISOMIPForcing(:warm),
                   params = Params(; max_layer_thickness = RelativeMaxLayerThickness(0.8)),
-                  boundary = BoundaryConditions(; gaps = ConnectedGapsBC()))
+                  boundary = BoundaryConditions(; gaps))
     return Simulation(model; kw...)
 end
 
@@ -104,6 +104,17 @@ const SCHEME_SCENARIOS = [
             # dt); raised ones and XLA's reductions agree to round-off.
             @test err < (FT == Float64 ? 1e-10 : 1e-3)
         end
+    end
+
+    # The cheapest check of LeakyGapsBC: its rate kernel and the relaxation in the step
+    # kernels, one compile, no AD.
+    @testset "leaky gaps: run! matches the CPU" begin
+        ref = gaps_sim(; gaps = LeakyGapsBC(0.8))
+        rsim = to_backend(gaps_sim(; gaps = LeakyGapsBC(0.8)), ReactantBackend())
+        run!(ref; days = 0.5, verbose = false)
+        run!(rsim; days = 0.5, verbose = false)
+        @test maximum(Array(rsim.model.gap_rate)) > 0
+        @test maxrel(prognostics(rsim.model), prognostics(ref.model)) < 1e-10
     end
 
     @testset "output, log and restarts" begin

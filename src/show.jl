@@ -122,11 +122,16 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     print(io, "  kinks          = ", p.kinks)
 end
 
+_gaps_label(g) = string(nameof(typeof(g)))
+_gaps_label(g::LeakyGapsBC) =
+    "LeakyGapsBC(α = $(g.transmission)" *
+    (g.crossing_length === nothing ? ")" : ", L = $(g.crossing_length) m)")
+
 Base.show(io::IO, b::BoundaryConditions) = print(
     io,
     "BoundaryConditions(open ocean = $(nameof(typeof(b.open_ocean))), ",
     "grounding line = $(nameof(typeof(b.grounding_line))), ",
-    "land = $(nameof(typeof(b.land))), gaps = $(nameof(typeof(b.gaps))), ",
+    "land = $(nameof(typeof(b.land))), gaps = $(_gaps_label(b.gaps)), ",
     "wall advection = $(nameof(typeof(b.wall_advection))))",
 )
 

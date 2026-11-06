@@ -380,8 +380,9 @@ _front_drho_weight(::ZeroGradientFront, x) = one(x)
 """
 Abstract supertype for the treatment of ice-shelf gaps — ice-free cells inside
 the shelf domain, marked `4` in the mask.  Pass a concrete instance as
-`BoundaryConditions(; gaps = ...)`: [`SinkGapsBC`](@ref) (the default, gaps act as sinks)
-or [`ConnectedGapsBC`](@ref) (gaps stay dynamically connected).
+`BoundaryConditions(; gaps = ...)`: [`SinkGapsBC`](@ref) (the default, gaps act as sinks),
+[`ConnectedGapsBC`](@ref) (gaps stay dynamically connected), or [`LeakyGapsBC`](@ref)
+(connected, but the layer loses part of its anomaly crossing the gap).
 """
 abstract type AbstractGapsBC end
 
@@ -431,6 +432,80 @@ Model(grid; forcing, boundary)                          # gaps from a footprint
 """
 struct ConnectedGapsBC <: AbstractGapsBC end
 
+"""
+$(TYPEDEF)
+
+Treat ice-shelf gaps as connected but leaky: an intermediate between
+[`SinkGapsBC`](@ref) and [`ConnectedGapsBC`](@ref), set by one parameter, the
+`transmission` α ∈ [0, 1] (default `0.8`).
+
+The gaps stay dynamically active as under `ConnectedGapsBC`, but in gap cells the layer
+dissolves into the water around it.  It detrains towards the minimum thickness `H_min`,
+its temperature relaxes towards the ambient `Ta` beneath it, and its velocity relaxes
+towards rest.  Salinity is left alone: the water detrained leaves at the layer's own
+`T` and `S`, so the meltwater the layer carries is not erased in the cells it crosses.
+All four use one rate, chosen so that the fraction α of the anomaly — `H - H_min`,
+`T - Ta`, `U`, `V` — survives one crossing of the gap:
+
+```
+κ = -ln(α) / L        decay per metre travelled in the gap
+r = κ |u|             relaxation rate (s⁻¹), from the local speed
+```
+
+Along a path of length `s` through the gap the anomaly then falls by `α^(s/L)`,
+whatever the speed.  `L` is the gap's crossing length: by default the hydraulic
+diameter `4A/P` of each 4-connected gap (area `A`, perimeter `P`), which is `n·dx` for
+an `n×n` gap and about twice the width of a long, narrow one; or one fixed length
+(m) for every gap if `crossing_length` is given.
+
+- `α = 1`: no relaxation, bit-identical to [`ConnectedGapsBC`](@ref).
+- `α = 0`: the gaps are demoted to open ocean, identical to [`SinkGapsBC`](@ref).
+  The limit `α → 0⁺` drains the gap as the sink does: on the ISOMIP+ channel of the
+  test suite, `α = 10⁻⁴` gives the sink's downstream melt to within 0.02 %.
+
+The relaxation is backward Euler, applied after each update of `H`, `T`, `U` and `V`,
+so it is stable for any rate.  Like the sink, it does not conserve layer volume.
+Melting is zero in gaps, as under `ConnectedGapsBC`.
+
+The response to α is not linear: a boundary current that loses half its momentum at
+every crossing mostly stalls, so melt stays close to the sink's up to `α ≈ 0.5` and
+rises to the connected value over `0.5 < α ≤ 1`.  The default `α = 0.8` lands between
+the end-members on every geometry tested, at 11–40 % of the way from the sink to the
+connected melt; see the documentation page on ice-shelf gaps for the numbers.
+
+Real gaps are full of sea ice, mélange and bergs that take up part of the layer's
+momentum and heat; α is the part they let through, and is not constrained by
+observations.
+
+# Example
+
+```julia
+boundary = BoundaryConditions(; gaps = LeakyGapsBC())       # α = 0.8
+boundary = BoundaryConditions(; gaps = LeakyGapsBC(; transmission = 0.3, crossing_length = 5e3))
+```
+
+# Fields
+$(TYPEDFIELDS)
+"""
+struct LeakyGapsBC{FT,L} <: AbstractGapsBC
+    "fraction of the layer's anomaly that survives one crossing of a gap, in [0, 1]"
+    transmission::FT
+    "crossing length of every gap (m), or `nothing` for each gap's hydraulic diameter `4A/P`"
+    crossing_length::L
+    function LeakyGapsBC(transmission::Real, crossing_length::Union{Nothing,Real} = nothing)
+        0 <= transmission <= 1 || throw(
+            ArgumentError("LeakyGapsBC transmission must lie in [0, 1], got $transmission"),
+        )
+        crossing_length === nothing || crossing_length > 0 || throw(
+            ArgumentError("LeakyGapsBC crossing_length must be positive, got $crossing_length"),
+        )
+        t = float(transmission)
+        l = crossing_length === nothing ? nothing : float(crossing_length)
+        return new{typeof(t),typeof(l)}(t, l)
+    end
+end
+LeakyGapsBC(; transmission = 0.8, crossing_length = nothing) = LeakyGapsBC(transmission, crossing_length)
+
 # Resolve mask value 4 (gap) into the classification the selected treatment implies.
 # Runs at model construction, before the Geometry is derived: SinkGapsBC demotes gaps
 # to open ocean, so every mask derivation sees exactly the v1.x geometry;
@@ -438,6 +513,34 @@ struct ConnectedGapsBC <: AbstractGapsBC end
 # `MarkGapsPreprocess`'s job.
 _apply_gaps_bc(mask, ::SinkGapsBC) = ifelse.(mask .== 4, 0, mask)
 _apply_gaps_bc(mask, ::ConnectedGapsBC) = mask
+# α = 0 is the sink itself, not its limit (see `LeakyGapsBC`).
+_apply_gaps_bc(mask, bc::LeakyGapsBC) =
+    iszero(bc.transmission) ? _apply_gaps_bc(mask, SinkGapsBC()) : mask
+
+# Decay per metre κ = -ln(α)/L in each gap cell of the resolved `mask`, zero elsewhere;
+# `L` is the gap's hydraulic diameter 4A/P unless the condition fixes it.  Faces across
+# i (x) are dy long, faces across j (y) dx.
+function _gap_decay(mask, bc::LeakyGapsBC, dx, dy, ::Type{FT}) where {FT}
+    κ = zeros(FT, size(mask))
+    lnα = -log(bc.transmission)
+    for comp in _components(mask, ==(4))
+        L = if bc.crossing_length === nothing
+            P = zero(FT)
+            for c in comp, (n, len) in zip(_neighbours(c), (dy, dy, dx, dx))
+                (checkbounds(Bool, mask, n) && mask[n] == 4) || (P += len)
+            end
+            4 * length(comp) * dx * dy / P
+        else
+            bc.crossing_length
+        end
+        κ[comp] .= lnα / L
+    end
+    return κ
+end
+
+_init_gap_decay!(cache, ::AbstractGapsBC, mask, dx, dy) = nothing
+_init_gap_decay!(cache, bc::LeakyGapsBC, mask, dx, dy) =
+    (cache.gap_decay .= _gap_decay(mask, bc, dx, dy, eltype(cache.gap_decay)); nothing)
 #############################
 # Boundary-condition container
 #############################
@@ -477,7 +580,7 @@ struct BoundaryConditions{
     grounding_line::GL
     "land walls: [`PartialSlipLand`](@ref) (default `PartialSlipLand(1.0)`), [`NoSlipLand`](@ref) or [`FreeSlipLand`](@ref)"
     land::LB
-    "ice-shelf gaps: [`SinkGapsBC`](@ref) (default) or [`ConnectedGapsBC`](@ref)"
+    "ice-shelf gaps: [`SinkGapsBC`](@ref) (default), [`ConnectedGapsBC`](@ref) or [`LeakyGapsBC`](@ref)"
     gaps::GB
     "wall slip in the momentum advection: [`NoWallAdvection`](@ref) (default), [`SlipScaledWallAdvection`](@ref) or [`V1WallAdvection`](@ref)"
     wall_advection::WA

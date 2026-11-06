@@ -29,7 +29,7 @@ Laddie.jl; the [table below](#Options-in-each-version) lists them, with the defa
 | frazil ice | `NoFrazilIce` | `NoFrazilIce` | `NoFrazilIce` |
 | lateral viscosity | `PrescribedLateralViscosity` | `NonlinearLateralViscosity` | `PrescribedLateralViscosity` |
 | Coriolis parameter | `CoriolisParameter0D` | `CoriolisParameter0D` | `CoriolisParameter0D` |
-| ice-shelf gaps | `SinkGapsBC` | `SinkGapsBC` or `ConnectedGapsBC`, per run | `SinkGapsBC` |
+| ice-shelf gaps | `SinkGapsBC` | `SinkGapsBC`, `ConnectedGapsBC` or `LeakyGapsBC`, per run | `SinkGapsBC` |
 | momentum advection | `CentredMomentumAdvection` | `UpstreamMomentumAdvection` | `CentredMomentumAdvection` |
 | tracer form | `AdvectiveTracerForm` | `FluxTracerForm` | `FluxTracerForm` |
 | momentum form | `AdvectiveMomentumForm` | `FluxMomentumForm`\* | `AdvectiveMomentumForm` |

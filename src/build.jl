@@ -306,7 +306,9 @@ function Model(
         typeof(params.frazil_ice),
         nx_total,
         ny_total,
+        typeof(boundary.gaps),
     )
+    _init_gap_decay!(cache, boundary.gaps, mask, grid.dx, grid.dy)
     _init_prescribed_melt!(cache, params.melting, grid, params)
     _init_exchange_velocities!(cache, params.melting)
     m = Model(grid, geometry, state, cache, params, boundary, forcing)

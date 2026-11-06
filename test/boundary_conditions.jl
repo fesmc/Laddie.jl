@@ -314,6 +314,86 @@ end
     @test mc.model.melt != m_sink.model.melt
 end
 
+@testset "Gaps BC: LeakyGapsBC between sink and connected" begin
+    # The 3x3 gap of the testset above, on 2 km cells: L = 4A/P = 6 km.
+    function gappy_mask()
+        mk = zeros(Int, 22, 12)
+        mk[1, :] .= 1;  mk[end, :] .= 1
+        mk[:, 1] .= 1;  mk[:, end] .= 1
+        mk[2:3,  2:11] .= 2
+        mk[4:20, 2:11] .= 3
+        mk[21,   2:11] .= 0
+        mk[10:12, 5:7] .= 4
+        return mk
+    end
+    gap_ix = CartesianIndices((10:12, 5:7))
+    z_draft_raw = fill(-400.0, 22, 12)
+    forcing = ISOMIPForcing(:warm; FT)
+    build(gaps) =
+        Simulation(Model(Grid(gappy_mask(), z_draft_raw, 2000.0, 2000.0; FT,
+                              domain_cropping = NoDomainCropping());
+                         forcing, boundary = BoundaryConditions(; gaps)))
+
+    # -- Construction ------------------------------------------------------
+    @test LeakyGapsBC().transmission == 0.8
+    @test LeakyGapsBC(1).transmission === 1.0
+    @test LeakyGapsBC(; transmission = 0.3, crossing_length = 5e3).crossing_length == 5e3
+    @test_throws ArgumentError LeakyGapsBC(1.5)
+    @test_throws ArgumentError LeakyGapsBC(-0.1)
+    @test_throws ArgumentError LeakyGapsBC(0.5, 0.0)
+    @test occursin("LeakyGapsBC(α = 0.8)", sprint(show, BoundaryConditions(; gaps = LeakyGapsBC())))
+    @test occursin("L = 5000.0 m", sprint(show, BoundaryConditions(; gaps = LeakyGapsBC(0.5, 5e3))))
+    @test Laddie._promote_param(LeakyGapsBC(0.5), Float32).transmission isa Float32
+
+    # -- Decay per metre: -ln(α)/L in gaps, zero elsewhere ------------------
+    ml = build(LeakyGapsBC(0.5))
+    @test all(ml.model.gap_decay[gap_ix] .≈ -log(0.5) / 6000)
+    @test count(!iszero, ml.model.gap_decay) == length(gap_ix)
+    @test all(build(LeakyGapsBC(0.5, 3e3)).model.gap_decay[gap_ix] .≈ -log(0.5) / 3000)
+    # A 1-cell gap is crossed in one cell; a 1x4 strip in about two widths.
+    strip = zeros(Int, 10, 10); strip[3, 3] = 4; strip[6, 3:6] .= 4
+    κ = Laddie._gap_decay(strip, LeakyGapsBC(0.5), 1000.0, 1000.0, Float64)
+    @test κ[3, 3] ≈ -log(0.5) / 1000
+    @test κ[6, 4] ≈ -log(0.5) / (4 * 4e6 / 10e3)
+    # Other gap conditions carry the slots as scalar zeros: no work, no memory.
+    @test build(ConnectedGapsBC()).model.gap_rate === zero(FT)
+    @test build(SinkGapsBC()).model.gap_decay === zero(FT)
+
+    # -- The implicit relaxation -------------------------------------------
+    r = fill(0.0, 1, 1)
+    @test Laddie._gap_relax(2.0, 1.0, r, 1, 1, 100.0) === 2.0           # r = 0: identity
+    r[1, 1] = 1e30
+    @test Laddie._gap_relax(2.0, 1.0, r, 1, 1, 100.0) ≈ 1.0             # r → ∞: the target
+    r[1, 1] = 1e-3
+    @test Laddie._gap_relax(2.0, 1.0, r, 1, 1, 100.0) ≈ 1 + 1 / 1.1     # backward Euler
+    @test Laddie._gap_relax(2.0, 1.0, 0.0, 1, 1, 100.0) === 2.0         # scalar: untouched
+    @test Laddie._gap_damp(2.0, fill(1e-3, 2, 1), 1, 1, 2, 1, 100.0) ≈ 2 / 1.1
+
+    # -- The end-members, exactly ------------------------------------------
+    sims = Dict(:sink => build(SinkGapsBC()), :conn => build(ConnectedGapsBC()),
+                :a0 => build(LeakyGapsBC(0.0)), :a1 => build(LeakyGapsBC(1.0)),
+                :a05 => build(LeakyGapsBC(0.5)), :a01 => build(LeakyGapsBC(0.1)))
+    @test sims[:a0].model.resolved_mask == sims[:sink].model.resolved_mask
+    for s in values(sims)
+        run!(s; days = 1.0, verbose = false)
+        @test all(isfinite, s.model.H.present) && all(isfinite, s.model.T.present)
+    end
+    for f in (:H, :U, :V, :T, :S)
+        @test getproperty(sims[:a1].model, f).present == getproperty(sims[:conn].model, f).present
+        @test getproperty(sims[:a0].model, f).present == getproperty(sims[:sink].model, f).present
+    end
+    @test sims[:a1].model.melt == sims[:conn].model.melt
+    @test sims[:a0].model.melt == sims[:sink].model.melt
+
+    # -- In between: the less transmitted, the more the gap drains --------
+    # (Not slower: next to this 400 m draft cliff a thinner gap layer flows faster.)
+    gapmean(s, f) = sum(abs, getproperty(s.model, f).present[gap_ix]) / length(gap_ix)
+    @test gapmean(sims[:a01], :H) < gapmean(sims[:a05], :H) < gapmean(sims[:conn], :H)
+    @test all(sims[:a05].model.melt[gap_ix] .== 0)
+    @test all(sims[:a05].model.gap_rate[gap_ix] .> 0)
+    @test all(sims[:a05].model.gap_rate[sims[:a05].model.imask .> 0] .== 0)
+end
+
 @testset "Gaps BC: meltwater crosses a gap in the ISOMIP+ boundary current" begin
     # The science test for ConnectedGapsBC.  ISOMIP+ channel, coarsened to
     # 60x20 so three runs stay cheap.  Coriolis steers the plume into a
@@ -348,6 +428,8 @@ end
     m_sink = channel(gappy, SinkGapsBC())
     m_conn = channel(gappy, ConnectedGapsBC())
     m_none = channel(mask0, SinkGapsBC())    # same draft, no gap: the control
+    m_leak0 = channel(gappy, LeakyGapsBC(1e-4))   # the limit α → 0⁺
+    m_leak9 = channel(gappy, LeakyGapsBC(0.9))
 
     for m in (m_sink, m_conn, m_none)
         @test all(isfinite, m.model.melt) && all(isfinite, m.model.H.present)
@@ -379,6 +461,13 @@ end
           1.2 * mn(abs.(m_sink.model.U.present[down, ywall]))
     @test mn(m_conn.model.T.present[down, ywall]) >
           mn(m_sink.model.T.present[down, ywall]) + 0.01
+
+    # LeakyGapsBC: α → 0⁺ drains the gap as the sink does, so the family is
+    # continuous at α = 0, and α = 0.9 lands between the end-members.
+    @test meltsum(m_leak0, down) ≈ meltsum(m_sink, down) rtol = 1e-3
+    @test maximum(abs.(m_leak0.model.U.present[xgap, ywall])) < 0.1
+    @test meltsum(m_sink, down) < meltsum(m_leak9, down) < meltsum(m_conn, down)
+    @test meltsum(m_leak9, up) ≈ meltsum(m_conn, up) rtol = 1e-3
 end
 
 @testset "Front pressure: FullDepthGradient is default/v1, TruncatedDepthGradient drops the term" begin

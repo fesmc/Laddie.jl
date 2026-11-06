@@ -706,6 +706,7 @@ function init_from_restart!(sim, path::AbstractString; refine::Integer = 1, coar
             end
         end
     end
+    _set_forcing_time!(sim)
     _bootstrap_leapfrog!(m, sim.clock.dt; _nan_check(sim)...)
     refined = refine == 1 ? "" : " (refined $(refine)×)"
     _print2log(sim, "Restarted from $(path)$(refined) at $(_t_days(sim)) days")

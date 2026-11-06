@@ -191,10 +191,16 @@ No I/O, no CFL control, no blow-up check — those belong to [`run!`](@ref).
 Returns `sim`.
 """
 function time_step!(sim::Simulation)
+    _set_forcing_time!(sim)
     _step_model!(sim.model, sim.clock.dt, sim.nu; _nan_check(sim)...)
     _tick!(sim.clock)
     return sim
 end
+
+# Bring a time-dependent forcing (a `RampedOceanForcing`) to the clock's time, from the
+# host; a no-op for every other forcing.
+_set_forcing_time!(sim) = _set_forcing_time!(
+    getfield(sim.model, :forcing).ocean, sim.clock.time / _float64(_primal(sim.model.seconds_per_day)))
 
 # Move `clock` forward by one step of its dt: the host side of `time_step!`.
 function _tick!(clock)

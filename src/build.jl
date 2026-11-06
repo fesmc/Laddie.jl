@@ -12,6 +12,7 @@ _scalar_type(::Params{FT}) where {FT} = FT
 # Whether `trace_parameters` has turned the scalar parameters into traced numbers.
 _is_traced(p::Params) = _float_type(p) !== _scalar_type(p)
 _float_type(f::Union{OceanForcing1D,OceanForcing2D,PerBasinOceanForcing1D}) = eltype(f.Tz)
+_float_type(f::RampedOceanForcing) = _float_type(f.from)
 
 # Per-cell ambient profiles cover the grid's input arrays and are cropped with them;
 # a single profile is the same everywhere.
@@ -34,6 +35,9 @@ function _crop_ocean_forcing(o::PerBasinOceanForcing1D, sz, r, c)
     )
     return PerBasinOceanForcing1D(o.Tz, o.Sz, o.basin[r, c], o.z, o.dz, o.z0)
 end
+# Both ends of a ramp are cropped alike; the weight is kept, not copied.
+_crop_ocean_forcing(o::RampedOceanForcing, sz, r, c) = RampedOceanForcing(
+    _crop_ocean_forcing(o.from, sz, r, c), _crop_ocean_forcing(o.to, sz, r, c), o.start, o.duration, o.weight)
 _float_type(f::CavityForcing) = _float_type(f.ocean)
 
 # A user input given as a scalar or a field: a matrix must cover the grid's input
@@ -196,11 +200,11 @@ function _validate_model_inputs(resolved_mask, forcing, params, FT)
             "construct the parameters with Params(; FT = $FT, ...) or build the grid with the matching FT",
         ),
     )
-    forcing.ocean isa Union{OceanForcing1D,OceanForcing2D,PerBasinOceanForcing1D} || throw(
+    forcing.ocean isa Union{OceanForcing1D,OceanForcing2D,PerBasinOceanForcing1D,RampedOceanForcing} || throw(
         ArgumentError(
             "Model needs an OceanForcing1D (one ambient profile for the whole " *
-            "domain), a PerBasinOceanForcing1D (one per basin) or an OceanForcing2D " *
-            "(one per cell); got $(typeof(forcing.ocean)).",
+            "domain), a PerBasinOceanForcing1D (one per basin), an OceanForcing2D " *
+            "(one per cell) or a RampedOceanForcing between two of them; got $(typeof(forcing.ocean)).",
         ),
     )
     _float_type(forcing) === FT || throw(

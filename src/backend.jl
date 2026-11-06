@@ -40,6 +40,9 @@ _forcing_to_backend(f::Union{AbstractOceanForcing,AbstractIceForcing}, backend) 
 # The basin map is an integer array the ambient kernel reads, so it moves too.
 _forcing_to_backend(f::PerBasinOceanForcing1D, backend) =
     _mapfields(x -> x isa AbstractArray ? _to_device(backend, x) : x, f)
+# Both ends of a ramp move; the moved model gets its own weight.
+_forcing_to_backend(f::RampedOceanForcing, backend) = RampedOceanForcing(
+    _forcing_to_backend(f.from, backend), _forcing_to_backend(f.to, backend), f.start, f.duration, Ref(f.weight[]))
 
 """
 $(TYPEDSIGNATURES)

@@ -252,6 +252,78 @@ Base.show(io::IO, f::PerBasinOceanForcing1D) = print(
     "T ∈ [$(join(_r.(extrema(f.Tz), 3), ", "))] °C, S ∈ [$(join(_r.(extrema(f.Sz), 3), ", "))] psu",
 )
 
+"""
+$(TYPEDEF)
+
+Ambient T/S that ramps linearly from one ocean forcing to another: `from` up to day
+`start`, `to` from day `start + duration` on, and in between
+`(1 − w)·from + w·to` with `w = (t − start)/duration`, `t` in days of model time.  The ambient kernel blends the two profile tables as it
+samples them, so the cost is the second table and nothing per step beyond it.  Since the
+depth interpolation is linear, sampling the blend equals blending the samples.
+
+`from` and `to` must be of the same type ([`OceanForcing1D`](@ref),
+[`PerBasinOceanForcing1D`](@ref) or [`Laddie.OceanForcing2D`](@ref)) on the same depth
+grid, and a `PerBasinOceanForcing1D` pair on the same basin map.  The weight follows the
+simulation clock: [`time_step!`](@ref) sets it before each step, and a restart sets it
+from the restart's time, so a run restarted within the ramp resumes it.  For a gradual
+switch to a perturbed ocean in a spin-up, e.g. from cold to warm, instead of an abrupt
+one.
+
+Not supported by the Reactant backend: under Reactant the weight would be frozen at its
+value when the program is traced.
+
+```julia
+RampedOceanForcing(cold, warm; start = 600, duration = 100)   # days
+```
+
+# Fields
+$(TYPEDFIELDS)
+"""
+struct RampedOceanForcing{F<:AbstractOceanForcing,R<:Base.RefValue} <: AbstractOceanForcing
+    "the forcing up to `start`"
+    from::F
+    "the forcing from `start + duration` on"
+    to::F
+    "start of the ramp (days of model time)"
+    start::Float64
+    "length of the ramp (days)"
+    duration::Float64
+    "the current weight of `to`, in `[0, 1]`, set from the simulation clock"
+    weight::R
+end
+
+function RampedOceanForcing(from::F, to::F; start::Real, duration::Real) where {F<:AbstractOceanForcing}
+    from isa RampedOceanForcing && throw(ArgumentError("cannot ramp between RampedOceanForcings"))
+    duration > 0 || throw(ArgumentError("duration must be positive, got $duration"))
+    isfinite(start) || throw(ArgumentError("start must be finite, got $start"))
+    from.z == to.z || throw(ArgumentError("from and to must share their depth grid"))
+    size(from.Tz) == size(to.Tz) ||
+        throw(ArgumentError("from has $(size(from.Tz)) profile values but to has $(size(to.Tz))"))
+    from isa PerBasinOceanForcing1D && from.basin != to.basin &&
+        throw(ArgumentError("from and to must share their basin map"))
+    FT = eltype(from.Tz)
+    return RampedOceanForcing(from, to, Float64(start), Float64(duration), Ref(_ramp_weight(start, duration, 0.0, FT)))
+end
+RampedOceanForcing(from::AbstractOceanForcing, to::AbstractOceanForcing; kwargs...) = throw(
+    ArgumentError("from and to must be of the same type, got $(nameof(typeof(from))) and $(nameof(typeof(to)))"),
+)
+
+# The weight of `to` at `t_days`.
+_ramp_weight(start, duration, t_days, ::Type{FT}) where {FT} = FT(clamp((t_days - start) / duration, 0, 1))
+
+# Set the ramp weight from the model time (days); a no-op for every other forcing.
+_set_forcing_time!(o::AbstractOceanForcing, t_days) = o
+function _set_forcing_time!(o::RampedOceanForcing, t_days)
+    o.weight[] = _ramp_weight(o.start, o.duration, t_days, typeof(o.weight[]))
+    return o
+end
+
+Base.show(io::IO, f::RampedOceanForcing) = print(
+    io,
+    "RampedOceanForcing over days $(f.start)–$(f.start + f.duration) (weight now $(f.weight[])) from ",
+    f.from, " to ", f.to,
+)
+
 #########################
 # Ice
 #########################

@@ -202,6 +202,52 @@ end
 end
 
 
+# The ambient sampling of a `RampedOceanForcing`: as `_ambient_interp_kernel!`, from the
+# two profile tables blended with the weight `w` of the second. A kernel of its own, so
+# the shared ones (and their Reactant/Enzyme workarounds) stay as they are. `basin` is
+# the basin map of a `PerBasinOceanForcing1D` pair and `nothing` otherwise.
+@kernel function _ambient_interp_ramp_kernel!(
+    Ta,
+    Sa,
+    @Const(z_draft),
+    @Const(H),
+    @Const(Tz0),
+    @Const(Sz0),
+    @Const(Tz1),
+    @Const(Sz1),
+    basin,
+    w,
+    z0,
+    dz,
+    nz,
+)
+    z0, dz, w = _val(z0), _val(dz), _val(w)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = typeof(z0)
+        depth_idx = (z_draft[i, j] - H[i, j] - z0) / dz
+        depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
+        depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
+        lo = floor(_primal(depth_idx))
+        idx_lo = unsafe_trunc(Int, lo)
+        idx_hi = clamp(idx_lo + 1, 0, nz - 1)
+        weight = depth_idx - lo
+        Ta[i, j] = _ramped_sample(Tz0, Tz1, w, basin, i, j, idx_lo + 1, idx_hi + 1, weight)
+        Sa[i, j] = _ramped_sample(Sz0, Sz1, w, basin, i, j, idx_lo + 1, idx_hi + 1, weight)
+    end
+end
+
+# Level `k` of the profile of cell (i, j), with the basin map of a per-basin table.
+@inline _profile_level(P, ::Nothing, i, j, k) = _level(P, i, j, k)
+@inline _profile_level(P::AbstractMatrix, basin::AbstractMatrix, i, j, k) = @inbounds P[basin[i, j], k]
+# The ramped value between levels `lo` and `hi` (depth weight `a`) of tables `P0`, `P1`.
+@inline function _ramped_sample(P0, P1, w, basin, i, j, lo, hi, a)
+    FT = typeof(w)
+    v0 = a * _profile_level(P0, basin, i, j, hi) + (one(FT) - a) * _profile_level(P0, basin, i, j, lo)
+    v1 = a * _profile_level(P1, basin, i, j, hi) + (one(FT) - a) * _profile_level(P1, basin, i, j, lo)
+    return (one(FT) - w) * v0 + w * v1   # exact at w = 0 and w = 1
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -210,6 +256,27 @@ plume base (z_draft − H), writing results into `m.Ta` and `m.Sa`. This samplin
 no numbered equation in [Lambert et al. (2023)](@cite lambert_modelling_2023); see `docs/src/physics/equations.md`.
 """
 update_ambient_fields!(m) = _update_ambient_fields!(m, m.forcing.ocean)
+
+function _update_ambient_fields!(m, o::RampedOceanForcing)
+    from, to = o.from, o.to
+    launch!(
+        _ambient_interp_ramp_kernel!,
+        m.Ta,
+        m.Sa,
+        m.z_draft,
+        m.H.present,
+        from.Tz,
+        from.Sz,
+        to.Tz,
+        to.Sz,
+        from isa PerBasinOceanForcing1D ? from.basin : nothing,
+        o.weight[],
+        from.z0,
+        from.dz,
+        length(from.z),
+    )
+    return
+end
 
 function _update_ambient_fields!(m, ::PerBasinOceanForcing1D)
     launch!(

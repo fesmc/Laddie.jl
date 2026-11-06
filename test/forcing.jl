@@ -194,6 +194,34 @@ end
     @test occursin("2 basin profiles", sprint(show, f))
 end
 
+@testset "RampedOceanForcing: blends from → to with the clock" begin
+    grid = build_isomip(CPU(); FT, nx = 20, ny = 10).model.grid
+    warm, cold = ISOMIPForcing(:warm; FT), ISOMIPForcing(:cold; FT)
+    basin = fill(1, grid.input_size)
+    basin[:, (grid.input_size[2]÷2+1):end] .= 2
+    pc, pw = PerBasinOceanForcing1D([cold, warm], basin), PerBasinOceanForcing1D([warm, warm], basin)
+    for (from, to) in ((cold, warm), (pc, pw))
+        f = RampedOceanForcing(from, to; start = 1, duration = 2)
+        m, m0, m1 = (Model(grid; forcing = o) for o in (f, from, to))
+        foreach(Laddie.update_ambient_fields!, (m0, m1))
+        sample(t) = (Laddie._set_forcing_time!(getfield(m, :forcing).ocean, t); Laddie.update_ambient_fields!(m); (copy(m.Ta), copy(m.Sa)))
+        @test sample(0.5) == (m0.Ta, m0.Sa)          # before the ramp: exactly `from`
+        @test sample(3.5) == (m1.Ta, m1.Sa)          # after it: exactly `to`
+        Ta, Sa = sample(2.0)                          # halfway
+        @test Ta ≈ (m0.Ta .+ m1.Ta) ./ 2 && Sa ≈ (m0.Sa .+ m1.Sa) ./ 2
+    end
+    # The clock drives the weight: after 1.5 days of a ramp from day 1 over 2 days, w = 1/4.
+    f = RampedOceanForcing(cold, warm; start = 1, duration = 2)
+    sim = Simulation(Model(grid; forcing = f))
+    run!(sim; days = 1.5, verbose = false)
+    w = getfield(sim.model, :forcing).ocean.weight[]
+    @test w ≈ FT(0.25) atol = FT(0.01)
+    @test all(isfinite, sim.model.H.present)
+    @test_throws ArgumentError RampedOceanForcing(cold, pw; start = 0, duration = 1)
+    @test_throws ArgumentError RampedOceanForcing(cold, warm; start = 0, duration = 0)
+    @test occursin("RampedOceanForcing over days 1.0–3.0", sprint(show, f))
+end
+
 @testset "nearest_seed: exact Euclidean distance and label" begin
     labels = zeros(Int, 23, 17)
     seeds = [(3, 4), (20, 2), (11, 15), (18, 13), (1, 17)]

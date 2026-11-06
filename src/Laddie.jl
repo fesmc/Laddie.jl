@@ -107,7 +107,7 @@ export AbstractIceSlopeGradient, PyGradient, JlGradient
 export AbstractTimeStepper, FixedDt, AdaptiveDt
 export AbstractCFL, ConservativeCFL, ExactCFL
 export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateEnd
-export AbstractOceanForcing, OceanForcing1D, PerBasinOceanForcing1D, ISOMIPForcing
+export AbstractOceanForcing, OceanForcing1D, PerBasinOceanForcing1D, RampedOceanForcing, ISOMIPForcing
 export front_ocean_forcing, FrontBlend, front_sources, nearest_seed, regrid_ocean, fill_ocean!
 export AbstractIceForcing, PrescribedIceForcing
 export CavityForcing

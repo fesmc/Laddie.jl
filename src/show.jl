@@ -124,8 +124,8 @@ end
 
 _gaps_label(g) = string(nameof(typeof(g)))
 _gaps_label(g::LeakyGapsBC) =
-    "LeakyGapsBC(α = $(g.transmission)" *
-    (g.crossing_length === nothing ? ")" : ", L = $(g.crossing_length) m)")
+    "LeakyGapsBC(α = $(g.melange_cover)" *
+    (iszero(g.surface_heat_loss) ? ")" : ", Q = $(g.surface_heat_loss) W m⁻²)")
 
 Base.show(io::IO, b::BoundaryConditions) = print(
     io,

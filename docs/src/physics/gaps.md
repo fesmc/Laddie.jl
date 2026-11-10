@@ -4,21 +4,24 @@ Where melting thins a shelf all the way through, an ice-free **gap** opens insid
 domain. There is no ice base there, so no melt — but what happens to the meltwater layer
 arriving from upstream is genuinely uncertain, and the two defensible answers bracket a
 large range of coupled ice-sheet response ([Jesse et al. (2026)](@cite jesse_ice-sheet_2026)).
-Laddie.jl offers both, and a family in between, as
+Laddie.jl offers both, and a physically based variant of the connected gap, as
 `BoundaryConditions(; gaps = ...)`, selected on the same input mask:
 
-| | [`SinkGapsBC`](@ref) (default) | [`LeakyGapsBC`](@ref)`(α)` | [`ConnectedGapsBC`](@ref) |
+| | [`SinkGapsBC`](@ref) (default) | [`ConnectedGapsBC`](@ref) | [`LeakyGapsBC`](@ref)`(α, Q)` |
 |---|---|---|---|
 | gap cell is | open ocean | dynamically active, ice-free | dynamically active, ice-free |
-| ``H, T, S`` in the gap | not stepped | stepped, relaxed | stepped |
+| ``H, T, S`` in the gap | not stepped | stepped | stepped, plus surface heat loss and convection |
+| ice–ocean drag in the gap | – | full | scaled by the mélange cover α |
 | gap edge behaves like | the calving front | the shelf interior | the shelf interior |
-| heat and momentum arriving at the gap | leave the cavity | a fraction α continues | continue downstream |
+| heat and momentum arriving at the gap | leave the cavity | continue downstream | continue downstream, less what the open water takes |
 
-Real gaps are full of sea ice, mélange and bergs, so neither end-member is right on its
-own; running both is how the uncertainty is quantified, and [`LeakyGapsBC`](@ref) spans
-the range between them with one parameter. The
-[ice-shelf gaps example](../generated/jesse-gaps.md) runs both on the paper's own geometries
-and compares them with [LADDIE v2](../versions.md).
+Real gaps are full of sea ice, mélange and bergs. [`LeakyGapsBC`](@ref) represents them
+by their cover fraction α: the covered part acts on the layer as the ice shelf does, the
+open part loses heat to the atmosphere. Running the sink and the connected gap is how the
+uncertainty of the treatment is quantified; [`LeakyGapsBC`](@ref) shows where the
+processes in an enclosed gap put the answer between them. The
+[ice-shelf gaps example](../generated/jesse-gaps.md) runs the sink and the connected gap on
+the paper's own geometries and compares them with [LADDIE v2](../versions.md).
 
 Gap cells are those marked `4` in the mask. Mark them directly, or from a reference ice
 footprint with [`MarkGapsPreprocess`](@ref) (see
@@ -50,48 +53,78 @@ scheme handles that. Frazil ice does not form in gaps either.
 ## Leaky gaps
 
 [`LeakyGapsBC`](@ref) keeps the gaps active as `ConnectedGapsBC` does, with everything in
-the section above. In addition, the layer dissolves into the water around it while
-it crosses a gap. With ``q`` standing for ``H``, ``T``, ``U`` and ``V`` and ``q_a`` for
-``H_\mathrm{min}``, ``T_a``, ``0`` and ``0``, each gap cell is relaxed after its update by
+the section above, and covers a fraction α of each gap with mélange and sea ice (default
+``\alpha = 0.9``). The layer's thickness is never relaxed: it changes only by transport,
+entrainment, the sea ice the open water forms and convection. Three processes act in gap
+cells.
+
+**Drag.** The ice–ocean drag coefficient ``C_d`` is scaled by α in gap cells, by the mean
+cover of the two cells of a velocity face. `ConnectedGapsBC` applies the full drag in its
+gaps, as if they were covered; open water (``\alpha = 0``) applies none.
+
+**Open-water heat loss.** The open fraction loses ``(1 - \alpha)\,Q`` to the atmosphere
+(``Q`` = `surface_heat_loss`, W m⁻², default 0). After the tracer step it first cools the
+layer, and once the layer reaches the surface freezing point ``T_f(S, 0)``, the rest forms
+sea ice of salinity ``S_i`` (`ice_salinity`, default 5 psu):
 
 ```math
-\frac{\partial q}{\partial t} = -r\,(q - q_a), \qquad
-r = \kappa\,|\mathbf u|, \qquad \kappa = -\frac{\ln \alpha}{L},
+\delta T = \frac{(1 - \alpha)\,Q\,\Delta t}{\rho_0\,c_p\,H}, \qquad
+h = \frac{c_p\,\delta T_f\,H}{L}, \qquad
+H' = H - h, \qquad S' = \frac{S H - S_i h}{H'},
 ```
 
-so the anomaly ``q - q_a`` falls by ``\alpha^{s/L}`` along a path of length ``s``
-through the gap, whatever the speed. ``L`` is the gap's crossing length: the hydraulic
-diameter ``4A/P`` of each gap, or one length for all of them. The transmission
-``\alpha`` is the fraction of the layer's thickness, heat and momentum anomaly that
-survives one crossing. Salinity is not relaxed: the water detrained leaves at the
-layer's own ``T`` and ``S``. The step is backward Euler, so it is stable for any ``r``.
+with ``\delta T_f`` the part of the cooling below the freezing point, which the latent
+heat holds the layer at. The frozen water leaves the layer and its salt beyond ``S_i``
+stays: brine rejection, with the bookkeeping of [frazil ice](frazil_ice.md).
 
-The family is continuous at both ends. ``\alpha = 1`` is `ConnectedGapsBC` to the last
-bit, and ``\alpha = 0`` is `SinkGapsBC` itself; the limit ``\alpha \to 0^+`` drains the
-gap and reproduces the sink's downstream melt. The response in between is not linear.
-On the ISOMIP+ channel of the test suite (a 12 × 24 km gap across the boundary
-current, 20 days, downstream melt summed over the wall rows):
+**Convection.** Where the layer is denser than the water beneath it
+(``\delta\rho < 0``), its ``T`` and ``S`` relax towards ``T_a`` and ``S_a`` on the time
+scale τ (`convection_time`, default 10⁴ s), as under [`RelaxToAmbient`](@ref), and its
+thickness relaxes towards ``H_\mathrm{min}`` at the same rate, so the convected water
+leaves the layer. This runs in every gap cell, whatever the cover and whatever the
+model's convection scheme, which leaves gap cells alone (see
+[Convection in gaps](convection.md#Convection-in-gaps)).
 
-| | sink | 0.1 | 0.25 | 0.5 | 0.75 | **0.8** | 0.9 | connected |
-|---|---|---|---|---|---|---|---|---|
-| downstream melt (m yr⁻¹, summed) | 104.3 | 104.0 | 105.6 | 102.8 | 129.8 | **129.1** | 155.2 | 166.9 |
+With ``\alpha = 1`` there is no surface exchange and the full drag: this is
+`ConnectedGapsBC`, plus convection, and identical to it wherever no gap cell turns
+unstable. ``\alpha = 0`` is open water. It is not the sink: the sink assumes the layer
+leaves the cavity at the gap, and none of the three processes removes it nearly as fast.
 
-A boundary current that loses half its momentum at each crossing mostly stalls, so the
-melt stays close to the sink up to ``\alpha \approx 0.5`` and recovers over the last
-half of the range. On the two year-200 geometries of the
-[ice-shelf gaps example](../generated/jesse-gaps.md) (total melt, days 20–30):
+On the ISOMIP+ channel of the test suite (a 12 × 24 km gap across the boundary current,
+downstream melt summed over the wall rows, mean over days 18–20; sink 103.9, connected
+164.2):
 
-| geometry | sink | ``\alpha = 0.8`` | connected |
+| α | ``Q = 0`` | ``Q = 300`` W m⁻² | ``Q = 600`` W m⁻² |
 |---|---|---|---|
-| small-gap (five gap cells at the grounding line) | 38.7 | 46.3 | 68.6 Gt yr⁻¹ |
-| large-gap (northern margin open over 300 km) | 52.0 | 53.5 | 65.6 Gt yr⁻¹ |
+| 0 (open water) | 209.6 | 183.3 | 174.2 |
+| 0.25 | 196.8 | 178.1 | 165.0 |
+| 0.5 | 184.9 | 173.1 | 160.8 |
+| 0.8 | 171.9 | 167.6 | 163.1 |
+| **0.9** | **168.0** | **165.8** | **163.7** |
+| 1 (full cover) | 164.2 | 164.2 | 164.2 |
 
-These tables justify ``\alpha = 0.8`` as the default: it is past the flat part of the
-response, so the gap lets a real share of the connected signal through, and it lands
-between the end-members on all three geometries, at 40 % (channel), 25 % (small-gap)
-and 11 % (large-gap) of the way from the sink to the connected melt. The leak is
-weaker on long gaps, where a current running along the gap crosses many times its
-crossing length ``L``.
+Open water removes the drag, so the current crosses the gap faster and melts more
+downstream than under the connected gap; the heat loss takes part of that back. The gap
+layer stays buoyant here, so convection hardly acts. The layer in this gap is 230–245 m
+thick: it fills the upturned bowl the ice base forms around the gap, and is renewed
+within about two weeks, faster than a heat loss of a few hundred W m⁻² can cool and
+salt it to neutral buoyancy.
+
+On the two year-200 geometries of the
+[ice-shelf gaps example](../generated/jesse-gaps.md) (total melt, Gt yr⁻¹, days 20–30):
+
+| geometry | sink | ``\alpha = 0`` | ``\alpha = 0``, ``Q = 300`` | **``\alpha = 0.9``** | ``\alpha = 0.9``, ``Q = 300`` | connected |
+|---|---|---|---|---|---|---|
+| small-gap (five gap cells at the grounding line) | 38.7 | 68.6 | 68.4 | **68.6** | 68.6 | 68.6 |
+| large-gap (northern margin open over 300 km) | 52.0 | 65.4 | 64.3 | **65.6** | 65.5 | 65.6 |
+
+Within the processes represented, an enclosed gap behaves much like a connected one. At
+the default cover the leaky gap is within 2.5 % of `ConnectedGapsBC` on every geometry
+tested, and even open water stays on the connected side: up to 28 % more melt on the
+channel, at most 2 % less on the real geometries, against 20–45 % less under the sink. The default ``\alpha = 0.9`` describes a gap mostly
+filled with mélange and sea ice, and ``Q = 0`` leaves the heat loss off until a value for
+the region is chosen; estimates for coastal polynyas reach a few hundred W m⁻² in winter.
+The sink remains the end-member for a gap through which the layer can leave the cavity.
 
 ## API
 

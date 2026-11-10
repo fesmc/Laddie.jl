@@ -122,43 +122,14 @@ function precompute_integration_terms!(m, dt)
         dt,
     )
     _update_conv2!(m, m.convection_scheme)
-    _update_gap_rate!(m, m.gap_rate)
     return
 end
 
-# `LeakyGapsBC`: the relaxation rate r = κ|u| in gap cells, from the cell-centred
-# speed of the present level.  κ is zero outside gaps, so r is too.  Other gap
-# conditions carry `gap_rate` as a scalar zero and skip this.
-_update_gap_rate!(m, ::Number) = nothing
-function _update_gap_rate!(m, ::AbstractArray)
-    launch_interior!(_gap_rate_kernel!, m.gap_rate, m.gap_decay, m.U.present, m.V.present, m.params.kinks)
-    return
-end
-
-@kernel function _gap_rate_kernel!(rate, @Const(decay), @Const(U), @Const(V), kinks)
-    i0, j0 = @index(Global, NTuple)
-    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
-    @inbounds begin
-        FT = eltype(rate)
-        half = FT(0.5)
-        Uc = half * (U[i, j] + U[i-1, j])
-        Vc = half * (V[i, j] + V[i, j-1])
-        rate[i, j] = decay[i, j] * _ssqrt(kinks, Uc^2 + Vc^2, _kink_width(kinks, :u))
-    end
-end
-
-# Backward-Euler relaxation of a stepped value `q` towards `qa` (a field or one value)
-# at the rate `r` (s⁻¹) over the step `dt` — the `LeakyGapsBC` gap sink, operator-split
-# after the update: H towards H_min, T towards Ta, U and V towards rest; S is left
-# alone.  Stable for any rate, and exactly `q` at r = 0.  Without leaky gaps the rate
-# is a scalar zero, and the value passes through untouched.
-@inline _gap_relax(q, qa, ::Number, i, j, dt) = q
-@inline _gap_relax(q, qa, r::AbstractArray, i, j, dt) =
-    @inbounds (q + r[i, j] * dt * _at(qa, i, j)) / (1 + r[i, j] * dt)
-# The same for a velocity, towards rest, at the mean rate of the two cells of its face.
-@inline _gap_damp(U, ::Number, i, j, i2, j2, dt) = U
-@inline _gap_damp(U, r::AbstractArray, i, j, i2, j2, dt) =
-    @inbounds U / (1 + (r[i, j] + r[i2, j2]) / 2 * dt)
+# `LeakyGapsBC`: the drag coefficient of a face, scaled by the mean mélange cover of its
+# two cells (`gap_drag`: α in gap cells, 1 elsewhere).  Under any other gap condition
+# `gap_drag` is a scalar and C_d passes through; off gaps `C_d·2/2` is C_d exactly.
+@inline _face_drag(C_d, ::Number, i, j, i2, j2) = C_d
+@inline _face_drag(C_d, f::AbstractArray, i, j, i2, j2) = @inbounds C_d * (f[i, j] + f[i2, j2]) / 2
 
 @kernel function _step_thickness_kernel!(
     out,
@@ -169,19 +140,14 @@ end
     @Const(detr_cap),
     @Const(tmask),
     frazil,
-    gap_rate,
-    H_min,
     dt,
 )
-    dt, frazil, H_min = _val(dt), _val(frazil), _val(H_min)
+    dt, frazil = _val(dt), _val(frazil)
     i, j = @index(Global, NTuple)
-    # A `LeakyGapsBC` gap detrains towards H_min after the step.  Under the flux
-    # forms the water leaves at the layer's own T, S and velocity: their updates
-    # divide by max(H_future, H*), as for the cap (see `_tracer_update`).
     @inbounds out[i, j] = ifelse(
         iszero(tmask[i, j]),
         H0[i, j],
-        _gap_relax(_unclamped_thickness(H0, convH, melt, nentr, detr_cap, frazil, i, j, dt), H_min, gap_rate, i, j, dt),
+        _unclamped_thickness(H0, convH, melt, nentr, detr_cap, frazil, i, j, dt),
     )
 end
 
@@ -273,7 +239,7 @@ _or_zero(::Nothing, FT) = zero(FT)
     @Const(nentr),
     outflow,
     frazil,
-    gap_rate,
+    gap_drag,
     g,
     C_d,
     pgf_w,
@@ -305,6 +271,7 @@ _or_zero(::Nothing, FT) = zero(FT)
         # The drag speed, at the level of `Params.closure_level` (Ud, Vd).
         ipjmV = half * (half * (Vd[i, j] + Vd[i, jm1]) + half * (Vd[ip1, j] + Vd[ip1, jm1]))
         speed = _ssqrt(kinks, Ud[i, j]^2 + ipjmV^2, _kink_width(kinks, :u))
+        C_dU = _face_drag(C_d, gap_drag, i, j, ip1, j)   # mélange cover in gaps (LeakyGapsBC)
         # tmip is 2 at a fully-interior face (both neighbours active) and 1 at a
         # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where the
         # masked neighbour thickness is a zero stand-in rather than a real one.
@@ -324,7 +291,7 @@ _or_zero(::Nothing, FT) = zero(FT)
             g * ip_H_dzdx +                                             # pressure: ice-shelf slope
             -half * g * ip_H^2 * (drho[ip1, j] - drho[i, j]) / dx * drho_gate + # pressure: density gradient
             fu[i, j] * ip_H_Vjm +                                              # Coriolis
-            _explicit_sink(f, -C_d * U1[i, j] * speed) +               # quadratic drag
+            _explicit_sink(f, -C_dU * U1[i, j] * speed) +              # quadratic drag
             lU[i, j] +                                                   # horizontal viscosity
             _explicit_sink(f, -detr[i, j] * U1[i, j]) +                # momentum loss by detrainment
             _explicit_sink(f, -(ip_detr_cap + ip_frazil) * U1[i, j])   # cap detrainment and frazil, cancel their share of dHdt
@@ -332,9 +299,9 @@ _or_zero(::Nothing, FT) = zero(FT)
             f, H_past, H_future, convH, melt, nentr, detr, detr_cap, frazil, tmask, i, j, ip1, j, tmip, dt,
         )
         U_new = _momentum_update(
-            f, Up[i, j], U1[i, j], rhs, ip_H, H_old, H_new, sink + C_d * speed, _at(outflow, i, j), umask[i, j], dt,
+            f, Up[i, j], U1[i, j], rhs, ip_H, H_old, H_new, sink + C_dU * speed, _at(outflow, i, j), umask[i, j], dt,
         )
-        out[i, j] = ifelse(umask[i, j] > 0, _gap_damp(U_new, gap_rate, i, j, ip1, j, dt), U_new)
+        out[i, j] = U_new
     end
 end
 
@@ -365,7 +332,7 @@ end
     @Const(nentr),
     outflow,
     frazil,
-    gap_rate,
+    gap_drag,
     g,
     C_d,
     pgf_w,
@@ -397,6 +364,7 @@ end
         # The drag speed, at the level of `Params.closure_level` (Vd, Ud).
         jpimU = half * (half * (Ud[i, j] + Ud[im1, j]) + half * (Ud[i, jp1] + Ud[im1, jp1]))
         speed = _ssqrt(kinks, Vd[i, j]^2 + jpimU^2, _kink_width(kinks, :u))
+        C_dV = _face_drag(C_d, gap_drag, i, j, i, jp1)   # mélange cover in gaps (LeakyGapsBC)
         # See _step_u_momentum_kernel! for the ice-front gates.
         pgf_gate = one(FT) + pgf_w * (tmjp - FT(2))
         drho_gate = one(FT) + drho_w * (tmjp - FT(2))
@@ -409,7 +377,7 @@ end
             g * jp_H_dzdy +                                             # pressure: ice-shelf slope
             -half * g * jp_H^2 * (drho[i, jp1] - drho[i, j]) / dy * drho_gate + # pressure: density gradient
             -fv[i, j] * jp_H_Uim +                                             # Coriolis
-            _explicit_sink(f, -C_d * V1[i, j] * speed) +               # quadratic drag
+            _explicit_sink(f, -C_dV * V1[i, j] * speed) +              # quadratic drag
             lV[i, j] +                                                   # horizontal viscosity
             _explicit_sink(f, -detr[i, j] * V1[i, j]) +                # momentum loss by detrainment
             _explicit_sink(f, -(jp_detr_cap + jp_frazil) * V1[i, j])   # cap detrainment and frazil, cancel their share of dHdt
@@ -417,9 +385,9 @@ end
             f, H_past, H_future, convH, melt, nentr, detr, detr_cap, frazil, tmask, i, j, i, jp1, tmjp, dt,
         )
         V_new = _momentum_update(
-            f, Vp[i, j], V1[i, j], rhs, jp_H, H_old, H_new, sink + C_d * speed, _at(outflow, i, j), vmask[i, j], dt,
+            f, Vp[i, j], V1[i, j], rhs, jp_H, H_old, H_new, sink + C_dV * speed, _at(outflow, i, j), vmask[i, j], dt,
         )
-        out[i, j] = ifelse(vmask[i, j] > 0, _gap_damp(V_new, gap_rate, i, j, i, jp1, dt), V_new)
+        out[i, j] = V_new
     end
 end
 
@@ -520,7 +488,6 @@ end
     gamT,
     K_h,
     conv2,
-    gap_rate,
     frazil,
     L,
     c_p,
@@ -548,7 +515,7 @@ end
             outflow[i, j] + detr_cap[i, j] + _at(frazil, i, j),
             H1[i, j], H_past[i, j], H_future[i, j], H_star, Ta[i, j], tmask[i, j], dt,
         )
-        out[i, j] = ifelse(tmask[i, j] > 0, _gap_relax(T_new, Ta, gap_rate, i, j, dt), T_new)
+        out[i, j] = T_new
     end
 end
 
@@ -595,6 +562,83 @@ end
     end
 end
 
+# `LeakyGapsBC`: the open-water surface of a gap, operator-split after the T and S
+# steps.  `gap_heat` holds the heat loss of each gap cell, (1 − α) Q for mélange
+# cover α.  It first cools the layer, by Q dt/(ρ₀ c_p H).  Once the layer reaches the
+# surface freezing point, the rest forms sea ice, with the latent heat holding T at
+# the freezing point.  The ice takes the water thickness h = c_p δT H / L out of the
+# layer (δT the part of the cooling below freezing) and keeps `ice_salinity`; the rest
+# of its salt stays in the thinner layer, as for frazil:
+#
+#     H' = H − h,   S' = (S H − S_ice h) / H'.
+#
+# Then convection: where the layer is denser than the water beneath it (δρ < 0), T
+# and S relax towards that water (Ta, Sa) on `convection_time`, as under
+# `RelaxToAmbient`, and H relaxes towards H_min at the same rate: the convected water
+# leaves the layer.  Every gap cell convects, whatever its cover.
+# Without leaky gaps `gap_heat` is a scalar and this is skipped.
+_gap_surface!(m, ::Number, dt) = nothing
+function _gap_surface!(m, ::AbstractArray, dt)
+    gaps = m.boundary.gaps
+    launch!(
+        _gap_surface_kernel!,
+        m.T.future,
+        m.S.future,
+        m.H.future,
+        m.Ta,
+        m.Sa,
+        m.z_draft,
+        m.tmask,
+        m.imask,
+        m.gap_heat,
+        m.H_min,
+        m.rho0_seawater,
+        m.c_p,
+        m.L,
+        m.l1,
+        m.l2,
+        m.l3,
+        gaps.ice_salinity,
+        gaps.convection_time,
+        _eos_coefficients(m),
+        dt,
+    )
+    return
+end
+
+@kernel function _gap_surface_kernel!(
+    T, S, H, @Const(Ta), @Const(Sa), @Const(z_draft), @Const(tmask), @Const(imask), @Const(Q),
+    H_min, rho0, c_p, L, l1, l2, l3, S_ice, tau, eos, dt,
+)
+    rho0, c_p, L, dt, H_min, tau = _val(rho0), _val(c_p), _val(L), _val(dt), _val(H_min), _val(tau)
+    l1, l2, l3, S_ice, eos = _val(l1), _val(l2), _val(l3), _val(S_ice), _val(eos)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = eltype(T)
+        Ti, Si, Hi, z = T[i, j], S[i, j], H[i, j], z_draft[i, j]
+        gap = (tmask[i, j] > 0) & iszero(imask[i, j])
+        # Cooling over the step (K), zero where Q is.  `H > 0` in active cells; the
+        # max only guards inactive ones (H = 0, Q = 0).
+        cool = Q[i, j] * dt / (rho0 * c_p * max(Hi, eps(FT)))
+        Tf = l1 * Si + l2 + l3 * z
+        # The part of the cooling that would take T below freezing forms ice instead;
+        # all of it if the layer is already at or below freezing.
+        freeze = min(cool, max(Tf - Ti + cool, zero(FT)))
+        T1 = Ti - cool + freeze
+        # Frozen water thickness, never more than takes the layer to H_min.
+        h = min(c_p * freeze * Hi / L, max(Hi - H_min, zero(FT)))
+        H1 = Hi - h
+        # (S H − S_ice h)/H', written so that h = 0 leaves S bit-identical.
+        S1 = Si + (Si - S_ice) * h / max(H1, eps(FT))
+        # Convection, backward Euler on `tau`.
+        unstable = gap & (_drho(Sa[i, j], S1, Ta[i, j], T1, _layer_depth(z, H1), eos) < 0)
+        k = ifelse(unstable, dt / tau, zero(FT))
+        T[i, j] = ifelse(unstable, (T1 + k * Ta[i, j]) / (1 + k), T1)
+        S[i, j] = ifelse(unstable, (S1 + k * Sa[i, j]) / (1 + k), S1)
+        H[i, j] = ifelse(unstable, (H1 + k * H_min) / (1 + k), H1)
+    end
+end
+
 function step_thickness!(m, dt)
     launch!(
         _step_thickness_kernel!,
@@ -606,8 +650,6 @@ function step_thickness!(m, dt)
         m.detr_cap,
         m.tmask,
         m.frazil,
-        m.gap_rate,
-        m.H_min,
         dt,
     )
     return
@@ -645,7 +687,7 @@ function step_u_momentum!(m, dt)
         m.nentr,
         _or_zero(outflow, m.FT),
         m.frazil,
-        m.gap_rate,
+        m.gap_drag,
         m.g,
         m.C_d,
         _front_pgf_weight(m.front_pressure, m.g),
@@ -690,7 +732,7 @@ function step_v_momentum!(m, dt)
         m.nentr,
         _or_zero(outflow, m.FT),
         m.frazil,
-        m.gap_rate,
+        m.gap_drag,
         m.g,
         m.C_d,
         _front_pgf_weight(m.front_pressure, m.g),
@@ -728,7 +770,7 @@ function step_temperature!(m, dt)
         m.params.tracer_form,
     )
     gamT = first(_exchange_velocities(m))
-    launch!(_step_temperature_kernel!, args..., gamT, m.K_h, m.conv2, m.gap_rate, m.frazil, m.L, m.c_p, dt)
+    launch!(_step_temperature_kernel!, args..., gamT, m.K_h, m.conv2, m.frazil, m.L, m.c_p, dt)
     return
 end
 function step_salinity!(m, dt)
@@ -868,6 +910,7 @@ function leapfrog_step!(m, dt, nsteps; check_nans = false, clock = nothing)
     check_nans && _check_nans_shelf!(m, "T", m.T.future, clock)
 
     step_salinity!(m, span)
+    _gap_surface!(m, m.gap_heat, span)
     launch!(_clamp_tracer_kernel!, m.S.future, m.tmask, m.S_min, m.S_max, m.params.kinks, Val(:S))
     check_nans && _check_nans_shelf!(m, "S", m.S.future, clock)
     return

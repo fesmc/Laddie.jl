@@ -106,14 +106,14 @@ const SCHEME_SCENARIOS = [
         end
     end
 
-    # The cheapest check of LeakyGapsBC: its rate kernel and the relaxation in the step
-    # kernels, one compile, no AD.
+    # The cheapest check of LeakyGapsBC: the scaled drag in the momentum kernels and the
+    # open-water kernel (heat loss, convection), one compile, no AD.
     @testset "leaky gaps: run! matches the CPU" begin
-        ref = gaps_sim(; gaps = LeakyGapsBC(0.8))
-        rsim = to_backend(gaps_sim(; gaps = LeakyGapsBC(0.8)), ReactantBackend())
+        ref = gaps_sim(; gaps = LeakyGapsBC(0.5, 300.0))
+        rsim = to_backend(gaps_sim(; gaps = LeakyGapsBC(0.5, 300.0)), ReactantBackend())
         run!(ref; days = 0.5, verbose = false)
         run!(rsim; days = 0.5, verbose = false)
-        @test maximum(Array(rsim.model.gap_rate)) > 0
+        @test maximum(Array(rsim.model.gap_heat)) > 0
         @test maxrel(prognostics(rsim.model), prognostics(ref.model)) < 1e-10
     end
 

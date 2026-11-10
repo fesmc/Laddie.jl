@@ -43,6 +43,10 @@ the meltwater sink that [`ConnectedGapsBC`](@ref) exists to remove. [`ClampDensi
 overwriting its tracers, and it is the one convection treatment that [LADDIE v2](../versions.md)
 also applies over its whole active domain.
 
+[`LeakyGapsBC`](@ref) brings its own convection to gap cells, independent of the scheme
+chosen here: where the layer turns denser than the water beneath it, it relaxes towards
+that water and detrains, as described in [Leaky gaps](gaps.md#Leaky-gaps).
+
 ## API
 
 ```@docs

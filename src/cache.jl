@@ -9,7 +9,7 @@ every time step.  The physics outputs are read through the model, e.g.
 slots are scalars or fields: `GamT` (`gamT`, `gamS`) is a field for
 `TurbulentGamTMelting`, `UStarGamTMelting` and `PrescribedMelting`, `Conv2` (`conv2`) for
 `RelaxToAmbient`, `Frz` (`frazil`) for `RelaxedFrazilIce`, `PM` (`melt_prescribed`)
-for `PrescribedMelting`, and `Gap` (`gap_decay`, `gap_rate`) for `LeakyGapsBC`.
+for `PrescribedMelting`, and `Gap` (`gap_drag`, `gap_heat`) for `LeakyGapsBC`.
 
 `adv`, `lap` and `Hq` are shared by the four stepped equations: U, V, T and S are
 stepped one after another, and each consumes its terms before the next one writes
@@ -63,10 +63,10 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,Frz,PM,Gap}
     gamS::GamT
     "prescribed melt rate under `PrescribedMelting` (m s⁻¹), else an unused scalar"
     melt_prescribed::PM
-    "decay per metre travelled in a gap under `LeakyGapsBC` (m⁻¹, a field, fixed at build), else zero as a scalar"
-    gap_decay::Gap
-    "relaxation rate in gap cells under `LeakyGapsBC` (s⁻¹, a field), else zero as a scalar"
-    gap_rate::Gap
+    "drag factor under `LeakyGapsBC`: the mélange cover α in gap cells, 1 elsewhere (a field, fixed at build), else zero as a scalar"
+    gap_drag::Gap
+    "surface heat loss (1 − α) Q in gap cells under `LeakyGapsBC` (W m⁻², a field, fixed at build), else zero as a scalar"
+    gap_heat::Gap
     "advection term of the equation being stepped (work buffer)"
     adv::A
     "Laplacian term of the equation being stepped (work buffer)"
@@ -100,8 +100,8 @@ Allocate all scratch matrices for a grid of size `(nx, ny)`.
 `MP` (melt param type) determines whether `gamT`/`gamS` are scalars or arrays and
 whether a prescribed melt field is carried; `CS` (convection scheme type)
 determines whether `conv2` is a scalar or array, `FZ` (frazil scheme type) the
-same for `frazil`, and `GB` (gaps boundary condition type) for `gap_decay` and
-`gap_rate`.
+same for `frazil`, and `GB` (gaps boundary condition type) for `gap_drag` and
+`gap_heat`.
 """
 function Cache(FT::Type, MP::Type, CS::Type, FZ::Type, nx::Int, ny::Int, GB::Type = SinkGapsBC)
     special = (
@@ -110,8 +110,8 @@ function Cache(FT::Type, MP::Type, CS::Type, FZ::Type, nx::Int, ny::Int, GB::Typ
         gamT = _gamT_init(FT, nx, ny, MP),
         gamS = _gamT_init(FT, nx, ny, MP),
         melt_prescribed = _prescribed_init(FT, nx, ny, MP),
-        gap_decay = _gap_init(FT, nx, ny, GB),
-        gap_rate = _gap_init(FT, nx, ny, GB),
+        gap_drag = _gap_init(FT, nx, ny, GB),
+        gap_heat = _gap_init(FT, nx, ny, GB),
     )
     C = Cache{
         Matrix{FT},
@@ -119,7 +119,7 @@ function Cache(FT::Type, MP::Type, CS::Type, FZ::Type, nx::Int, ny::Int, GB::Typ
         typeof(special.conv2),
         typeof(special.frazil),
         typeof(special.melt_prescribed),
-        typeof(special.gap_decay),
+        typeof(special.gap_drag),
     }
     fields = map(fn -> haskey(special, fn) ? special[fn] : zeros(FT, nx, ny), fieldnames(C))
     return C(fields...)

@@ -382,7 +382,8 @@ Abstract supertype for the treatment of ice-shelf gaps — ice-free cells inside
 the shelf domain, marked `4` in the mask.  Pass a concrete instance as
 `BoundaryConditions(; gaps = ...)`: [`SinkGapsBC`](@ref) (the default, gaps act as sinks),
 [`ConnectedGapsBC`](@ref) (gaps stay dynamically connected), or [`LeakyGapsBC`](@ref)
-(connected, but the layer loses part of its anomaly crossing the gap).
+(connected and partly covered by mélange, with an open-water surface that loses heat
+and lets the layer convect).
 """
 abstract type AbstractGapsBC end
 
@@ -435,76 +436,83 @@ struct ConnectedGapsBC <: AbstractGapsBC end
 """
 $(TYPEDEF)
 
-Treat ice-shelf gaps as connected but leaky: an intermediate between
-[`SinkGapsBC`](@ref) and [`ConnectedGapsBC`](@ref), set by one parameter, the
-`transmission` α ∈ [0, 1] (default `0.8`).
+Treat ice-shelf gaps as connected and partly covered by mélange and sea ice, with
+cover fraction α ∈ [0, 1] (`melange_cover`, default `0.9`).  The covered part acts on
+the layer as the ice shelf does; the open part exchanges heat with the atmosphere, and
+the layer convects where it loses its buoyancy.
 
-The gaps stay dynamically active as under `ConnectedGapsBC`, but in gap cells the layer
-dissolves into the water around it.  It detrains towards the minimum thickness `H_min`,
-its temperature relaxes towards the ambient `Ta` beneath it, and its velocity relaxes
-towards rest.  Salinity is left alone: the water detrained leaves at the layer's own
-`T` and `S`, so the meltwater the layer carries is not erased in the cells it crosses.
-All four use one rate, chosen so that the fraction α of the anomaly — `H - H_min`,
-`T - Ta`, `U`, `V` — survives one crossing of the gap:
+The gaps stay dynamically active as under [`ConnectedGapsBC`](@ref): the layer's
+thickness is set by transport, entrainment, the sea ice the open water forms and
+convection, never by a prescribed relaxation.  Melting is zero in gaps, as under
+`ConnectedGapsBC`.
 
-```
-κ = -ln(α) / L        decay per metre travelled in the gap
-r = κ |u|             relaxation rate (s⁻¹), from the local speed
-```
+**Drag.**  The ice-ocean drag `Params.C_d` is scaled by α in gap cells (by the mean
+cover of the two cells of a velocity face).  `ConnectedGapsBC` applies the full drag in
+gaps, as if they were covered; open water (α = 0) applies none.
 
-Along a path of length `s` through the gap the anomaly then falls by `α^(s/L)`,
-whatever the speed.  `L` is the gap's crossing length: by default the hydraulic
-diameter `4A/P` of each 4-connected gap (area `A`, perimeter `P`), which is `n·dx` for
-an `n×n` gap and about twice the width of a long, narrow one; or one fixed length
-(m) for every gap if `crossing_length` is given.
+**Surface heat loss.**  The open fraction loses `(1 − α) Q` to the atmosphere, for
+`Q = surface_heat_loss` (W m⁻², default `0`).  It first cools the layer, by
+`(1 − α) Q dt/(ρ₀ c_p H)`.  Once the layer reaches the surface freezing point, the rest
+forms sea ice of salinity `ice_salinity` (default 5 psu): the frozen water leaves the
+layer, its salt beyond `ice_salinity` stays (brine rejection).
 
-- `α = 1`: no relaxation, bit-identical to [`ConnectedGapsBC`](@ref).
-- `α = 0`: the gaps are demoted to open ocean, identical to [`SinkGapsBC`](@ref).
-  The limit `α → 0⁺` drains the gap as the sink does: on the ISOMIP+ channel of the
-  test suite, `α = 10⁻⁴` gives the sink's downstream melt to within 0.02 %.
+**Convection.**  Where the layer is denser than the water beneath it (δρ < 0), its T
+and S relax towards that water's on `convection_time` (s, default `10⁴`), as under
+[`RelaxToAmbient`](@ref), and its thickness relaxes towards `H_min` at the same rate:
+the convected water leaves the layer.  This acts in every gap cell, whatever the cover
+and whatever the model's `convection_scheme`, which leaves gap cells alone.
 
-The relaxation is backward Euler, applied after each update of `H`, `T`, `U` and `V`,
-so it is stable for any rate.  Like the sink, it does not conserve layer volume.
-Melting is zero in gaps, as under `ConnectedGapsBC`.
+The two ends:
 
-The response to α is not linear: a boundary current that loses half its momentum at
-every crossing mostly stalls, so melt stays close to the sink's up to `α ≈ 0.5` and
-rises to the connected value over `0.5 < α ≤ 1`.  The default `α = 0.8` lands between
-the end-members on every geometry tested, at 11–40 % of the way from the sink to the
-connected melt; see the documentation page on ice-shelf gaps for the numbers.
+- `α = 1`: full drag, no surface exchange.  This is `ConnectedGapsBC`, plus convection
+  in gaps: bit-identical to it wherever no gap cell turns unstable.
+- `α = 0`: open water, no drag, the full heat loss `Q`.  Whether this comes close to
+  [`SinkGapsBC`](@ref) depends on `Q`: the sink is not built in.
 
-Real gaps are full of sea ice, mélange and bergs that take up part of the layer's
-momentum and heat; α is the part they let through, and is not constrained by
-observations.
+Neither α nor `Q` is constrained by observations in this setting; `Q` can be compared
+with estimates of the heat loss of coastal polynyas (a few hundred W m⁻² in winter).
 
 # Example
 
 ```julia
-boundary = BoundaryConditions(; gaps = LeakyGapsBC())       # α = 0.8
-boundary = BoundaryConditions(; gaps = LeakyGapsBC(; transmission = 0.3, crossing_length = 5e3))
+boundary = BoundaryConditions(; gaps = LeakyGapsBC())       # α = 0.9, Q = 0
+boundary = BoundaryConditions(; gaps = LeakyGapsBC(; melange_cover = 0.3, surface_heat_loss = 300))
 ```
 
 # Fields
 $(TYPEDFIELDS)
 """
-struct LeakyGapsBC{FT,L} <: AbstractGapsBC
-    "fraction of the layer's anomaly that survives one crossing of a gap, in [0, 1]"
-    transmission::FT
-    "crossing length of every gap (m), or `nothing` for each gap's hydraulic diameter `4A/P`"
-    crossing_length::L
-    function LeakyGapsBC(transmission::Real, crossing_length::Union{Nothing,Real} = nothing)
-        0 <= transmission <= 1 || throw(
-            ArgumentError("LeakyGapsBC transmission must lie in [0, 1], got $transmission"),
+struct LeakyGapsBC{FT} <: AbstractGapsBC
+    "mélange and sea-ice cover of the gaps, α ∈ [0, 1]"
+    melange_cover::FT
+    "heat loss of open water to the atmosphere (W m⁻², ≥ 0); the gap loses (1 − α) of it"
+    surface_heat_loss::FT
+    "salinity of the sea ice the heat loss forms (psu), which keeps this much of the salt"
+    ice_salinity::FT
+    "time scale of convection in gap cells (s, > 0)"
+    convection_time::FT
+    function LeakyGapsBC(
+        melange_cover::Real, surface_heat_loss::Real = 0.0, ice_salinity::Real = 5.0,
+        convection_time::Real = 1e4,
+    )
+        0 <= melange_cover <= 1 || throw(
+            ArgumentError("LeakyGapsBC melange_cover must lie in [0, 1], got $melange_cover"),
         )
-        crossing_length === nothing || crossing_length > 0 || throw(
-            ArgumentError("LeakyGapsBC crossing_length must be positive, got $crossing_length"),
+        surface_heat_loss >= 0 || throw(
+            ArgumentError("LeakyGapsBC surface_heat_loss must be non-negative, got $surface_heat_loss"),
         )
-        t = float(transmission)
-        l = crossing_length === nothing ? nothing : float(crossing_length)
-        return new{typeof(t),typeof(l)}(t, l)
+        ice_salinity >= 0 || throw(
+            ArgumentError("LeakyGapsBC ice_salinity must be non-negative, got $ice_salinity"),
+        )
+        convection_time > 0 || throw(
+            ArgumentError("LeakyGapsBC convection_time must be positive, got $convection_time"),
+        )
+        f = promote(float(melange_cover), float(surface_heat_loss), float(ice_salinity), float(convection_time))
+        return new{eltype(f)}(f...)
     end
 end
-LeakyGapsBC(; transmission = 0.8, crossing_length = nothing) = LeakyGapsBC(transmission, crossing_length)
+LeakyGapsBC(; melange_cover = 0.9, surface_heat_loss = 0.0, ice_salinity = 5.0, convection_time = 1e4) =
+    LeakyGapsBC(melange_cover, surface_heat_loss, ice_salinity, convection_time)
 
 # Resolve mask value 4 (gap) into the classification the selected treatment implies.
 # Runs at model construction, before the Geometry is derived: SinkGapsBC demotes gaps
@@ -513,34 +521,17 @@ LeakyGapsBC(; transmission = 0.8, crossing_length = nothing) = LeakyGapsBC(trans
 # `MarkGapsPreprocess`'s job.
 _apply_gaps_bc(mask, ::SinkGapsBC) = ifelse.(mask .== 4, 0, mask)
 _apply_gaps_bc(mask, ::ConnectedGapsBC) = mask
-# α = 0 is the sink itself, not its limit (see `LeakyGapsBC`).
-_apply_gaps_bc(mask, bc::LeakyGapsBC) =
-    iszero(bc.transmission) ? _apply_gaps_bc(mask, SinkGapsBC()) : mask
+_apply_gaps_bc(mask, ::LeakyGapsBC) = mask
 
-# Decay per metre κ = -ln(α)/L in each gap cell of the resolved `mask`, zero elsewhere;
-# `L` is the gap's hydraulic diameter 4A/P unless the condition fixes it.  Faces across
-# i (x) are dy long, faces across j (y) dx.
-function _gap_decay(mask, bc::LeakyGapsBC, dx, dy, ::Type{FT}) where {FT}
-    κ = zeros(FT, size(mask))
-    lnα = -log(bc.transmission)
-    for comp in _components(mask, ==(4))
-        L = if bc.crossing_length === nothing
-            P = zero(FT)
-            for c in comp, (n, len) in zip(_neighbours(c), (dy, dy, dx, dx))
-                (checkbounds(Bool, mask, n) && mask[n] == 4) || (P += len)
-            end
-            4 * length(comp) * dx * dy / P
-        else
-            bc.crossing_length
-        end
-        κ[comp] .= lnα / L
-    end
-    return κ
+# The per-cell fields of `LeakyGapsBC`, fixed at build: the drag factor (α in gaps, 1
+# elsewhere) and the open-water heat loss ((1 − α) Q in gaps, 0 elsewhere).
+_init_gaps!(cache, ::AbstractGapsBC, mask) = nothing
+function _init_gaps!(cache, bc::LeakyGapsBC, mask)
+    α, gap = bc.melange_cover, mask .== 4
+    cache.gap_drag .= ifelse.(gap, α, 1)
+    cache.gap_heat .= ifelse.(gap, (1 - α) * bc.surface_heat_loss, 0)
+    return nothing
 end
-
-_init_gap_decay!(cache, ::AbstractGapsBC, mask, dx, dy) = nothing
-_init_gap_decay!(cache, bc::LeakyGapsBC, mask, dx, dy) =
-    (cache.gap_decay .= _gap_decay(mask, bc, dx, dy, eltype(cache.gap_decay)); nothing)
 #############################
 # Boundary-condition container
 #############################

@@ -314,7 +314,7 @@ end
     @test mc.model.melt != m_sink.model.melt
 end
 
-@testset "Gaps BC: LeakyGapsBC between sink and connected" begin
+@testset "Gaps BC: LeakyGapsBC, mélange cover, open-water heat loss, convection" begin
     # The 3x3 gap of the testset above, on 2 km cells: L = 4A/P = 6 km.
     function gappy_mask()
         mk = zeros(Int, 22, 12)
@@ -335,63 +335,83 @@ end
                          forcing, boundary = BoundaryConditions(; gaps)))
 
     # -- Construction ------------------------------------------------------
-    @test LeakyGapsBC().transmission == 0.8
-    @test LeakyGapsBC(1).transmission === 1.0
-    @test LeakyGapsBC(; transmission = 0.3, crossing_length = 5e3).crossing_length == 5e3
+    @test LeakyGapsBC().melange_cover == 0.9
+    @test LeakyGapsBC().surface_heat_loss === 0.0 && LeakyGapsBC().ice_salinity === 5.0
+    @test LeakyGapsBC().convection_time === 1e4
+    @test LeakyGapsBC(1).melange_cover === 1.0
+    @test LeakyGapsBC(; melange_cover = 0.3, surface_heat_loss = 300).surface_heat_loss == 300
     @test_throws ArgumentError LeakyGapsBC(1.5)
     @test_throws ArgumentError LeakyGapsBC(-0.1)
-    @test_throws ArgumentError LeakyGapsBC(0.5, 0.0)
-    @test occursin("LeakyGapsBC(α = 0.8)", sprint(show, BoundaryConditions(; gaps = LeakyGapsBC())))
-    @test occursin("L = 5000.0 m", sprint(show, BoundaryConditions(; gaps = LeakyGapsBC(0.5, 5e3))))
-    @test Laddie._promote_param(LeakyGapsBC(0.5), Float32).transmission isa Float32
+    @test_throws ArgumentError LeakyGapsBC(; surface_heat_loss = -1)
+    @test_throws ArgumentError LeakyGapsBC(; ice_salinity = -1)
+    @test_throws ArgumentError LeakyGapsBC(; convection_time = 0)
+    @test occursin("LeakyGapsBC(α = 0.9)", sprint(show, BoundaryConditions(; gaps = LeakyGapsBC())))
+    @test occursin("Q = 100.0 W m⁻²", sprint(show, BoundaryConditions(; gaps = LeakyGapsBC(; surface_heat_loss = 100))))
+    let p32 = Laddie._promote_param(LeakyGapsBC(0.5, 100), Float32)
+        @test p32.melange_cover isa Float32 && p32.surface_heat_loss isa Float32 && p32.convection_time isa Float32
+    end
 
-    # -- Decay per metre: -ln(α)/L in gaps, zero elsewhere ------------------
-    ml = build(LeakyGapsBC(0.5))
-    @test all(ml.model.gap_decay[gap_ix] .≈ -log(0.5) / 6000)
-    @test count(!iszero, ml.model.gap_decay) == length(gap_ix)
-    @test all(build(LeakyGapsBC(0.5, 3e3)).model.gap_decay[gap_ix] .≈ -log(0.5) / 3000)
-    # A 1-cell gap is crossed in one cell; a 1x4 strip in about two widths.
-    strip = zeros(Int, 10, 10); strip[3, 3] = 4; strip[6, 3:6] .= 4
-    κ = Laddie._gap_decay(strip, LeakyGapsBC(0.5), 1000.0, 1000.0, Float64)
-    @test κ[3, 3] ≈ -log(0.5) / 1000
-    @test κ[6, 4] ≈ -log(0.5) / (4 * 4e6 / 10e3)
-    # Other gap conditions carry the slots as scalar zeros: no work, no memory.
-    @test build(ConnectedGapsBC()).model.gap_rate === zero(FT)
-    @test build(SinkGapsBC()).model.gap_decay === zero(FT)
+    # -- Per-cell fields: drag factor α and heat loss (1 − α) Q in gaps ------
+    mq = build(LeakyGapsBC(0.25, 400.0))
+    @test all(mq.model.gap_drag[gap_ix] .== 0.25) && count(!=(1), mq.model.gap_drag) == length(gap_ix)
+    @test all(mq.model.gap_heat[gap_ix] .== 300) && count(!iszero, mq.model.gap_heat) == length(gap_ix)
+    @test all(iszero, build(LeakyGapsBC(1.0, 400.0)).model.gap_heat)   # full cover: no exchange
+    # Other gap conditions carry the slots as scalars: no work, no memory.
+    @test build(ConnectedGapsBC()).model.gap_drag === zero(FT)
+    @test build(SinkGapsBC()).model.gap_heat === zero(FT)
+    # Drag of a face: C_d scaled by the mean cover of its cells, exactly C_d off gaps.
+    @test Laddie._face_drag(2.5e-3, [1.0 1.0], 1, 1, 1, 2) === 2.5e-3
+    @test Laddie._face_drag(2.5e-3, [0.5 1.0], 1, 1, 1, 2) ≈ 2.5e-3 * 0.75
+    @test Laddie._face_drag(2.5e-3, 0.0, 1, 1, 1, 2) === 2.5e-3
 
-    # -- The implicit relaxation -------------------------------------------
-    r = fill(0.0, 1, 1)
-    @test Laddie._gap_relax(2.0, 1.0, r, 1, 1, 100.0) === 2.0           # r = 0: identity
-    r[1, 1] = 1e30
-    @test Laddie._gap_relax(2.0, 1.0, r, 1, 1, 100.0) ≈ 1.0             # r → ∞: the target
-    r[1, 1] = 1e-3
-    @test Laddie._gap_relax(2.0, 1.0, r, 1, 1, 100.0) ≈ 1 + 1 / 1.1     # backward Euler
-    @test Laddie._gap_relax(2.0, 1.0, 0.0, 1, 1, 100.0) === 2.0         # scalar: untouched
-    @test Laddie._gap_damp(2.0, fill(1e-3, 2, 1), 1, 1, 2, 1, 100.0) ≈ 2 / 1.1
-
-    # -- The end-members, exactly ------------------------------------------
-    sims = Dict(:sink => build(SinkGapsBC()), :conn => build(ConnectedGapsBC()),
-                :a0 => build(LeakyGapsBC(0.0)), :a1 => build(LeakyGapsBC(1.0)),
-                :a05 => build(LeakyGapsBC(0.5)), :a01 => build(LeakyGapsBC(0.1)))
-    @test sims[:a0].model.resolved_mask == sims[:sink].model.resolved_mask
+    # -- Runs: finite, never a sink, no melt in gaps -----------------------
+    sims = Dict(:conn => build(ConnectedGapsBC()), :a0 => build(LeakyGapsBC(0.0)),
+                :a1 => build(LeakyGapsBC(1.0)), :q => build(LeakyGapsBC(0.5, 2000.0)))
+    @test sims[:a0].model.resolved_mask == sims[:conn].model.resolved_mask
     for s in values(sims)
         run!(s; days = 1.0, verbose = false)
         @test all(isfinite, s.model.H.present) && all(isfinite, s.model.T.present)
+        @test all(s.model.melt[gap_ix] .== 0)
     end
-    for f in (:H, :U, :V, :T, :S)
-        @test getproperty(sims[:a1].model, f).present == getproperty(sims[:conn].model, f).present
-        @test getproperty(sims[:a0].model, f).present == getproperty(sims[:sink].model, f).present
-    end
-    @test sims[:a1].model.melt == sims[:conn].model.melt
-    @test sims[:a0].model.melt == sims[:sink].model.melt
+    # This gap convects on its own (bucket 4).  Convection relaxes the layer
+    # towards the water beneath it, so δρ approaches zero from below: the
+    # leaky gap weakens the instability the connected gap keeps.
+    mindrho(s) = minimum(s.model.drho[gap_ix])
+    @test mindrho(sims[:conn]) < 0
+    @test mindrho(sims[:conn]) < mindrho(sims[:a1]) <= 0
+    gapmean(s, f) = sum(getproperty(s.model, f).present[gap_ix]) / length(gap_ix)
+    @test gapmean(sims[:a1], :H) < gapmean(sims[:conn], :H)          # convected water leaves
 
-    # -- In between: the less transmitted, the more the gap drains --------
-    # (Not slower: next to this 400 m draft cliff a thinner gap layer flows faster.)
-    gapmean(s, f) = sum(abs, getproperty(s.model, f).present[gap_ix]) / length(gap_ix)
-    @test gapmean(sims[:a01], :H) < gapmean(sims[:a05], :H) < gapmean(sims[:conn], :H)
-    @test all(sims[:a05].model.melt[gap_ix] .== 0)
-    @test all(sims[:a05].model.gap_rate[gap_ix] .> 0)
-    @test all(sims[:a05].model.gap_rate[sims[:a05].model.imask .> 0] .== 0)
+    # -- The open-water surface, cell by cell --------------------------------
+    # (1) no heat loss, stable: untouched; (2) warm layer: cooling only; (3) at the
+    # surface freezing point: ice and brine; (4) unstable: convection towards
+    # (Ta, Sa) and H_min; (5) the same under ice: not a gap, untouched.
+    let eos = (; beta = 7.8e-4, a0 = 3.7e-5, aT = 0.0, aZ = 0.0), c_p = 3974.0, L = 3.34e5,
+        l1 = -5.73e-2, l2 = 8.32e-2, rho0 = 1028.0, dt = 3600.0, tau = 1e4, S0 = 34.0, H0 = 10.0
+        Tf = l1 * S0 + l2
+        T = [Tf + 1.0 Tf + 1.0 Tf Tf + 0.5 Tf + 0.5]; S = fill(S0, 1, 5); H = fill(H0, 1, 5)
+        Q = [0.0 100.0 100.0 0.0 0.0]
+        Ta = fill(Tf, 1, 5); Sa = [35.0 35.0 35.0 S0 - 0.5 S0 - 0.5]
+        tmask = ones(1, 5); imask = [0.0 0.0 0.0 0.0 1.0]
+        step() = begin
+            T1, S1, H1 = copy(T), copy(S), copy(H)
+            Laddie._gap_surface_kernel!(KernelAbstractions.CPU())(
+                T1, S1, H1, Ta, Sa, zeros(1, 5), tmask, imask, Q, 1.0, rho0, c_p, L, l1, l2, 0.0,
+                5.0, tau, eos, dt; ndrange = (1, 5))
+            (T1, S1, H1)
+        end
+        T1, S1, H1 = step()
+        cool = 100 * dt / (rho0 * c_p * H0)
+        @test (T1[1], S1[1], H1[1]) === (T[1], S[1], H[1])                 # Q = 0: identity
+        @test T1[2] ≈ T[2] - cool && S1[2] === S0 && H1[2] === H0          # cooling only
+        h = c_p * cool * H0 / L
+        @test T1[3] ≈ Tf && H1[3] ≈ H0 - h                                 # ice at T_f
+        @test S1[3] ≈ (S0 * H0 - 5 * h) / (H0 - h)                         # brine
+        k = dt / tau
+        @test T1[4] ≈ (T[4] + k * Tf) / (1 + k) && S1[4] ≈ (S0 + k * Sa[4]) / (1 + k)
+        @test H1[4] ≈ (H0 + k * 1.0) / (1 + k)                             # detrains
+        @test (T1[5], S1[5], H1[5]) === (T[5], S[5], H[5])                 # under ice
+    end
 end
 
 @testset "Gaps BC: meltwater crosses a gap in the ISOMIP+ boundary current" begin
@@ -428,8 +448,9 @@ end
     m_sink = channel(gappy, SinkGapsBC())
     m_conn = channel(gappy, ConnectedGapsBC())
     m_none = channel(mask0, SinkGapsBC())    # same draft, no gap: the control
-    m_leak0 = channel(gappy, LeakyGapsBC(1e-4))   # the limit α → 0⁺
-    m_leak9 = channel(gappy, LeakyGapsBC(0.9))
+    m_leak1 = channel(gappy, LeakyGapsBC(1.0))          # full mélange cover
+    m_leak0 = channel(gappy, LeakyGapsBC(0.0))          # open water, no heat loss
+    m_leakq = channel(gappy, LeakyGapsBC(0.0, 600.0))   # open water, winter heat loss
 
     for m in (m_sink, m_conn, m_none)
         @test all(isfinite, m.model.melt) && all(isfinite, m.model.H.present)
@@ -462,12 +483,17 @@ end
     @test mn(m_conn.model.T.present[down, ywall]) >
           mn(m_sink.model.T.present[down, ywall]) + 0.01
 
-    # LeakyGapsBC: α → 0⁺ drains the gap as the sink does, so the family is
-    # continuous at α = 0, and α = 0.9 lands between the end-members.
-    @test meltsum(m_leak0, down) ≈ meltsum(m_sink, down) rtol = 1e-3
-    @test maximum(abs.(m_leak0.model.U.present[xgap, ywall])) < 0.1
-    @test meltsum(m_sink, down) < meltsum(m_leak9, down) < meltsum(m_conn, down)
-    @test meltsum(m_leak9, up) ≈ meltsum(m_conn, up) rtol = 1e-3
+    # LeakyGapsBC.  Full cover is the connected gap: this gap layer stays
+    # stable, so convection never fires.  Open water drops the ice drag, and
+    # the faster current melts more downstream than the connected one; the
+    # heat loss of the open water takes part of that back.  Nothing reaches
+    # back upstream.
+    @test meltsum(m_leak1, down) ≈ meltsum(m_conn, down) rtol = 1e-6
+    @test meltsum(m_leak0, down) > meltsum(m_conn, down)
+    @test meltsum(m_conn, down) < meltsum(m_leakq, down) < meltsum(m_leak0, down)
+    for m in (m_leak1, m_leak0, m_leakq)
+        @test meltsum(m, up) ≈ meltsum(m_conn, up) rtol = 1e-3
+    end
 end
 
 @testset "Front pressure: FullDepthGradient is default/v1, TruncatedDepthGradient drops the term" begin

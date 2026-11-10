@@ -297,7 +297,7 @@ end
     S = [mask[i, j] == 0 ? 34.0 : NaN for i = 1:nx, j = 1:ny, k = eachindex(z)]
     ifront = findlast(i -> mask[i, 5] == 3, 1:nx)
     T[ifront+1, 2, 1:5] .= NaN   # a shorter column extends flat below its water
-    f = front_ocean_forcing(T, S, z, mask; FT)
+    f = front_ocean_forcing(T, S, z, mask; FT, cut = false)
     @test f isa PerBasinOceanForcing1D
     @test size(f.Tz, 1) == count(mask[ifront+1, :] .== 0)   # one profile per front cell's source
     for j = 3:(ny-1), i = 2:ifront
@@ -309,7 +309,45 @@ end
     m = Model(grid; forcing = f)
     run!(Simulation(m); days = 0.2, verbose = false)
     @test all(isfinite, m.H.present) && all(isfinite, m.melt)
-    @test_throws ArgumentError front_ocean_forcing(T[1:5, :, :], S, z, mask)
+    @test_throws ArgumentError front_ocean_forcing(T[1:5, :, :], S, z, mask; cut = false)
+    @test_throws ArgumentError front_ocean_forcing(T, S, z, mask)   # the cut needs the bed
+end
+
+@testset "front_ocean_forcing: source columns cut at their seabed" begin
+    # The channel of the previous test sets, every open-ocean column the same warm
+    # profile down to −1000 m. The open ocean's bed is −300 m, so below −300 m the
+    # columns hold what an ocean product would have extrapolated there.
+    sim = build_isomip(CPU(); FT, nx = 20, ny = 10, xfront = 30_000.0,
+                       domain_cropping = NoDomainCropping())
+    mask = sim.model.grid.mask
+    z = collect(-1000.0:50.0:-50.0)
+    prof(zz) = -1.9 + zz * (1.0 + 1.9) / -720.0
+    nx, ny = size(mask)
+    T = [mask[i, j] == 0 ? prof(z[k]) : NaN for i = 1:nx, j = 1:ny, k = eachindex(z)]
+    S = [mask[i, j] == 0 ? 34.0 + 0.001z[k] : NaN for i = 1:nx, j = 1:ny, k = eachindex(z)]
+    bed = fill(-300.0, nx, ny)
+    ifront = findlast(i -> mask[i, 5] == 3, 1:nx)
+    cell(f) = (f.Tz[f.basin[ifront, 5], :], f.Sz[f.basin[ifront, 5], :])
+    k300 = findfirst(==(-300.0), z)
+    above, below = k300:length(z), 1:(k300-1)
+
+    # Cut: the column as it is down to its deepest level above the bed, flat below.
+    Tc, Sc = cell(front_ocean_forcing(T, S, z, mask; FT, depth = bed))
+    @test Tc[above] ≈ prof.(z[above])
+    @test all(Tc[below] .≈ prof(-300.0))
+    @test all(Sc[below] .≈ 34.0 - 0.3)
+    # Uncut: the extrapolation is read.
+    Tu, _ = cell(front_ocean_forcing(T, S, z, mask; FT, depth = bed, cut = false))
+    @test Tu ≈ prof.(z)
+    # A bed between levels: the deepest level above it is held.
+    Tb, _ = cell(front_ocean_forcing(T, S, z, mask; FT, depth = fill(-320.0, nx, ny)))
+    @test all(Tb[below] .≈ prof(-300.0))
+    # A bed above the shallowest level: that level is kept and held.
+    Ts, _ = cell(front_ocean_forcing(T, S, z, mask; FT, depth = fill(-10.0, nx, ny)))
+    @test all(Ts .≈ prof(-50.0))
+    # The blend cuts every source column the same way.
+    Tf, _ = cell(front_ocean_forcing(T, S, z, mask; FT, depth = bed, blend = FrontBlend(3000.0; dx = 1000.0)))
+    @test Tf ≈ Tc
 end
 
 @testset "front_ocean_forcing: FrontBlend" begin
@@ -325,43 +363,49 @@ end
     S = [mask[i, j] == 0 ? 34.0 : NaN for i = 1:nx, j = 1:ny, k = eachindex(z)]
     ifront = findlast(i -> mask[i, 5] == 3, 1:nx)
     rows = findall(j -> mask[ifront+1, j] == 0, 1:ny)
-    f0 = front_ocean_forcing(T, S, z, mask; FT)
+    f0 = front_ocean_forcing(T, S, z, mask; FT, cut = false)
     profile(f, i, j) = f.Tz[f.basin[i, j], :]
+    blended(n) = front_ocean_forcing(T, S, z, mask; FT, cut = false, blend = FrontBlend(n * 1000.0; dx = 1000.0))
 
-    # Width 0: the unblended forcing, row for row.
-    fz = front_ocean_forcing(T, S, z, mask; FT, blend = FrontBlend(0; dx = 1))
+    # One source: the unblended forcing, row for row.
+    fz = blended(1)
     @test size(fz.Tz) == size(f0.Tz)
     @test all(profile(fz, i, j) ≈ profile(f0, i, j) for i = 1:nx, j = 1:ny)
 
-    # Width 2 cells: a front cell takes its own row's source at distance 1 (weight
-    # 3 − 1) and its neighbour rows' at distance 2 (weight 3 − 2), through their
-    # front cells; the rows two away are at d* = 3 and weigh nothing.
-    f2 = front_ocean_forcing(T, S, z, mask; FT, blend = FrontBlend(2000.0; dx = 1000.0))
+    # Three sources: a front cell takes its own row's source at distance 1 and its
+    # neighbour rows' at distance 2, through their front cells; the first left out,
+    # two rows away, is at d₄ = 3, so the weights are 3 − 1 and 3 − 2. At the edge
+    # row the three are its own and the next two rows, at 1, 2, 3, with d₄ = 4.
+    f2 = blended(3)
     base = -1.0 .+ 0.001z
     for j in rows[2:end-1]
         @test profile(f2, ifront, j) ≈ base .+ 0.01(j^2 + 0.5)
     end
-    j1, j2 = rows[1], rows[2]
-    @test profile(f2, ifront, j1) ≈ base .+ 0.01(2j1^2 + j2^2) / 3 rtol = 1e-6   # one neighbour; weights in Float32
-    # Every cavity cell is a convex blend of the sources, and deeper in the cavity
-    # the rows differ less than at the front.
+    j1, j2, j3 = rows[1], rows[2], rows[3]
+    @test profile(f2, ifront, j1) ≈ base .+ 0.01(3j1^2 + 2j2^2 + j3^2) / 6 rtol = 1e-6   # weights in Float32
+    # Every cavity cell is a convex blend of the sources. The rows differ less than
+    # unblended, and as much deep in the cavity as at the front: the same length of
+    # front is blended everywhere.
     lo, hi = extrema(T[ifront+1, rows, 1])
     @test all(lo - 1e-6 <= profile(f2, i, j)[1] <= hi + 1e-6 for i = 2:ifront, j in rows)
     spread(f, i) = -(reverse(extrema(profile(f, i, j)[1] for j in rows))...)
-    @test spread(f2, 2) < spread(f2, ifront) < spread(f0, ifront)
+    @test spread(f2, 2) ≈ spread(f2, ifront) rtol = 1e-6
+    @test spread(f2, ifront) < spread(f0, ifront)
     @test size(f2.Tz, 1) == length(rows) + count(mask .== 3)   # every shelf cell blends here
     @test all(1 .<= f2.basin .<= size(f2.Tz, 1))
     m = Model(grid; forcing = f2)
     run!(Simulation(m); days = 0.2, verbose = false)
     @test all(isfinite, m.H.present) && all(isfinite, m.melt)
 
-    # kmax caps the sources per cell, and the blend radius with it.
-    f1 = front_ocean_forcing(T, S, z, mask; FT, blend = FrontBlend(20_000.0; dx = 1000.0, kmax = 1))
-    @test size(f1.Tz) == size(f0.Tz)
-    @test FrontBlend(20e3; dx = 2e3).width == 10
-    @test_throws ArgumentError FrontBlend(-1; dx = 1)
+    # More front than any cell reaches: every cell takes all the sources, equally.
+    fall = blended(100)
+    @test all(profile(fall, i, j) ≈ base .+ 0.01sum(abs2, rows) / length(rows) for i = 2:ifront, j in rows if mask[i, j] == 3)
+
+    @test FrontBlend(dx = 2e3).sources == 32
+    @test FrontBlend(20e3; dx = 2e3).sources == 10
+    @test FrontBlend(1e3; dx = 8e3).sources == 1
+    @test_throws ArgumentError FrontBlend(0; dx = 1)
     @test_throws ArgumentError FrontBlend(1; dx = 0)
-    @test_throws ArgumentError FrontBlend(1; dx = 1, kmax = 0)
     @test_throws UndefKeywordError FrontBlend(1)
 end
 

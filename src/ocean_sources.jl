@@ -7,7 +7,8 @@
 # cell at the front that feeds it, or a blend of those of nearby fronts
 # (`FrontBlend`), as a `PerBasinOceanForcing1D` with one profile per such column
 # (and per blended cell).  `regrid_ocean` and `fill_ocean!` bring a coarse ocean grid onto
-# the model's cells, for this or for an `OceanForcing2D`.
+# the model's cells, for this or for an `OceanForcing2D`.  The source columns are cut at
+# their own seabed: the input fields hold extrapolated values below it.
 # All of this is host-side preprocessing on CPU arrays.
 # ============================================================================
 
@@ -176,52 +177,52 @@ function _front_seeds(mask, wet, depth)
 end
 
 """
-    FrontBlend(width; dx, kmax = 64)
+    FrontBlend(front_length = 64e3; dx)
 
 Blend the front columns that force a cavity cell, for [`front_ocean_forcing`](@ref):
-every cavity cell sees the weighted mean of up to `kmax` open-ocean source columns,
-those whose fronts lie within `width` (m) of its nearest, distances measured through
-the cavity as in [`front_sources`](@ref). `dx` is the cell size (m).
+every cavity cell sees the weighted mean of the open-ocean source columns of the
+`front_length` (m) of calving front closest to it, that is of its
+``n = `` `front_length` / `dx` closest sources (at least one), distances measured
+through the cavity as in [`front_sources`](@ref). `dx` is the cell size (m), so the
+same length of front is blended at every resolution.
 
-Source ``k`` at distance ``d_k`` takes the weight ``d^* - d_k``, normalised, with
-``d^*`` the distance of the first source left out: the `kmax + 1`-th, or ``d_1 +``
-`width`. A source therefore enters and leaves a cell's blend at zero weight, and the
-forcing has no steps where the nearest front changes. Such steps make one-cell-wide
-lines of convergence and runaway layer thickness in the cavity.
+Source ``k`` at distance ``d_k`` takes the weight ``d_{n+1} - d_k``, normalised, with
+``d_{n+1}`` the distance of the first source left out. A source therefore enters and
+leaves a cell's blend at zero weight, and the forcing has no steps where the nearest
+front changes. Such steps make one-cell-wide lines of convergence and runaway layer
+thickness in the cavity. A cell that no more than ``n`` sources reach takes all of
+them, equally. With ``n = 1`` every cell takes one nearest front, as without a
+blend; where two are exactly as near, it may be the other one.
 
-Where fronts are dense, `kmax` rather than `width` sets the blend radius; that radius
-shrinks with the cell size, so raise `kmax` at fine resolution to keep it. At
-`width = 0` every cell takes one nearest front, as without a blend; where two are
-exactly as near, it may be the other one.
+The default of 64 km fits best, among 8 to 512 km, the water inside the cavities of
+the ISMIP7 ocean models that resolve them (NEMO of Mathiot et al. 2023; the merge of
+Naughten et al. 2021 and Jourdain et al. 2022), predicted from their own front
+columns, cut at the seabed.
 """
 struct FrontBlend
-    "blend width, in cells"
-    width::Float64
-    "most sources per cell"
-    kmax::Int
-    function FrontBlend(width::Real; dx::Real, kmax::Integer = 64)
-        width >= 0 || throw(ArgumentError("width must be ≥ 0, got $width"))
+    "the number of closest sources each cavity cell blends"
+    sources::Int
+    function FrontBlend(front_length::Real = 64e3; dx::Real)
+        front_length > 0 || throw(ArgumentError("front_length must be > 0, got $front_length"))
         dx > 0 || throw(ArgumentError("dx must be > 0, got $dx"))
-        kmax >= 1 || throw(ArgumentError("kmax must be ≥ 1, got $kmax"))
-        new(Float64(width / dx), Int(kmax))
+        return new(max(1, round(Int, front_length / dx)))
     end
 end
 
-Base.show(io::IO, b::FrontBlend) = print(io, "FrontBlend(", _r(b.width, 3), " cells, kmax = ", b.kmax, ")")
+Base.show(io::IO, b::FrontBlend) = print(io, "FrontBlend(", b.sources, b.sources == 1 ? " source" : " sources", ")")
 
 # The sources and weights of every cavity cell for `blend`: as the sweep of
-# `front_sources`, but each cell keeps the `kmax + 1` nearest distinct sources
-# within `blend.width` of its nearest, nearest first. Returns `(; cells, src, w,
-# lost)`: the cavity cells, their sources (linear indices, `(kmax, ncells)`, 0 where
-# unused) and weights (summing to 1), and the number of cells no front reaches
-# through the cavity (their nearest front in a straight line, weight 1).
+# `front_sources`, but each cell keeps its `n + 1` nearest distinct sources,
+# nearest first (n = `blend.sources`). Returns `(; cells, src, w, lost)`: the cavity
+# cells, their sources (linear indices, `(n, ncells)`, 0 where unused) and weights
+# (summing to 1), and the number of cells no front reaches through the cavity
+# (their nearest front in a straight line, weight 1).
 function _front_blend(mask, cavity, src0, dist0, blend::FrontBlend)
     cells = findall(cavity)
-    nc, kmax = length(cells), blend.kmax
+    nc, kmax = length(cells), blend.sources
     K1 = kmax + 1
     pos = zeros(Int32, size(mask))
     foreach(((i, I),) -> pos[I] = i, enumerate(cells))
-    W = Float32(blend.width)
     D = fill(Inf32, K1, nc)
     S = zeros(Int32, K1, nc)
     n = zeros(Int, nc)
@@ -229,13 +230,13 @@ function _front_blend(mask, cavity, src0, dist0, blend::FrontBlend)
         src0[I] > 0 && (D[1, i] = dist0[I]; S[1, i] = src0[I]; n[i] = 1)
     end
     # Merge the list of cell j, `step` away, into that of cell i; true if it changed.
-    # Lists stay sorted; a list's nearest only gets nearer, so what lies beyond its
-    # width now stays beyond it.
+    # Lists stay sorted, so the candidates come in ascending distance and the first
+    # one beyond a full list ends the merge.
     function merge!(i, j, step)
         changed = false
         for e = 1:n[j]
             c = D[e, j] + step
-            (c > D[1, i] + W || (n[i] == K1 && c >= D[K1, i])) && break
+            n[i] == K1 && c >= D[K1, i] && break
             s = S[e, j]
             p = findfirst(==(s), view(S, 1:n[i], i))
             if !isnothing(p)
@@ -283,21 +284,42 @@ function _front_blend(mask, cavity, src0, dist0, blend::FrontBlend)
     end
     for i = 1:nc
         n[i] == 0 && continue
-        m = count(e -> D[e, i] <= D[1, i] + W, 1:n[i])
-        k = min(m, kmax)
-        dstar = m > kmax ? D[K1, i] : D[1, i] + W
+        k = min(n[i], kmax)
         for e = 1:k
-            src[e, i], w[e, i] = S[e, i], dstar - D[e, i]
+            src[e, i] = S[e, i]
+        end
+        if n[i] <= kmax          # no source left out: all of them, equally
+            w[1:k, i] .= 1 / k
+            continue
+        end
+        for e = 1:k
+            w[e, i] = D[K1, i] - D[e, i]
         end
         tot = sum(view(w, 1:k, i))
         if tot > 0
             w[1:k, i] ./= tot
-        else                     # width 0 and no tie: the nearest alone
+        else                     # the first left out ties with all kept: the nearest alone
             w[1:k, i] .= 0
             w[1, i] = 1
         end
     end
     return (; cells, src, w, lost = length(lost))
+end
+
+# Drop (set to NaN) the levels of the columns `Tcol`, `Scol` on the levels `z` that lie
+# below the seabed `bed` and hold data, except the shallowest level with data, so
+# that `_extend_flat!` extends the column flat from its seabed down.
+function _cut_below_seabed!(Tcol, Scol, z, bed)
+    wet = findall(k -> isfinite(Tcol[k]) && isfinite(Scol[k]), eachindex(z))
+    isempty(wet) && return Tcol, Scol
+    top = wet[argmax(z[wet])]
+    for k in wet
+        if k != top && z[k] < bed
+            Tcol[k] = NaN
+            Scol[k] = NaN
+        end
+    end
+    return Tcol, Scol
 end
 
 # Give every level of the column `col` without a value (NaN) that of the nearest
@@ -313,20 +335,28 @@ function _extend_flat!(col)
 end
 
 """
-    front_ocean_forcing(T, S, z, mask; depth = nothing, blend = nothing, FT = Float64)
+    front_ocean_forcing(T, S, z, mask; depth = nothing, blend = nothing, cut = true, FT = Float64)
 
 Ambient forcing from outside the ice fronts only, as an ocean model without
 cavities would give it: every cavity cell of `mask` takes the water column of its
 open-ocean source ([`front_sources`](@ref)), extended flat below that column's
 water.  `T`, `S` are `(nx, ny, nz)` on the depths `z` (uniform) for the full domain
 of `mask`, border ring included, with `NaN` where there is no water; only cells
-with water in both can be sources.  `depth` ranks the open-ocean neighbours of a
-front cell, the lowest winning (pass the bed elevation, size of `mask`); without
-it, the column with the most levels of water wins.
+with water in both can be sources.  `depth` is the bed elevation (m, negative,
+size of `mask`): it ranks the open-ocean neighbours of a front cell, the deepest
+winning; without it, the column with the most levels of water wins.
 
-With `blend = FrontBlend(width; dx)` ([`FrontBlend`](@ref)), every cavity cell
-takes instead the weighted mean of the source columns of the fronts within `width`
-of its nearest, so the forcing has no steps where the nearest front changes.
+With `cut` (the default; it needs `depth`), every source column is cut at its own
+seabed first: its levels below `depth` are dropped (the shallowest level with data
+is always kept), so that the column extends flat from its deepest level above the
+seabed. Ocean products are commonly extrapolated through land and below the seabed
+(horizontally from the nearest water at each depth, often warm off-shelf water),
+and a cavity deeper than its front would otherwise read that extrapolation.
+`cut = false` keeps the columns as they are.
+
+With `blend = FrontBlend(front_length; dx)` ([`FrontBlend`](@ref)), every cavity
+cell takes instead the weighted mean of the source columns of the `front_length` of
+front closest to it, so the forcing has no steps where the nearest front changes.
 
 Returns a [`PerBasinOceanForcing1D`](@ref) with one profile per source column and,
 blended, one more per cavity cell that blends several: `n_rows × nz` numbers
@@ -340,12 +370,15 @@ function front_ocean_forcing(
     mask;
     depth = nothing,
     blend::Union{Nothing,FrontBlend} = nothing,
+    cut::Bool = true,
     FT = Float64,
 )
     size(T) == size(S) || throw(ArgumentError("T is $(size(T)) but S is $(size(S))"))
     size(T)[1:2] == size(mask) ||
         throw(ArgumentError("T is $(size(T)) but the mask is $(size(mask)); give the full domain"))
     size(T, 3) == length(z) || throw(ArgumentError("T has $(size(T, 3)) levels but z has $(length(z))"))
+    cut && depth === nothing &&
+        throw(ArgumentError("cut needs depth, the bed elevation to cut the source columns at; pass cut = false to keep them whole"))
     wet = dropdims(any(isfinite, T; dims = 3) .& any(isfinite, S; dims = 3); dims = 3)
     rank = depth === nothing ? -Float64.(dropdims(count(isfinite, T; dims = 3); dims = 3)) : depth
     if blend === nothing
@@ -362,6 +395,7 @@ function front_ocean_forcing(
     for (n, l) in enumerate(sources)
         Tz[n, :] .= T[C[l], :]
         Sz[n, :] .= S[C[l], :]
+        cut && _cut_below_seabed!(view(Tz, n, :), view(Sz, n, :), z, depth[C[l]])
         _extend_flat!(view(Tz, n, :))
         _extend_flat!(view(Sz, n, :))
     end

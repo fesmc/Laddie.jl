@@ -160,10 +160,10 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 #   * `max_detrainment`: v2 hard-codes a 1e-3 m s⁻¹ cap (`laddie_physics.f90`), and unlike
 #     v1's 0.5 it binds.
 #
-# Walls are no-slip on both the grounding line and land, as in v2 — but v2's no slip is
-# *viscous only*: both of its advection schemes skip grounded neighbours, so no momentum
-# crosses a wall. [`NoWallAdvection`](@ref) takes the slip factor out of the momentum
-# advection and leaves it in the viscous drag, which is v2's combination.
+# Walls are v2's, which are the defaults: zero velocity one grid spacing behind the
+# grounding line and land in the viscosity (v2's "no slip", slip factor 1 here), and
+# no momentum across a wall, since both of v2's advection schemes skip grounded
+# neighbours ([`NoWallAdvection`](@ref)). See [Wall slip](../numerics/walls.md).
 #
 # One v2 setting is deliberately left off: its `'upstream'` momentum advection, which
 # Laddie.jl has as [`UpstreamMomentumAdvection`](@ref) — the momentum riding on the thickness

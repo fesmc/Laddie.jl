@@ -37,7 +37,7 @@ of v2's own output, remapped from its mesh to a regular grid.
 | [`SimulationPIGv1`](@ref) | [Lambert et al. (2023)](@cite lambert_modelling_2023), App. C, 500 m, 30 days | 15.30 / 15.27 (+0.2 %) | 0.991 | 41.5 / 41.6 |
 | [`SimulationASEv1`](@ref) | v1 run of [Lambert et al. (2026)](@cite lambert_one-layer_2026), Sect. 3.1, 20 days | 17.49 / 17.51 (−0.1 %) | 0.999 | 26.5 / 26.5 |
 | [`SimulationASEv1Theoretical`](@ref) | same | 19.02 / 17.51 (+8.6 %) | 0.85 | 32.6 / 26.5 |
-| [`SimulationASEv2`](@ref) | [Lambert et al. (2026)](@cite lambert_one-layer_2026), Sect. 3.1, 20 days | 20.46 / 19.44 (+5.2 %) | 0.906 | 40.5 / 31.7 |
+| [`SimulationASEv2`](@ref) | [Lambert et al. (2026)](@cite lambert_one-layer_2026), Sect. 3.1, 20 days | 20.49 / 19.44 (+5.4 %) | 0.906 | 40.6 / 31.7 |
 | [`SimulationISOMIPv2`](@ref) | [Lambert et al. (2026)](@cite lambert_one-layer_2026), Sect. 3.2.1, 20 days | 10.54 / 8.92 (+18 %) | 0.932 | 26.0 / 31.5 |
 | [`SimulationFRISv1`](@ref) | [Lambert et al. (2023)](@cite lambert_modelling_2023), 1 km, 720 days | not yet run | | |
 | [`SimulationMISOMIPv2`](@ref), [`SimulationMISOMIPGapsv2`](@ref) | standalone spin-ups of coupled runs | no reference | | |

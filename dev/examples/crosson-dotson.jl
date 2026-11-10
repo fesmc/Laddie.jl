@@ -82,8 +82,9 @@ params = Params(; FT,
     convection_scheme = ClampDensity(0.005),
     tracer_form = AdvectiveTracerForm(),  # the reference steps T and S, not H·T and H·S
 )
-## The reference applies one partial-slip factor of 1 to every wall.
-boundary = BoundaryConditions(; grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0))
+## The reference's slip = 1 on every wall: no slip in the viscosity, v1's advective ghost.
+boundary = BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
+                              wall_advection = V1WallAdvection())
 model = Model(grid; forcing, params, boundary, gradient = PyGradient())
 sim = Simulation(model; dt = 120.0, nu = 0.8)
 

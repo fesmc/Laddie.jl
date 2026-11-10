@@ -67,14 +67,32 @@ calls writes on the same cadence as one advanced by a single call.
 Static fields, written once: `:mask` (the mask and the margin flags `at_isf`,
 `at_grl`, `at_lnd`, `at_gap`) and `:z_draft` (the ice draft, m).
 
+Time series, off by default: set `tsday` to write, every `tsday` days, the means over
+the ice-covered cells (`imask`) of the fields averaged over the `tsday` window, on
+their own time axis `ts_time`:
+
+| name | series | units |
+|------|--------|-------|
+| `ts_H`, `ts_T`, `ts_S` | mean layer thickness, temperature, salinity | m, °C, psu |
+| `ts_tf` | mean thermal forcing ``T - T_f(S, z_b)`` (the mean of `:supercooling`) | °C |
+| `ts_u_norm` | mean speed on T-points | m s⁻¹ |
+| `ts_m` | mean basal melt rate | m yr⁻¹ |
+| `ts_m_gt` | total basal melt, freshwater mass | Gt yr⁻¹ |
+
+The fields are accumulated on the device every step, like the time-averaged maps;
+the spatial means are reduced only once per `tsday`, and the series are written to
+`output.nc` together with the maps.  Not available under a
+[`ReactantBackend`](@ref): `to_backend` rejects a simulation with `tsday` set.
+
 ```julia
 OutputConfig(; name = "warm", saveday = 1.0, fields = (:H, :melt, :entr))
+OutputConfig(; name = "warm", saveday = 10.0, tsday = 1.0)   # with daily time series
 ```
 
 # Fields
 $(TYPEDFIELDS)
 """
-Base.@kwdef struct OutputConfig{T,F}
+Base.@kwdef struct OutputConfig{T,D,F}
     "run name; files go to `joinpath(resultdir, name)`"
     name::String = "run"
     "averaging and output interval in days; `0` disables all file I/O"
@@ -83,33 +101,39 @@ Base.@kwdef struct OutputConfig{T,F}
     diagday::T = 1.0
     "interval of the restart files in days (must be positive)"
     restday::T = 30.0
+    "interval of the time series of shelf means in days; `nothing` (default) disables them"
+    tsday::D = nothing
     "parent directory of the run directory"
     resultdir::String = "./output/"
     "log file name inside the run directory"
     logfilename::String = "log.txt"
     "variables written to `output.nc` (see the table above)"
     fields::F = (:Ut, :Vt, :H, :T, :S, :melt, :mask, :z_draft)
-    OutputConfig{T,F}(args...) where {T,F} = new{T,F}(args...)
+    OutputConfig{T,D,F}(args...) where {T,D,F} = new{T,D,F}(args...)
 end
 
 const _STATIC_FIELDS = (:mask, :z_draft)
 
 # Positional (and keyword) construction converts the intervals to one float type and
 # the field names to a tuple of symbols, and rejects unknown names.
-function OutputConfig(name, saveday, diagday, restday, resultdir, logfilename, fields)
+function OutputConfig(name, saveday, diagday, restday, tsday, resultdir, logfilename, fields)
     saveday >= 0 || throw(ArgumentError("saveday must not be negative (0 disables file I/O), got $saveday"))
     # A zero interval would never advance its event time, and so fire on every step.
     diagday > 0 || throw(ArgumentError("diagday must be positive, got $diagday"))
     restday > 0 || throw(ArgumentError("restday must be positive, got $restday"))
+    tsday === nothing || tsday > 0 ||
+        throw(ArgumentError("tsday must be positive (or `nothing` for no time series), got $tsday"))
     days = promote(float(saveday), float(diagday), float(restday))
+    tsday = tsday === nothing ? nothing : convert(eltype(days), tsday)
     fields = Tuple(Symbol.(fields))
     known = (keys(_OUTPUT_FIELDS)..., _STATIC_FIELDS...)
     for f in fields
         f in known || throw(ArgumentError("unknown output field :$f; use one of $known"))
     end
-    return OutputConfig{eltype(days),typeof(fields)}(
+    return OutputConfig{eltype(days),typeof(tsday),typeof(fields)}(
         name,
         days...,
+        tsday,
         resultdir,
         logfilename,
         fields,
@@ -131,7 +155,7 @@ in the [`Clock`](@ref), and the cell-centre coordinates written to NetCDF on the
 # Fields
 $(TYPEDFIELDS)
 """
-mutable struct IOState{I,T,C}
+mutable struct IOState{I,T,C,S,R}
     "steps accumulated since the last output write"
     count::I
     "simulated time accumulated since the last output write (s)"
@@ -154,6 +178,16 @@ mutable struct IOState{I,T,C}
     restartfile::String
     "the dt-weighted sums over the averaging window of the time-averaged output fields, by name (full-size model arrays)"
     acc::C
+    "clock time of the next time-series point (s); `Inf` while the series are off"
+    nextseries::T
+    "simulated time accumulated since the last time-series point (s)"
+    ts_t_accum::T
+    "the dt-weighted sums over the series window of the fields behind the time series, by name (full-size model arrays)"
+    tsacc::S
+    "time-series points (host numbers) not yet written to `output.nc`"
+    ts_rows::R
+    "number of time-series points written to `output.nc` so far"
+    ts_index::I
 end
 
 # The time-averaged output fields, by output name.  `src` reads the field from the
@@ -200,6 +234,27 @@ const _OUTPUT_FIELDS = (
         Val(:supercooling),
     ),
 )
+
+# The fields accumulated for the time series (`_accum_series_kernel!`); `melt` gives
+# both `ts_m` and `ts_m_gt`.
+const _SERIES_FIELDS = (:H, :T, :S, :u_norm, :melt)
+
+# The time series written to `output.nc`: name, units, long name.
+const _SERIES = (
+    ts_H = ("m", "mean mixed-layer thickness over ice-covered cells"),
+    ts_T = ("degC", "mean layer-averaged temperature over ice-covered cells"),
+    ts_S = ("psu", "mean layer-averaged salinity over ice-covered cells"),
+    ts_tf = (
+        "degC",
+        "mean thermal forcing over ice-covered cells, T - Tf(S, z_draft)",
+    ),
+    ts_u_norm = ("m s-1", "mean speed on t-grid over ice-covered cells"),
+    ts_m = ("m yr-1", "mean basal melt rate over ice-covered cells"),
+    ts_m_gt = ("Gt yr-1", "total basal melt, freshwater mass"),
+)
+
+# One time-series point: the time (days) and the series, as host numbers.
+const _SeriesRow = NamedTuple{(:time, keys(_SERIES)...),NTuple{length(_SERIES) + 1,Float64}}
 
 # ============================================================================
 # Run directory + log
@@ -347,14 +402,20 @@ function prepare_output!(sim)
     sim.io.nextsave = sim.clock.time + out.saveday * spd
     sim.io.nextdiag = sim.clock.time + out.diagday * spd
     sim.io.nextrest = sim.clock.time + out.restday * spd
+    sim.io.nextseries = _series_on(sim) ? sim.clock.time + out.tsday * spd : Inf
     sim.io.count = 0
     sim.io.t_accum = 0.0
     sim.io.time_index = 0
+    sim.io.ts_index = 0
+    empty!(sim.io.ts_rows)
     _write_run_metadata(sim)
     _create_output_file!(sim)
-    # Write the initial state as the first time slice before any stepping.
+    # Write the initial state as the first time slice (and series point) before any
+    # stepping.
     _accum!(sim)
     _write_output!(sim, _t_days(sim))
+    _series_on(sim) && _record_series!(sim)
+    _write_series!(sim)
     _reset_accum!(sim)
     return sim
 end
@@ -390,13 +451,67 @@ end
     end
 end
 
-# Add the current fields to the averages: on the device, the dt-weighted fields
-# (`_accum_fields!`, which the Reactant extension traces into its step loop); on the
-# host, the counters of the averaging window (`_count_accum!`).
+# Add the current fields to the averages: on the device, the dt-weighted fields of
+# the maps (`_accum_fields!`, which the Reactant extension traces into its step loop)
+# and of the time series (`_accum_series!`, never under Reactant); on the host, the
+# counters of the averaging windows (`_count_accum!`).
 function _accum!(sim)
     _accum_fields!(sim.io.acc, sim.model, sim.clock.dt)
+    _accum_series!(sim.io.tsacc, sim.model, sim.clock.dt)
     _count_accum!(sim.io, sim.clock.dt)
     return
+end
+
+_accum_series!(::NamedTuple{()}, m, dt) = nothing
+# All series in one kernel: one launch, and a single pass over the fields.  The speed
+# is that of the velocities averaged onto T-points (as `meltstats`).
+_accum_series!(a, m, dt) = launch!(
+    _accum_series_kernel!,
+    a.H,
+    a.T,
+    a.S,
+    a.u_norm,
+    a.melt,
+    m.H.present,
+    m.T.present,
+    m.S.present,
+    m.U.present,
+    m.V.present,
+    m.melt,
+    size(a.H, 1),
+    size(a.H, 2),
+    dt,
+)
+
+@kernel function _accum_series_kernel!(
+    H_acc,
+    T_acc,
+    S_acc,
+    u_norm_acc,
+    melt_acc,
+    @Const(H),
+    @Const(T),
+    @Const(S),
+    @Const(U),
+    @Const(V),
+    @Const(melt),
+    Nx,
+    Ny,
+    dt,
+)
+    dt = _val(dt)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = eltype(H_acc)
+        half = FT(0.5)
+        u = (U[i, j] + U[_xm1(i, Nx), j]) * half
+        v = (V[i, j] + V[i, _ym1(j, Ny)]) * half
+        H_acc[i, j] += H[i, j] * dt
+        T_acc[i, j] += T[i, j] * dt
+        S_acc[i, j] += S[i, j] * dt
+        u_norm_acc[i, j] += _safe_sqrt(u^2 + v^2) * dt
+        melt_acc[i, j] += melt[i, j] * dt
+    end
 end
 
 function _accum_fields!(accs, m, dt)
@@ -409,6 +524,7 @@ end
 function _count_accum!(io, dt)
     io.count += 1
     io.t_accum += _primal(dt)
+    io.ts_t_accum += _primal(dt)
     return
 end
 
@@ -470,6 +586,32 @@ function _create_output_file!(sim)
 
         ds.attrib["model"] = "Laddie.jl"
         ds.attrib["saveday"] = sim.output.saveday
+        _series_on(sim) && (ds.attrib["tsday"] = sim.output.tsday)
+
+        # Time series of shelf means — their own unlimited time axis, since `tsday`
+        # need not match `saveday`.
+        if _series_on(sim)
+            defDim(ds, "ts_time", Inf)
+            defVar(
+                ds,
+                "ts_time",
+                Float64,
+                ("ts_time",);
+                attrib = [
+                    "units" => "days",
+                    "long_name" => "simulation time (end of time-series window)",
+                ],
+            )
+            for (name, (units, long)) in pairs(_SERIES)
+                defVar(
+                    ds,
+                    string(name),
+                    Float64,
+                    ("ts_time",);
+                    attrib = ["units" => units, "long_name" => long],
+                )
+            end
+        end
 
         # Time-varying fields — data appended each save interval
         function dv(name, units, longname)
@@ -568,6 +710,88 @@ function _write_output!(sim, t_days)
     _print2log(sim, @sprintf("%.3f days: appended output → output.nc (step %d)", t_days, k))
 end
 
+# ============================================================================
+# Time series of shelf means
+# ============================================================================
+
+_series_on(sim) = !isempty(sim.io.tsacc)
+
+# The sums over the ice-covered cells of the series accumulators, and the number of
+# those cells: one device reduction per series, over the scratch field `diag`.
+function _series_sums(m, acc)
+    d = m.diag
+    function masked_sum(a)
+        @. d = a * m.imask
+        return sum(d)
+    end
+    # The draft is fixed, so it is summed as is, not accumulated.
+    return (; ncells = sum(m.imask), z_draft = masked_sum(m.z_draft), map(masked_sum, acc)...)
+end
+
+# Turn the series accumulators into one point of the time series (kept on the
+# host until the next write of `output.nc`) and reset them.  The window means are
+# the spatial means of the time-averaged fields, which, the mask being fixed, are
+# the time averages of the spatial means.
+function _record_series!(sim)
+    m = sim.model
+    io = sim.io
+    sums = map(_float64, _series_sums(m, io.tsacc))
+    t = io.ts_t_accum
+    shelf_mean(x) = x / (sums.ncells * t)
+    seconds_per_year = _float64(m.seconds_per_year)
+    melt_total = sums.melt / t * _float64(m.dx * m.dy * m.rho_freshwater)  # kg s⁻¹
+    # T − T_f(S, z_b) with the liquidus of the melt kernel (as `:supercooling`): linear
+    # in T and S, so its mean is that of the mean T and S at the mean draft.
+    liquidus =
+        _float64(m.l1) * shelf_mean(sums.S) + _float64(m.l2) +
+        _float64(m.l3) * sums.z_draft / sums.ncells
+    thermal_forcing = shelf_mean(sums.T) - liquidus
+    row = _SeriesRow((
+        _t_days(sim),
+        shelf_mean(sums.H),
+        shelf_mean(sums.T),
+        shelf_mean(sums.S),
+        thermal_forcing,
+        shelf_mean(sums.u_norm),
+        shelf_mean(sums.melt) * seconds_per_year,
+        melt_total * seconds_per_year / _KG_PER_GT,
+    ))
+    push!(io.ts_rows, row)
+    io.ts_t_accum = 0.0
+    foreach(acc -> fill!(acc, 0), io.tsacc)
+    return
+end
+
+# Append the pending time-series points to output.nc.
+function _write_series!(sim)
+    io = sim.io
+    isempty(io.ts_rows) && return
+    k = (io.ts_index + 1):(io.ts_index + length(io.ts_rows))
+    NCDataset(joinpath(io.rundir, "output.nc"), "a") do ds
+        ds["ts_time"][k] = [row.time for row in io.ts_rows]
+        for name in keys(_SERIES)
+            ds[string(name)][k] = [getfield(row, name) for row in io.ts_rows]
+        end
+    end
+    io.ts_index = last(k)
+    empty!(io.ts_rows)
+    return
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Record one point of the time series of shelf means, once every `output.tsday`
+days.  Called by `run!` after each batch of steps, before `savefields!`, which
+writes the points recorded since its last write.
+"""
+function saveseries!(sim)
+    _event_due(sim, sim.io.nextseries) || return
+    _record_series!(sim)
+    sim.io.nextseries += sim.output.tsday * _primal(sim.model.seconds_per_day)
+    return
+end
+
 # A periodic event is due once the clock reaches the next event time.  The
 # half-step tolerance mirrors the run! stopping rule (round-half-up), so a fixed
 # dt fires at the same steps an integer `t % interval == 0` test would.
@@ -584,16 +808,22 @@ accumulates the averages; the final partial window is flushed after the loop.
 function savefields!(sim)
     _event_due(sim, sim.io.nextsave) || return
     _write_output!(sim, _t_days(sim))
+    _write_series!(sim)
     _reset_accum!(sim)
     sim.io.nextsave += sim.output.saveday * _primal(sim.model.seconds_per_day)
     return
 end
 
-# Flush any unwritten accumulation as a final output file (end of run).
+# Flush any unwritten accumulation as a final output slice and series point, and
+# the series points not yet written (end of run).
 function flush_output!(sim)
-    sim.io.count > 0 || return
-    _write_output!(sim, _t_days(sim))
-    _reset_accum!(sim)
+    _series_on(sim) && sim.io.ts_t_accum > 0 && _record_series!(sim)
+    if sim.io.count > 0
+        _write_output!(sim, _t_days(sim))
+        _reset_accum!(sim)
+    end
+    _write_series!(sim)
+    return
 end
 
 # ============================================================================

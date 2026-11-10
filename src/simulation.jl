@@ -24,10 +24,12 @@ mutable struct Clock{FT,T,I}
 end
 
 # I/O state on the model's backend, with a zeroed accumulator for each time-averaged
-# output field when file I/O is on.  Full grid size (including the border ring), so
-# `_accum!` can do bare `.+=`; the ring is masked out when writing to NetCDF.
+# output field when file I/O is on, and for each field behind the time series when
+# these are on too.  Full grid size (including the border ring), so `_accum!` can do
+# bare `.+=`; the ring is masked out when writing to NetCDF.
 function IOState(m::Model, output::OutputConfig)
     names = output.saveday > 0 ? filter(in(keys(_OUTPUT_FIELDS)), output.fields) : ()
+    series = output.saveday > 0 && output.tsday !== nothing ? _SERIES_FIELDS : ()
     IOState(
         0,       # count
         0.0,     # t_accum
@@ -40,6 +42,11 @@ function IOState(m::Model, output::OutputConfig)
         0.0,     # walltime_start
         "",      # restartfile
         NamedTuple{names}(map(_ -> zero(m.tmask), names)),
+        Inf,     # nextseries
+        0.0,     # ts_t_accum
+        NamedTuple{series}(map(_ -> zero(m.tmask), series)),
+        _SeriesRow[],   # ts_rows
+        0,       # ts_index
     )
 end
 
@@ -178,9 +185,11 @@ The clock, time stepper and output configuration are carried over; the original
 simulation is not modified.
 
 With a [`ReactantBackend`](@ref), `run!` then advances the simulation in compiled
-batches of steps (requires `using Reactant, CUDA`).
+batches of steps (requires `using Reactant, CUDA`); the time series of
+[`OutputConfig`](@ref) (`tsday`) are not available there.
 """
 function to_backend(sim::Simulation, backend)
+    _check_series_backend(sim.output, backend)
     c = sim.clock
     Simulation(
         to_backend(sim.model, backend),

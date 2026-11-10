@@ -142,3 +142,13 @@ to_backend(m::Model, b::ReactantBackend) = to_backend(m, _reactant_device(b))
 _iostate_to_backend(io::IOState, b::ReactantBackend) =
     _iostate_to_backend(io, _reactant_device(b))
 _execution(b::ReactantBackend) = _reactant_execution(b)
+
+# The time series of shelf means are not compiled into the Reactant step loop.
+_check_series_backend(output, backend) = nothing
+_check_series_backend(output, ::ReactantBackend) =
+    output.tsday === nothing || throw(
+        ArgumentError(
+            "time series (OutputConfig tsday = $(output.tsday)) are not available under " *
+            "ReactantBackend; leave tsday at its default `nothing`",
+        ),
+    )

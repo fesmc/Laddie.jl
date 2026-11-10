@@ -446,7 +446,7 @@ _sync_due(r, step, elapsed, half) = step % r.checkint == 0 || elapsed + half >= 
 _sample_due(r, elapsed, half) = elapsed + half >= r.next_steady
 _output_due(io, t, half) =
     _event_due(t, half, io.nextsave) || _event_due(t, half, io.nextdiag) ||
-    _event_due(t, half, io.nextrest)
+    _event_due(t, half, io.nextrest) || _event_due(t, half, io.nextseries)
 
 # The number of steps until the next host event.
 function _steps_to_next_event(sim, r)
@@ -510,8 +510,8 @@ whole number of steps, so a sequence of calls matches one long call exactly only
 when the durations are multiples of `dt`.
 
 Each step is one [`time_step!`](@ref).  When `sim.output.saveday > 0`, the
-output fields are accumulated after every step, `savefields!`, `printdiags` and
-`saverestart!` write whenever their interval is due, and the call ends by flushing
+output fields are accumulated after every step, `saveseries!`, `savefields!`,
+`printdiags` and `saverestart!` write whenever their interval is due, and the call ends by flushing
 the partial averaging window and writing a restart.  When
 `verbose = true`, a progress bar with throughput and ETA is displayed;
 melt/thickness/speed diagnostics attached to the bar refresh every ~5 % of
@@ -579,6 +579,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
             r.elapsed += _primal(clock.dt)
         end
         if io_on
+            saveseries!(sim)
             savefields!(sim)
             printdiags(sim)
             saverestart!(sim)

@@ -228,3 +228,60 @@ end
     @test length(files) == 3
     @test "restart_000000.250.jld2" in files
 end
+
+@testset "I/O: time series of shelf means" begin
+    NCD = Laddie.NCDatasets
+    tmp = mktempdir()
+    @test_throws ArgumentError OutputConfig(; saveday = 1.0, tsday = -1.0)
+    @test_throws ArgumentError OutputConfig(; saveday = 1.0, tsday = 0)
+    @test OutputConfig().tsday === nothing          # off by default
+    @test OutputConfig(; tsday = 1).tsday === 1.0   # same float type as the other intervals
+
+    # Same window as the maps: each series point is the mean over the ice-covered
+    # cells of the time-averaged map it shares its window with.
+    output = OutputConfig(; name = "series", resultdir = tmp, saveday = 0.25, tsday = 0.25,
+                          fields = (:H, :T, :S, :melt, :supercooling))
+    sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, output)
+    run!(sim; days = 1.0, verbose = false)
+    m = sim.model
+    ice = m.imask[2:end-1, 2:end-1] .> 0
+    NCD.Dataset(joinpath(tmp, "series", "output.nc")) do ds
+        @test ds["ts_time"][:] ≈ ds["time"][:]
+        @test length(ds["ts_time"]) == 5
+        for (ts, map) in (("ts_H", "H"), ("ts_T", "T"), ("ts_S", "S"), ("ts_m", "melt"),
+                          ("ts_tf", "supercooling"))
+            for k in 1:5
+                @test ds[ts][k] ≈ sum(ds[map][:, :, k][ice]) / count(ice)
+            end
+        end
+        @test ds["ts_m"][end] > 0
+        @test ds["ts_m_gt"][:] ≈
+              ds["ts_m"][:] .* count(ice) .* m.dx .* m.dy .* m.rho_freshwater ./ 1e12
+        @test all(isfinite, ds["ts_u_norm"][:])
+        @test ds["ts_u_norm"][end] > 0
+        @test ds["ts_m_gt"].attrib["units"] == "Gt yr-1"
+    end
+
+    # Finer than the maps, with the final partial window flushed at the end of run!.
+    output = OutputConfig(; name = "fine", resultdir = tmp, saveday = 0.5, tsday = 0.25)
+    sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, output)
+    run!(sim; days = 1.1, verbose = false)
+    NCD.Dataset(joinpath(tmp, "fine", "output.nc")) do ds
+        @test length(ds["time"]) == 4
+        @test ds["ts_time"][:] ≈ [0.0, 0.25, 0.5, 0.75, 1.0, 1.1] atol = 0.01
+    end
+
+    # No series without tsday.
+    output = OutputConfig(; name = "noseries", resultdir = tmp, saveday = 0.5)
+    sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, output)
+    @test isempty(sim.io.tsacc)
+    run!(sim; days = 0.5, verbose = false)
+    NCD.Dataset(joinpath(tmp, "noseries", "output.nc")) do ds
+        @test !haskey(ds, "ts_time") && !haskey(ds, "ts_m")
+    end
+
+    # Rejected under Reactant before anything is moved (no extension needed).
+    output = OutputConfig(; name = "rx", resultdir = tmp, saveday = 0.5, tsday = 0.25)
+    sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, output)
+    @test_throws ArgumentError to_backend(sim, ReactantBackend())
+end

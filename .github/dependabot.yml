@@ -17,6 +17,12 @@ updates:
       - "/test"
     schedule:
       interval: "weekly"
+    ignore:
+      # KernelAbstractions 0.10 makes `CPU` an alias for the OpenCL `POCLBackend`, which has no
+      # `static` threading (used by `_launch_backend` in src/numerics.jl), and Reactant still
+      # requires KernelAbstractions 0.9.
+      - dependency-name: "KernelAbstractions"
+        versions: [">= 0.10"]
     # To group all Julia dependency updates into a single PR, uncomment the following:
     # groups:
     #   julia-dependencies:

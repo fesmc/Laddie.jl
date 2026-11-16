@@ -33,9 +33,9 @@ cases — while the border cells are masked out and contribute nothing to the
 dynamics. The physical boundaries are:
 
 - **Grounding line and land**: zero-flux walls, each with its own slip factor; see
-  [Wall slip](walls.md) and [Wall momentum advection](wall_advection.md).
-- **Ice front**: an open boundary; see [Open-ocean boundary](open_ocean.md) and
-  [Ice-front pressure gradient](front_pressure.md).
+  [Wall slip](../physics/walls.md) and [Wall momentum advection](../physics/wall_advection.md).
+- **Ice front**: an open boundary; see [Open-ocean boundary](../physics/open_ocean.md) and
+  [Ice-front pressure gradient](../physics/front_pressure.md).
 - **Ice-shelf gaps**: either sinks, like the ice front, or part of the active domain;
   see [Ice-shelf gaps](../physics/gaps.md).
 
@@ -78,10 +78,6 @@ describe one family each:
 | [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; tstep)` | `FixedDt()` |
 | [CFL number](cfl.md) | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `ExactCFL()` |
 | [Simulation end](simulation_end.md) | [`AbstractSimulationEnd`](@ref) | `Simulation(model; stop)`, `run!(sim; until)` | `FixedSimulationEnd()` |
-| [Wall slip](walls.md) | [`AbstractGroundingLineBC`](@ref), [`AbstractLandBC`](@ref) | `BoundaryConditions(; grounding_line, land)` | `PartialSlipGL(1.0)`, `PartialSlipLand(1.0)` |
-| [Wall momentum advection](wall_advection.md) | [`AbstractWallAdvection`](@ref) | `BoundaryConditions(; wall_advection)` | `NoWallAdvection()` |
-| [Open-ocean boundary](open_ocean.md) | [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `ZeroGradientInflow()` |
-| [Ice-front pressure gradient](front_pressure.md) | [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `FullDepthGradient()` |
 | [Maximum layer thickness](max_layer_thickness.md) | [`AbstractMaxLayerThickness`](@ref) | `Params(; max_layer_thickness)` | `NoMaxLayerThickness()` |
 | [Ice-base slope](ice_slope.md) | [`AbstractIceSlopeGradient`](@ref) | `Model(grid; gradient)` | `JlGradient()` |
 | [Mask preprocessing](preprocessing.md) | [`AbstractPreprocess`](@ref) | `Grid(...; preprocess)` | none |

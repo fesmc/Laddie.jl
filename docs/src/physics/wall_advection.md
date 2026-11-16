@@ -15,7 +15,7 @@ ghost velocity ``(1 - \text{slip})\,u``, is selected with
 
 ## Interaction with the advection scheme
 
-This interacts with the [momentum-advection scheme](momentum_advection.md), and the
+This interacts with the [momentum-advection scheme](../numerics/momentum_advection.md), and the
 interaction is easy to trip over:
 
 - Under [`CentredMomentumAdvection`](@ref) the two terms are independent, and

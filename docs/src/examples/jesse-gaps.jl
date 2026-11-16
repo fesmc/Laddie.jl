@@ -163,7 +163,7 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 # Walls are v2's, which are the defaults: zero velocity one grid spacing behind the
 # grounding line and land in the viscosity (v2's "no slip", slip factor 1 here), and
 # no momentum across a wall, since both of v2's advection schemes skip grounded
-# neighbours ([`NoWallAdvection`](@ref)). See [Wall slip](../numerics/walls.md).
+# neighbours ([`NoWallAdvection`](@ref)). See [Wall slip](../physics/walls.md).
 #
 # One v2 setting is deliberately left off: its `'upstream'` momentum advection, which
 # Laddie.jl has as [`UpstreamMomentumAdvection`](@ref) — the momentum riding on the thickness

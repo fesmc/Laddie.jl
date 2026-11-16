@@ -63,6 +63,10 @@ the forcing. The pages of this section describe one family each:
 | [`AbstractCoriolisParameter`](@ref) | `Params(; coriolis)` | `CoriolisParameter0D()` |
 | [`AbstractOceanForcing`](@ref) | `Model(grid; forcing)` | — |
 | [`AbstractIceForcing`](@ref) | `Model(grid; forcing)` | `PrescribedIceForcing(-25)` |
+| [`AbstractGroundingLineBC`](@ref), [`AbstractLandBC`](@ref) | `BoundaryConditions(; grounding_line, land)` | `PartialSlipGL(1.0)`, `PartialSlipLand(1.0)` |
+| [`AbstractWallAdvection`](@ref) | `BoundaryConditions(; wall_advection)` | `NoWallAdvection()` |
+| [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `ZeroGradientInflow()` |
+| [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `FullDepthGradient()` |
 | [`AbstractGapsBC`](@ref) | `BoundaryConditions(; gaps)` | `SinkGapsBC()` |
 
 Each default is the choice a plain run makes. The [LADDIE versions](../versions.md) page

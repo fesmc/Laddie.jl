@@ -18,11 +18,11 @@ is built from the staggered fields of its mesh, a question that does not arise o
 C-grid; `UpstreamMomentumAdvection` stands for both.
 
 Building the fluxes from the mass fluxes has two consequences. Walls carry no momentum,
-because they carry no mass, so [wall momentum advection](wall_advection.md) has no effect
+because they carry no mass, so [wall momentum advection](../physics/wall_advection.md) has no effect
 under the upstream scheme; and an inflow face at the ice front carries the cell's own
 thickness and velocity, matching [`ZeroGradientInflow`](@ref). The first one means that
 the scheme and ``A_h`` have to be chosen together; see
-[Wall momentum advection](wall_advection.md).
+[Wall momentum advection](../physics/wall_advection.md).
 
 ## API
 

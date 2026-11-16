@@ -114,6 +114,7 @@ makedocs(;
             "Mask preprocessing" => "numerics/preprocessing.md",
             "Domain cropping" => "numerics/domain_cropping.md",
         ],
+        "Preprocessing" => "preprocessing.md",
         "Reactant backend" => "reactant.md",
         "Examples" => [
             "ISOMIP+" => "generated/isomip.md",

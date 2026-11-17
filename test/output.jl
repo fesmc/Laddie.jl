@@ -233,6 +233,30 @@ end
     # does not refine the coarse domain.
     @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), file)
     @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), file; refine = 3)
+
+    # A fine domain one cell longer at the far end (a source grid's remainder that the
+    # coarse grid dropped): the extra column, open ocean, has no coarse parent.
+    long = build_isomip(CPU(); nx = 41, ny = 12, dx = 2000.0, dy = 2000.0, xfront = 60_000.0,
+                        domain_cropping = crop)
+    @test long.model.grid.input_size[1] == gf.input_size[1] + 1
+    Laddie.init_from_restart!(long, file; refine = 2)
+    # Where both grids have the cell (all but the far-end column, a border ring on the
+    # exact grid), the refined state is the one of the exact-size fine grid.
+    gl = long.model.grid
+    Hf = Laddie.init_from_restart!(fine_sim(), file; refine = 2).model.H.past
+    compared = 0
+    for (jj, j) in enumerate(gl.crop[2]), (ii, i) in enumerate(gl.crop[1])
+        (i < gf.input_size[1] && i in gf.crop[1] && j in gf.crop[2]) || continue
+        @test long.model.H.past[ii, jj] == Hf[i - first(gf.crop[1]) + 1, j - first(gf.crop[2]) + 1]
+        compared += 1
+    end
+    @test compared > 0.9 * count(tm_f)
+    run!(long; days = 0.2, verbose = false)
+    @test all(isfinite, long.model.H.present)
+    # More than f − 1 extra cells is not a refinement of the coarse domain.
+    @test_throws ArgumentError Laddie.init_from_restart!(
+        build_isomip(CPU(); nx = 42, ny = 12, dx = 2000.0, dy = 2000.0, xfront = 60_000.0,
+                     domain_cropping = crop), file; refine = 2)
 end
 
 @testset "Output cadence validation and restart names" begin

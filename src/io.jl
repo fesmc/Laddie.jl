@@ -931,7 +931,9 @@ another.  [`Simulation`](@ref) calls it for its `restart` keyword.
 
 With `refine = f > 1`, `path` is the restart of a run whose cells are `f` times
 coarser, on the same full domain: each coarse cell holds `f × f` fine ones, and
-the fine domain, border ring included, is `f .* (coarse size .- 2) .+ 2` cells.
+the fine domain, border ring included, is `f .* (coarse size .- 2) .+ 2` cells, or
+up to `f - 1` more at the far end of an axis (a grid coarsened by whole blocks drops
+the remainder of its source grid); those extra cells keep the state `sim` was built with.
 Each fine cell takes H, T and S of the coarse cell it lies in where that cell was
 active, and each fine velocity point the cell-centred velocity of that coarse cell
 (the mean of its two faces), on the fine velocity masks.  Fine cells whose coarse
@@ -1004,11 +1006,14 @@ end
 function _refiner(m, file, f, coarse_grid)
     co = _coarse_layout(file, coarse_grid)
     g = m.grid
+    # The fine domain may hold up to f − 1 more cells at the far end of each axis: a
+    # grid coarsened by whole blocks drops the source grid's remainder (BedMachine's
+    # 13333 cells at 500 m are 3333 at 2 km).  Those cells have no coarse parent.
     fine_size = f .* (co.input_size .- 2) .+ 2
-    Tuple(g.input_size) == fine_size || throw(
+    all(0 .<= Tuple(g.input_size) .- fine_size .< f) || throw(
         ArgumentError(
             "the model's full domain is $(Tuple(g.input_size)) cells, but $(f)× the coarse " *
-            "$(co.input_size) (border ring kept) is $fine_size",
+            "$(co.input_size) (border ring kept) is $fine_size, up to $(f - 1) more",
         ),
     )
     co.dx === nothing || isapprox(co.dx, f * _float64(g.dx); rtol = 1e-6) || throw(
@@ -1016,10 +1021,11 @@ function _refiner(m, file, f, coarse_grid)
     )
     # Coarse cropped index of the coarse cell holding each fine cell of the model's
     # crop, the border rings mapping onto each other; 0 outside the coarse crop
-    # (inactive there: cropping keeps every active cell).
+    # (inactive there: cropping keeps every active cell) and for the extra cells at
+    # the far end that no coarse cell covers.
     function parents(fine_range, n_fine, n_coarse, coarse_range)
         map(fine_range) do i
-            p = i == 1 ? 1 : i == n_fine ? n_coarse : (i - 2) ÷ f + 2
+            p = i == 1 ? 1 : i == n_fine ? n_coarse : i <= f * (n_coarse - 2) + 1 ? (i - 2) ÷ f + 2 : 0
             p in coarse_range ? p - first(coarse_range) + 1 : 0
         end
     end

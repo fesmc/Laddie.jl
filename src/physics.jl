@@ -27,11 +27,11 @@ const _GAMMA_T_OVER_S = 35
 # `Ts` the ice temperature of the forcing.  The ice thickness is the hydrostatic one
 # from the draft; `_safe_div` keeps cells without ice at zero.  The switch of c_i at
 # the freezing point is blended over ε_T under `SmoothKinks`.
-@inline function _ice_conduction(cond, c_i, T, Tf, Ts, z_draft)
-    k = cond.kinks
-    ci_eff = c_i * _sswitch(k, T - Tf, cond.ci_melt, cond.ci_freeze, _kink_width(k, :T))
-    Hi = -z_draft * cond.thick_ratio
-    q = _safe_div(cond.k_ice * (Tf - Ts), Hi * cond.rho_fw)
+@inline function _ice_conduction(conduction, c_i, T, Tf, Ts, z_draft)
+    k = conduction.kinks
+    ci_eff = c_i * _sswitch(k, T - Tf, conduction.ci_melt, conduction.ci_freeze, _kink_width(k, :T))
+    Hi = -z_draft * conduction.thick_ratio
+    q = _safe_div(conduction.k_ice * (Tf - Ts), Hi * conduction.rho_fw)
     return ci_eff, q
 end
 
@@ -80,10 +80,10 @@ end
     l1,
     l2,
     l3,
-    cond,
+    conduction,
 )
-    gamT, gamS, c_p, c_i, L, l1, l2, l3, cond =
-        _val(gamT), _val(gamS), _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3), _val(cond)
+    gamT, gamS, c_p, c_i, L, l1, l2, l3, conduction =
+        _val(gamT), _val(gamS), _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3), _val(conduction)
     i, j = @index(Global, NTuple)
     FT = typeof(c_p)
     @inbounds begin
@@ -95,7 +95,7 @@ end
         # fixed flux q.  The flux enters the heat balance as c_p·γT·(T − Tb) − q, so it
         # is the temperature T − q/(c_p·γT) that the equations below see.
         ci_eff, q_cond =
-            _ice_conduction(cond, c_i, T[i, j], Tf_depth + l1 * S[i, j], T_ice_base[i, j], z_draft[i, j])
+            _ice_conduction(conduction, c_i, T[i, j], Tf_depth + l1 * S[i, j], T_ice_base[i, j], z_draft[i, j])
         cp_over_Leff = c_p / (L - ci_eff * T_ice_base[i, j])
         ci_over_cp = ci_eff / c_p
         gT = _at(gamT, i, j)
@@ -106,7 +106,7 @@ end
             gS * (one(FT) + cp_over_Leff * ci_over_cp * (Tf_depth + l1 * S[i, j]))
         quad_c = cp_over_Leff * gT * gS * (Tf_depth - T_bal + l1 * S[i, j])
         disc = quad_b * quad_b - FT(4) * quad_c
-        melt_rate = (-quad_b + _ssqrt(cond.kinks, disc, _kink_width(cond.kinks, :w))) / FT(2)
+        melt_rate = (-quad_b + _ssqrt(conduction.kinks, disc, _kink_width(conduction.kinks, :w))) / FT(2)
         # Only ice-covered cells melt.  Gap cells (in tmask, not in imask) are ice-free,
         # so they add no meltwater volume and no buoyancy — and their Tb is set to T,
         # which makes the ice-ocean heat exchange -gamT*(T - Tb) in the temperature
@@ -596,10 +596,10 @@ end
     l1,
     l2,
     l3,
-    cond,
+    conduction,
 )
-    c_p, c_i, L, l1, l2, l3, cond =
-        _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3), _val(cond)
+    c_p, c_i, L, l1, l2, l3, conduction =
+        _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3), _val(conduction)
     i, j = @index(Global, NTuple)
     FT = typeof(c_p)
     @inbounds begin
@@ -610,7 +610,7 @@ end
         ice = ocean & !iszero(imask[i, j])
         mdot = melt_prescribed[i, j]
         tb = _freezing_point(S[i, j], z_draft[i, j], l1, l2, l3)
-        ci_eff, q_cond = _ice_conduction(cond, c_i, T[i, j], tb, T_ice_base[i, j], z_draft[i, j])
+        ci_eff, q_cond = _ice_conduction(conduction, c_i, T[i, j], tb, T_ice_base[i, j], z_draft[i, j])
         heat = (mdot * (L - ci_eff * (T_ice_base[i, j] - tb)) + q_cond) / c_p
         melt[i, j] = ifelse(ice, mdot, z)
         Tb[i, j] = ifelse(ice, tb, ifelse(ocean, T[i, j], z))
@@ -714,15 +714,15 @@ end
     l1,
     l2,
     l3,
-    cond,
+    conduction,
 )
-    c_p, c_i, L, l1, l2, l3, cond =
-        _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3), _val(cond)
+    c_p, c_i, L, l1, l2, l3, conduction =
+        _val(c_p), _val(c_i), _val(L), _val(l1), _val(l2), _val(l3), _val(conduction)
     i, j = @index(Global, NTuple)
     FT = typeof(c_p)
     @inbounds begin
         Tf = _freezing_point(S[i, j], z_draft[i, j], l1, l2, l3)
-        ci_eff, q_cond = _ice_conduction(cond, c_i, T[i, j], Tf, T_ice_base[i, j], z_draft[i, j])
+        ci_eff, q_cond = _ice_conduction(conduction, c_i, T[i, j], Tf, T_ice_base[i, j], z_draft[i, j])
         melt_rate = (c_p * gamT[i, j] * (T[i, j] - Tf) - q_cond) / (L - ci_eff * (T_ice_base[i, j] - Tf))
         melt[i, j] = iszero(imask[i, j]) ? zero(FT) : melt_rate
         Tb[i, j] = ifelse(iszero(tmask[i, j]), zero(FT), ifelse(iszero(imask[i, j]), T[i, j], Tf))

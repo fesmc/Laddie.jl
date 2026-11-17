@@ -63,7 +63,9 @@ It solves a vertically-averaged approximation of the Navier-Stokes equations in 
 
 - Supported AD paths: ForwardDiff through a model built at `FT = Dual`, and Enzyme through Reactant
   (`reactant_compile`, `integrate!`, `trace_parameters`). Both must keep working
-- No global or hidden mutable state; every input of a computation is passed explicitly
+- No global or hidden mutable state; every input of a computation is passed explicitly. The one exception
+  is compile configuration in `ext/LaddieReactantExt.jl` (`TRACING_FUSION`, `EXTRA_COMPILE_OPTIONS`): it
+  selects how kernels are lowered, never what they compute
 - Guard non-differentiable points (`sqrt`, division) with `_safe_sqrt` / `_safe_div` instead of
   introducing new kinks; a new `abs`/`max`/`min` in the dynamics must respect `Params.kinks`
 - A change to the dynamics or to a scheme needs a gradient test (`test/autodiff.jl`, and the scheme
@@ -72,7 +74,10 @@ It solves a vertically-averaged approximation of the Navier-Stokes equations in 
 ### Physics
 
 - Every process cites its governing equation (and its source) in the docstring or in comments
-- A process that conserves mass, heat or salt has a test that verifies the conservation
+- Heat and salt in the layer are not conserved: entrainment, detrainment and melt exchange them with the
+  ambient water and the ice. Test budgets instead: the change of a quantity equals its fluxes (as the
+  H equation is tested to close exactly over one step). A process that does conserve a quantity has a test
+  that verifies it
 - Prefer continuous-time formulations (tendencies, relaxations with a time scale). Instantaneous
   adjustments (resets, clamps, caps) are exceptions: document why they are needed, and do not copy them
   as a pattern for new schemes
@@ -89,7 +94,8 @@ It solves a vertically-averaged approximation of the Navier-Stokes equations in 
 
 - **Files**: snake_case matching the type they define
 - **Types/Constructors**: PascalCase **only for true constructors**
-- **Functions**: snake_case — `time_step!`; functions that return values are never PascalCase
+- **Functions**: snake_case — `time_step!`; functions that return values are not PascalCase, except named
+  setups that return a configured object like a constructor (`ISOMIPForcing`, `ParamsISOMIPv2`, `SimulationPIGv1`)
 - **Kernels**: underscore prefix and `_kernel!` suffix — `_accum_series_kernel!`
 - **Variables**: English long name or readable unicode math notation — never mix abbreviated and
   full forms (e.g., `cond` vs `condition`) to imply a difference; be specific
@@ -268,11 +274,14 @@ _step_model!(m, dt, nu)
 ## Reproductions are a regression contract
 
 `src/reproductions.jl` defines `Params*v1/v2` and `Simulation*v1/v2`, which reproduce published LADDIE
-setups (tested in `test/reproductions.jl`).
+setups (tested in `test/reproductions.jl`). Each `Params*` alias is pinned by its mean melt on a small
+ISOMIP cavity (`REPRODUCTION_MEAN_MELT`, runs on CI); the `Simulation*` aliases need `papers/` and are
+tested only where it exists.
 
 - Never change what these aliases produce as a side effect of another change
 - A new scheme or option keeps the existing default; a reproduction pins any setting it relies on explicitly
-- Changing a model-wide default requires checking every reproduction alias and saying so in the plan
+- Changing a model-wide default requires checking every reproduction alias and saying so in the plan.
+  If an alias changes on purpose, update its `REPRODUCTION_MEAN_MELT` value in the same commit and say why
 
 ## Agent Behavior
 

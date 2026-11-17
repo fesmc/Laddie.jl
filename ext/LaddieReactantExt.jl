@@ -35,6 +35,9 @@ const Adapt = KA.Adapt
 # slower than `:kernel` on every grid: 2.2× at 2000×2000.
 const FUSION_STRATEGIES = (:native, :kernel, :xla)
 # The strategy of the program being traced; set by `_compile` around each trace.
+# Global mutable state, the documented exception in AGENTS.md: the launch overlay reads it
+# during tracing, where no argument reaches it, and it only selects how kernels are
+# lowered, never what they compute.
 const TRACING_FUSION = Ref(:kernel)
 
 # `:auto`: native kernels on the GPU; on the CPU, where XLA must run raised code,
@@ -173,7 +176,8 @@ Laddie._reactant_execution(b::ReactantBackend) =
     ReactantExecution(_fusion(b), Dict{Symbol,Any}(), nothing)
 
 # Extra keyword arguments for `Reactant.compile` (e.g. `xla_debug_options`), for
-# experiments with XLA's code generation; see `benchmark/reactant/fusion.jl`.
+# experiments with XLA's code generation; see `benchmark/reactant/fusion.jl`.  Global
+# mutable state like `TRACING_FUSION` (compile configuration only, see AGENTS.md).
 const EXTRA_COMPILE_OPTIONS = Ref{Any}((;))
 
 _compile(f, exec, args...) = _compile_with(f, exec.fusion, args, EXTRA_COMPILE_OPTIONS[])

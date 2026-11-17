@@ -4,12 +4,14 @@
 # through different kernels: bottom drag (momentum), γ_T (melt) and the entrainment
 # coefficient.  The model is built at the element type of `x`, so `Dual` inputs
 # propagate through the grid, the state and the parameters alike.
-function ad_melt(x; tstep = FixedDt(), output = OutputConfig(), kinks = ExactKinks())
+function ad_melt(x; tstep = FixedDt(), output = OutputConfig(), kinks = ExactKinks(),
+                 schemes = (;), isomipcond = :warm, supercooling = 0.0)
     T = eltype(x)
     params = Params(; FT = T, C_d = x[1], melting = FixedGamTMelting(x[2]),
-                    entrainment = GasparEntrainment(x[3]), kinks)
-    sim = build_isomip(CPU(); FT = T, nx = 20, ny = 10, isomipcond = :warm, params,
+                    entrainment = GasparEntrainment(x[3]), kinks, schemes...)
+    sim = build_isomip(CPU(); FT = T, nx = 20, ny = 10, isomipcond, params,
                        tstep, output)
+    iszero(supercooling) || supercool!(sim.model, T(supercooling))
     run!(sim; days = 2.0, verbose = false)
     return sim.model.melt
 end
@@ -40,6 +42,30 @@ ad_gradient(f) = ForwardDiff.gradient(f, AD_X0, AD_CFG, Val(false))
         h = 1e-6 * x0[k]
         e = zeros(length(x0)); e[k] = h
         fd = (ad_melt_loss(x0 .+ e) - ad_melt_loss(x0 .- e)) / 2h
+        @test g[k] ≈ fd rtol = 1e-5
+    end
+end
+
+# Non-default schemes, each in its own run: a gradient test per scheme (AGENTS.md).
+# ISOMIP+ is never supercooled on its own, so the frazil case starts 0.05 K below the
+# freezing point under the ice; without that it would test nothing.
+const AD_SCHEME_CASES = (
+    "RelaxedFrazilIce" => (; schemes = (; frazil_ice = RelaxedFrazilIce()), supercooling = 0.05),
+    "FluxMomentumForm" => (; schemes = (; momentum_form = FluxMomentumForm())),
+    "AdvectiveTracerForm" => (; schemes = (; tracer_form = AdvectiveTracerForm())),
+    "PastClosures" => (; schemes = (; closure_level = PastClosures())),
+)
+
+@testset "ForwardDiff through $name matches central differences" for (name, case) in AD_SCHEME_CASES
+    loss(x) = ad_melt_loss(x; case...)
+    # The scheme acts: the loss differs from the default's under the same start.
+    @test loss(AD_X0) != ad_melt_loss(AD_X0; supercooling = get(case, :supercooling, 0.0))
+    g = ad_gradient(loss)
+    @test all(isfinite, g)
+    for k in eachindex(AD_X0)
+        h = 1e-6 * AD_X0[k]
+        e = zeros(length(AD_X0)); e[k] = h
+        fd = (loss(AD_X0 .+ e) - loss(AD_X0 .- e)) / 2h
         @test g[k] ≈ fd rtol = 1e-5
     end
 end

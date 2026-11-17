@@ -48,7 +48,7 @@ function OceanForcing1D(
         T_new = _interp1d(z_s, T_s, z_new)
         S_new = _interp1d(z_s, S_s, z_new)
     end
-    OceanForcing1D(FT.(T_new), FT.(S_new), FT.(z_new), FT(1.0), FT(z_new[1]))
+    return OceanForcing1D(FT.(T_new), FT.(S_new), FT.(z_new), FT(1.0), FT(z_new[1]))
 end
 
 function _interp1d(x, y, xi)

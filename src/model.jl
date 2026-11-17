@@ -112,7 +112,7 @@ mutable struct Model{
         F<:CavityForcing,
     }
         _check_property_collisions(grid, geometry, state, cache, params, forcing)
-        new{G,GE,S,C,P,B,F}(grid, geometry, state, cache, params, boundary, forcing)
+        return new{G,GE,S,C,P,B,F}(grid, geometry, state, cache, params, boundary, forcing)
     end
 end
 

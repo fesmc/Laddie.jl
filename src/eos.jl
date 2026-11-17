@@ -1,6 +1,6 @@
 """
-Abstract supertype for the equation of state: the buoyancy contrast ``\\delta\\rho =
-(\\rho_a - \\rho)/\\rho_0`` of the ambient water against the layer, which sets the pressure
+Abstract supertype for the equation of state: the buoyancy contrast
+`δρ = (ρ_a − ρ)/ρ₀` of the ambient water against the layer, which sets the pressure
 gradient, the entrainment and the convective stability.  Pass a concrete instance as
 `Params(; equation_of_state = ...)`:
 
@@ -9,13 +9,13 @@ gradient, the entrainment and the convective stability.  Pass a concrete instanc
 
 All contrasts have the form
 
-```math
-\\delta\\rho = \\beta\\,(S_a - S) - \\bigl(a_0 + a_T\\,\\bar T + a_Z\\,Z\\bigr)\\,(T_a - T),
-\\qquad \\bar T = \\tfrac12 (T_a + T),
+```
+δρ = β (S_a − S) − (a₀ + a_T T̄ + a_Z Z) (T_a − T),
+T̄ = ½ (T_a + T),
 ```
 
 with ``Z`` the depth of the layer mid-point (positive downward), so that the thermal expansion
-``\\alpha = a_0 + a_T \\bar T + a_Z Z`` is linear in temperature (cabbeling) and depth
+`α = a₀ + a_T T̄ + a_Z Z` is linear in temperature (cabbeling) and depth
 (thermobaricity).  The parameterisations differ only in the four coefficients, which are scalars
 computed where the kernels are launched.
 """
@@ -24,7 +24,7 @@ abstract type AbstractEquationOfState end
 """
 $(TYPEDEF)
 
-Linear equation of state, ``\\delta\\rho = \\beta\\,(S_a - S) - \\alpha\\,(T_a - T)``, with the
+Linear equation of state, `δρ = β (S_a − S) − α (T_a − T)`, with the
 constants `Params.alpha` and `Params.beta`.  The default, and the behaviour of LADDIE v1 and v2.
 """
 struct LinearEOS <: AbstractEquationOfState end
@@ -34,24 +34,24 @@ $(TYPEDEF)
 
 The simplified polynomial equation of state of [Roquet et al. (2015, their Eq. 17)](@cite roquet_defining_2015),
 
-```math
-\\rho' = -\\frac{C_b}{2}\\,(\\Theta - \\Theta_0)^2 - T_h\\,Z\\,\\Theta + b_0\\,S_A,
+```
+ρ′ = −(C_b/2) (Θ − Θ₀)² − T_h Z Θ + b₀ S_A,
 ```
 
 the simplest form that has both **cabbeling** (the thermal expansion falls with temperature) and
 **thermobaricity** (it rises with depth) and whose parameters are directly interpretable:
-``C_b`` the sensitivity of ``\\alpha`` to ``\\Theta``, ``\\Theta_0`` the temperature at which the surface
-``\\alpha`` vanishes, ``T_h`` its sensitivity to depth, ``b_0`` the (constant) haline contraction.  The
-thermal expansion is ``\\alpha = C_b(\\Theta - \\Theta_0) + T_h Z``, i.e. 0.029 kg m⁻³ K⁻¹ at the
+`C_b` the sensitivity of `α` to `Θ`, `Θ₀` the temperature at which the surface
+`α` vanishes, `T_h` its sensitivity to depth, `b₀` the (constant) haline contraction.  The
+thermal expansion is `α = C_b(Θ − Θ₀) + T_h Z`, i.e. 0.029 kg m⁻³ K⁻¹ at the
 surface freezing point (−1.9 °C), 0.041 at 500 m, and 0.068 at 0.5 °C and 500 m, where the linear
 default has 0.038 throughout.  The defaults are the values of the paper.  The constants are
-rescaled by ``\\rho_0`` (`Params.rho0_seawater`) to the reduced contrast of the model.
+rescaled by `ρ₀` (`Params.rho0_seawater`) to the reduced contrast of the model.
 
 `Params.alpha` and `Params.beta` are not used by this equation of state.
 
 !!! warning "Experimental"
     Constructing a `RoquetEOS` logs a warning.  [Roquet et al. (2015)](@cite roquet_defining_2015) fit it to the open ocean
-    (``\\Theta`` down to −1.9 °C, ``S_A`` ≈ 34–35 g kg⁻¹, ``Z`` to 5000 m) and in Conservative
+    (`Θ` down to −1.9 °C, `S_A` ≈ 34–35 g kg⁻¹, `Z` to 5000 m) and in Conservative
     Temperature and Absolute Salinity, which this model takes as its temperature and salinity.
     Since ``b_0`` is constant, only salinity differences enter and the offset between Absolute and
     Practical Salinity cancels; the difference between Conservative and potential temperature is
@@ -71,7 +71,7 @@ $(TYPEDFIELDS)
 @kwdef struct RoquetEOS{FT} <: AbstractEquationOfState
     "sensitivity of the thermal expansion to temperature ``C_b`` (kg m⁻³ K⁻², default `0.011`); non-negative"
     Cb::FT = 0.011
-    "temperature at which the surface thermal expansion vanishes ``\\Theta_0`` (°C, default `-4.5`)"
+    "temperature at which the surface thermal expansion vanishes `Θ₀` (°C, default `-4.5`)"
     Theta0::FT = -4.5
     "sensitivity of the thermal expansion to depth ``T_h`` (kg m⁻⁴ K⁻¹, default `2.5e-5`)"
     Th::FT = 2.5e-5

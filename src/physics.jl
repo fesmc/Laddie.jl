@@ -312,7 +312,7 @@ function _update_ambient_fields!(m, ::AbstractOceanForcing)
     return
 end
 
-"Reduced (dimensionless) density ``\\delta\\rho = \\Delta\\rho_a/\\rho_0`` of the ambient water against the layer, ``\\beta(S_a - S) - \\alpha(T_a - T)`` for [`LinearEOS`](@ref) (Lambert et al. 2023, Eqs. 6–7)."
+"Reduced (dimensionless) density `δρ = Δρ_a/ρ₀` of the ambient water against the layer, `β(S_a − S) − α(T_a − T)` for [`LinearEOS`](@ref) (Lambert et al. 2023, Eqs. 6–7)."
 update_density!(m) = launch!(
     _density_kernel!,
     m.drho,
@@ -329,7 +329,7 @@ update_density!(m) = launch!(
 """
 $(TYPEDSIGNATURES)
 
-Flag convectively unstable cells and clamp ``\\delta\\rho`` to a minimum positive value
+Flag convectively unstable cells and clamp `δρ` to a minimum positive value
 so the plume remains lighter than ambient.
 
 Applies in gap cells too (`tmask` but not `imask`): the buoyancy floor is the one
@@ -339,6 +339,7 @@ domain, gaps included.
 function update_convection!(m, cs::ClampDensity)
     thr = cs.d_rho_min / m.rho0_seawater
     launch!(_clamp_density_kernel!, m.convection, m.drho, thr, m.params.kinks)
+    return nothing
 end
 
 # The convection schemes are pointwise, and run as kernels rather than broadcasts so
@@ -387,6 +388,7 @@ function update_convection!(m, cs::ResetToAmbient)
         S_adj,
         eos,
     )
+    return nothing
 end
 
 # Reset T/S of unstable ice-covered cells to ambient, and refresh `drho` there with
@@ -413,12 +415,14 @@ end
         d = drho[i, j]
         ice = imask[i, j] > 0
         convection[i, j] = ifelse((d < 0) & ice, one(FT), zero(FT))
-        if (d < thr) & ice
-            T[i, j] = Ta[i, j]
-            S[i, j] = Sa[i, j] - S_adj
-            drho[i, j] =
-                _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], _layer_depth(z_draft[i, j], H[i, j]), eos) * tmask[i, j]
-        end
+        reset = (d < thr) & ice
+        T_new = ifelse(reset, Ta[i, j], T[i, j])
+        S_new = ifelse(reset, Sa[i, j] - S_adj, S[i, j])
+        drho_reset =
+            _drho(Sa[i, j], S_new, Ta[i, j], T_new, _layer_depth(z_draft[i, j], H[i, j]), eos) * tmask[i, j]
+        T[i, j] = T_new
+        S[i, j] = S_new
+        drho[i, j] = ifelse(reset, drho_reset, d)
     end
 end
 
@@ -491,13 +495,14 @@ end
 $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with a fixed heat transfer
-coefficient ``\\gamma_T`` ([Jenkins 1991](@cite jenkins_onedimensional_1991); [Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 8–10 and 13).
+coefficient `γ_T` ([Jenkins 1991](@cite jenkins_onedimensional_1991); [Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 8–10 and 13).
 Sets `m.ustar`, `m.melt`, `m.Tb`; `m.gamT` and `m.gamS` hold the constant
 exchange velocities from the start.
 """
 function update_melt!(m, ::FixedGamTMelting)
     update_ustar!(m)
     _launch_three_eq_melt!(m)
+    return nothing
 end
 
 # γ_T and γ_S as the kernels take them.  FixedGamTMelting's constants come straight
@@ -531,6 +536,7 @@ function _launch_three_eq_melt!(m)
         m.l3,
         _conduction_args(m),
     )
+    return nothing
 end
 
 """
@@ -563,6 +569,7 @@ function update_melt!(m, ::PrescribedMelting)
         m.l3,
         _conduction_args(m),
     )
+    return nothing
 end
 
 # Prescribed melt with a consistent heat sink.  The interface sits at the local
@@ -597,23 +604,17 @@ end
     FT = typeof(c_p)
     @inbounds begin
         z = zero(FT)
-        if iszero(tmask[i, j])
-            melt[i, j] = z
-            Tb[i, j] = z
-            gamT[i, j] = z
-        elseif iszero(imask[i, j])
-            melt[i, j] = z
-            Tb[i, j] = T[i, j]
-            gamT[i, j] = z
-        else
-            mdot = melt_prescribed[i, j]
-            tb = _freezing_point(S[i, j], z_draft[i, j], l1, l2, l3)
-            ci_eff, q_cond = _ice_conduction(cond, c_i, T[i, j], tb, T_ice_base[i, j], z_draft[i, j])
-            heat = (mdot * (L - ci_eff * (T_ice_base[i, j] - tb)) + q_cond) / c_p
-            melt[i, j] = mdot
-            Tb[i, j] = tb
-            gamT[i, j] = _safe_div(heat, T[i, j] - tb)
-        end
+        # Outside the domain everything is zero; in a gap cell (ocean, no ice) there is no
+        # melt and Tb = T; under ice the prescribed rate sets Tb and γT.
+        ocean = !iszero(tmask[i, j])
+        ice = ocean & !iszero(imask[i, j])
+        mdot = melt_prescribed[i, j]
+        tb = _freezing_point(S[i, j], z_draft[i, j], l1, l2, l3)
+        ci_eff, q_cond = _ice_conduction(cond, c_i, T[i, j], tb, T_ice_base[i, j], z_draft[i, j])
+        heat = (mdot * (L - ci_eff * (T_ice_base[i, j] - tb)) + q_cond) / c_p
+        melt[i, j] = ifelse(ice, mdot, z)
+        Tb[i, j] = ifelse(ice, tb, ifelse(ocean, T[i, j], z))
+        gamT[i, j] = ifelse(ice, _safe_div(heat, T[i, j] - tb), z)
     end
 end
 
@@ -621,7 +622,7 @@ end
 $(TYPEDSIGNATURES)
 
 Three-equation ice-ocean melt parameterisation with turbulence-dependent
-transfer coefficients ``\\gamma_T``, ``\\gamma_S`` via the log-layer formulation
+transfer coefficients `γ_T`, `γ_S` via the log-layer formulation
 ([Holland & Jenkins 1999](@cite holland_modeling_1999); [Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 8–13).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
@@ -629,19 +630,21 @@ function update_melt!(m, mp::TurbulentGamTMelting)
     update_ustar!(m)
     _compute_turbulent_transfer_coefficients!(m, mp)
     _launch_three_eq_melt!(m)
+    return nothing
 end
 
 """
 $(TYPEDSIGNATURES)
 
 Three-equation melt with transfer coefficients proportional to the friction velocity,
-``\\gamma_T = \\Gamma_T u_\\star`` and ``\\gamma_S = \\gamma_T/r``, with `r = mp.ratio` (35 by default).
+`γ_T = Γ_T u⋆` and `γ_S = γ_T/r`, with `r = mp.ratio` (35 by default).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
 function update_melt!(m, mp::UStarGamTMelting)
     update_ustar!(m)
     launch!(_ustar_gamma_kernel!, m.gamT, m.gamS, m.ustar, m.tmask, mp.Gamma_T, mp.ratio)
     _launch_three_eq_melt!(m)
+    return nothing
 end
 
 @kernel function _ustar_gamma_kernel!(gamT, gamS, @Const(ustar), @Const(tmask), Gamma_T, ratio)
@@ -683,6 +686,7 @@ function update_melt!(m, mp::TwoEquationMelting)
         m.l3,
         _conduction_args(m),
     )
+    return nothing
 end
 
 @kernel function _ustar_gamT_kernel!(gamT, @Const(ustar), @Const(tmask), Gamma)
@@ -750,13 +754,14 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
         drho_coeff,
         m.params.kinks,
     )
+    return nothing
 end
 
 """
 $(TYPEDSIGNATURES)
 
 [Gaspar (1988)](@cite gaspar_modeling_1988) mechanical-energy entrainment (see [`GasparEntrainment`](@ref)):
-``e = 2\\mu u_\\star^3 / (g H \\delta\\rho)`` minus a melt detrainment correction
+`e = 2μ u⋆³ / (g H δρ)` minus a melt detrainment correction
 ([Lambert et al. 2023](@cite lambert_modelling_2023), Eq. 14; see `docs/src/physics/equations.md`).
 """
 function _compute_entrainment!(m, ep::GasparEntrainment)
@@ -993,7 +998,7 @@ $(TYPEDSIGNATURES)
 
 Frazil-ice formation rate `m.frazil` (m s⁻¹, freshwater equivalent) under
 [`RelaxedFrazilIce`](@ref): the rate whose latent heat relaxes the supercooling of
-the past level, ``\\max(T_f - T, 0)``, over `relaxation_time`.  Ice-covered cells
+the past level, `max(T_f − T, 0)`, over `relaxation_time`.  Ice-covered cells
 only (`imask`): a gap cell is open water, and the ice it would form is sea ice, not
 marine ice.  Nothing to do under [`NoFrazilIce`](@ref), where `m.frazil` is a scalar
 zero.  Computed before `update_entrainment!`, whose preventive bounds on H include

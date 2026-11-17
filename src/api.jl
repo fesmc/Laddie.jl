@@ -113,6 +113,7 @@ function _launch_tpoint_diag!(kernel!, m)
         nx,
         ny,
     )
+    return nothing
 end
 
 # The CFL number of the current state, for the dt controller.  `Simulation.cfl`

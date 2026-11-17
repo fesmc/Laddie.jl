@@ -419,7 +419,7 @@ function _grid(
         (UnitRange{Int}(r), UnitRange{Int}(c)),
         input_size,
     )
-    return backend isa CPU ? grid : _grid_to_backend(grid, backend)
+    return _grid_on(grid, backend)
 end
 
 # Spacing and full-domain coordinates along one axis, from the spacing, the

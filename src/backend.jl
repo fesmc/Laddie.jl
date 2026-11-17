@@ -20,6 +20,14 @@ _grid_to_backend(g::Grid{FT,A}, backend) where {FT,A} = _matrices_to_backend(g, 
 _geometry_to_backend(g::Geometry{A}, backend) where {A} = _matrices_to_backend(g, A, backend)
 _cache_to_backend(c::Cache{A}, backend) where {A} = _matrices_to_backend(c, A, backend)
 
+# Moves that are the identity on the CPU, where grids and models are first built.
+_grid_on(grid, ::CPU) = grid
+_grid_on(grid, backend) = _grid_to_backend(grid, backend)
+_cpu_grid(grid, ::CPU) = grid
+_cpu_grid(grid, backend) = _grid_to_backend(grid, CPU())
+_model_on(m, ::CPU) = m
+_model_on(m, backend) = to_backend(m, backend)
+
 _state_to_backend(s::State, backend) =
     _mapfields(v -> _mapfields(a -> _to_device(backend, a), v), s)
 
@@ -69,7 +77,7 @@ function to_backend(m::Model, backend)
     new_state = _state_to_backend(getfield(m, :state), backend)
     new_cache = _cache_to_backend(getfield(m, :cache), backend)
     new_forcing = _forcing_to_backend(getfield(m, :forcing), backend)
-    Model(
+    return Model(
         new_grid,
         new_geometry,
         new_state,

@@ -12,6 +12,10 @@
 Supertype of the Coriolis-parameter options.  Select with
 `Params(; coriolis = ...)`; see [`CoriolisParameter0D`](@ref) (an f-plane) and
 [`CoriolisParameter2D`](@ref) (f from latitude).
+
+`f` enters the momentum equations as `−f k̂ × u`, with `f = 2Ω sin φ` at latitude `φ`. The
+default f-plane value is the one of the ISOMIP+ protocol
+([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)).
 """
 abstract type AbstractCoriolisParameter end
 
@@ -26,7 +30,7 @@ const DEFAULT_CORIOLIS_F = -1.37e-4
 
 """
 Latitude [°N] that reproduces [`DEFAULT_CORIOLIS_F`](@ref) through
-``f = 2Ω\\sin φ`` — about 69.95 °S.
+`f = 2Ω sin φ` — about 69.95 °S.
 
 Derived from `DEFAULT_CORIOLIS_F` rather than written as a rounded −70.0 so that
 `CoriolisParameter2D()` and `CoriolisParameter0D()` agree to the last bit; a
@@ -39,7 +43,7 @@ $(TYPEDEF)
 
 f-plane: one Coriolis parameter over the whole domain, given directly.
 
-The default is the ISOMIP+ value ``f = -1.37\\times10^{-4}`` s⁻¹, which
+The default is the ISOMIP+ value `f = −1.37×10⁻⁴` s⁻¹, which
 corresponds to 69.95 °S.
 
 Select via `Params(; coriolis = CoriolisParameter0D(-1.4e-4))`.
@@ -55,7 +59,7 @@ end
 """
 $(TYPEDEF)
 
-Coriolis parameter from latitude, ``f = 2Ω\\sin φ``.
+Coriolis parameter from latitude, `f = 2Ω sin φ`.
 
 `lat` is in degrees north (negative in the Southern Hemisphere) and may be
 
@@ -69,10 +73,12 @@ Across the Antarctic shelves `f` runs from −1.32e-4 at 65 °S to −1.44e-4 at
 80 °S, roughly a 9 % spread; the Rossby radius scales as 1/f, so a large domain
 feels it even though the range looks narrow.
 
-```julia
-Params(; coriolis = CoriolisParameter2D(-75.0))      # f-plane at 75°S
-Params(; coriolis = CoriolisParameter2D(lat_matrix)) # varying with latitude
+```jldoctest
+julia> Params(; coriolis = CoriolisParameter2D(-75.0)).coriolis   # f-plane at 75°S
+CoriolisParameter2D(lat = -75.0°N)
 ```
+
+A matrix of latitudes the size of `mask`, `CoriolisParameter2D(lat_matrix)`, varies `f` across the domain.
 
 # Fields
 $(TYPEDFIELDS)

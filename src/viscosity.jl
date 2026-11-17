@@ -8,6 +8,10 @@ Pass a concrete instance as `Params(; lateral_viscosity = ...)`:
 [`PrescribedLateralViscosity`](@ref) (constant coefficient, the default) or
 [`NonlinearLateralViscosity`](@ref) (shear-scaled, as in LADDIE v2).
 
+The momentum equations carry the lateral friction `∇·(A_h H ∇u)`: with a constant `A_h` as in
+LADDIE v1 ([Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 2–3), or with the shear-scaled
+coefficient of the LADDIE v2 code ([Lambert et al. 2026](@cite lambert_one-layer_2026)).
+
 Tracer diffusivity `Params.K_h` is always a constant and is unaffected.
 """
 abstract type AbstractLateralViscosity end
@@ -34,16 +38,16 @@ Shear-scaled lateral viscosity, as used by the LADDIE v2
 implementation (`laddie_velocity.f90:260`). Instead of a constant coefficient,
 the viscosity at each interior face is
 
-```math
-A_h^{\\mathrm{eff}} = \\frac{C_{\\mathrm{visc}}}{100}\\,\\Delta\\,\\lVert\\delta\\mathbf{u}\\rVert,
+```
+A_h^eff = C_visc/100 Δ ‖δu‖,
 ```
 
 with `Δ` the grid spacing across that face (`dx` for east/west faces, `dy` for
-north/south) and ``\\lVert\\delta\\mathbf{u}\\rVert = \\sqrt{\\delta U^2 + \\delta V^2}``
+north/south) and `‖δu‖ = √(δU² + δV²)`
 the magnitude of the full velocity-difference *vector* across it — the
 reference's `dUabs`, so one isotropic coefficient serves both momentum
 components on a face. The flux of each component then goes as
-``\\lVert\\delta\\mathbf{u}\\rVert\\,\\delta U``. This is a Smagorinsky-type parameterisation — near-zero viscosity in
+`‖δu‖ δU`. This is a Smagorinsky-type parameterisation — near-zero viscosity in
 smooth flow, large viscosity where shear is strong — rather than the plain
 Laplacian of [`PrescribedLateralViscosity`](@ref).
 

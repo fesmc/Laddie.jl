@@ -8,8 +8,8 @@ Time integration is configured on the [`Simulation`](@ref), and the boundary
 conditions in [`BoundaryConditions`](@ref).
 
 Rates follow the model's convention: `melt` and the entrainment
-rates are freshwater-equivalent layer-thickness rates in m s⁻¹, and ``\\delta\\rho``
-is the reduced density contrast ``(\\rho_a - \\rho)/\\rho_0``.
+rates are freshwater-equivalent layer-thickness rates in m s⁻¹, and `δρ`
+is the reduced density contrast `(ρ_a − ρ)/ρ₀`.
 
 # Fields
 $(TYPEDFIELDS)
@@ -210,8 +210,11 @@ fields of the parameterization objects are converted to `FT` (default `Float64`)
 All parameters default to ISOMIP+-canonical values, so `Params()` is a valid
 ready-to-use parameter set.  Override individual fields as needed:
 
-```julia
-params = Params(; coriolis = CoriolisParameter0D(0.0), melting = TurbulentGamTMelting(), FT = Float32)
+```jldoctest
+julia> params = Params(; coriolis = CoriolisParameter0D(0.0), melting = TurbulentGamTMelting(), FT = Float32);
+
+julia> params.melting
+TurbulentGamTMelting{Float32}(13.8f0, 2432.0f0, 1.95f-6)
 ```
 
 `drho_floor` is the value the reference LADDIE code hard-wires.

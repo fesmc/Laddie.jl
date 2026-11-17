@@ -12,14 +12,14 @@ $(TYPEDEF)
 Buoyancy-flux-driven entrainment after [Gaspar (1988)](@cite gaspar_modeling_1988), following [Gladish et al. (2012)](@cite gladish_ice-shelf_2012), as in [Lambert et al. (2023, Eq. 14)](@cite lambert_modelling_2023) and LADDIE v2 ([Lambert et al. 2026](@cite lambert_one-layer_2026),
 Eq. 13). The layer mechanical-energy balance
 
-```math
-\\frac{H}{2}\\, g_b' \\dot{m} + \\frac{H}{2}\\, g_a' \\dot{e} = \\mu u_\\star^3
+```
+(H/2) g_b′ ṁ + (H/2) g_a′ ė = μ u⋆³
 ```
 
-is solved for the net entrainment ``\\dot{e}``:
+is solved for the net entrainment `ė`:
 
-```math
-\\dot{e} = \\frac{2\\mu}{g}\\,\\frac{u_\\star^3}{H\\, \\delta \\rho} - \\frac{\\delta \\rho_b}{\\delta \\rho}\\,\\dot{m}.
+```
+ė = (2μ/g) u⋆³/(H δρ) − (δρ_b/δρ) ṁ.
 ```
 
 This is the scheme LADDIE v1 calls `'Gaspar'` (`physics.py`) and
@@ -41,11 +41,11 @@ $(TYPEDEF)
 
 Shear-driven entrainment following [Holland & Jenkins (1999)](@cite holland_modeling_1999):
 
-```math
-\\dot{e} = c_l \\, \\frac{K_h}{A_h^2} \\sqrt{\\max\\left(0,\\; |\\mathbf{u}|^2 - g\\,\\delta\\rho\\,\\frac{K_h}{A_h}\\,H\\right)},
+```
+ė = c_l (K_h/A_h²) √(max(0, |u|² − g δρ (K_h/A_h) H)),
 ```
 
-with ``|\\mathbf{u}|`` the speed at the T-point, ``\\delta\\rho`` the reduced density
+with `|u|` the speed at the T-point, `δρ` the reduced density
 contrast and ``K_h``, ``A_h`` the lateral diffusivity and viscosity of `Params`.
 There is no detrainment.
 

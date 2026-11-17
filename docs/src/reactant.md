@@ -121,6 +121,11 @@ run!(rsim; days = 30)
 
 ## Automatic differentiation
 
+!!! warning "Preprocess the geometry first"
+    The gradient of a run on real topography can blow up because of a one-cell ocean hole or a
+    similar artefact that the forward run absorbs. Clean the mask with the `preprocess` list of
+    [`Grid`](@ref) before differentiating; see [Preprocessing](@ref).
+
 [`integrate!`](@ref) is the model as a plain function: `n` leapfrog steps with no
 `Simulation` around them. Inside a program compiled by [`reactant_compile`](@ref), with
 a traced `n`, the steps become a traced loop that Enzyme can differentiate. Forward

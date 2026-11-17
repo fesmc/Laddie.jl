@@ -118,7 +118,7 @@ Kernel `_step_u_momentum_kernel!` integrates the **expanded** form (per unit
 then ``U^{+} = U^{p} + (\mathrm{rhs}/\bar H)\,\Delta t``. Overbars denote C-grid
 face interpolation to the ``U``-node. The detrainment-momentum-loss term is a
 Laddie.jl addition (see [Entrainment](entrainment.md)). The front-pressure choice below is
-described on [its own page](../numerics/front_pressure.md).
+described on [its own page](front_pressure.md).
 
 At a **one-sided face** — the ice front, or a `SinkGapsBC` gap-sink edge — the neighbour
 needed for ``H_{x-1}`` is not part of the active domain, and masking pins its stored

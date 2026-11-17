@@ -86,7 +86,7 @@ println("mean melt $(round(mean_melt; digits = 2)) m/yr, max melt $(round(max_me
 # (`runladdie.py config_isomip_compare.toml`, geometry from `gen_isomip_geom.py`), is stored
 # in `docs/assets/restart_000001.nc`. Laddie.jl repeats the day with the v1 ice-base
 # slope (`PyGradient`), the v1 walls (its `slip = 1`: no slip in the viscosity,
-# [`V1WallAdvection`](@ref) in the advection; see [Wall slip](../numerics/walls.md)) and
+# [`V1WallAdvection`](@ref) in the advection; see [Wall slip](../physics/walls.md)) and
 # the v1 tracer step (`AdvectiveTracerForm`), and the two end states are compared cell
 # by cell.
 

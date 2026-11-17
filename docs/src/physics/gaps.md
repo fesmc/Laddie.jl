@@ -28,8 +28,8 @@ footprint with [`MarkGapsPreprocess`](@ref) (see
 [Mask preprocessing](../numerics/preprocessing.md)). The boundary condition only decides
 what happens in the cells so marked. Under `SinkGapsBC` they are demoted to open ocean
 when the model is built, so the gap edges are one-sided faces like the ice front, with the
-same [open-ocean condition](../numerics/open_ocean.md) and
-[front pressure gradient](../numerics/front_pressure.md).
+same [open-ocean condition](open_ocean.md) and
+[front pressure gradient](front_pressure.md).
 
 ## Connected gaps
 

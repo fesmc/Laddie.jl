@@ -241,7 +241,7 @@ fig
 # them exactly. With more than a handful of unknowns, a prior (or regularisation) term
 # keeps the problem well posed. And the geometry must be free of artefacts that make the
 # run's derivative explode: a one-cell ocean hole inside an ice shelf is enough (see
-# [`FillOceanHolesPreprocess`](@ref)).
+# [`FillOceanHolesPreprocess`](@ref) and [Preprocessing](@ref)).
 #
 # To rerun the example and refresh the figure as part of the documentation build (needs
 # a CUDA GPU): `LADDIE_DOCS_INVERSE=true julia -t 8 --project=docs docs/make.jl`.

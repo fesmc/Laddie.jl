@@ -1,3 +1,7 @@
+using Pkg
+Pkg.activate(@__DIR__)
+Pkg.instantiate()
+
 using Laddie
 using Documenter
 using DocumenterCitations
@@ -92,6 +96,10 @@ makedocs(;
             "Lateral viscosity" => "physics/lateral_viscosity.md",
             "Coriolis parameter" => "physics/coriolis.md",
             "Ocean forcing" => "physics/ocean_forcing.md",
+            "Wall slip" => "physics/walls.md",
+            "Wall momentum advection" => "physics/wall_advection.md",
+            "Open-ocean boundary" => "physics/open_ocean.md",
+            "Ice-front pressure gradient" => "physics/front_pressure.md",
             "Ice-shelf gaps" => "physics/gaps.md",
             "Equation reference" => "physics/equations.md",
         ],
@@ -104,16 +112,13 @@ makedocs(;
             "Time stepping" => "numerics/time_stepping.md",
             "CFL number" => "numerics/cfl.md",
             "Simulation end" => "numerics/simulation_end.md",
-            "Wall slip" => "numerics/walls.md",
-            "Wall momentum advection" => "numerics/wall_advection.md",
-            "Open-ocean boundary" => "numerics/open_ocean.md",
-            "Ice-front pressure gradient" => "numerics/front_pressure.md",
             "Maximum layer thickness" => "numerics/max_layer_thickness.md",
             "Kinks" => "numerics/kinks.md",
             "Ice-base slope" => "numerics/ice_slope.md",
             "Mask preprocessing" => "numerics/preprocessing.md",
             "Domain cropping" => "numerics/domain_cropping.md",
         ],
+        "Preprocessing" => "preprocessing.md",
         "Reactant backend" => "reactant.md",
         "Examples" => [
             "ISOMIP+" => "generated/isomip.md",

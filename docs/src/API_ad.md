@@ -4,6 +4,12 @@
 Pages = ["API_ad.md"]
 ```
 
+!!! warning "Preprocess the geometry before differentiating"
+    A one-cell ocean hole inside a shelf, or a similar artefact in real topography, can make the
+    gradient of a run blow up while the forward run looks fine. Fill holes and small patches with
+    the `preprocess` list of [`Grid`](@ref) before computing a gradient; see
+    [Preprocessing](@ref) for the recipe and how to check a geometry.
+
 A run can be differentiated in two ways (see [Inverse problems](@ref) for both on one
 example):
 

@@ -90,7 +90,7 @@ end
     output = OutputConfig(; name = "ad", resultdir = tmp, saveday = 1.0, restday = 1.0)
     @test all(isfinite, ad_gradient(x -> ad_melt_loss(x; output)))
     Laddie.NCDatasets.NCDataset(joinpath(tmp, "ad", "output.nc")) do ds
-        @test eltype(ds["melt"][:, :, end]) <: Union{Missing,Float64}
+        @test eltype(ds["melt"][:, :, end]) <: Union{Missing,Float32}
     end
 end
 

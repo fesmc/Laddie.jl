@@ -64,6 +64,11 @@ calls writes on the same cadence as one advanced by a single call.
 | `:convection` | fraction of time a cell was convectively unstable | – |
 | `:supercooling` | ``T - T_f(S, z_b)``, the layer temperature above its freezing point at the ice base (negative where supercooled) | °C |
 
+The maps are written as `float_type` (`Float32` by default, `Float64` on request), with
+the fill value NaN on every cell outside the active cells (`tmask`), and compressed
+losslessly (deflate level 1 with shuffle). NetCDF readers return these cells as
+missing (NCDatasets) or NaN (xarray, ncview).
+
 Static fields, written once: `:mask` (the mask and the margin flags `at_isf`,
 `at_grl`, `at_lnd`, `at_gap`) and `:z_draft` (the ice draft, m).
 
@@ -112,15 +117,33 @@ Base.@kwdef struct OutputConfig{T,D,F}
     logfilename::String = "log.txt"
     "variables written to `output.nc` (see the table above)"
     fields::F = (:Ut, :Vt, :H, :T, :S, :melt, :mask, :z_draft)
+    "float type of the time-averaged maps in `output.nc`, `Float32` (default) or `Float64`"
+    float_type::DataType = Float32
     OutputConfig{T,D,F}(args...) where {T,D,F} = new{T,D,F}(args...)
 end
 
 const _STATIC_FIELDS = (:mask, :z_draft)
 
+# Lossless compression of the maps in `output.nc`. With NaN outside the active cells, it
+# shrinks a pan-Antarctic 2 km map about 15-fold, at negligible write time.
+const _COMPRESSION = (; deflatelevel = 1, shuffle = true)
+
 # Positional (and keyword) construction converts the intervals to one float type and
 # the field names to a tuple of symbols, and rejects unknown names.
-function OutputConfig(name, saveday, diagday, restday, tsday, resultdir, logfilename, fields)
+function OutputConfig(
+    name,
+    saveday,
+    diagday,
+    restday,
+    tsday,
+    resultdir,
+    logfilename,
+    fields,
+    float_type = Float32,
+)
     saveday >= 0 || throw(ArgumentError("saveday must not be negative (0 disables file I/O), got $saveday"))
+    float_type in (Float32, Float64) ||
+        throw(ArgumentError("float_type must be Float32 or Float64, got $float_type"))
     # A zero interval would never advance its event time, and so fire on every step.
     diagday > 0 || throw(ArgumentError("diagday must be positive, got $diagday"))
     restday > 0 || throw(ArgumentError("restday must be positive, got $restday"))
@@ -140,6 +163,7 @@ function OutputConfig(name, saveday, diagday, restday, tsday, resultdir, logfile
         resultdir,
         logfilename,
         fields,
+        float_type,
     )
 end
 
@@ -317,6 +341,7 @@ _toml_value(v::Real) = _float64(v)   # floats, and ForwardDiff duals
 _toml_value(v::String) = v
 _toml_value(v::Symbol) = String(v)
 _toml_value(v::Tuple) = [_toml_value(x) for x in v]
+_toml_value(v::Type) = string(v)
 _toml_value(::Any) = nothing   # functions etc. are skipped
 
 # A struct as a TOML table: its type name, its numbers, strings and symbols, nested
@@ -340,7 +365,7 @@ function _scalar_fields(x)
 end
 _is_table(v) =
     isstructtype(typeof(v)) &&
-    !(v isa Union{Number,AbstractString,Symbol,Tuple,AbstractArray,Function})
+    !(v isa Union{Number,AbstractString,Symbol,Tuple,AbstractArray,Function,Type})
 
 # Write the effective configuration of this run — parameters, forcing, grid,
 # time integration, output, precision, backend, package/Julia versions — so any
@@ -618,15 +643,18 @@ function _create_output_file!(sim)
             end
         end
 
-        # Time-varying fields — data appended each save interval
+        # Time-varying fields — data appended each save interval, one time slice per chunk
+        FT = sim.output.float_type
         function dv(name, units, longname)
             defVar(
                 ds,
                 name,
-                Float64,
+                FT,
                 ("x", "y", "time");
-                fillvalue = NaN,
+                fillvalue = FT(NaN),
+                chunksizes = [m.nx, m.ny, 1],
                 attrib = ["units" => units, "long_name" => longname],
+                _COMPRESSION...,
             )
         end
         for name in keys(sim.io.acc)
@@ -689,11 +717,12 @@ end
 
 # Append one time-average slice to output.nc.  The dt-weighted accumulators are
 # divided by the accumulated window length; the time coordinate stores the end
-# of the averaging window in days.
+# of the averaging window in days.  Cells outside `tmask` get the fill value NaN.
 function _write_output!(sim, t_days)
     m = sim.model
     n = sim.io.t_accum
     tmask_int = _int(m.tmask)
+    FT = sim.output.float_type
     sim.io.time_index += 1
     k = sim.io.time_index
     path = joinpath(sim.io.rundir, "output.nc")
@@ -704,8 +733,7 @@ function _write_output!(sim, t_days)
 
         function wv(name, av, scale)
             av_int = _int(av)
-            FT0 = zero(eltype(av_int))
-            ds[name][:, :, k] = ifelse.(tmask_int .> 0, av_int ./ n .* scale, FT0)
+            ds[name][:, :, k] = ifelse.(tmask_int .> 0, FT.(av_int ./ n .* scale), FT(NaN))
         end
 
         for (name, acc) in pairs(sim.io.acc)

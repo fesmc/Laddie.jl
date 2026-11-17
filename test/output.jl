@@ -24,22 +24,26 @@ end
                 domain_cropping = NoDomainCropping())
     fields = (:Ut, :Vt, :H, :T, :S, :melt, :mask, :z_draft, :ustar, :drho, :convection,
               :supercooling)
-    output = OutputConfig(; name = "extra", resultdir = tmp, saveday = 0.25, fields)
+    # Float64 maps: the supercooling identity below holds to Float64 rounding.
+    output = OutputConfig(; name = "extra", resultdir = tmp, saveday = 0.25, fields,
+                          float_type = Float64)
     @test_throws ArgumentError OutputConfig(; fields = (:H, :nope))
+    @test_throws ArgumentError OutputConfig(; float_type = Float16)
     sim = Simulation(Model(grid; forcing = ISOMIPForcing(:warm)); output)
     run!(sim; days = 0.5, verbose = false)
     Laddie.NCDatasets.Dataset(joinpath(tmp, "extra", "output.nc")) do ds
         @test ds["x"][:] == xs[2:end-1]
         @test ds["y"][1] == 3.0e5 - 2000.0
-        for v in ("ustar", "drho", "convection")
-            a = ds[v][:, :, end]
-            @test all(isfinite, a)
-        end
-        @test maximum(ds["ustar"][:, :, end]) > 0
-        @test all(0 .<= ds["convection"][:, :, end] .<= 1)
-        # T − Tf(S, z_b) is linear in T and S, so its time mean is that of the means.
         m = sim.model
         wet = m.tmask[2:end-1, 2:end-1] .> 0
+        for v in ("ustar", "drho", "convection")
+            a = ds[v][:, :, end]
+            @test all(isfinite, a[wet])
+            @test all(ismissing, a[.!wet])   # the NaN fill value outside the active cells
+        end
+        @test maximum(ds["ustar"][:, :, end][wet]) > 0
+        @test all(0 .<= ds["convection"][:, :, end][wet] .<= 1)
+        # T − Tf(S, z_b) is linear in T and S, so its time mean is that of the means.
         T, S = ds["T"][:, :, end], ds["S"][:, :, end]
         Tf = m.l1 .* S .+ m.l2 .+ m.l3 .* m.z_draft[2:end-1, 2:end-1]
         @test ds["supercooling"][:, :, end][wet] ≈ (T .- Tf)[wet]
@@ -99,6 +103,28 @@ end
     end
     @test any(isfinite, melt_out)
     @test maximum(filter(isfinite, melt_out)) > 0   # m/yr, warm cavity melts
+
+    # Default maps: Float32, compressed losslessly, NaN outside the active cells, and
+    # the Float32 rounding of the maps a Float64 output writes for the same run.
+    @test meta["output"]["float_type"] == "Float32"
+    output64 = OutputConfig(; name = "iotest64", resultdir = tmpdir, saveday = 0.5,
+                            float_type = Float64)
+    m64 = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, output = output64)
+    run!(m64; days = 1.0, verbose = false)
+    wet = m.model.tmask[2:end-1, 2:end-1] .> 0
+    maps(path) = NCD.Dataset(path) do ds
+        Dict(v => Array(ds[v][:, :, :]) for v in ("melt", "H", "T", "S", "Ut", "Vt"))
+    end
+    maps32, maps64 = maps(out_path), maps(joinpath(tmpdir, "iotest64", "output.nc"))
+    NCD.Dataset(out_path) do ds
+        @test NCD.deflate(ds["melt"].var) == (true, true, 1)   # shuffle, deflate, level
+    end
+    for (v, a) in maps32
+        @test eltype(a) == Union{Missing,Float32}
+        @test all(ismissing, a[.!wet, :])
+        @test all(!ismissing, a[wet, :])
+        @test a[wet, :] == Float32.(maps64[v][wet, :])
+    end
 
     # Restart written, then round-trips: a model restarted from it must
     # carry the same prognostic state.
@@ -239,8 +265,9 @@ end
 
     # Same window as the maps: each series point is the mean over the ice-covered
     # cells of the time-averaged map it shares its window with.
+    # Float64 maps, so that the series (reduced in Float64) match them to Float64 rounding.
     output = OutputConfig(; name = "series", resultdir = tmp, saveday = 0.25, tsday = 0.25,
-                          fields = (:H, :T, :S, :melt, :supercooling))
+                          fields = (:H, :T, :S, :melt, :supercooling), float_type = Float64)
     sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, output)
     run!(sim; days = 1.0, verbose = false)
     m = sim.model

@@ -24,7 +24,7 @@ _warn_experimental(name, kind, default) = @warn(
 """
 $(TYPEDEF)
 
-Prescribed melt rate, ``\\dot{m} = \\dot{m}_0``, applied on ice-covered cells only
+Prescribed melt rate, `ṁ = ṁ₀`, applied on ice-covered cells only
 (gap cells never melt).
 
 `melt` is in m yr⁻¹ of freshwater — the same units as the model's `melt` output — and
@@ -35,18 +35,20 @@ The melt still acts on the layer as in the three-equation model, so a prescribed
 melt rate cools and freshens the plume consistently:
 
 - the interface temperature is the local freezing point,
-  ``T_b = \\lambda_1 S + \\lambda_2 + \\lambda_3 z_b``;
+  `T_b = λ₁ S + λ₂ + λ₃ z_b`;
 - the layer loses the heat that melting requires,
-  ``\\gamma_T (T - T_b) = \\dot{m}\\,(L - c_i (T_i - T_b)) / c_p``, with the
-  equivalent ``\\gamma_T`` reported as `m.gamT`;
-- the friction velocity ``u_\\star`` is computed as usual, since entrainment needs it.
+  `γ_T (T − T_b) = ṁ (L − c_i (T_i − T_b)) / c_p`, with the
+  equivalent `γ_T` reported as `m.gamT`;
+- the friction velocity `u⋆` is computed as usual, since entrainment needs it.
 
 # Example
 
-```julia
-Params(; melting = PrescribedMelting(10.0))          # uniform 10 m/yr
-Params(; melting = PrescribedMelting(melt_matrix))   # 2D, same size as `mask`
+```jldoctest
+julia> Params(; melting = PrescribedMelting(10.0)).melting   # uniform 10 m/yr
+PrescribedMelting(melt = 10.0 m/yr)
 ```
+
+A matrix the size of `mask`, `PrescribedMelting(melt_matrix)`, prescribes a 2D melt rate.
 
 # Fields
 $(TYPEDFIELDS)
@@ -64,12 +66,13 @@ $(TYPEDEF)
 
 Three-equation ice–ocean melt parameterisation ([Jenkins 1991](@cite jenkins_onedimensional_1991); the equations are
 given under [`TurbulentGamTMelting`](@ref)) with a constant turbulent heat transfer
-coefficient ``\\gamma_T`` and ``\\gamma_S = \\gamma_T / 35`` (the default).
+coefficient `γ_T` and `γ_S = γ_T / 35` (the default).
 
 # Example
 
-```julia
-Params(; melting = FixedGamTMelting(0.00018))
+```jldoctest
+julia> Params(; melting = FixedGamTMelting(0.00018)).melting
+FixedGamTMelting{Float64}(0.00018)
 ```
 
 # Fields
@@ -87,30 +90,32 @@ Three-equation ice–ocean melt parameterisation (the equations are given under
 [`TurbulentGamTMelting`](@ref)) with transfer coefficients proportional to the friction
 velocity ([Jenkins et al. 2010](@cite jenkins_observation_2010)):
 
-```math
-\\gamma_T = \\Gamma_T \\, u_\\star, \\qquad \\gamma_S = \\gamma_T / r ,
+```
+γ_T = Γ_T u⋆,    γ_S = γ_T/r,
 ```
 
 with the ratio ``r`` of the heat and salt transfer coefficients 35 by default.
 
 This is LADDIE v2's `'uniform'` option, which is also what the ISOMIP+ protocol tunes
-([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)).  [Jesse et al. (2026)](@cite jesse_ice-sheet_2026) use ``\\Gamma_T = 3 \\times 10^{-2}``.
+([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)).  [Jesse et al. (2026)](@cite jesse_ice-sheet_2026) use `Γ_T = 3 × 10⁻²`.
 
-[Jenkins et al. (2010)](@cite jenkins_observation_2010) fit ``C_d^{1/2}\\Gamma_T = 1.1 \\times 10^{-3}`` and
-``C_d^{1/2}\\Gamma_S = 3.1 \\times 10^{-5}`` (``r`` = 35) to observations beneath Ronne Ice
-Shelf, with ``C_d`` = 0.0097.  Since ``\\Gamma`` multiplies the ``u_\\star`` of this model, which uses
-`Params.C_d_top`, the equivalent is ``\\Gamma_T = 1.1 \\times 10^{-3}/\\sqrt{C_d^\\text{top}}``, about
-``3.3 \\times 10^{-2}`` for the default `C_d_top = 1.1e-3`.  The default
-``\\Gamma_T = 3 \\times 10^{-2}`` is already close.
+[Jenkins et al. (2010)](@cite jenkins_observation_2010) fit `C_d^(1/2) Γ_T = 1.1 × 10⁻³` and
+`C_d^(1/2) Γ_S = 3.1 × 10⁻⁵` (`r` = 35) to observations beneath Ronne Ice
+Shelf, with `C_d` = 0.0097.  Since `Γ` multiplies the `u⋆` of this model, which uses
+`Params.C_d_top`, the equivalent is `Γ_T = 1.1 × 10⁻³/√(C_d^top)`, about
+`3.3 × 10⁻²` for the default `C_d_top = 1.1e-3`.  The default
+`Γ_T = 3 × 10⁻²` is already close.
 
 A ratio other than 35 is experimental and warns when constructed.
 
 # Example
 
-```julia
-Params(; melting = UStarGamTMelting(3.0e-2))
-Params(; melting = UStarGamTMelting(3.0e-2, 70.0))   # Γ_T / Γ_S = 70
+```jldoctest
+julia> Params(; melting = UStarGamTMelting(3.0e-2)).melting
+UStarGamTMelting{Float64}(0.03, 35.0)
 ```
+
+`UStarGamTMelting(3.0e-2, 70.0)` sets `Γ_T/Γ_S = 70`, an experimental ratio (with a warning).
 
 # Fields
 $(TYPEDFIELDS)
@@ -118,7 +123,7 @@ $(TYPEDFIELDS)
 @kwdef struct UStarGamTMelting{FT} <: AbstractMelting
     "dimensionless heat transfer coefficient (default `3.0e-2`)"
     Gamma_T::FT = 3.0e-2
-    "ratio of the heat to the salt transfer coefficient, ``\\gamma_T/\\gamma_S`` (default `35`)"
+    "ratio of the heat to the salt transfer coefficient, `γ_T/γ_S` (default `35`)"
     ratio::FT = 35.0
     UStarGamTMelting{FT}(Gamma_T, ratio) where {FT} = new{FT}(Gamma_T, ratio)
 end
@@ -141,30 +146,30 @@ $(TYPEDEF)
 
 Two-equation ice–ocean melt parameterisation ([McPhee 1992](@cite mcphee_turbulent_1992); [Jenkins et al. 2010](@cite jenkins_observation_2010), Eqs. 14–15).
 The interface is at the freezing point of the layer salinity, ``T_b = T_f(S, z_b)``, so the salt
-balance drops out, and the heat transfer coefficient ``\\gamma_{TS} = \\Gamma_{TS}\\,u_\\star``
+balance drops out, and the heat transfer coefficient `γ_TS = Γ_TS u⋆`
 absorbs the effect of salt diffusion:
 
-```math
-c_p\\,\\gamma_{TS}\\,(T - T_b) = \\dot m\\,L + \\dot m\\,c_i\\,(T_b - T_i) + q_\\text{cond}
+```
+c_p γ_TS (T − T_b) = ṁ L + ṁ c_i (T_b − T_i) + q_cond
 ```
 
-(``q_\\text{cond}`` and the ``c_i`` term from [`AbstractIceConduction`](@ref), the
-Holland & Jenkins form by default.)  Unlike the three-equation form it is linear in ``\\dot m``,
+(`q_cond` and the `c_i` term from [`AbstractIceConduction`](@ref), the
+Holland & Jenkins form by default.)  Unlike the three-equation form it is linear in `ṁ`,
 
-```math
-\\dot m = \\frac{c_p\\,\\gamma_{TS}\\,(T - T_f) - q_\\text{cond}}{L - c_{i}\\,(T_i - T_f)} .
+```
+ṁ = (c_p γ_TS (T − T_f) − q_cond)/(L − c_i (T_i − T_f)).
 ```
 
 It is as good as the three-equation form at the one site where [Jenkins et al.](@cite jenkins_observation_2010) tested both,
 and expected to be less so under strong thermal forcing, where the interface salinity departs
-from the layer's: ``\\Gamma_T > \\Gamma_{TS}`` always ([Jenkins et al. 2010](@cite jenkins_observation_2010), Eq. 8).  The
+from the layer's: `Γ_T > Γ_TS` always ([Jenkins et al. 2010](@cite jenkins_observation_2010), Eq. 8).  The
 buoyancy-flux entrainment reads the interface salinity ``S_b = S`` of this scheme, so the
 buoyancy of the meltwater enters only through the thickness, not through the entrainment's
 melt correction.  `gamS` is not used and stays zero.
 
-[Jenkins et al. (2010)](@cite jenkins_observation_2010) fit ``C_d^{1/2}\\Gamma_{TS} = 5.9 \\times 10^{-4}`` (``\\Gamma_{TS}`` = 0.006
-with ``C_d`` = 0.0097; [McPhee 1992](@cite mcphee_turbulent_1992)).  Since ``\\Gamma_{TS}`` multiplies the ``u_\\star`` of this model,
-which uses `Params.C_d_top`, the equivalent is ``5.9 \\times 10^{-4}/\\sqrt{C_d^\\text{top}}``, which is
+[Jenkins et al. (2010)](@cite jenkins_observation_2010) fit `C_d^(1/2) Γ_TS = 5.9 × 10⁻⁴` (`Γ_TS` = 0.006
+with `C_d` = 0.0097; [McPhee 1992](@cite mcphee_turbulent_1992)).  Since `Γ_TS` multiplies the `u⋆` of this model,
+which uses `Params.C_d_top`, the equivalent is `5.9 × 10⁻⁴/√(C_d^top)`, which is
 the default `0.0178` for `C_d_top = 1.1e-3`.  Change it along with `C_d_top`.
 
 Select via `Params(; melting = TwoEquationMelting())`; warns when constructed.
@@ -192,41 +197,38 @@ _rebuild(::Type{<:TwoEquationMelting}, Gamma_TS) = TwoEquationMelting{typeof(Gam
 $(TYPEDEF)
 
 Three-equation melt parameterisation with turbulence-dependent transfer
-coefficients ``\\gamma_T`` and ``\\gamma_S`` via the log-layer formulation
+coefficients `γ_T` and `γ_S` via the log-layer formulation
 ([Holland & Jenkins 1999](@cite holland_modeling_1999); [Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 11–12):
 
-```math
-\\begin{aligned}
-c_p \\, \\gamma_T \\,(T - T_b) &= \\dot{m} \\, L + \\dot{m} \\, c_i \\, (T_b - T_i) \\\\
-\\gamma_S \\, (S - S_b) &= \\dot{m} \\, S_b \\\\
-T_b &= \\lambda_1 \\, S_b + \\lambda_2 + \\lambda_3 \\, z_b
-\\end{aligned}
+```
+c_p γ_T (T − T_b) = ṁ L + ṁ c_i (T_b − T_i)
+γ_S (S − S_b) = ṁ S_b
+T_b = λ₁ S_b + λ₂ + λ₃ z_b
 ```
 
 The turbulent heat exchange coefficients are determined by:
 
-```math
-\\begin{aligned}
-\\gamma_T &= \\frac{u_\\star}{2.12 \\, \\log \\frac{u_\\star H}{\\nu_0} + 12.5 \\, \\mathrm{Pr}^{2/3} - 8.68} \\\\
-\\gamma_S &= \\frac{u_\\star}{2.12 \\, \\log \\frac{u_\\star H}{\\nu_0} + 12.5 \\, \\mathrm{Sc}^{2/3} - 8.68}
-\\end{aligned}
+```
+γ_T = u⋆/(2.12 log(u⋆ H/ν₀) + 12.5 Pr^(2/3) − 8.68)
+γ_S = u⋆/(2.12 log(u⋆ H/ν₀) + 12.5 Sc^(2/3) − 8.68)
 ```
 
-This results in a quadratic equation for the melt rate ``\\dot{m}``.
+This results in a quadratic equation for the melt rate `ṁ`.
 
-The log term is floored at zero, i.e. ``u_\\star H/\\nu_0`` is taken as at least 1.
+The log term is floored at zero, i.e. `u⋆ H/ν₀` is taken as at least 1.
 Below that the layer is thinner than its own viscous sublayer, where the log law
 does not hold, and the unbounded log would drive the denominator through zero and
-give a negative or huge ``\\gamma``.  The floor never binds at the default
-parameters: `Params.u_tide` and `Params.H_min` keep ``u_\\star H/\\nu_0`` above
+give a negative or huge `γ`.  The floor never binds at the default
+parameters: `Params.u_tide` and `Params.H_min` keep `u⋆ H/ν₀` above
 about 170.  With the floor, both denominators stay positive when
-``12.5 \\, \\mathrm{Pr}^{2/3} > 8.68`` (and likewise for `Sc`), which the
+`12.5 Pr^(2/3) > 8.68` (and likewise for `Sc`), which the
 constructor checks.
 
 # Example
 
-```julia
-Params(; melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6))
+```jldoctest
+julia> Params(; melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6)).melting
+TurbulentGamTMelting{Float64}(13.8, 2432.0, 1.95e-6)
 ```
 
 # Fields

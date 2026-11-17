@@ -31,13 +31,13 @@ Smooth every kink over a band of half-width ε, one ε per physical quantity:
 
   * `max(x, 0)` becomes the ``C^1`` quadratic blend ``(x + ε)^2 / 4ε`` for
     ``|x| < ε`` and is exact outside the band.  `max(a, b)`, `min(a, b)`, `clamp`,
-    `|x|` and the upwind splits ``u^\\pm`` follow from it, so ``u^+ + u^- = u``
+    `|x|` and the upwind splits `u±` follow from it, so `u⁺ + u⁻ = u`
     still holds and the upwind fluxes stay conservative.
   * `√x` (of `max(x, 0)`) is blended into the quadratic
     ``(x + 3ε^2)^2 / 16ε^3`` below ``x = ε^2``, which removes the unbounded slope at
     zero, and is exact above it.
   * The step of the conductive `c_i` at the freezing point is blended with a cubic
-    smoothstep over ``T - T_f \\in [-ε_T, ε_T]``.
+    smoothstep over `T − T_f ∈ [−ε_T, ε_T]`.
 
 Where each ε acts:
 

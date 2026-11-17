@@ -218,9 +218,10 @@ wall is one step stronger than its advective one.  v1's published `slip = 1` is
 therefore [`NoSlipGL`](@ref) / [`NoSlipLand`](@ref) in the viscosity, with this
 advection:
 
-```julia
-BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
-                   wall_advection = V1WallAdvection())
+```jldoctest
+julia> BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
+                          wall_advection = V1WallAdvection())
+BoundaryConditions(open ocean = ZeroGradientInflow, grounding line = NoSlipGL, land = NoSlipLand, gaps = SinkGapsBC, wall advection = V1WallAdvection)
 ```
 
 A v1 `slip` below 1 maps to `PartialSlipGL(slip + 1)`; above 1 it has no
@@ -474,9 +475,12 @@ with estimates of the heat loss of coastal polynyas (a few hundred W m⁻² in w
 
 # Example
 
-```julia
-boundary = BoundaryConditions(; gaps = LeakyGapsBC())       # α = 0.9, Q = 0
-boundary = BoundaryConditions(; gaps = LeakyGapsBC(; melange_cover = 0.3, surface_heat_loss = 300))
+```jldoctest
+julia> BoundaryConditions(; gaps = LeakyGapsBC()).gaps       # α = 0.9, Q = 0
+LeakyGapsBC{Float64}(0.9, 0.0, 5.0, 10000.0)
+
+julia> LeakyGapsBC(; melange_cover = 0.3, surface_heat_loss = 300)
+LeakyGapsBC{Float64}(0.3, 300.0, 5.0, 10000.0)
 ```
 
 # Fields
@@ -547,12 +551,13 @@ in the viscosity ([`PartialSlipGL`](@ref)`(1.0)`, [`PartialSlipLand`](@ref)`(1.0
 and no momentum across walls ([`NoWallAdvection`](@ref)).  The other conditions
 are those of both LADDIE versions.
 
-```julia
-BoundaryConditions(; land = FreeSlipLand(), gaps = ConnectedGapsBC())
+```jldoctest
+julia> BoundaryConditions(; land = FreeSlipLand(), gaps = ConnectedGapsBC())
+BoundaryConditions(open ocean = ZeroGradientInflow, grounding line = PartialSlipGL, land = FreeSlipLand, gaps = ConnectedGapsBC, wall advection = NoWallAdvection)
 
-# LADDIE v1 walls (its published slip = 1)
-BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
-                   wall_advection = V1WallAdvection())
+julia> BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),   # LADDIE v1 walls
+                          wall_advection = V1WallAdvection())
+BoundaryConditions(open ocean = ZeroGradientInflow, grounding line = NoSlipGL, land = NoSlipLand, gaps = SinkGapsBC, wall advection = V1WallAdvection)
 ```
 
 # Fields

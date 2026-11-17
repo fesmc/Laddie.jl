@@ -43,6 +43,34 @@ const V2_PARAMS = (ParamsISOMIPv2, ParamsAISv2, ParamsASEv2, ParamsPIGv2, Params
     @test ParamsAISv2().convection_scheme.d_rho_min == 0.02
 end
 
+# The reproduction aliases are a regression contract (AGENTS.md): a change elsewhere must
+# not move what they produce.  The Simulation aliases need `papers/`, which CI does not
+# have, so each parameter set runs on the same small ISOMIP cavity instead: 200 steps of
+# 210 s, mean melt (m/yr) as recorded on 2026-11-17.  A deliberate change of an alias
+# updates its value here and says so.
+const REPRODUCTION_MEAN_MELT = (
+    ParamsCrossonDotsonv1 => 3.6672100901724223,
+    ParamsFRISv1 => 26.957092183119325,
+    ParamsPIGv1 => 3.6672100901724223,
+    ParamsASEv1 => 3.6645544580515934,
+    ParamsISOMIPv2 => 14.04424152290845,
+    ParamsAISv2 => 4.176565541613683,
+    ParamsASEv2 => 5.275845144368532,
+    ParamsPIGv2 => 5.275844422226887,
+    ParamsMISOMIPv2 => 12.037053630101514,
+    ParamsMISOMIPGapsv2 => 14.241437057083251,
+)
+
+@testset "Params aliases: mean melt regression" begin
+    for (f, mean_melt) in REPRODUCTION_MEAN_MELT
+        sim = build_isomip(CPU(); nx = 40, ny = 20, params = f())
+        for _ in 1:200
+            time_step!(sim)
+        end
+        @test isapprox(meltstats(sim).mean_meltrate, mean_melt; rtol = 1e-10)
+    end
+end
+
 @testset "Simulation aliases" begin
     if isdir(Laddie.DEFAULT_PAPERS_DIR)
         sim = SimulationPIGv1()

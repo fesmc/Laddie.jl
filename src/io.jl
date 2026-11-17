@@ -84,9 +84,12 @@ the spatial means are reduced only once per `tsday`, and the series are written 
 `output.nc` together with the maps.  Not available under a
 [`ReactantBackend`](@ref): `to_backend` rejects a simulation with `tsday` set.
 
-```julia
-OutputConfig(; name = "warm", saveday = 1.0, fields = (:H, :melt, :entr))
-OutputConfig(; name = "warm", saveday = 10.0, tsday = 1.0)   # with daily time series
+```jldoctest
+julia> OutputConfig(; name = "warm", saveday = 1.0, fields = (:H, :melt, :entr))
+OutputConfig: every 1.0 d → ./output/warm
+
+julia> OutputConfig(; name = "warm", saveday = 10.0, tsday = 1.0)   # with daily time series
+OutputConfig: every 10.0 d → ./output/warm
 ```
 
 # Fields
@@ -270,6 +273,7 @@ function _print2log(sim, text)
     open(sim.io.logfile, "a") do f
         write(f, @sprintf("[%02d:%02d:%04.1f] %s\n", h, mn, sc, text))
     end
+    return nothing
 end
 
 # One-line record of an adaptive-dt change (no-op when I/O is disabled).  Kept
@@ -542,6 +546,7 @@ function _reset_accum!(sim)
     io.count = 0
     io.t_accum = 0.0
     foreach(acc -> fill!(acc, 0), io.acc)
+    return nothing
 end
 
 # ============================================================================
@@ -679,6 +684,7 @@ function _create_output_file!(sim)
         end
     end
     _print2log(sim, "Created output file → output.nc")
+    return nothing
 end
 
 # Append one time-average slice to output.nc.  The dt-weighted accumulators are
@@ -708,6 +714,7 @@ function _write_output!(sim, t_days)
         end
     end
     _print2log(sim, @sprintf("%.3f days: appended output → output.nc (step %d)", t_days, k))
+    return nothing
 end
 
 # ============================================================================
@@ -865,6 +872,7 @@ function _write_restart!(sim, t_days)
 
     cp(filename, joinpath(sim.io.rundir, "restart_latest.jld2"); force = true)
     _print2log(sim, @sprintf("%.3f days: saved restart → %s", t_days, basename(filename)))
+    return nothing
 end
 
 """
@@ -880,6 +888,7 @@ function saverestart!(sim)
     _event_due(sim, sim.io.nextrest) || return
     _write_restart!(sim, _t_days(sim))
     sim.io.nextrest += sim.output.restday * _primal(sim.model.seconds_per_day)
+    return nothing
 end
 
 """
@@ -1077,4 +1086,5 @@ function printdiags(sim)
         d_conv
     )
     _print2log(sim, line)
+    return nothing
 end

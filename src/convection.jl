@@ -1,16 +1,22 @@
 """
 Abstract supertype for the treatment of convective instability: cells where the
 layer is denser than the ambient water beneath it, i.e. where the reduced density
-contrast ``\\delta\\rho`` falls below zero.  Pass a concrete instance as
+contrast `δρ` falls below zero.  Pass a concrete instance as
 `Params(; convection_scheme = ...)`: [`ResetToAmbient`](@ref) (the default),
 [`ClampDensity`](@ref) or [`RelaxToAmbient`](@ref).
+
+The layer is unstable where `δρ = (ρ_a − ρ)/ρ₀ < 0`. No LADDIE paper describes a convection
+closure, so the schemes follow the reference codes: `ResetToAmbient` and `RelaxToAmbient` the
+LADDIE v1 code of [Lambert et al. (2023)](@cite lambert_modelling_2023), `ClampDensity` the
+buoyancy floor of the LADDIE v2 code of [Lambert et al. (2026)](@cite lambert_one-layer_2026).
+`RelaxToAmbient` adds the tracer sink `−(q − q_a) conv2`, `conv2 = [δρ < 0] H/convection_time`.
 """
 abstract type AbstractConvectionScheme end
 
 """
 $(TYPEDEF)
 
-Handle convective instability (``\\delta\\rho < 0``) by clamping the density contrast to a
+Handle convective instability (`δρ < 0`) by clamping the density contrast to a
 minimum positive value, `d_rho_min / Params.rho0_seawater`, so the plume remains lighter
 than ambient.  T and S are left unchanged.  This is the buoyancy floor of LADDIE v2,
 `max(drho_amb, buoyancy_min/rho_sw)` with `buoyancy_min = 5e-3`.
@@ -21,7 +27,7 @@ Select via `Params(; convection_scheme = ClampDensity(0.005))`.
 $(TYPEDFIELDS)
 """
 @kwdef struct ClampDensity{FT} <: AbstractConvectionScheme
-    "minimum density contrast ``\\rho_a - \\rho`` (kg m⁻³, default `0.005`); divided by `Params.rho0_seawater` to compare with ``\\delta\\rho``"
+    "minimum density contrast `ρ_a − ρ` (kg m⁻³, default `0.005`); divided by `Params.rho0_seawater` to compare with `δρ`"
     d_rho_min::FT = 0.005
 end
 
@@ -38,7 +44,7 @@ Select via `Params(; convection_scheme = ResetToAmbient(0.005))`.
 $(TYPEDFIELDS)
 """
 @kwdef struct ResetToAmbient{FT} <: AbstractConvectionScheme
-    "threshold density contrast ``\\rho_a - \\rho`` that triggers the reset (kg m⁻³, default `0.005`); divided by `Params.rho0_seawater` to compare with ``\\delta\\rho``"
+    "threshold density contrast `ρ_a − ρ` that triggers the reset (kg m⁻³, default `0.005`); divided by `Params.rho0_seawater` to compare with `δρ`"
     d_rho_min::FT = 0.005
 end
 

@@ -874,6 +874,7 @@ function _check_nans_shelf!(m, varname, arr, clock)
         "NaN in $varname at t = $(round(_t_days(clock, m), digits=4)) days " *
         "(iteration $(clock.iteration))",
     )
+    return nothing
 end
 
 # One leapfrog integration of `m` over `nsteps × dt`: `nsteps = 2` is the centred

@@ -283,7 +283,7 @@ function Model(
     backend = KA.get_backend(grid.z_draft)
     # The model is assembled on the CPU and moved in one go, so its derived fields
     # are computed exactly as on a CPU run whatever the grid's backend.
-    grid = backend isa CPU ? grid : _grid_to_backend(grid, CPU())
+    grid = _cpu_grid(grid, backend)
     r, c = grid.crop
     # Full-domain fields are validated against the grid's input size, then cropped
     # with the grid's own ranges.  Materialising the ice temperature once keeps the
@@ -313,7 +313,7 @@ function Model(
     _init_exchange_velocities!(cache, params.melting)
     m = Model(grid, geometry, state, cache, params, boundary, forcing)
     _initialize_prognostics!(m)
-    backend isa CPU || (m = to_backend(m, backend))
+    m = _model_on(m, backend)
     return m
 end
 

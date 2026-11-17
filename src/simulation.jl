@@ -30,7 +30,7 @@ end
 function IOState(m::Model, output::OutputConfig)
     names = output.saveday > 0 ? filter(in(keys(_OUTPUT_FIELDS)), output.fields) : ()
     series = output.saveday > 0 && output.tsday !== nothing ? _SERIES_FIELDS : ()
-    IOState(
+    return IOState(
         0,       # count
         0.0,     # t_accum
         0,       # time_index
@@ -191,7 +191,7 @@ batches of steps (requires `using Reactant, CUDA`); the time series of
 function to_backend(sim::Simulation, backend)
     _check_series_backend(sim.output, backend)
     c = sim.clock
-    Simulation(
+    return Simulation(
         to_backend(sim.model, backend),
         Clock(c.time, c.iteration, c.dt),
         sim.tstep,

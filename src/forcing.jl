@@ -62,8 +62,9 @@ profile is 18 °C at −5000 m).
 Used automatically by `build_isomip`; pass it as the `forcing` argument of
 `Model` to use it with another geometry.
 
-```julia
-ISOMIPForcing(:cold; FT = Float32)
+```jldoctest
+julia> ISOMIPForcing(:cold; FT = Float32)
+OceanForcing1D{Float32}: 5000-point profile, z ∈ [-5000.0, -1.0] m, T ∈ [-1.9, -1.9] °C, S ∈ [33.801, 39.008] psu
 ```
 """
 function ISOMIPForcing(isomipcond::Symbol = :warm; FT = Float64)
@@ -78,7 +79,7 @@ function ISOMIPForcing(isomipcond::Symbol = :warm; FT = Float64)
     T_deep, S_deep = isomipcond == :warm ? (FT(1.0), FT(34.7)) : (FT(-1.9), FT(34.55))
     Tz = @. T_surface + z * (T_deep - T_surface) / z_pyc
     Sz = @. S_surface + z * (S_deep - S_surface) / z_pyc
-    OceanForcing1D(Tz, Sz, z, dz, z0)
+    return OceanForcing1D(Tz, Sz, z, dz, z0)
 end
 
 """
@@ -127,7 +128,7 @@ function OceanForcing2D(Tz::AbstractArray{<:Real,3}, Sz::AbstractArray{<:Real,3}
     T, S = FT.(Tz[:, :, p]), FT.(Sz[:, :, p])
     all(isfinite, T) && all(isfinite, S) ||
         throw(ArgumentError("Tz and Sz must be finite everywhere (fill the gaps first)"))
-    OceanForcing2D(T, S, FT.(zs), FT(dzs[1]), FT(zs[1]))
+    return OceanForcing2D(T, S, FT.(zs), FT(dzs[1]), FT(zs[1]))
 end
 
 Base.show(io::IO, f::OceanForcing2D) = print(
@@ -209,7 +210,7 @@ function PerBasinOceanForcing1D(
         throw(ArgumentError("the levels of a PerBasinOceanForcing1D must be uniformly spaced"))
     T, S = FT.(Tz[:, p]), FT.(Sz[:, p])
     all(isfinite, T) && all(isfinite, S) || throw(ArgumentError("Tz and Sz must be finite"))
-    PerBasinOceanForcing1D(T, S, Int32.(basin), FT.(zs), FT(dzs[1]), FT(zs[1]))
+    return PerBasinOceanForcing1D(T, S, Int32.(basin), FT.(zs), FT(dzs[1]), FT(zs[1]))
 end
 
 """
@@ -363,10 +364,12 @@ Colder ice absorbs more heat per unit melt, so a lower `T_ice_base` means less
 melt for the same thermal driving: `L_eff` runs from 3.34e5 J kg⁻¹ at 0 °C to
 3.84e5 at −25 °C, a 15 % spread.
 
-```julia
-PrescribedIceForcing(-25.0)          # uniform, the default
-PrescribedIceForcing(T_ice_matrix)   # 2D, same size as `mask`
+```jldoctest
+julia> PrescribedIceForcing(-25.0)   # uniform, the default
+PrescribedIceForcing(T_ice_base = -25.0 °C)
 ```
+
+A matrix the size of `mask`, `PrescribedIceForcing(T_ice_matrix)`, gives a 2D ice-base temperature.
 
 # Fields
 $(TYPEDFIELDS)

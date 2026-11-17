@@ -2,8 +2,8 @@
 
 @testset "Docstrings and display" begin
     d = string(@doc TurbulentGamTMelting)
-    @test !occursin("\\T_b", d) && !occursin("\\\\gamma", d)
-    @test occursin("\\\\", d)                     # the line breaks survive
+    @test !occursin("\\", d)                      # Unicode math, no LaTeX
+    @test occursin("\nγ_S (S − S_b) = ṁ S_b\n", d)  # one equation per line
     @test startswith(sprint(show, Laddie.OceanForcing2D(zeros(2, 2, 2), zeros(2, 2, 2), [-2.0, -1.0])), "OceanForcing2D{Float64}: 2×2 profiles")
     @test !(:OceanForcing2D in names(Laddie))
 end

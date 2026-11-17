@@ -28,11 +28,13 @@ Base.show(io::IO, s::State) = print(
 function Base.show(io::IO, c::Cache)
     nmat = count(fn -> getfield(c, fn) isa AbstractMatrix, fieldnames(typeof(c)))
     print(io, "Cache{$(eltype(c.melt))}: $nmat scratch/diagnostic arrays of $(_sz(c.melt))")
+    return nothing
 end
 
 function Base.show(io::IO, s::IOState)
     rd = isempty(s.rundir) ? "I/O disabled" : "rundir = \"$(s.rundir)\""
     print(io, "IOState: $(length(s.acc)) averaged fields, $(s.time_index) output slices, $rd")
+    return nothing
 end
 
 # Generic one-liner for a profile forcing.  extrema/length are reductions, so this
@@ -45,6 +47,7 @@ function Base.show(io::IO, f::AbstractOceanForcing)
         "z ∈ [$(join(extrema(f.z), ", "))] m, T ∈ [$(bounds(f.Tz, 3))] °C, ",
         "S ∈ [$(bounds(f.Sz, 3))] psu",
     )
+    return nothing
 end
 
 # The ice forcing is one field, so summarise it as a range rather than printing a
@@ -74,6 +77,7 @@ function Base.show(io::IO, ::MIME"text/plain", g::Grid)
         "\n  cropped from $(join(g.input_size, "×")) ",
         "(rows $(first(r)):$(last(r)), columns $(first(c)):$(last(c)))",
     )
+    return nothing
 end
 
 Base.show(io::IO, g::Geometry) = print(
@@ -120,6 +124,7 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  closure level  = ", p.closure_level)
     println(io, "  coriolis       = ", p.coriolis)
     print(io, "  kinks          = ", p.kinks)
+    return nothing
 end
 
 _gaps_label(g) = string(nameof(typeof(g)))
@@ -151,6 +156,7 @@ function Base.show(io::IO, m::Model)
         "Model{$(m.FT)} on $(_backend_name(m)): $(g.Nx - 2)×$(g.Ny - 2) interior, ",
         "$(nameof(typeof(ocean))) forcing",
     )
+    return nothing
 end
 
 function Base.show(io::IO, ::MIME"text/plain", m::Model)
@@ -164,6 +170,7 @@ function Base.show(io::IO, ::MIME"text/plain", m::Model)
     println(io, "  forcing: ", getfield(m, :forcing))
     println(io, "  params:  ", _schemes(getfield(m, :params)))
     print(io, "  boundary: ", getfield(m, :boundary))
+    return nothing
 end
 
 _days(seconds, spd) = _r(seconds / _float64(spd), 3)
@@ -207,4 +214,5 @@ function Base.show(io::IO, ::MIME"text/plain", sim::Simulation)
     )
     println(io, "  stop:    ", sim.stop)
     print(io, "  output:  ", sim.output)
+    return nothing
 end

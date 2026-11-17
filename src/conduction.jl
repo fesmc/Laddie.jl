@@ -2,11 +2,11 @@
 Abstract supertype for the heat conducted into the ice at the ice–ocean interface,
 the ice-side term of the interface heat budget ([Wiskandt & Jourdain 2025](@cite wiskandt_brief_2025), Eqs. 1–2):
 
-```math
-\\dot m\\,L = c_p\\,\\gamma_T\\,(T - T_b) + q_\\text{cond},
+```
+ṁ L = c_p γ_T (T − T_b) + q_cond,
 ```
 
-with ``q_\\text{cond}`` (per unit mass of water, like the other terms) the conduction
+with `q_cond` (per unit mass of water, like the other terms) the conduction
 into the ice, negative for a surface colder than the base.  Pass a concrete instance
 as `Params(; ice_conduction = ...)`:
 
@@ -29,11 +29,11 @@ _warn_experimental_conduction(name) =
 $(TYPEDEF)
 
 [Holland & Jenkins (1999)](@cite holland_modeling_1999) linearisation of the heat advected by the ice, their melt-rate
-dependent gradient: ``q_\\text{cond} = \\dot m\\,c_i\\,(T_b - T_i)``, so the latent heat
-becomes ``L_\\text{eff} = L - c_i (T_i - T_b)``.  Applied for melting and refreezing
+dependent gradient: `q_cond = ṁ c_i (T_b − T_i)`, so the latent heat
+becomes `L_eff = L − c_i (T_i − T_b)`.  Applied for melting and refreezing
 alike.  The default, and the behaviour of LADDIE v1 and v2.
 
-It is Eq. (2C) of [Wiskandt & Jourdain (2025)](@cite wiskandt_brief_2025) without the cut-off at ``\\dot m = 0``, see
+It is Eq. (2C) of [Wiskandt & Jourdain (2025)](@cite wiskandt_brief_2025) without the cut-off at `ṁ = 0`, see
 [`MeltOnlyConduction`](@ref).
 """
 struct HollandJenkinsConduction <: AbstractIceConduction end
@@ -42,13 +42,13 @@ struct HollandJenkinsConduction <: AbstractIceConduction end
 $(TYPEDEF)
 
 The parameterisation of [`HollandJenkinsConduction`](@ref), but with no conduction into the ice
-where the layer is not melting it: ``q_\\text{cond} = \\dot m\\,c_i\\,(T_b - T_i)`` for
-``\\dot m > 0``, zero otherwise ([Wiskandt & Jourdain 2025](@cite wiskandt_brief_2025), Eq. 2C with
-``\\max\\{\\dot m, 0\\}``).  Their argument is that a refreezing ice base carries marine
+where the layer is not melting it: `q_cond = ṁ c_i (T_b − T_i)` for
+`ṁ > 0`, zero otherwise ([Wiskandt & Jourdain 2025](@cite wiskandt_brief_2025), Eq. 2C with
+`max(ṁ, 0)`).  Their argument is that a refreezing ice base carries marine
 ice close to the freezing point throughout, so there is no gradient to conduct along.
 
 The switch is the sign of the thermal forcing ``T - T_f(S, z_b)``, which has the sign
-of ``\\dot m`` and needs no iteration of the melt equations.  Where it is not positive,
+of `ṁ` and needs no iteration of the melt equations.  Where it is not positive,
 the latent heat is the plain ``L``.
 
 Select via `Params(; ice_conduction = MeltOnlyConduction())`; warns when constructed.
@@ -63,8 +63,8 @@ end
 """
 $(TYPEDEF)
 
-No conduction into the ice, ``q_\\text{cond} = 0`` ([Wiskandt & Jourdain 2025](@cite wiskandt_brief_2025), Eq. 2A),
-so ``L_\\text{eff} = L`` and `T_ice_base` has no effect.  It is a good approximation only
+No conduction into the ice, `q_cond = 0` ([Wiskandt & Jourdain 2025](@cite wiskandt_brief_2025), Eq. 2A),
+so `L_eff = L` and `T_ice_base` has no effect.  It is a good approximation only
 for a base of marine ice at the freezing point.  Overestimates the melt by
 ``c_i (T_s - T_f)/L``, about 11 % for ``T_s = -20`` °C, compared with
 [`MeltOnlyConduction`](@ref).
@@ -84,16 +84,16 @@ $(TYPEDEF)
 Steady linear temperature profile through the ice, with no advection ([Wiskandt & Jourdain
 2025](@cite wiskandt_brief_2025), Eq. 2B; used by Losch 2008, Holland et al. 2008):
 
-```math
-q_\\text{cond} = \\frac{k_i\\,(T_f - T_s)}{\\rho_\\text{fw}\\,H_i},
+```
+q_cond = (k_i (T_f − T_s))/(ρ_fw H_i),
 ```
 
-with ``T_f`` the freezing point at the layer salinity (so that ``q_\\text{cond}`` does not
-depend on ``\\dot m`` and the melt equation stays quadratic), ``T_s`` the `T_ice_base` of the
+with `T_f` the freezing point at the layer salinity (so that `q_cond` does not
+depend on `ṁ` and the melt equation stays quadratic), `T_s` the `T_ice_base` of the
 ice forcing, and ``H_i`` the ice thickness, taken from the draft by hydrostatic
-equilibrium, ``H_i = -z_b\\,\\rho_0/\\rho_\\text{ice}`` with `Params.rho0_seawater` and
+equilibrium, `H_i = −z_b ρ₀/ρ_ice` with `Params.rho0_seawater` and
 `Params.rho_ice`.  The flux acts for melting and refreezing alike.  A thermal steady
-state between base and surface takes of order ``(H_i/2)^2/\\kappa_i`` (about 1000 years for
+state between base and surface takes of order `(H_i/2)²/κ_i` (about 1000 years for
 400 m), which only the large, slow ice shelves reach.
 
 Select via `Params(; ice_conduction = LinearProfileConduction())`; warns when constructed.
@@ -102,7 +102,7 @@ Select via `Params(; ice_conduction = LinearProfileConduction())`; warns when co
 $(TYPEDFIELDS)
 """
 @kwdef struct LinearProfileConduction{FT} <: AbstractIceConduction
-    "thermal conductivity of ice ``k_i = \\rho_i c_i \\kappa_i`` (W m⁻¹ K⁻¹, default `2.1`; Jenkins et al. 2010)"
+    "thermal conductivity of ice `k_i = ρ_i c_i κ_i` (W m⁻¹ K⁻¹, default `2.1`; Jenkins et al. 2010)"
     conductivity::FT = 2.1
     function LinearProfileConduction{FT}(conductivity) where {FT}
         _warn_experimental_conduction("LinearProfileConduction")

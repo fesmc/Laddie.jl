@@ -97,17 +97,17 @@ struct Params{
     entrainment::EP
     "melt scheme, an [`AbstractMelting`](@ref) (default `FixedGamTMelting(1.8e-4)`)"
     melting::MP
-    "convective-instability treatment, an [`AbstractConvectionScheme`](@ref) (default `ResetToAmbient(0.005)`)"
+    "convective-instability treatment, an [`AbstractConvectionScheme`](@ref) (default `RelaxToAmbient(3600)`)"
     convection_scheme::CS
     "frazil-ice formation in a supercooled layer, an [`AbstractFrazilIce`](@ref) (default none)"
     frazil_ice::FZ
-    "heat conduction into the ice at the interface, an [`AbstractIceConduction`](@ref) (default Holland & Jenkins)"
+    "heat conduction into the ice at the interface, an [`AbstractIceConduction`](@ref) (default `MeltOnlyConduction()`)"
     ice_conduction::IC
     "equation of state, an [`AbstractEquationOfState`](@ref) (default linear, with `alpha` and `beta`)"
     equation_of_state::EQ
     "upper bound on the layer thickness, an [`AbstractMaxLayerThickness`](@ref) (default none)"
     max_layer_thickness::MLT
-    "bounds on the layer temperature and salinity, an [`AbstractTracerBounds`](@ref) (default `TracerBounds()`)"
+    "bounds on the layer temperature and salinity, an [`AbstractTracerBounds`](@ref) (default `NoTracerBounds()`)"
     tracer_bounds::TB
     "lateral momentum viscosity, an [`AbstractLateralViscosity`](@ref) (default constant `A_h`)"
     lateral_viscosity::LV
@@ -119,9 +119,9 @@ struct Params{
     momentum_advection::MA
     "form of the tracer equations, an [`AbstractTracerForm`](@ref) (default flux form, as in v2)"
     tracer_form::TF
-    "form of the momentum equations, an [`AbstractMomentumForm`](@ref) (default advective form, as in LADDIE v1)"
+    "form of the momentum equations, an [`AbstractMomentumForm`](@ref) (default flux form, the transport `H U` as in LADDIE v2)"
     momentum_form::MF
-    "time level of `u★`, the entrainment thickness and the drag speed, an [`AbstractClosureLevel`](@ref) (default present)"
+    "time level of `u★`, the entrainment thickness and the drag speed, an [`AbstractClosureLevel`](@ref) (default `PastClosures()`)"
     closure_level::CL
     "Coriolis parameter, an [`AbstractCoriolisParameter`](@ref) (default f-plane at `-1.37e-4` s⁻¹)"
     coriolis::CP
@@ -178,19 +178,19 @@ _param_defaults() = (
     seconds_per_year = 365.25 * 24 * 3600,
     entrainment = GasparEntrainment(2.5),
     melting = FixedGamTMelting(0.00018),
-    convection_scheme = ResetToAmbient(0.005),
+    convection_scheme = RelaxToAmbient(3600.0),
     frazil_ice = NoFrazilIce(),
-    ice_conduction = HollandJenkinsConduction(),
+    ice_conduction = MeltOnlyConduction(),
     equation_of_state = LinearEOS(),
     max_layer_thickness = NoMaxLayerThickness(),
-    tracer_bounds = TracerBounds(),
+    tracer_bounds = NoTracerBounds(),
     lateral_viscosity = PrescribedLateralViscosity(),
     laplacian_weights = PresentLaplacianWeights(),
     front_pressure = FullDepthGradient(),
     momentum_advection = CentredMomentumAdvection(),
     tracer_form = FluxTracerForm(),
-    momentum_form = AdvectiveMomentumForm(),
-    closure_level = PresentClosures(),
+    momentum_form = FluxMomentumForm(),
+    closure_level = PastClosures(),
     coriolis = CoriolisParameter0D(),
     ice_slope = MaskedGradient(),
     kinks = ExactKinks(),

@@ -49,7 +49,8 @@ end
 end
 
 @testset "Tracer bounds are a scheme" begin
-    b = Params(; FT).tracer_bounds
+    @test Params(; FT).tracer_bounds isa NoTracerBounds
+    b = Params(; FT, tracer_bounds = TracerBounds()).tracer_bounds
     @test b isa TracerBounds{FT}
     @test (b.T_min, b.T_max, b.S_min, b.S_max) == (-5, 5, 32, 36)
     @test_throws ArgumentError TracerBounds(; T_min = 1.0, T_max = 0.0)

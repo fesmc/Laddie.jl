@@ -4,12 +4,12 @@ The momentum budget is in flux form, ``\partial(HU)/\partial t = -\nabla\cdot(HU
 and can be stepped in two forms, `Params(; momentum_form = ...)`, the momentum counterpart of
 the [tracer form](tracer_form.md):
 
-- [`AdvectiveMomentumForm`](@ref), the default, steps ``U`` itself with the product-rule term
+- [`AdvectiveMomentumForm`](@ref) steps ``U`` itself with the product-rule term
   ``-U\,\partial_t H`` and every term at the present level, as LADDIE v1 does:
   ```math
   U^{+} = U^{-} + 2\Delta t\,\frac{\mathrm{rhs} - U\,\partial_t H - s\,U}{\bar H^{n}}.
   ```
-- [`FluxMomentumForm`](@ref) steps the transport ``\bar H U`` and divides by the new face
+- [`FluxMomentumForm`](@ref), the default, steps the transport ``\bar H U`` and divides by the new face
   thickness, as LADDIE v2 does, with the terms that remove momentum at the layer's own
   ``U`` taken at the new level:
   ```math

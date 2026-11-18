@@ -23,28 +23,37 @@ Laddie.jl; the [table below](#Options-in-each-version) lists them, with the defa
 |---|---|---|---|
 | equation of state | `LinearEOS` | `LinearEOS` | `LinearEOS` |
 | melting | `TurbulentGamTMelting` | `TurbulentGamTMelting` or `UStarGamTMelting`, per run | `FixedGamTMelting` |
-| ice conduction | `HollandJenkinsConduction` | `HollandJenkinsConduction` | `HollandJenkinsConduction` |
+| ice conduction | `HollandJenkinsConduction` | `HollandJenkinsConduction` | `MeltOnlyConduction`† |
 | entrainment | `GasparEntrainment` | `GasparEntrainment` | `GasparEntrainment` |
-| convection | `ResetToAmbient` | `ClampDensity` | `ResetToAmbient` |
+| convection | `ResetToAmbient` | `ClampDensity` | `RelaxToAmbient(3600)`† |
 | frazil ice | `NoFrazilIce` | `NoFrazilIce` | `NoFrazilIce` |
 | lateral viscosity | `PrescribedLateralViscosity` | `NonlinearLateralViscosity` | `PrescribedLateralViscosity` |
 | Coriolis parameter | `CoriolisParameter0D` | `CoriolisParameter0D` | `CoriolisParameter0D` |
 | ice-shelf gaps | `SinkGapsBC` | `SinkGapsBC`, `ConnectedGapsBC` or `LeakyGapsBC`, per run | `SinkGapsBC` |
 | momentum advection | `CentredMomentumAdvection` | `UpstreamMomentumAdvection` | `CentredMomentumAdvection` |
 | tracer form | `AdvectiveTracerForm` | `FluxTracerForm` | `FluxTracerForm` |
-| momentum form | `AdvectiveMomentumForm` | `FluxMomentumForm`\* | `AdvectiveMomentumForm` |
-| closure level | `PresentClosures` | no counterpart (FB-RK3) | `PresentClosures` |
+| momentum form | `AdvectiveMomentumForm` | `FluxMomentumForm`\* | `FluxMomentumForm` |
+| closure level | `PresentClosures` | no counterpart (FB-RK3) | `PastClosures`† |
 | Laplacian weights | `PastLaplacianWeights`\* | no counterpart | `PresentLaplacianWeights` |
 | wall slip | `NoSlipGL`, `NoSlipLand` | `PartialSlipGL(1)`, `PartialSlipLand(1)` | `PartialSlipGL(1)`, `PartialSlipLand(1)` |
 | wall momentum advection | `V1WallAdvection` | `NoWallAdvection` | `NoWallAdvection` |
 | open-ocean boundary | `ZeroGradientInflow` | `ZeroGradientInflow` | `ZeroGradientInflow` |
 | ice-front pressure gradient | `FullDepthGradient` | `TruncatedDepthGradient` | `FullDepthGradient` |
 | maximum layer thickness | none that binds | `AbsoluteMaxLayerThickness` | `NoMaxLayerThickness` |
+| tracer bounds | none | none | `NoTracerBounds`\* |
 | ice-base slope (`ice_slope`) | `CentredGradient` | no counterpart (mesh) | `MaskedGradient` |
 
-\* The aliases below keep the Laddie.jl default for these two: `Params<Setup>v1` has
-`PresentLaplacianWeights`, and `Params<Setup>v2` has `AdvectiveMomentumForm`. Select them
-explicitly to use the option of the version.
+\* The aliases below do not follow the version here: `Params<Setup>v1` has
+`PresentLaplacianWeights`, `Params<Setup>v2` has `AdvectiveMomentumForm`, and both have
+`TracerBounds()`, as Laddie.jl had them when the aliases were made. Select the option of the
+version explicitly to use it.
+
+† Neither version's choice: the default is the setup of tuned pan-Antarctic runs. Relaxing an
+unstable layer to the ambient water over an hour replaces an instantaneous reset; conduction
+stops where the base refreezes, since marine ice there sits near the freezing point
+([Wiskandt & Jourdain 2025](@cite wiskandt_brief_2025)); the closures at the past level keep
+strongly entraining, thin layers stable under the leapfrog (see
+[Momentum form and closure level](numerics/momentum_form.md)).
 
 ## Using the versions
 

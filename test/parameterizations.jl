@@ -442,10 +442,10 @@ end
 end
 
 @testset "Flux momentum form: dilution and sinks at the new level" begin
-    @test Params().momentum_form isa AdvectiveMomentumForm
-    @test Params().closure_level isa PresentClosures
-    @test Params(; FT, momentum_form = FluxMomentumForm(), closure_level = PastClosures()).closure_level isa
-          PastClosures
+    @test Params().momentum_form isa FluxMomentumForm
+    @test Params().closure_level isa PastClosures
+    @test Params(; FT, momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosures()).closure_level isa
+          PresentClosures
     upd(rhs, H_old, H_new, sink; U = 0.3, mask = 1.0, dt = 800.0) =
         Laddie._momentum_update(FluxMomentumForm(), U, U, rhs, NaN, H_old, H_new, sink, 0.0, mask, dt)
     # Entrainment of water at rest: U scaled by H⁻/H⁺, whatever the rate.
@@ -537,11 +537,13 @@ end
 @testset "AbstractIceConduction: closures, heat balance, warnings" begin
     quiet(f) = Base.CoreLogging.with_logger(f, Base.CoreLogging.NullLogger())
 
-    # The default is the Holland & Jenkins linearisation and warns of nothing; the
-    # others warn (once per session under the console logger, through `maxlog`).
-    @test Params(; FT).ice_conduction === HollandJenkinsConduction()
+    # The default is the melt-only conduction; it and the Holland & Jenkins linearisation
+    # of LADDIE v1/v2 warn of nothing, the others warn (once per session under the console
+    # logger, through `maxlog`).
+    @test Params(; FT).ice_conduction === MeltOnlyConduction()
+    @test_logs MeltOnlyConduction()
     @test_logs HollandJenkinsConduction()
-    @test_logs (:warn, r"experimental ice-conduction parameterisation") MeltOnlyConduction()
+    @test_logs (:warn, r"experimental ice-conduction parameterisation") NoConduction()
     @test_logs (:warn, r"LinearProfileConduction") LinearProfileConduction()
 
     none, meltonly, lin = quiet() do
@@ -551,7 +553,7 @@ end
     @test quiet(() -> LinearProfileConduction().conductivity) === 2.1
     @test sprint(show, lin) == "LinearProfileConduction(conductivity = 2.1 W/m/K)"
     @test sprint(show, none) == "NoConduction()"
-    @test occursin("ice conduction = HollandJenkinsConduction()",
+    @test occursin("ice conduction = MeltOnlyConduction()",
                    sprint(show, MIME("text/plain"), Params(; FT)))
     # Promotion to the precision of the Params.
     p32 = quiet(() -> Params(; FT = Float32, ice_conduction = LinearProfileConduction(2.1)))

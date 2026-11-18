@@ -191,7 +191,7 @@ moved water carries its matching momentum, as in [`FluxTracerForm`](@ref): volum
 at the upper bound leaves at `U`, volume added by the `H_min` floor comes in at rest,
 so the denominator takes the face average of `max(H⁺, H*)`.
 
-Select via `Params(; momentum_form = FluxMomentumForm())`.
+Select via `Params(; momentum_form = FluxMomentumForm())` (the default).
 """
 struct FluxMomentumForm <: AbstractMomentumForm end
 
@@ -201,8 +201,8 @@ $(TYPEDEF)
 Abstract supertype for the time level the closures see: the friction velocity `u★`
 (hence the melt and entrainment rates), the thickness in the entrainment rate, and
 the speed in the quadratic drag.  Pass a concrete instance as
-`Params(; closure_level = ...)`: [`PresentClosures`](@ref) (the default) or
-[`PastClosures`](@ref).
+`Params(; closure_level = ...)`: [`PastClosures`](@ref) (the default) or
+[`PresentClosures`](@ref).
 
 A closure that damps the state it is computed from (entrainment ∝ `u★³/H` dilutes
 `U` and thickens `H`; drag ∝ `|u|` slows `u`) is unstable in the leapfrog at the

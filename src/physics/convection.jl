@@ -2,8 +2,8 @@
 Abstract supertype for the treatment of convective instability: cells where the
 layer is denser than the ambient water beneath it, i.e. where the reduced density
 contrast `δρ` falls below zero.  Pass a concrete instance as
-`Params(; convection_scheme = ...)`: [`ResetToAmbient`](@ref) (the default),
-[`ClampDensity`](@ref) or [`RelaxToAmbient`](@ref).
+`Params(; convection_scheme = ...)`: [`RelaxToAmbient`](@ref) (the default),
+[`ResetToAmbient`](@ref) or [`ClampDensity`](@ref).
 
 The layer is unstable where `δρ = (ρ_a − ρ)/ρ₀ < 0`. No LADDIE paper describes a convection
 closure, so the schemes follow the reference codes: `ResetToAmbient` and `RelaxToAmbient` the
@@ -53,16 +53,18 @@ $(TYPEDEF)
 
 Handle convective instability by relaxing T and S of unstable cells toward
 ambient values over a prescribed timescale (applied implicitly in the tracer
-time step via the `conv2` term).
+time step via the `conv2` term).  The default: a continuous relaxation rather than the
+instantaneous reset of [`ResetToAmbient`](@ref).  One hour is the order of the time an
+unstable layer takes to overturn, and gave good pan-Antarctic runs.
 
-Select via `Params(; convection_scheme = RelaxToAmbient(10000.0))`.
+Select via `Params(; convection_scheme = RelaxToAmbient(3600.0))` (the default).
 
 # Fields
 $(TYPEDFIELDS)
 """
 @kwdef struct RelaxToAmbient{FT} <: AbstractConvectionScheme
-    "relaxation timescale (s, default `10000.0`)"
-    convection_time::FT = 10000.0
+    "relaxation timescale (s, default `3600`)"
+    convection_time::FT = 3600.0
 end
 
 # ============================================================================

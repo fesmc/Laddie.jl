@@ -190,6 +190,9 @@ params = Params(; FT,
     rho0_seawater = rho0, rho_ice = 917.0,
     H_min = 1.0, u_tide = 0.01, v_cut = 1.0,
     H_init = 2.0, dT_init = 0.0, dS_init = -0.1,
+    ## Laddie's defaults differ from what the published run used:
+    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosures(),
+    tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsConduction(),
 )
 
 # ## Runs

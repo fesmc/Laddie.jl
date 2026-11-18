@@ -10,12 +10,12 @@ with `q_cond` (per unit mass of water, like the other terms) the conduction
 into the ice, negative for a surface colder than the base.  Pass a concrete instance
 as `Params(; ice_conduction = ...)`:
 
- - [`HollandJenkinsConduction`](@ref) (the default)
- - [`MeltOnlyConduction`](@ref)
+ - [`MeltOnlyConduction`](@ref) (the default)
+ - [`HollandJenkinsConduction`](@ref), the parameterisation of LADDIE v1 and v2
  - [`NoConduction`](@ref)
  - [`LinearProfileConduction`](@ref)
 
-All except the default are experimental and warn when constructed.  The ice
+`NoConduction` and `LinearProfileConduction` are experimental and warn when constructed.  The ice
 temperature ``T_i`` they use is the `T_ice_base` of the ice forcing
 ([`PrescribedIceForcing`](@ref)), which plays the role of the ice surface
 temperature ``T_s`` of the paper.
@@ -23,7 +23,7 @@ temperature ``T_s`` of the paper.
 abstract type AbstractIceConduction end
 
 _warn_experimental_conduction(name) =
-    _warn_experimental(name, "ice-conduction parameterisation", "HollandJenkinsConduction()")
+    _warn_experimental(name, "ice-conduction parameterisation", "MeltOnlyConduction()")
 
 """
 $(TYPEDEF)
@@ -31,7 +31,7 @@ $(TYPEDEF)
 [Holland & Jenkins (1999)](@cite holland_modeling_1999) linearisation of the heat advected by the ice, their melt-rate
 dependent gradient: `q_cond = ṁ c_i (T_b − T_i)`, so the latent heat
 becomes `L_eff = L − c_i (T_i − T_b)`.  Applied for melting and refreezing
-alike.  The default, and the behaviour of LADDIE v1 and v2.
+alike.  The behaviour of LADDIE v1 and v2.
 
 It is Eq. (2C) of [Wiskandt & Jourdain (2025)](@cite wiskandt_brief_2025) without the cut-off at `ṁ = 0`, see
 [`MeltOnlyConduction`](@ref).
@@ -51,14 +51,9 @@ The switch is the sign of the thermal forcing ``T - T_f(S, z_b)``, which has the
 of `ṁ` and needs no iteration of the melt equations.  Where it is not positive,
 the latent heat is the plain ``L``.
 
-Select via `Params(; ice_conduction = MeltOnlyConduction())`; warns when constructed.
+Select via `Params(; ice_conduction = MeltOnlyConduction())` (the default).
 """
-struct MeltOnlyConduction <: AbstractIceConduction
-    function MeltOnlyConduction()
-        _warn_experimental_conduction("MeltOnlyConduction")
-        return new()
-    end
-end
+struct MeltOnlyConduction <: AbstractIceConduction end
 
 """
 $(TYPEDEF)

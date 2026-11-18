@@ -55,9 +55,9 @@ the forcing. The pages of this section describe one family each:
 |---------------|---------------|---------|
 | [`AbstractEquationOfState`](@ref) | `Params(; equation_of_state)` | `LinearEOS()` |
 | [`AbstractMelting`](@ref) | `Params(; melting)` | `FixedGamTMelting(1.8e-4)` |
-| [`AbstractIceConduction`](@ref) | `Params(; ice_conduction)` | `HollandJenkinsConduction()` |
+| [`AbstractIceConduction`](@ref) | `Params(; ice_conduction)` | `MeltOnlyConduction()` |
 | [`AbstractEntrainment`](@ref) | `Params(; entrainment)` | `GasparEntrainment(2.5)` |
-| [`AbstractConvectionScheme`](@ref) | `Params(; convection_scheme)` | `ResetToAmbient(0.005)` |
+| [`AbstractConvectionScheme`](@ref) | `Params(; convection_scheme)` | `RelaxToAmbient(3600)` |
 | [`AbstractFrazilIce`](@ref) | `Params(; frazil_ice)` | `NoFrazilIce()` |
 | [`AbstractLateralViscosity`](@ref) | `Params(; lateral_viscosity)` | `PrescribedLateralViscosity()` |
 | [`AbstractCoriolisParameter`](@ref) | `Params(; coriolis)` | `CoriolisParameter0D()` |

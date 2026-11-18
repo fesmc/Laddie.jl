@@ -142,14 +142,16 @@ Simulation
 │   │   ├── ice_conduction              #   AbstractIceConduction
 │   │   ├── equation_of_state           #   AbstractEquationOfState
 │   │   ├── max_layer_thickness
+│   │   ├── tracer_bounds               #   NoTracerBounds (default) / TracerBounds
 │   │   ├── lateral_viscosity
 │   │   ├── laplacian_weights
 │   │   ├── front_pressure
 │   │   ├── momentum_advection
 │   │   ├── tracer_form                 #   FluxTracerForm (default) / AdvectiveTracerForm
-│   │   ├── momentum_form               #   AdvectiveMomentumForm / FluxMomentumForm
+│   │   ├── momentum_form               #   FluxMomentumForm (default) / AdvectiveMomentumForm
 │   │   ├── closure_level
 │   │   ├── coriolis                    #   AbstractCoriolisParameter
+│   │   ├── ice_slope                   #   MaskedGradient (default) / CentredGradient
 │   │   └── kinks                       #   AbstractKinks (ExactKinks / SmoothKinks)
 │   ├── boundary :: BoundaryConditions  # open_ocean, grounding_line, land, gaps, wall_advection
 │   └── forcing :: CavityForcing        # ocean (ambient T/S profiles), ice (ice-base temperature)
@@ -206,8 +208,8 @@ _step_model!(m, dt, nu)
 ├── leapfrog_step!(m, dt, 2)        centred step over 2Δt, writing the future level:
 │   ├── H   step_thickness!, clamp thickness, precompute_integration_terms!
 │   ├── U,V step_u_momentum!, step_v_momentum!, clamp_velocities! (speed cap v_cut)
-│   ├── T   step_temperature!, clamp to [T_min, T_max]
-│   └── S   step_salinity!, gap surface fluxes, clamp to [S_min, S_max]
+│   ├── T   step_temperature!, apply_tracer_bounds! (none by default)
+│   └── S   step_salinity!, gap surface fluxes, apply_tracer_bounds!
 └── apply_robert_asselin_filter!    filter present (coefficient nu), then refresh density and convection
 ```
 

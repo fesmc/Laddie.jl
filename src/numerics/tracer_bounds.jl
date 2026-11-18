@@ -1,8 +1,8 @@
 """
 Abstract supertype for bounds on the layer temperature and salinity, applied inside the
 active domain after every tracer step.  Pass a concrete instance as
-`Params(; tracer_bounds = ...)`: [`TracerBounds`](@ref) (the default) or
-[`NoTracerBounds`](@ref).
+`Params(; tracer_bounds = ...)`: [`NoTracerBounds`](@ref) (the default) or
+[`TracerBounds`](@ref).
 
 Bounds are a stability safeguard, not physics: LADDIE v2 has no counterpart, it
 assigns T and S only from the flux-form integration.  They carry a real cost: with
@@ -16,7 +16,7 @@ abstract type AbstractTracerBounds end
 $(TYPEDEF)
 
 Leave the layer temperature and salinity unbounded: they are set by their budgets
-alone, as in LADDIE v2.
+alone, as in LADDIE v2 (the default).
 
 Select via `Params(; tracer_bounds = NoTracerBounds())`.
 """
@@ -26,7 +26,7 @@ struct NoTracerBounds <: AbstractTracerBounds end
 $(TYPEDEF)
 
 Clamp the layer temperature to `[T_min, T_max]` and the salinity to `[S_min, S_max]`
-inside the active domain after every tracer step (the default).  Outside `tmask` the
+inside the active domain after every tracer step.  Outside `tmask` the
 tracers stay zero.  Widen the bounds for fresher settings such as Greenland fjords; an
 infinite bound switches that side off.
 

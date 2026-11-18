@@ -11,15 +11,15 @@ with ``q_\text{cond}`` negative for an ice surface colder than the base. The ice
 is not resolved, so ``q_\text{cond}`` is a parameterisation, selected with
 `Params(; ice_conduction = ...)`.
 
-The default term ``-c_i (T_i - T_b)\,\dot m`` in ``L_\text{eff}`` (see
+The term ``-c_i (T_i - T_b)\,\dot m`` in ``L_\text{eff}`` (see
 [Melting](melting.md)) is the linearisation of [Holland & Jenkins (1999)](@cite holland_modeling_1999), which assumes that
 the ice velocity is proportional to the melt rate. The other parameterisations are those compared by
 [Wiskandt & Jourdain (2025)](@cite wiskandt_brief_2025):
 
 | parameterisation | heat conducted into the ice | when it is reasonable |
 |---|---|---|
-| [`HollandJenkinsConduction`](@ref) (default) | ``\dot m\,c_i\,(T_b - T_i)``, melting and refreezing | melting; the [v1 and v2](../versions.md) behaviour |
-| [`MeltOnlyConduction`](@ref) | the same for ``\dot m > 0``, zero otherwise | as above, and a refreezing base of marine ice near the freezing point |
+| [`HollandJenkinsConduction`](@ref) | ``\dot m\,c_i\,(T_b - T_i)``, melting and refreezing | melting; the [v1 and v2](../versions.md) behaviour |
+| [`MeltOnlyConduction`](@ref) (default) | the same for ``\dot m > 0``, zero otherwise | as above, and a refreezing base of marine ice near the freezing point |
 | [`NoConduction`](@ref) | none, ``L_\text{eff} = L`` | marine ice only; overestimates melt by ``c_i (T_s - T_f)/L`` (≈ 11 % for ``T_s = -20`` °C) |
 | [`LinearProfileConduction`](@ref) | ``k_i (T_f - T_s)/H_i``, independent of ``\dot m`` | thick, slow ice shelves in thermal steady state (e.g. Ross) |
 

@@ -55,8 +55,8 @@ filter); during that transient the fluxes carry nothing in, as under
 [`NoInflow`](@ref).
 
 The clip is the τ → 0 limit of a relaxation of the inward normal velocity.  It is
-an instantaneous adjustment rather than a relaxation because the sinks of the
-default [`AdvectiveMomentumForm`](@ref) are explicit, so a relaxation fast enough
+an instantaneous adjustment rather than a relaxation because the sinks of
+[`AdvectiveMomentumForm`](@ref) are explicit, so a relaxation fast enough
 to act as a valve would be unstable.
 
 Gap edges under [`SinkGapsBC`](@ref) are one-sided faces too, so the valve acts

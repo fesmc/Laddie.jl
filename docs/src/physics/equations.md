@@ -247,7 +247,7 @@ The interface temperature is then
 ``T_b = (c_p\gamma_T\,T/L_\text{eff} - \dot m)/(c_p\gamma_T/L_\text{eff} + c_i\dot m/L_\text{eff})``.
 
 The ``c_i`` terms are the conduction into the ice of `ice_conduction =
-HollandJenkinsConduction` (the default). With `ice_conduction` set to another
+HollandJenkinsConduction`. With `ice_conduction` set to another
 [`AbstractIceConduction`](@ref), the kernel replaces ``c_i`` per cell by
 ``c_{i,\text{eff}} = c_i\,w`` with ``w \in \{0, 1\}`` set by the sign of ``T - T_f(S, z_b)``
 (`MeltOnlyConduction`: 1 where melting, 0 otherwise; `NoConduction`, `LinearProfileConduction`: 0),

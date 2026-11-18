@@ -7,9 +7,9 @@ selected with `Params(; convection_scheme = ...)`:
 
 | scheme | action | where |
 |---|---|---|
-| [`ResetToAmbient`](@ref) (default) | ``T, S`` reset to ambient at once, with ``S`` lowered just enough for a contrast of `d_rho_min` | ice-covered cells |
+| [`ResetToAmbient`](@ref) | ``T, S`` reset to ambient at once, with ``S`` lowered just enough for a contrast of `d_rho_min` | ice-covered cells |
 | [`ClampDensity`](@ref) | ``\delta\rho`` floored at `d_rho_min`, ``T`` and ``S`` left alone | the whole active domain |
-| [`RelaxToAmbient`](@ref) | ``T, S`` relaxed toward ambient over `convection_time` | ice-covered cells |
+| [`RelaxToAmbient`](@ref) (default, 1 h) | ``T, S`` relaxed toward ambient over `convection_time` | ice-covered cells |
 
 The thresholds `d_rho_min` are dimensional contrasts ``\rho_a - \rho`` in kg m⁻³, divided
 by `Params.rho0_seawater` to compare with the reduced contrast ``\delta\rho``: the default

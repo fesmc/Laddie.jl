@@ -106,6 +106,9 @@ params = Params(; FT,
     rho0_seawater = rho_sw,
     seconds_per_year = 365 * 86400.0,
     ice_slope = CentredGradient(),
+    ## Laddie's defaults differ from what the published run used:
+    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosures(),
+    tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsConduction(),
 )
 boundary = BoundaryConditions(;
     grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0),

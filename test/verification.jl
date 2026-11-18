@@ -18,7 +18,11 @@
     if isfile(py_restart)
         v1_walls = BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
                                       wall_advection = V1WallAdvection())
-        v1_params = Params(; tracer_form = AdvectiveTracerForm(), ice_slope = CentredGradient())
+        v1_params = Params(; tracer_form = AdvectiveTracerForm(), ice_slope = CentredGradient(),
+                            convection_scheme = ResetToAmbient(0.005),
+                            ice_conduction = HollandJenkinsConduction(),
+                            momentum_form = AdvectiveMomentumForm(),
+                            closure_level = PresentClosures(), tracer_bounds = TracerBounds())
         m = build_isomip(; isomipcond = :warm, boundary = v1_walls,
                          params = v1_params)
         run!(m; days = 1.0, verbose = false)

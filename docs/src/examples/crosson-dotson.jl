@@ -9,7 +9,7 @@ defaults, and make a good starting point for a realistic cavity. Four of them ma
   * `nu = 0.8`: `nu = 0.1` is unstable at `dt = 120 s` and inflates the mean melt sevenfold.
   * No cap on the layer thickness ([`NoMaxLayerThickness`](@ref), the default): capping `H`
     at the water column cuts melt by ~90 % (see [`AbstractMaxLayerThickness`](@ref)).
-  * `ClampDensity` convection, as in the reference (the default `ResetToAmbient`: −0.07 %).
+  * `ClampDensity` convection, as in the reference (`ResetToAmbient`: −0.07 %).
   * `CentredGradient`, the reference's ice-base slope (the default `MaskedGradient`: −0.8 %).
 
 The code is **not executed** by the documentation build, as it needs BedMachine v2 and the
@@ -82,6 +82,9 @@ params = Params(; FT,
     convection_scheme = ClampDensity(0.005),
     tracer_form = AdvectiveTracerForm(),  # the reference steps T and S, not H·T and H·S
     ice_slope = CentredGradient(),        # the reference's slope stencil
+    ## Laddie's defaults differ from what the published run used:
+    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosures(),
+    tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsConduction(),
 )
 ## The reference's slip = 1 on every wall: no slip in the viscosity, v1's advective ghost.
 boundary = BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),

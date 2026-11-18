@@ -299,7 +299,8 @@ end
     # End-to-end: gap cells really do sit below the reset threshold during a
     # run — ungated the reset would keep firing there — yet the layer still
     # arrives warmer than the surface ambient it is crossing.
-    m_cv = build(gappy_mask(), ConnectedGapsBC())
+    m_cv = build(gappy_mask(), ConnectedGapsBC();
+                 params = Params(; FT, convection_scheme = ResetToAmbient(FT(0.005))))
     @test getfield(m_cv.model, :params).convection_scheme isa ResetToAmbient
     run!(m_cv; days = 1.0, verbose = false)
     @test any(m_cv.model.drho[gap_ix] .< FT(0.005) / m_cv.model.rho0_seawater)

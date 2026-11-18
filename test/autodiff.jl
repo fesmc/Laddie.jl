@@ -48,18 +48,31 @@ end
 
 # Non-default schemes, each in its own run: a gradient test per scheme (AGENTS.md).
 # ISOMIP+ is never supercooled on its own, so the frazil case starts 0.05 K below the
-# freezing point under the ice; without that it would test nothing.
+# freezing point under the ice; without that it would test nothing.  The conduction
+# schemes differ only where the base refreezes, and the convection schemes only where the
+# layer is denser than the ambient water, so those cases start supercooled too.  A case
+# whose scheme is the default names a `reference` scheme it must differ from instead.
 const AD_SCHEME_CASES = (
     "RelaxedFrazilIce" => (; schemes = (; frazil_ice = RelaxedFrazilIce()), supercooling = 0.05),
-    "FluxMomentumForm" => (; schemes = (; momentum_form = FluxMomentumForm())),
+    "AdvectiveMomentumForm" => (; schemes = (; momentum_form = AdvectiveMomentumForm())),
     "AdvectiveTracerForm" => (; schemes = (; tracer_form = AdvectiveTracerForm())),
-    "PastClosures" => (; schemes = (; closure_level = PastClosures())),
+    "PresentClosures" => (; schemes = (; closure_level = PresentClosures())),
+    "ResetToAmbient" => (; schemes = (; convection_scheme = ResetToAmbient()), supercooling = 0.05),
+    "RelaxToAmbient, convecting" => (; schemes = (; convection_scheme = RelaxToAmbient()), supercooling = 0.05,
+                                     reference = (; convection_scheme = ClampDensity())),
+    "HollandJenkinsConduction" =>
+        (; schemes = (; ice_conduction = HollandJenkinsConduction()), supercooling = 0.05),
+    "MeltOnlyConduction, refreezing" => (; schemes = (; ice_conduction = MeltOnlyConduction()), supercooling = 0.05,
+                                         reference = (; ice_conduction = NoConduction())),
 )
 
 @testset "ForwardDiff through $name matches central differences" for (name, case) in AD_SCHEME_CASES
-    loss(x) = ad_melt_loss(x; case...)
-    # The scheme acts: the loss differs from the default's under the same start.
-    @test loss(AD_X0) != ad_melt_loss(AD_X0; supercooling = get(case, :supercooling, 0.0))
+    loss(x) = ad_melt_loss(x; case.schemes, supercooling = get(case, :supercooling, 0.0))
+    # The scheme acts: the loss differs from the reference's (by default, the default
+    # schemes) under the same start.
+    @test loss(AD_X0) != Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
+        ad_melt_loss(AD_X0; schemes = get(case, :reference, (;)), supercooling = get(case, :supercooling, 0.0))
+    end
     g = ad_gradient(loss)
     @test all(isfinite, g)
     for k in eachindex(AD_X0)

@@ -400,8 +400,8 @@ is at the interface temperature ``T_b``, the freezing point, which the melt solv
 computes every step.  The ice column is not resolved; the heat conducted into the ice
 is a parameterisation ([`AbstractIceConduction`](@ref)), and ``T_i`` is the temperature of the
 ice *above* the thin thermal boundary layer at the base, into which the ice is advected
-as it melts.  For the default [`HollandJenkinsConduction`](@ref) ([Holland & Jenkins
-1999](@cite holland_modeling_1999)), a steady ice column, that is the ice-shelf **surface temperature** (Wiskandt &
+as it melts.  For [`HollandJenkinsConduction`](@ref) ([Holland & Jenkins
+1999](@cite holland_modeling_1999)) and the default [`MeltOnlyConduction`](@ref), a steady ice column, that is the ice-shelf **surface temperature** (Wiskandt &
 Jourdain 2025 use the 1980–2019 mean snow-surface temperature).  With an ice sheet
 model at hand, the ice temperature 50–100 m above the base, as a 2D field, carries the
 transient and upstream-advected state of the ice instead.  Were ``T_i`` the basal

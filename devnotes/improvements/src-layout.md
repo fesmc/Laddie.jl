@@ -16,6 +16,8 @@ Every commit only moves code: no computation changed.
 ## Evidence
 
 - Full test suite: 2913/2913 pass after the helper move. After the whole restructure it passes as well, with the same count, the `REPRODUCTION_MEAN_MELT` pins and Aqua.
+- Reactant suite (`test/reactant`, GPU target): every testset passes, sharding included (21/21), except "output, log and restarts". That testset errors in the same way at 9624c82, before the moves: scalar indexing of a `ConcretePJRTArray` inside ProtoBuf's `_encoded_size`.
+- Docs build: every `@docs` entry and cross-reference resolves.
 - Bit-identical `meltstats` against 9624c82 (before the moves), ISOMIP 40×20, Float64:
 
 | setup | days | max melt (m/yr) | mean melt (m/yr) | total melt (Gt/yr) |

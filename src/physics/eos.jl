@@ -106,3 +106,57 @@ end
 Base.show(io::IO, ::LinearEOS) = print(io, "LinearEOS()")
 Base.show(io::IO, e::RoquetEOS) =
     print(io, "RoquetEOS(Cb = $(e.Cb), Theta0 = $(e.Theta0), Th = $(e.Th), b0 = $(e.b0))")
+
+# ============================================================================
+# Density contrast: the pointwise pieces, `update_density!` and its kernel
+# ============================================================================
+
+# Point-wise equation-of-state and freezing-point pieces shared by several kernels.
+# Each spells out one formula in one operation order, so every caller rounds alike.
+
+# Buoyancy contrast (ρ_a − ρ)/ρ₀ of water (S, T) against (Sa, Ta) at depth `Z` (positive
+# downward), δρ = β ΔS − (a0 + aT T̄ + aZ Z) ΔT, with the coefficients `c` of
+# `_eos_coefficients`.  For the linear equation of state aT = aZ = 0 and a0 = α, which
+# leaves `β ΔS − α ΔT` to the last bit.
+@inline _drho(Sa, S, Ta, T, Z, c) = c.beta * (Sa - S) - (c.a0 + c.aT * (Ta + T) / 2 + c.aZ * Z) * (Ta - T)
+
+# Depth (positive downward) of the mid-point of the layer of thickness `H` under the ice
+# base at `z_draft`.
+@inline _layer_depth(z_draft, H) = -z_draft + H / 2
+
+# Liquidus: freezing temperature at salinity `S` and depth `z`, and its inverse, the
+# salinity whose freezing temperature at `z` is `Tf`.  `_three_eq_melt_kernel!`
+# groups `l2 + l3*z` separately and so keeps its own copy.
+@inline _freezing_point(S, z, l1, l2, l3) = l1 * S + l2 + l3 * z
+@inline _freezing_salinity(Tf, z, l1, l2, l3) = (Tf - l2 - l3 * z) / l1
+
+@kernel function _density_kernel!(
+    drho,
+    @Const(Sa),
+    @Const(S),
+    @Const(Ta),
+    @Const(T),
+    @Const(tmask),
+    @Const(z_draft),
+    @Const(H),
+    eos,
+)
+    eos = _val(eos)
+    i, j = @index(Global, NTuple)
+    @inbounds drho[i, j] =
+        _drho(Sa[i, j], S[i, j], Ta[i, j], T[i, j], _layer_depth(z_draft[i, j], H[i, j]), eos) * tmask[i, j]
+end
+
+"Reduced (dimensionless) density `δρ = Δρ_a/ρ₀` of the ambient water against the layer, `β(S_a − S) − α(T_a − T)` for [`LinearEOS`](@ref) (Lambert et al. 2023, Eqs. 6–7)."
+update_density!(m) = launch!(
+    _density_kernel!,
+    m.drho,
+    m.Sa,
+    m.S.present,
+    m.Ta,
+    m.T.present,
+    m.tmask,
+    m.z_draft,
+    m.H.present,
+    _eos_coefficients(m),
+)

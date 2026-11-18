@@ -125,3 +125,30 @@ Base.show(io::IO, ::MeltOnlyConduction) = print(io, "MeltOnlyConduction()")
 Base.show(io::IO, ::NoConduction) = print(io, "NoConduction()")
 Base.show(io::IO, c::LinearProfileConduction) =
     print(io, "LinearProfileConduction(conductivity = $(c.conductivity) W/m/K)")
+
+# ============================================================================
+# Conduction at one cell, for the melt kernels
+# ============================================================================
+
+# Conduction into the ice at one cell (see `AbstractIceConduction`): the effective
+# `c_i` of the melt-proportional term, and the fixed flux `q` (J kg⁻¹ m s⁻¹, per unit
+# mass of freshwater like the melt) that the heat balance carries on top of it.  `Tf`
+# is the freezing point at the layer salinity, `T - Tf` having the sign of the melt,
+# `Ts` the ice temperature of the forcing.  The ice thickness is the hydrostatic one
+# from the draft; `_safe_div` keeps cells without ice at zero.  The switch of c_i at
+# the freezing point is blended over ε_T under `SmoothKinks`.
+@inline function _ice_conduction(conduction, c_i, T, Tf, Ts, z_draft)
+    k = conduction.kinks
+    ci_eff = c_i * _sswitch(k, T - Tf, conduction.ci_melt, conduction.ci_freeze, _kink_width(k, :T))
+    Hi = -z_draft * conduction.thick_ratio
+    q = _safe_div(conduction.k_ice * (Tf - Ts), Hi * conduction.rho_fw)
+    return ci_eff, q
+end
+
+# The scalars `_ice_conduction` reads, for the kernel launches, and the kink treatment,
+# which the melt kernels take from here.
+function _conduction_args(m)
+    ci_melt, ci_freeze, k_ice = _conduction_coefficients(m.params.ice_conduction, m.FT)
+    return (; ci_melt, ci_freeze, k_ice, thick_ratio = m.rho0_seawater / m.rho_ice, rho_fw = m.rho_freshwater,
+            kinks = m.params.kinks)
+end

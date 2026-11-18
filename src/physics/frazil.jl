@@ -58,3 +58,64 @@ $(TYPEDFIELDS)
     "relaxation time of the supercooling (s, default `3600`)"
     relaxation_time::FT = 3600.0
 end
+
+# ============================================================================
+# `update_frazil!` and its kernel
+# ============================================================================
+
+"""
+$(TYPEDSIGNATURES)
+
+Frazil-ice formation rate `m.frazil` (m s⁻¹, freshwater equivalent) under
+[`RelaxedFrazilIce`](@ref): the rate whose latent heat relaxes the supercooling of
+the past level, `max(T_f − T, 0)`, over `relaxation_time`.  Ice-covered cells
+only (`imask`): a gap cell is open water, and the ice it would form is sea ice, not
+marine ice.  Nothing to do under [`NoFrazilIce`](@ref), where `m.frazil` is a scalar
+zero.  Computed before `update_entrainment!`, whose preventive bounds on H include
+it.
+"""
+update_frazil!(m) = update_frazil!(m, m.frazil_ice)
+update_frazil!(m, ::NoFrazilIce) = nothing
+function update_frazil!(m, fz::RelaxedFrazilIce)
+    launch!(
+        _frazil_kernel!,
+        m.frazil,
+        m.T.past,
+        m.S.past,
+        m.H.present,
+        m.z_draft,
+        m.imask,
+        fz.relaxation_time,
+        m.c_p,
+        m.L,
+        m.l1,
+        m.l2,
+        m.l3,
+        m.params.kinks,
+    )
+end
+
+@kernel function _frazil_kernel!(
+    frazil,
+    @Const(T),
+    @Const(S),
+    @Const(H),
+    @Const(z_draft),
+    @Const(imask),
+    relaxation_time,
+    c_p,
+    L,
+    l1,
+    l2,
+    l3,
+    kinks,
+)
+    relaxation_time, c_p, L, l1, l2, l3 =
+        _val(relaxation_time), _val(c_p), _val(L), _val(l1), _val(l2), _val(l3)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = typeof(c_p)
+        supercooling = _smax0(kinks, l1 * S[i, j] + l2 + l3 * z_draft[i, j] - T[i, j], _kink_width(kinks, :T))
+        frazil[i, j] = imask[i, j] * c_p / L * H[i, j] * supercooling / relaxation_time
+    end
+end

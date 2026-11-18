@@ -64,3 +64,130 @@ $(TYPEDFIELDS)
     "relaxation timescale (s, default `10000.0`)"
     convection_time::FT = 10000.0
 end
+
+# ============================================================================
+# `update_convection!` and its kernels
+# ============================================================================
+
+"""
+$(TYPEDSIGNATURES)
+
+Flag convectively unstable cells and clamp `δρ` to a minimum positive value
+so the plume remains lighter than ambient.
+
+Applies in gap cells too (`tmask` but not `imask`): the buoyancy floor is the one
+convection treatment LADDIE v2 also has, and it applies there over its whole active
+domain, gaps included.
+"""
+function update_convection!(m, cs::ClampDensity)
+    thr = cs.d_rho_min / m.rho0_seawater
+    launch!(_clamp_density_kernel!, m.convection, m.drho, thr, m.params.kinks)
+    return nothing
+end
+
+# The convection schemes are pointwise, and run as kernels rather than broadcasts so
+# that they are threaded on the CPU: they run twice per step (see
+# `apply_robert_asselin_filter!`).  Each reads the `drho` of the current T/S.
+@kernel function _clamp_density_kernel!(convection, drho, thr, kinks)
+    thr = _val(thr)
+    i, j = @index(Global, NTuple)
+    FT = typeof(thr)
+    @inbounds begin
+        d = drho[i, j]
+        convection[i, j] = ifelse(d < 0, one(FT), zero(FT))
+        drho[i, j] = _smax(kinks, d, thr, _kink_width(kinks, :drho))
+    end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Flag convectively unstable cells, then instantly reset their T/S to ambient
+values so the density remains stable.
+
+Restricted to ice-covered cells (`imask`).  In a gap the ambient profile is sampled at
+the sea surface, where it is cold and fresh, so `drho < 0` is close to unconditional
+there; resetting would overwrite the T/S anomaly the layer is carrying across the gap
+and rebuild the meltwater sink that [`ConnectedGapsBC`](@ref) exists to remove.  LADDIE
+v2 has no reset scheme to copy here, so this is a Laddie.jl-only decision.
+"""
+function update_convection!(m, cs::ResetToAmbient)
+    thr = cs.d_rho_min / m.rho0_seawater
+    eos = _eos_coefficients(m)
+    S_adj = cs.d_rho_min / (m.rho0_seawater * eos.beta)
+    launch!(
+        _reset_to_ambient_kernel!,
+        m.convection,
+        m.T.present,
+        m.S.present,
+        m.drho,
+        m.Ta,
+        m.Sa,
+        m.tmask,
+        m.imask,
+        m.z_draft,
+        m.H.present,
+        thr,
+        S_adj,
+        eos,
+    )
+    return nothing
+end
+
+# Reset T/S of unstable ice-covered cells to ambient, and refresh `drho` there with
+# the expression of `_density_kernel!` (elsewhere T/S are unchanged, so is `drho`).
+@kernel function _reset_to_ambient_kernel!(
+    convection,
+    T,
+    S,
+    drho,
+    @Const(Ta),
+    @Const(Sa),
+    @Const(tmask),
+    @Const(imask),
+    @Const(z_draft),
+    @Const(H),
+    thr,
+    S_adj,
+    eos,
+)
+    thr, S_adj, eos = _val(thr), _val(S_adj), _val(eos)
+    i, j = @index(Global, NTuple)
+    FT = typeof(thr)
+    @inbounds begin
+        d = drho[i, j]
+        ice = imask[i, j] > 0
+        convection[i, j] = ifelse((d < 0) & ice, one(FT), zero(FT))
+        reset = (d < thr) & ice
+        T_new = ifelse(reset, Ta[i, j], T[i, j])
+        S_new = ifelse(reset, Sa[i, j] - S_adj, S[i, j])
+        drho_reset =
+            _drho(Sa[i, j], S_new, Ta[i, j], T_new, _layer_depth(z_draft[i, j], H[i, j]), eos) * tmask[i, j]
+        T[i, j] = T_new
+        S[i, j] = S_new
+        drho[i, j] = ifelse(reset, drho_reset, d)
+    end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Flag convectively unstable cells; relaxation is applied implicitly during the
+tracer time step via `conv2`.
+
+Restricted to ice-covered cells (`imask`) for the same reason as
+[`ResetToAmbient`](@ref) — relaxing a gap cell towards surface ambient is a slower
+version of the same sink.
+"""
+function update_convection!(m, ::RelaxToAmbient)
+    launch!(_flag_unstable_ice_kernel!, m.convection, m.drho, m.imask)
+end
+
+@kernel function _flag_unstable_ice_kernel!(convection, @Const(drho), @Const(imask))
+    i, j = @index(Global, NTuple)
+    FT = eltype(convection)
+    @inbounds convection[i, j] =
+        ifelse((drho[i, j] < 0) & (imask[i, j] > 0), one(FT), zero(FT))
+end
+
+update_convection!(m) = update_convection!(m, m.convection_scheme)

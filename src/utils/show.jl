@@ -53,7 +53,7 @@ end
 # The ice forcing is one field, so summarise it as a range rather than printing a
 # whole matrix; a uniform field collapses to the single value.
 Base.show(io::IO, f::AbstractIceForcing) =
-    print(io, "$(nameof(typeof(f)))(T_ice_base = $(_range_str(f.T_ice_base, 2)) °C)")
+    print(io, "$(nameof(typeof(f)))(T_ice_farfield = $(_range_str(f.T_ice_farfield, 2)) °C)")
 
 Base.show(io::IO, f::CavityForcing) = print(io, f.ocean, "\n  ice: ", f.ice)
 

@@ -1,4 +1,4 @@
-# Ocean and ice forcing: profile resampling, ambient lookup, ice temperature (T_ice_base).
+# Ocean and ice forcing: profile resampling, ambient lookup, ice temperature (T_ice_farfield).
 
 @testset "OceanForcing1D: resampling, sorting, flat extrapolation" begin
     z_c = [-1000.0, -500.0, -100.0]
@@ -82,14 +82,14 @@ end
     @test m2.Sa[act] ≈ m1.Sa[act]
 end
 
-@testset "Ice forcing: scalar and 2D T_ice_base, default is inert" begin
-    # T_ice_base moved out of Params and into the forcing.  The default must
+@testset "Ice forcing: scalar and 2D T_ice_farfield, default is inert" begin
+    # T_ice_farfield moved out of Params and into the forcing.  The default must
     # reproduce the old scalar Params.T_i = -25.0 exactly, or every existing
     # result shifts.
     m_def = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
-    @test m_def.model.T_ice_base isa Matrix{FT}
-    @test size(m_def.model.T_ice_base) == size(m_def.model.tmask)
-    @test all(m_def.model.T_ice_base .== -25)
+    @test m_def.model.T_ice_farfield isa Matrix{FT}
+    @test size(m_def.model.T_ice_farfield) == size(m_def.model.tmask)
+    @test all(m_def.model.T_ice_farfield .== -25)
     @test !hasfield(typeof(getfield(m_def.model, :params)), :T_i)
 
     mask0 = copy(m_def.model.mask); zd0 = copy(m_def.model.z_draft)
@@ -146,13 +146,13 @@ end
     m_crop = Model(Grid(mask0, zd0, 2000.0, 2000.0; FT,
                         domain_cropping = MinRectangleDomainCropping(margin = 2));
                    forcing = CavityForcing(ISOMIPForcing(:warm; FT), PrescribedIceForcing(marked)))
-    @test size(m_crop.T_ice_base) == size(m_crop.tmask)
-    @test count(==(FT(-2.0)), m_crop.T_ice_base) == 1
+    @test size(m_crop.T_ice_farfield) == size(m_crop.tmask)
+    @test count(==(FT(-2.0)), m_crop.T_ice_farfield) == 1
 
     # A bare ocean forcing still works and picks up the default ice.
     m_bare = Model(grid0; forcing = ISOMIPForcing(:warm; FT))
     @test getfield(m_bare, :forcing) isa CavityForcing
-    @test all(m_bare.T_ice_base .== Laddie.DEFAULT_T_ICE_BASE)
+    @test all(m_bare.T_ice_farfield .== Laddie.DEFAULT_T_ICE_FARFIELD)
 end
 
 @testset "PerBasinOceanForcing1D: each basin samples its own profile" begin

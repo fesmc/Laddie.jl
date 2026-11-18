@@ -122,7 +122,7 @@ pattern.
 ## Ice temperature
 
 ``T_i`` comes from the **ice forcing**, not the parameter set: [`PrescribedIceForcing`](@ref)
-holds it (as `T_ice_base`) as a scalar or as a 2D field, so a temperate ice front can sit
+holds it (as `T_ice_farfield`) as a scalar or as a 2D field, so a temperate ice front can sit
 next to a cold interior. Despite the field name, it is not the temperature at the ice
 base: the base is at ``T_b``, the freezing point, and ``T_i`` is the temperature of the
 ice above the thin thermal boundary layer at the base — the surface temperature for a

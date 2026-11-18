@@ -37,7 +37,7 @@ end
     @test cf isa CavityForcing
     @test all(isconcretetype, fieldtypes(typeof(cf)))
     @test all(isconcretetype, fieldtypes(typeof(cf.ice)))
-    @test cf.ice.T_ice_base isa Matrix{FT}
+    @test cf.ice.T_ice_farfield isa Matrix{FT}
 end
 
 @testset "Model property forwarding: collision guard" begin

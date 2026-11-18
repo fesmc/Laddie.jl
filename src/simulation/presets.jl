@@ -19,8 +19,8 @@ Convenience constructor for the idealised ISOMIP+ channel geometry
 - `z_draft_gl`, `z_draft_front`: ice-draft depth at grounding line and ice front in
   metres (default −720 m and −200 m).
 - `isomipcond`: `:warm` (1 °C at depth) or `:cold` (nearly freezing).
-- `ice_forcing`: an `AbstractIceForcing` supplying the ice temperature `T_ice_base`
-  (default: uniform `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`).
+- `ice_forcing`: an `AbstractIceForcing` supplying the ice temperature `T_ice_farfield`
+  (default: uniform `PrescribedIceForcing($(DEFAULT_T_ICE_FARFIELD))`).
 - `FT`: floating-point precision type (default `Float64`; use `Float32` for GPU).
 - `params`: `Params` object (default `Params(; FT)`, the ISOMIP+-canonical values).
 - `domain_cropping`, `preprocess`: forwarded to `Grid`.
@@ -102,8 +102,8 @@ const DEFAULT_PAPERS_DIR = joinpath(dirname(dirname(@__DIR__)), "papers")
 
 # The ice temperature of the v1 runs (`Ti` in every config) and of the standalone
 # v2 runs (UPSY's default uniform ice temperature, 270 K).
-const T_ICE_BASE_V1 = -25.0
-const T_ICE_BASE_V2 = 270.0 - 273.15
+const T_ICE_FARFIELD_V1 = -25.0
+const T_ICE_FARFIELD_V2 = 270.0 - 273.15
 
 # Merge the setup's values with the caller's overrides into a `Params`.
 _reproduction_params(setup::NamedTuple, FT, overrides) =
@@ -218,7 +218,7 @@ function _v1_simulation(
     simulation_kwargs,
 )
     grid = Grid(mask, z_draft, dx, dx; backend, FT, domain_cropping = NoDomainCropping())
-    forcing = CavityForcing(ocean, PrescribedIceForcing(T_ICE_BASE_V1))
+    forcing = CavityForcing(ocean, PrescribedIceForcing(T_ICE_FARFIELD_V1))
     model = Model(grid; forcing, params, boundary)
     return Simulation(
         model;
@@ -298,7 +298,7 @@ stored in `datadir/lambert-2023/data/CrossDots_0.5_tanh_Tdeep0.4_ztcl-500_050.nc
 
 - forcing: v1 'tanh' profile, T from the surface freezing point (S0 = 34) to 0.4 °C,
   thermocline at −500 m with scale 250 m, `drho0 = 0.01` (fitted to the file's
-  ambient fields to 1e−4 °C); `T_ice_base = -25 °C`
+  ambient fields to 1e−4 °C); `T_ice_farfield = -25 °C`
 - `dt = 120` s, 50 days, Robert–Asselin `nu = 0.8`
 - v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), the v1 ice-slope stencil [`CentredGradient`](@ref)
 
@@ -331,7 +331,7 @@ in `datadir/lambert-2023/data/FRIS_1.0_linear_S134.8_T1-2.3_720.nc`.
 
 - forcing: v1 'linear' profile, T from the surface freezing point to −2.3 °C and S from
   34.5 to 34.8 psu at −2000 m (matches the file's ambient fields to round-off);
-  `T_ice_base = -25 °C`
+  `T_ice_farfield = -25 °C`
 - `dt = 240` s, 720 days, Robert–Asselin `nu = 0.8`
 - v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredGradient`](@ref)
 
@@ -366,7 +366,7 @@ stored in `datadir/lambert-2023/data/PIG.nc`.
 - geometry: the file holds no mask, so it is rebuilt from the stored ice thickness
   and bed by flotation with BedMachine's densities (917 and 1027 kg m⁻³)
 - forcing: v1 'tanh' as Crosson–Dotson, but 1.0 °C at depth and the thermocline at
-  −450 m; `T_ice_base = -25 °C`
+  −450 m; `T_ice_farfield = -25 °C`
 - `dt = 120` s, 30 days, Robert–Asselin `nu = 0.8`
 - v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredGradient`](@ref)
 
@@ -421,7 +421,7 @@ with Δx = 500 m in every derivative, and so is this simulation: `Grid(…, 500,
 the 1 km cells.  [`SimulationASEv1Theoretical`](@ref) is the consistent 1 km run.
 
 - forcing: v1 'tanh', surface freezing point (S0 = 34) to 1.0 °C, thermocline at
-  −450 m with scale 100 m, `drho0 = 0.01`; `T_ice_base = -25 °C`
+  −450 m with scale 100 m, `drho0 = 0.01`; `T_ice_farfield = -25 °C`
 - `dt = 30` s, 20 days, Robert–Asselin `nu = 0.8`
 - v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredGradient`](@ref)
 
@@ -568,7 +568,7 @@ function _v2_simulation(
     simulation_kwargs,
 )
     grid = Grid(mask, z_draft, dx, dx; backend, FT)
-    forcing = CavityForcing(ocean, PrescribedIceForcing(T_ICE_BASE_V2))
+    forcing = CavityForcing(ocean, PrescribedIceForcing(T_ICE_FARFIELD_V2))
     model = Model(grid; forcing, params, boundary)
     return Simulation(
         model;
@@ -773,7 +773,7 @@ Ocean1 geometry remapped to a regular grid in
 `datadir/lambert-2026/results/isomip_ocean1/laddie_output_grid.nc`; the shelf is the
 ice that floats there.
 
-- forcing: ISOMIP+ warm, sampled every 100 m as v2 does; `T_ice_base = -3.15 °C`
+- forcing: ISOMIP+ warm, sampled every 100 m as v2 does; `T_ice_farfield = -3.15 °C`
 - `dt = 90` s, 20 days
 - v2 walls (the defaults: slip factor 1, no momentum across walls)
 
@@ -801,7 +801,7 @@ remapped to the regular 1 km grid in `datadir/lambert-2026/results/ASE/laddie_ou
 (the run used 1.2 km triangles); the shelf is the ice that floats there.
 
 - forcing: UFEMISM 'TANH', surface freezing point to 1.0 °C, thermocline at 450 m with
-  scale 100 m, sampled every 100 m; `T_ice_base = -3.15 °C`
+  scale 100 m, sampled every 100 m; `T_ice_farfield = -3.15 °C`
 - `dt = 30` s, 20 days
 - v2 walls (the defaults: slip factor 1, no momentum across walls)
 
@@ -845,7 +845,7 @@ Sect. 4)](@cite lambert_one-layer_2026), standalone on the spun-up ice geometry 
 coupled run used 1 km triangles on the shelf).  A sanity check, not a coupled run.
 
 - forcing: UFEMISM 'TANH', surface freezing point to 1.5 °C, thermocline at 450 m with
-  scale 100 m, sampled every 100 m; `T_ice_base = -3.15 °C`
+  scale 100 m, sampled every 100 m; `T_ice_farfield = -3.15 °C`
 - `dt = 60` s, 10 days (the config's initial LADDIE run)
 - v2 walls (the defaults: slip factor 1, no momentum across walls)
 
@@ -881,7 +881,7 @@ mesh only); this uses the MISOMIP+ spin-up of [Lambert et al. (2026)](@cite lamb
 
 - `ocean`: `:ocean1`, `:ocean2` or `:ocean3`, deep temperature −1, 0 or 1 °C under a
   thermocline at 450 m (UFEMISM 'TANH', which keeps the density profile identical
-  across the three, as the paper requires); `T_ice_base = -3.15 °C`
+  across the three, as the paper requires); `T_ice_farfield = -3.15 °C`
 - `gaps`: [`SinkGapsBC`](@ref) (the paper's "sink", LADDIE's default) or
   [`ConnectedGapsBC`](@ref) ("connected"); without gaps in the initial geometry both
   give the same run

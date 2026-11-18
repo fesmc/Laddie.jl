@@ -42,7 +42,7 @@ struct ReservedNameForcing <: Laddie.AbstractOceanForcing
 end
 
 struct CollidingIceForcing <: Laddie.AbstractIceForcing
-    T_ice_base::Matrix{Float64}
+    T_ice_farfield::Matrix{Float64}
     Tz::Vector{Float64}   # collides with the ocean forcing's profile
     CollidingIceForcing(T) = new(T, Float64[])
 end

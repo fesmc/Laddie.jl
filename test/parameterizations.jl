@@ -177,7 +177,7 @@ end
     # exchange term carries exactly the heat the prescribed melt needs.
     Laddie.update_melt!(m)
     @test m.Tb[ice] ≈ (m.l1 .* m.S.present .+ m.l2 .+ m.l3 .* m.z_draft)[ice]
-    heat = @. m.melt * (m.L - m.c_i * (m.T_ice_base - m.Tb)) / m.c_p
+    heat = @. m.melt * (m.L - m.c_i * (m.T_ice_farfield - m.Tb)) / m.c_p
     @test (m.gamT .* (m.T.present .- m.Tb))[ice] ≈ heat[ice]
     # Melting cools the layer relative to a run without melt.
     sim0 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
@@ -574,7 +574,7 @@ end
         ice = m.imask .> 0
         ci = @. m.c_i * ifelse(m.T.present > Tf, fmelt, ffreeze)
         Hi = @. -m.z_draft * m.rho0_seawater / m.rho_ice
-        q = @. k * (Tf - m.T_ice_base) / (Hi * m.rho_freshwater)
+        q = @. k * (Tf - m.T_ice_farfield) / (Hi * m.rho_freshwater)
         Sb = @. m.gamS * m.S.present / (m.gamS + m.melt)
         # Tb is the liquidus at Sb exactly where there is no melt-proportional conduction.
         # Where there is, the kernel's quadratic takes the m² coefficient as L − c_i T_i
@@ -586,7 +586,7 @@ end
             @test maximum(abs, (m.Tb .- Tliq)[ice]) < 1e-2
         end
         lhs = @. m.c_p * m.gamT * (m.T.present - m.Tb)
-        rhs = @. m.melt * (m.L - ci * (m.T_ice_base - m.Tb)) + q
+        rhs = @. m.melt * (m.L - ci * (m.T_ice_farfield - m.Tb)) + q
         @test lhs[ice] ≈ rhs[ice]
         @test all(isfinite, m.melt) && all(isfinite, m.Tb)
         sign = supercooled ? -1 : 1
@@ -621,8 +621,8 @@ end
         Tf = @. m.l1 * m.S.present + m.l2 + m.l3 * m.z_draft
         ci = @. m.c_i * ifelse(m.T.present > Tf, f1, f2)
         Hi = @. -m.z_draft * m.rho0_seawater / m.rho_ice
-        q = @. k * (Tf - m.T_ice_base) / (Hi * m.rho_freshwater)
-        heat = @. (m.melt * (m.L - ci * (m.T_ice_base - m.Tb)) + q) / m.c_p
+        q = @. k * (Tf - m.T_ice_farfield) / (Hi * m.rho_freshwater)
+        heat = @. (m.melt * (m.L - ci * (m.T_ice_farfield - m.Tb)) + q) / m.c_p
         @test (m.gamT .* (m.T.present .- m.Tb))[ice] ≈ heat[ice]
     end
 
@@ -698,9 +698,9 @@ end
         # The heat balance, linear in ṁ.
         ci = @. m.c_i * ifelse(m.T.present > Tf, fmelt, ffreeze)
         Hi = @. -m.z_draft * m.rho0_seawater / m.rho_ice
-        q = @. k * (Tf - m.T_ice_base) / (Hi * m.rho_freshwater)
+        q = @. k * (Tf - m.T_ice_farfield) / (Hi * m.rho_freshwater)
         lhs = @. m.c_p * m.gamT * (m.T.present - m.Tb)
-        rhs = @. m.melt * (m.L - ci * (m.T_ice_base - m.Tb)) + q
+        rhs = @. m.melt * (m.L - ci * (m.T_ice_farfield - m.Tb)) + q
         @test lhs[ice] ≈ rhs[ice]
         # Gap and open-ocean cells do not melt; their Tb leaves the exchange term at zero.
         @test all(iszero, m.melt[.!ice])

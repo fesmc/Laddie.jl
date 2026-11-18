@@ -85,7 +85,7 @@ _iostate_to_backend(io::IOState, backend) =
 
 # Every non-integer real array of the forcing (floats, and ForwardDiff `Dual`s, which
 # are `Real` but not `AbstractFloat`), so the kernels can read the ambient profiles
-# and T_ice_base on the device.
+# and T_ice_farfield on the device.
 _forcing_to_backend(f::CavityForcing, backend) =
     _mapfields(x -> _forcing_to_backend(x, backend), f)
 _forcing_to_backend(f::Union{AbstractOceanForcing,AbstractIceForcing}, backend) =

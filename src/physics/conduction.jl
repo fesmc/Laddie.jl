@@ -16,7 +16,7 @@ as `Params(; ice_conduction = ...)`:
  - [`LinearProfileConduction`](@ref)
 
 `NoConduction` and `LinearProfileConduction` are experimental and warn when constructed.  The ice
-temperature ``T_i`` they use is the `T_ice_base` of the ice forcing
+temperature ``T_i`` they use is the `T_ice_farfield` of the ice forcing
 ([`PrescribedIceForcing`](@ref)), which plays the role of the ice surface
 temperature ``T_s`` of the paper.
 """
@@ -59,7 +59,7 @@ struct MeltOnlyConduction <: AbstractIceConduction end
 $(TYPEDEF)
 
 No conduction into the ice, `q_cond = 0` ([Wiskandt & Jourdain 2025](@cite wiskandt_brief_2025), Eq. 2A),
-so `L_eff = L` and `T_ice_base` has no effect.  It is a good approximation only
+so `L_eff = L` and `T_ice_farfield` has no effect.  It is a good approximation only
 for a base of marine ice at the freezing point.  Overestimates the melt by
 ``c_i (T_s - T_f)/L``, about 11 % for ``T_s = -20`` °C, compared with
 [`MeltOnlyConduction`](@ref).
@@ -84,7 +84,7 @@ q_cond = (k_i (T_f − T_s))/(ρ_fw H_i),
 ```
 
 with `T_f` the freezing point at the layer salinity (so that `q_cond` does not
-depend on `ṁ` and the melt equation stays quadratic), `T_s` the `T_ice_base` of the
+depend on `ṁ` and the melt equation stays quadratic), `T_s` the `T_ice_farfield` of the
 ice forcing, and ``H_i`` the ice thickness, taken from the draft by hydrostatic
 equilibrium, `H_i = −z_b ρ₀/ρ_ice` with `Params.rho0_seawater` and
 `Params.rho_ice`.  The flux acts for melting and refreezing alike.  A thermal steady

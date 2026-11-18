@@ -38,7 +38,7 @@ equations at ``T - q/(c_p\gamma_T)`` in place of ``T``; see the
 
 !!! warning "Experimental"
     Every parameterisation but the default is experimental, and constructing one logs a warning.
-    The `T_ice_base` of the ice forcing is used as the ice temperature ``T_i`` by all of
+    The `T_ice_farfield` of the ice forcing is used as the ice temperature ``T_i`` by all of
     them. In [Holland & Jenkins (1999)](@cite holland_modeling_1999) and [Wiskandt & Jourdain (2025)](@cite wiskandt_brief_2025)
     this is the ice-shelf *surface* temperature ``T_s`` for every parameterisation (the ice at the
     base itself is at the freezing point); [Wiskandt & Jourdain](@cite wiskandt_brief_2025) use the 1980–2019 mean snow-surface

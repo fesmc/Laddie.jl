@@ -58,7 +58,7 @@ Fields are accessed directly on `m` through a flat forwarding layer:
 | `m.f`, `m.fu`, `m.fv` | `Geometry` | Coriolis at T-, u- and v-points |
 | `m.boundary` | `BoundaryConditions` | `m.boundary.land` (not flattened) |
 | `m.Tz`, `m.Sz`, `m.z` | Forcing (ocean) | ambient profile arrays |
-| `m.T_ice_base` | Forcing (ice) | ice temperature above the basal boundary layer (see `PrescribedIceForcing`) |
+| `m.T_ice_farfield` | Forcing (ice) | ice temperature above the basal boundary layer (see `PrescribedIceForcing`) |
 
 `m.FT` returns the floating-point type (`Float64` or `Float32`) of the scalar
 parameters, which `Model` checks against the grid and forcing, and `m.nx`, `m.ny`
@@ -261,17 +261,17 @@ function _check_scalar_or_field(x, sz, name, desc)
     return x
 end
 
-# Bring a user-supplied ice temperature `T_ice_base` onto the full domain: a scalar is
+# Bring a user-supplied ice temperature `T_ice_farfield` onto the full domain: a scalar is
 # broadcast, a matrix is checked against the grid's input size and converted to FT,
 # so `_crop_ice_forcing` can then slice it with the grid's crop ranges.  Materialising once at build keeps
 # the melt kernel to a single indexed path instead of a scalar and a field variant.
 function _expand_ice_forcing(ice::PrescribedIceForcing, sz, FT)
-    T = _check_scalar_or_field(ice.T_ice_base, sz, "T_ice_base", "ice temperature")
+    T = _check_scalar_or_field(ice.T_ice_farfield, sz, "T_ice_farfield", "ice temperature")
     Tb = T isa AbstractMatrix ? FT.(T) : fill(FT(T), sz)
-    any(isnan, Tb) && throw(ArgumentError("T_ice_base contains NaN"))
+    any(isnan, Tb) && throw(ArgumentError("T_ice_farfield contains NaN"))
     all(<=(0), Tb) || throw(
         ArgumentError(
-            "T_ice_base must be at or below 0 °C (it is ice); found a maximum of " *
+            "T_ice_farfield must be at or below 0 °C (it is ice); found a maximum of " *
             "$(maximum(Tb)) °C",
         ),
     )
@@ -279,10 +279,10 @@ function _expand_ice_forcing(ice::PrescribedIceForcing, sz, FT)
 end
 
 _crop_ice_forcing(ice::PrescribedIceForcing, r, c) =
-    PrescribedIceForcing(ice.T_ice_base[r, c])
+    PrescribedIceForcing(ice.T_ice_farfield[r, c])
 
 # Unknown ice forcings pass through untouched; they are responsible for supplying
-# their own grid-shaped `T_ice_base`.
+# their own grid-shaped `T_ice_farfield`.
 _expand_ice_forcing(ice::AbstractIceForcing, sz, FT) = ice
 _crop_ice_forcing(ice::AbstractIceForcing, r, c) = ice
 
@@ -442,7 +442,7 @@ independently.
 # Keywords
 - `forcing` (required): a `CavityForcing`, or an ocean forcing alone (e.g.
   `ISOMIPForcing`, `OceanForcing1D`), which is paired with a uniform
-  `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`.  A 2D ice temperature `T_ice_base` must
+  `PrescribedIceForcing($(DEFAULT_T_ICE_FARFIELD))`.  A 2D ice temperature `T_ice_farfield` must
   cover the grid's input arrays (`grid.input_size`); it is cropped with the grid.
 - `params`: a `Params` object with all physical constants and parameterizations
   (default `Params(; FT)` at the grid's precision).  A 2D latitude in
@@ -493,7 +493,7 @@ function Model(
     f_t = _coriolis_field(params.coriolis, grid.input_size, FT)[r, c]
     mask = _apply_gaps_bc(grid.mask, boundary.gaps)
     _validate_model_inputs(mask, forcing, params, FT)
-    # The ice forcing is grid-shaped from here on, so `m.T_ice_base` lines up with
+    # The ice forcing is grid-shaped from here on, so `m.T_ice_farfield` lines up with
     # `m.z_draft` and the melt kernel can index it directly; so are per-cell ambient
     # profiles.
     forcing = CavityForcing(_crop_ocean_forcing(forcing.ocean, grid.input_size, r, c), ice)

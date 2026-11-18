@@ -105,7 +105,7 @@ end
     @test meta["forcing"]["ocean"]["Tz_range"][2] ≈ 18.23888888888889
     @test meta["forcing"]["ocean"]["z_range"][1] < 0
     @test meta["forcing"]["ice"]["type"] == "PrescribedIceForcing"
-    @test meta["forcing"]["ice"]["T_ice_base_range"] == [-25.0, -25.0]
+    @test meta["forcing"]["ice"]["T_ice_farfield_range"] == [-25.0, -25.0]
     @test meta["output"]["saveday"] == 0.5
 
     # All output is written into a single output.nc with a time dimension;

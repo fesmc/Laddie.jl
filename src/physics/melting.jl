@@ -286,7 +286,7 @@ const _GAMMA_T_OVER_S = 35
     @Const(z_draft),
     @Const(tmask),
     @Const(imask),
-    @Const(T_ice_base),
+    @Const(T_ice_farfield),
     gamT,
     gamS,
     c_p,
@@ -310,8 +310,8 @@ const _GAMMA_T_OVER_S = 35
         # fixed flux q.  The flux enters the heat balance as c_p·γT·(T − Tb) − q, so it
         # is the temperature T − q/(c_p·γT) that the equations below see.
         ci_eff, q_cond =
-            _ice_conduction(conduction, c_i, T[i, j], Tf_depth + l1 * S[i, j], T_ice_base[i, j], z_draft[i, j])
-        cp_over_Leff = c_p / (L - ci_eff * T_ice_base[i, j])
+            _ice_conduction(conduction, c_i, T[i, j], Tf_depth + l1 * S[i, j], T_ice_farfield[i, j], z_draft[i, j])
+        cp_over_Leff = c_p / (L - ci_eff * T_ice_farfield[i, j])
         ci_over_cp = ci_eff / c_p
         gT = _at(gamT, i, j)
         gS = _at(gamS, i, j)
@@ -417,7 +417,7 @@ function _launch_three_eq_melt!(m)
         m.z_draft,
         m.tmask,
         m.imask,
-        m.T_ice_base,
+        m.T_ice_farfield,
         gamT,
         gamS,
         m.c_p,
@@ -451,7 +451,7 @@ function update_melt!(m, ::PrescribedMelting)
         m.z_draft,
         m.tmask,
         m.imask,
-        m.T_ice_base,
+        m.T_ice_farfield,
         m.melt_prescribed,
         m.c_p,
         m.c_i,
@@ -480,7 +480,7 @@ end
     @Const(z_draft),
     @Const(tmask),
     @Const(imask),
-    @Const(T_ice_base),
+    @Const(T_ice_farfield),
     @Const(melt_prescribed),
     c_p,
     c_i,
@@ -502,8 +502,8 @@ end
         ice = ocean & !iszero(imask[i, j])
         mdot = melt_prescribed[i, j]
         tb = _freezing_point(S[i, j], z_draft[i, j], l1, l2, l3)
-        ci_eff, q_cond = _ice_conduction(conduction, c_i, T[i, j], tb, T_ice_base[i, j], z_draft[i, j])
-        heat = (mdot * (L - ci_eff * (T_ice_base[i, j] - tb)) + q_cond) / c_p
+        ci_eff, q_cond = _ice_conduction(conduction, c_i, T[i, j], tb, T_ice_farfield[i, j], z_draft[i, j])
+        heat = (mdot * (L - ci_eff * (T_ice_farfield[i, j] - tb)) + q_cond) / c_p
         melt[i, j] = ifelse(ice, mdot, z)
         Tb[i, j] = ifelse(ice, tb, ifelse(ocean, T[i, j], z))
         gamT[i, j] = ifelse(ice, _safe_div(heat, T[i, j] - tb), z)
@@ -568,7 +568,7 @@ function update_melt!(m, mp::TwoEquationMelting)
         m.z_draft,
         m.tmask,
         m.imask,
-        m.T_ice_base,
+        m.T_ice_farfield,
         m.gamT,
         m.c_p,
         m.c_i,
@@ -598,7 +598,7 @@ end
     @Const(z_draft),
     @Const(tmask),
     @Const(imask),
-    @Const(T_ice_base),
+    @Const(T_ice_farfield),
     @Const(gamT),
     c_p,
     c_i,
@@ -614,8 +614,8 @@ end
     FT = typeof(c_p)
     @inbounds begin
         Tf = _freezing_point(S[i, j], z_draft[i, j], l1, l2, l3)
-        ci_eff, q_cond = _ice_conduction(conduction, c_i, T[i, j], Tf, T_ice_base[i, j], z_draft[i, j])
-        melt_rate = (c_p * gamT[i, j] * (T[i, j] - Tf) - q_cond) / (L - ci_eff * (T_ice_base[i, j] - Tf))
+        ci_eff, q_cond = _ice_conduction(conduction, c_i, T[i, j], Tf, T_ice_farfield[i, j], z_draft[i, j])
+        melt_rate = (c_p * gamT[i, j] * (T[i, j] - Tf) - q_cond) / (L - ci_eff * (T_ice_farfield[i, j] - Tf))
         melt[i, j] = iszero(imask[i, j]) ? zero(FT) : melt_rate
         Tb[i, j] = ifelse(iszero(tmask[i, j]), zero(FT), ifelse(iszero(imask[i, j]), T[i, j], Tf))
     end

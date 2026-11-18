@@ -4,7 +4,7 @@
 # A `CavityForcing` bundles the two external drivers of the meltwater layer:
 #   - `ocean` — the ambient T/S the layer entrains and exchanges heat with
 #   - `ice`   — the state of the ice above it; currently the ice temperature above
-#               the basal thermal boundary layer (`T_ice_base`, typically the surface
+#               the basal thermal boundary layer (`T_ice_farfield`, typically the surface
 #               temperature), which sets the heat conducted into the ice
 #
 # Ocean profiles are carried on a uniform z-grid.  The concrete vector type is a
@@ -140,7 +140,7 @@ $(TYPEDEF)
 
 Laterally varying ambient T/S: one vertical profile per grid cell, all on the same
 uniform z-grid.  `Tz` and `Sz` are `(nx, ny, nz)` arrays covering the full domain
-including the border ring (like a 2D `T_ice_base`); `Model` crops them with the
+including the border ring (like a 2D `T_ice_farfield`); `Model` crops them with the
 grid.  Each cell samples its own column at the depth of its plume base, and depths
 outside the grid take the nearest level, as for [`OceanForcing1D`](@ref).
 
@@ -201,7 +201,7 @@ of a domain that spans several basins (e.g. pan-Antarctic) when each basin is fo
 by its own front profile: `n_basins × nz` numbers instead of an
 [`OceanForcing2D`](@ref)'s `nx × ny × nz`.
 
-`basin` covers the full domain including the border ring (like a 2D `T_ice_base`),
+`basin` covers the full domain including the border ring (like a 2D `T_ice_farfield`),
 and `Model` crops it with the grid.  Every cell must hold a valid basin index in
 `1:size(Tz, 1)`, land and ocean included (the ambient kernel runs on every cell).
 Assign cells outside any basin to the nearest one before building the forcing.
@@ -316,7 +316,7 @@ samples them, so the cost is the second table and nothing per step beyond it.  S
 depth interpolation is linear, sampling the blend equals blending the samples.
 
 `from` and `to` must be of the same type ([`OceanForcing1D`](@ref),
-[`PerBasinOceanForcing1D`](@ref) or [`Laddie.OceanForcing2D`](@ref)) on the same depth
+[`PerBasinOceanForcing1D`](@ref) or [`OceanForcing2D`](@ref)) on the same depth
 grid, and a `PerBasinOceanForcing1D` pair on the same basin map.  The weight follows the
 simulation clock: [`time_step!`](@ref) sets it before each step, and a restart sets it
 from the restart's time, so a run restarted within the ramp resumes it.  For a gradual
@@ -384,7 +384,7 @@ Base.show(io::IO, f::RampedOceanForcing) = print(
 
 """
 Supertype of every ice forcing: the state of the ice above the layer.  Subtypes
-must provide `T_ice_base` (°C, ≤ 0), the ice temperature ``T_i`` that the
+must provide `T_ice_farfield` (°C, ≤ 0), the ice temperature ``T_i`` that the
 [`AbstractIceConduction`](@ref) parameterisation uses for the heat conducted into the ice;
 see [`PrescribedIceForcing`](@ref) for what it is and is not.
 """
@@ -395,11 +395,11 @@ $(TYPEDEF)
 
 Ice temperature ``T_i`` held fixed for the whole run.
 
-Despite its name, `T_ice_base` is **not** the temperature at the ice base: the base
+`T_ice_farfield` is the temperature of the ice away from the base, not at it: the base
 is at the interface temperature ``T_b``, the freezing point, which the melt solve
 computes every step.  The ice column is not resolved; the heat conducted into the ice
 is a parameterisation ([`AbstractIceConduction`](@ref)), and ``T_i`` is the temperature of the
-ice *above* the thin thermal boundary layer at the base, into which the ice is advected
+ice *above* the thin thermal boundary layer at the base (its far field), into which the ice is advected
 as it melts.  For [`HollandJenkinsConduction`](@ref) ([Holland & Jenkins
 1999](@cite holland_modeling_1999)) and the default [`MeltOnlyConduction`](@ref), a steady ice column, that is the ice-shelf **surface temperature** (Wiskandt &
 Jourdain 2025 use the 1980–2019 mean snow-surface temperature).  With an ice sheet
@@ -407,36 +407,36 @@ model at hand, the ice temperature 50–100 m above the base, as a 2D field, car
 transient and upstream-advected state of the ice instead.  Were ``T_i`` the basal
 temperature, ``T_i = T_b`` and it would have no effect.
 
-`T_ice_base` may be given as a scalar (uniform ice, the common standalone case)
+`T_ice_farfield` may be given as a scalar (uniform ice, the common standalone case)
 or as a full-domain matrix the same size as `mask`, letting a colder interior sit
 next to a temperate ice front.  `Model` converts either form to an `FT` matrix on
-the model grid, cropping it alongside the mask, so `m.T_ice_base` is always a
+the model grid, cropping it alongside the mask, so `m.T_ice_farfield` is always a
 grid-shaped field.
 
-Colder ice absorbs more heat per unit melt, so a lower `T_ice_base` means less
+Colder ice absorbs more heat per unit melt, so a lower `T_ice_farfield` means less
 melt for the same thermal driving: `L_eff` runs from 3.34e5 J kg⁻¹ at 0 °C to
 3.84e5 at −25 °C, a 15 % spread.
 
 ```jldoctest
 julia> PrescribedIceForcing(-25.0)   # uniform, the default
-PrescribedIceForcing(T_ice_base = -25.0 °C)
+PrescribedIceForcing(T_ice_farfield = -25.0 °C)
 ```
 
-A matrix the size of `mask`, `PrescribedIceForcing(T_ice_matrix)`, gives a 2D ice-base temperature.
+A matrix the size of `mask`, `PrescribedIceForcing(T_ice_matrix)`, gives a 2D ice temperature.
 
 # Fields
 $(TYPEDFIELDS)
 """
 struct PrescribedIceForcing{M} <: AbstractIceForcing
     "ice temperature above the basal boundary layer, typically the surface temperature (°C): a scalar, or a full-domain matrix the size of `mask`"
-    T_ice_base::M
+    T_ice_farfield::M
 end
 
-# Default ice temperature `T_ice_base`, applied when a bare ocean forcing is passed to
+# Default ice temperature `T_ice_farfield`, applied when a bare ocean forcing is passed to
 # `Model` (the ISOMIP+ value).
-const DEFAULT_T_ICE_BASE = -25.0
+const DEFAULT_T_ICE_FARFIELD = -25.0
 
-PrescribedIceForcing() = PrescribedIceForcing(DEFAULT_T_ICE_BASE)
+PrescribedIceForcing() = PrescribedIceForcing(DEFAULT_T_ICE_FARFIELD)
 
 ########################
 # Forcing
@@ -449,7 +449,7 @@ The complete external forcing of a cavity: an ocean forcing and an ice forcing.
 
 `Model` takes one of these. Passing a bare ocean forcing is shorthand for
 `CavityForcing(ocean)`, which pairs it with a uniform
-`PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`.
+`PrescribedIceForcing($(DEFAULT_T_ICE_FARFIELD))`.
 
 ```julia
 CavityForcing(ISOMIPForcing(:warm))                                 # default ice
@@ -462,7 +462,7 @@ $(TYPEDFIELDS)
 struct CavityForcing{O<:AbstractOceanForcing,I<:AbstractIceForcing}
     "the ocean forcing (ambient temperature and salinity)"
     ocean::O
-    "the ice forcing (the ice temperature `T_ice_base`)"
+    "the ice forcing (the ice temperature `T_ice_farfield`)"
     ice::I
 end
 

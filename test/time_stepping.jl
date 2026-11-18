@@ -173,7 +173,7 @@ end
 @testset "AdaptiveDt: accuracy, step count, restart round-trip" begin
     # Accuracy: on 1-day warm ISOMIP+ the adaptive solution tracks the
     # fixed-dt one to within a couple of percent (measured ~1.3% mean, ~1.2%
-    # max).  PyGradient is used here so tolerances reflect the calibrated
+    # max).  CentredGradient is used here so tolerances reflect the calibrated
     # dynamics.
     #
     # NOTE: both models must be built the same way.  This comparison read as a
@@ -183,9 +183,9 @@ end
     # against one capped at 100 m, not fixed-dt against adaptive-dt.  The
     # defaults are unified now and the guard test below keeps them that way.
     mf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      gradient = PyGradient())
+                      params = Params(; FT, ice_slope = CentredGradient()))
     ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      gradient = PyGradient(), tstep = AdaptiveDt())
+                      params = Params(; FT, ice_slope = CentredGradient()), tstep = AdaptiveDt())
     run!(mf; days = 1.0, verbose = false)
     run!(ma; days = 1.0, verbose = false)
     mxf, mnf, _ = meltstats(mf)

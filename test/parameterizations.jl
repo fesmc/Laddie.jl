@@ -98,8 +98,7 @@ end
     @test build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold).model.entrainment isa
           GasparEntrainment
     mk(ep) = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm,
-        gradient = PyGradient(),
-        params = Params(; FT, entrainment = ep, melting = FixedGamTMelting(FT(0.00018)),
+        params = Params(; FT, ice_slope = CentredGradient(), entrainment = ep, melting = FixedGamTMelting(FT(0.00018)),
                         convection_scheme = ResetToAmbient(FT(0.005))))
     m1 = mk(GasparEntrainment(FT(2.5)))
     m2 = mk(GasparEntrainment(FT(1.25)))

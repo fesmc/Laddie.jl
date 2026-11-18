@@ -32,6 +32,7 @@ struct Params{
     MF<:AbstractMomentumForm,
     CL<:AbstractClosureLevel,
     CP<:AbstractCoriolisParameter,
+    IS<:AbstractIceSlopeGradient,
     KT<:AbstractKinks,
 }
     # Dynamics
@@ -124,6 +125,8 @@ struct Params{
     closure_level::CL
     "Coriolis parameter, an [`AbstractCoriolisParameter`](@ref) (default f-plane at `-1.37e-4` s⁻¹)"
     coriolis::CP
+    "stencil of the ice-base slope, an [`AbstractIceSlopeGradient`](@ref) (default `MaskedGradient()`)"
+    ice_slope::IS
     "treatment of the kinks (max/min switches, upwinding, √ at zero), an [`AbstractKinks`](@ref) (default exact)"
     kinks::KT
 end
@@ -189,6 +192,7 @@ _param_defaults() = (
     momentum_form = AdvectiveMomentumForm(),
     closure_level = PresentClosures(),
     coriolis = CoriolisParameter0D(),
+    ice_slope = MaskedGradient(),
     kinks = ExactKinks(),
 )
 

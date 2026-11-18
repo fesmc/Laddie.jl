@@ -124,6 +124,7 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  momentum form  = ", p.momentum_form)
     println(io, "  closure level  = ", p.closure_level)
     println(io, "  coriolis       = ", p.coriolis)
+    println(io, "  ice slope      = ", p.ice_slope)
     print(io, "  kinks          = ", p.kinks)
     return nothing
 end

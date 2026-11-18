@@ -113,7 +113,7 @@ export AbstractMomentumForm, AdvectiveMomentumForm, FluxMomentumForm
 export AbstractClosureLevel, PresentClosures, PastClosures
 export AbstractLaplacianWeights, PresentLaplacianWeights, PastLaplacianWeights
 export AbstractFrontPressure, FullDepthGradient, TruncatedDepthGradient, ZeroGradientFront
-export AbstractIceSlopeGradient, PyGradient, JlGradient
+export AbstractIceSlopeGradient, CentredGradient, MaskedGradient
 export AbstractTimeStepper, FixedDt, AdaptiveDt
 export AbstractCFL, ConservativeCFL, ExactCFL
 export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateEnd

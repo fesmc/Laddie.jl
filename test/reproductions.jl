@@ -47,12 +47,15 @@ end
 # not move what they produce.  The Simulation aliases need `papers/`, which CI does not
 # have, so each parameter set runs on the same small ISOMIP cavity instead: 200 steps of
 # 210 s, mean melt (m/yr) as recorded on 2026-11-17.  A deliberate change of an alias
-# updates its value here and says so.
+# updates its value here and says so.  2026-11-18: the v1 aliases select v1's ice-slope
+# stencil `CentredGradient` themselves; on this cavity it sees z_draft = 0 at the grounded
+# cells (slope 0.18 in the 40 grounding-line and wall cells), so v1 melt rises from ~3.7
+# to ~42 m/yr.
 const REPRODUCTION_MEAN_MELT = (
-    ParamsCrossonDotsonv1 => 3.6672100901724223,
-    ParamsFRISv1 => 26.957092183119325,
-    ParamsPIGv1 => 3.6672100901724223,
-    ParamsASEv1 => 3.6645544580515934,
+    ParamsCrossonDotsonv1 => 41.942167852797816,
+    ParamsFRISv1 => 56.338289385202444,
+    ParamsPIGv1 => 41.942167852797816,
+    ParamsASEv1 => 42.720908649664196,
     ParamsISOMIPv2 => 14.04424152290845,
     ParamsAISv2 => 4.176565541613683,
     ParamsASEv2 => 5.275845144368532,

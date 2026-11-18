@@ -80,7 +80,7 @@ describe one family each:
 | [Simulation end](simulation_end.md) | [`AbstractSimulationEnd`](@ref) | `Simulation(model; stop)`, `run!(sim; until)` | `FixedSimulationEnd()` |
 | [Maximum layer thickness](max_layer_thickness.md) | [`AbstractMaxLayerThickness`](@ref) | `Params(; max_layer_thickness)` | `NoMaxLayerThickness()` |
 | [Tracer bounds](tracer_bounds.md) | [`AbstractTracerBounds`](@ref) | `Params(; tracer_bounds)` | `TracerBounds()` |
-| [Ice-base slope](ice_slope.md) | [`AbstractIceSlopeGradient`](@ref) | `Model(grid; gradient)` | `JlGradient()` |
+| [Ice-base slope](ice_slope.md) | [`AbstractIceSlopeGradient`](@ref) | `Params(; ice_slope)` | `MaskedGradient()` |
 | [Mask preprocessing](preprocessing.md) | [`AbstractPreprocess`](@ref) | `Grid(...; preprocess)` | none |
 | [Domain cropping](domain_cropping.md) | [`AbstractDomainCropping`](@ref) | `Grid(...; domain_cropping)` | `MinRectangleDomainCropping()` |
 

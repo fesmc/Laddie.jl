@@ -8,9 +8,9 @@
     # NumPy-vs-Julia floating-point evaluation-order differences; a physics
     # regression exceeds them by orders of magnitude.
     #
-    # PyGradient() matches the Python LADDIE v1.1 centred-difference stencil
+    # CentredGradient() matches the Python LADDIE v1.1 centred-difference stencil
     # (no mask awareness), so the field residuals are meaningful here.
-    # For production runs use the default JlGradient() which avoids spurious
+    # For production runs use the default MaskedGradient() which avoids spurious
     # slopes from ocean/grounded neighbours.  Likewise the Python walls are v1's
     # slip = 1 (no slip in the viscosity, V1WallAdvection), not the v2 default, and
     # Python steps the tracers in advective form, not the flux-form default.
@@ -18,8 +18,8 @@
     if isfile(py_restart)
         v1_walls = BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
                                       wall_advection = V1WallAdvection())
-        v1_params = Params(; tracer_form = AdvectiveTracerForm())
-        m = build_isomip(; isomipcond = :warm, gradient = PyGradient(), boundary = v1_walls,
+        v1_params = Params(; tracer_form = AdvectiveTracerForm(), ice_slope = CentredGradient())
+        m = build_isomip(; isomipcond = :warm, boundary = v1_walls,
                          params = v1_params)
         run!(m; days = 1.0, verbose = false)
 

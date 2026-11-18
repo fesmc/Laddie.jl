@@ -431,7 +431,7 @@ The model derives everything that depends on its choices from the grid and keeps
 it in its `Geometry`: the gap-resolved mask (`boundary.gaps` decides whether gap
 cells `4` are active or demoted to open ocean, so the same grid can drive both
 treatments), the active-cell and velocity masks, the wall indicators, the
-ice-base slope (`gradient`) and the Coriolis field (`params.coriolis`).
+ice-base slope (`params.ice_slope`) and the Coriolis field (`params.coriolis`).
 
 Land (`1`) and grounded ice (`2`) are both walls to the plume and are unioned into
 `grd`, but they stay distinct throughout: only `2` is a grounding line (`gl`, and
@@ -449,8 +449,6 @@ independently.
   `params.coriolis` is cropped with the grid, like the ice temperature.
 - `boundary`: a [`BoundaryConditions`](@ref) (default `BoundaryConditions()`: LADDIE
   v2's walls, otherwise the conditions both LADDIE versions share).
-- `gradient`: ice-base slope stencil, [`JlGradient`](@ref) (default) or
-  [`PyGradient`](@ref).
 
 The model lives on the grid's backend and precision; `params` and `forcing` must
 match that precision (an `ArgumentError` is thrown otherwise).  It holds its
@@ -480,7 +478,6 @@ function Model(
     forcing,
     params::Params = Params(; FT),
     boundary::BoundaryConditions = BoundaryConditions(),
-    gradient = JlGradient(),
 ) where {FT}
     forcing = _as_cavity_forcing(forcing)
     boundary = _mapfields(bc -> _promote_param(bc, FT), boundary)
@@ -500,7 +497,7 @@ function Model(
     # `m.z_draft` and the melt kernel can index it directly; so are per-cell ambient
     # profiles.
     forcing = CavityForcing(_crop_ocean_forcing(forcing.ocean, grid.input_size, r, c), ice)
-    geometry = Geometry(mask, grid.z_draft, f_t, grid.dx, grid.dy; FT, gradient)
+    geometry = Geometry(mask, grid.z_draft, f_t, grid.dx, grid.dy; FT, ice_slope = params.ice_slope)
     nx_total, ny_total = size(mask)
     state = State(FT, nx_total, ny_total)
     cache = Cache(

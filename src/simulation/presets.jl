@@ -24,7 +24,7 @@ Convenience constructor for the idealised ISOMIP+ channel geometry
 - `FT`: floating-point precision type (default `Float64`; use `Float32` for GPU).
 - `params`: `Params` object (default `Params(; FT)`, the ISOMIP+-canonical values).
 - `domain_cropping`, `preprocess`: forwarded to `Grid`.
-- `boundary`, `gradient`: forwarded to `Model`.
+- `boundary`: forwarded to `Model`.
 - any other keyword (`dt`, `tstep`, `cfl`, `nu`, `stop`, `output`, `restart`,
   `debug`) is forwarded to [`Simulation`](@ref).
 
@@ -49,7 +49,6 @@ function build_isomip(
     ice_forcing = PrescribedIceForcing(),
     params = Params(; FT),
     boundary = BoundaryConditions(),
-    gradient = JlGradient(),
     domain_cropping = NoDomainCropping(),
     preprocess = AbstractPreprocess[],
     simulation_kwargs...,
@@ -76,7 +75,7 @@ function build_isomip(
     forcing = CavityForcing(ISOMIPForcing(isomipcond; FT), ice_forcing)
 
     grid = Grid(mask, z_draft_raw, dx, dy; preprocess, domain_cropping, backend, FT)
-    model = Model(grid; forcing, params, boundary, gradient)
+    model = Model(grid; forcing, params, boundary)
     return Simulation(model; simulation_kwargs...)
 end
 
@@ -149,6 +148,7 @@ _v1_params(; A_h, K_h, H_min, u_tide) = (
     momentum_advection = CentredMomentumAdvection(),
     tracer_form = AdvectiveTracerForm(),
     coriolis = CoriolisParameter0D(-1.37e-4),
+    ice_slope = CentredGradient(),
 )
 
 # v1's `slip = 1` on every wall: no slip in the viscosity, a zero ghost in the
@@ -215,7 +215,7 @@ function _v1_simulation(
 )
     grid = Grid(mask, z_draft, dx, dx; backend, FT, domain_cropping = NoDomainCropping())
     forcing = CavityForcing(ocean, PrescribedIceForcing(T_ICE_BASE_V1))
-    model = Model(grid; forcing, params, boundary, gradient = PyGradient())
+    model = Model(grid; forcing, params, boundary)
     return Simulation(
         model;
         merge((; dt, nu = 0.8, stop = FixedSimulationEnd(days)), values(simulation_kwargs))...,
@@ -296,7 +296,7 @@ stored in `datadir/lambert-2023/data/CrossDots_0.5_tanh_Tdeep0.4_ztcl-500_050.nc
   thermocline at −500 m with scale 250 m, `drho0 = 0.01` (fitted to the file's
   ambient fields to 1e−4 °C); `T_ice_base = -25 °C`
 - `dt = 120` s, 50 days, Robert–Asselin `nu = 0.8`
-- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), the v1 ice-slope stencil [`PyGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), the v1 ice-slope stencil [`CentredGradient`](@ref)
 
 `params` defaults to [`ParamsCrossonDotsonv1`](@ref); other keywords go to
 [`Simulation`](@ref) and override `dt`, `nu` and `stop`.
@@ -329,7 +329,7 @@ in `datadir/lambert-2023/data/FRIS_1.0_linear_S134.8_T1-2.3_720.nc`.
   34.5 to 34.8 psu at −2000 m (matches the file's ambient fields to round-off);
   `T_ice_base = -25 °C`
 - `dt = 240` s, 720 days, Robert–Asselin `nu = 0.8`
-- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`PyGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredGradient`](@ref)
 
 `params` defaults to [`ParamsFRISv1`](@ref); other keywords go to [`Simulation`](@ref).
 
@@ -364,7 +364,7 @@ stored in `datadir/lambert-2023/data/PIG.nc`.
 - forcing: v1 'tanh' as Crosson–Dotson, but 1.0 °C at depth and the thermocline at
   −450 m; `T_ice_base = -25 °C`
 - `dt = 120` s, 30 days, Robert–Asselin `nu = 0.8`
-- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`PyGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredGradient`](@ref)
 
 `params` defaults to [`ParamsPIGv1`](@ref); other keywords go to [`Simulation`](@ref).
 
@@ -419,7 +419,7 @@ the 1 km cells.  [`SimulationASEv1Theoretical`](@ref) is the consistent 1 km run
 - forcing: v1 'tanh', surface freezing point (S0 = 34) to 1.0 °C, thermocline at
   −450 m with scale 100 m, `drho0 = 0.01`; `T_ice_base = -25 °C`
 - `dt = 30` s, 20 days, Robert–Asselin `nu = 0.8`
-- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`PyGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredGradient`](@ref)
 
 `params` defaults to [`ParamsASEv1`](@ref); other keywords go to [`Simulation`](@ref).
 """

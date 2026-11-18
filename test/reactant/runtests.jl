@@ -69,9 +69,9 @@ end
 # (the kernel of RelativeMaxLayerThickness at fraction 1) and OceanForcing2D (not
 # supported by the Reactant backend yet).
 const SCHEME_SCENARIOS = [
-    "mixing" => () -> build_isomip(CPU(); KW..., gradient = PyGradient(),
+    "mixing" => () -> build_isomip(CPU(); KW...,
         cfl = ConservativeCFL(), tstep = AdaptiveDt(),
-        params = Params(; melting = TurbulentGamTMelting(), entrainment = GasparEntrainment(),
+        params = Params(; ice_slope = CentredGradient(), melting = TurbulentGamTMelting(), entrainment = GasparEntrainment(),
                         convection_scheme = RelaxToAmbient(),
                         max_layer_thickness = AbsoluteMaxLayerThickness(50.0),
                         lateral_viscosity = NonlinearLateralViscosity(),

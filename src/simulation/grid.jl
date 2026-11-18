@@ -5,24 +5,25 @@
 
 """
 Abstract supertype for ice-base slope (dzdx/dzdy) computation strategies.
-Pass a concrete instance as the `gradient` keyword to `Model` or
-`build_isomip`.  The slope is part of the model's `Geometry`, not of the
+Pass a concrete instance as `Params(; ice_slope = ...)`: [`MaskedGradient`](@ref)
+(the default) or [`CentredGradient`](@ref).  The slope is computed once, when the
+[`Model`](@ref) is built, and kept in its `Geometry`, not in the
 [`Grid`](@ref): it depends on which cells are active.
 """
 abstract type AbstractIceSlopeGradient end
 
 """
-    PyGradient()
+    CentredGradient()
 
 v1-ported centred-difference gradient: `(zb[i+1] − zb[i−1]) / (2 dx)` applied
 uniformly over all cells with no mask awareness.  Matches the LADDIE v1
 v1.1 stencil exactly and should be used when comparing against the LADDIE v1
 code output.
 """
-struct PyGradient <: AbstractIceSlopeGradient end
+struct CentredGradient <: AbstractIceSlopeGradient end
 
 """
-    JlGradient()
+    MaskedGradient()
 
 Mask-aware gradient (default): the ice-base slope at each shelf cell is
 computed using only shelf-cell neighbours, falling back to one-sided
@@ -30,13 +31,13 @@ differences at ice fronts / grounding lines, and zero when no shelf neighbour
 exists.  This avoids spurious slopes from the physically-incompatible `z_draft`
 values stored at ocean cells (`z_draft=0`) and grounded cells (`z_draft=bed`).
 """
-struct JlGradient <: AbstractIceSlopeGradient end
+struct MaskedGradient <: AbstractIceSlopeGradient end
 
-function _icebase_slope(::PyGradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
+function _icebase_slope(::CentredGradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
     return gradient_x(z_draft_ft, dx_ft), gradient_y(z_draft_ft, dy_ft)
 end
 
-function _icebase_slope(::JlGradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
+function _icebase_slope(::MaskedGradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
     # Only read shelf-cell neighbours to avoid incorporating the
     # physically-incompatible z_draft values at ocean (z_draft=0) and grounded
     # (z_draft=bed) cells, which would produce O(0.2) spurious slopes.
@@ -171,7 +172,7 @@ function Geometry(
     dx,
     dy;
     FT = Float64,
-    gradient = JlGradient(),
+    ice_slope = MaskedGradient(),
 )
     dx_ft = FT(dx)
     dy_ft = FT(dy)
@@ -198,7 +199,7 @@ function Geometry(
     lnd = FT.(mask .== 1)
     ocn = FT.(mask .== 0)
 
-    dzdx, dzdy = _icebase_slope(gradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
+    dzdx, dzdy = _icebase_slope(ice_slope, tmask, z_draft_ft, dx_ft, dy_ft, FT)
 
     tmaskym1 = ym1(tmask)
     tmaskyp1 = yp1(tmask)

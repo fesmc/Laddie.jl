@@ -40,7 +40,7 @@ Laddie.jl; the [table below](#Options-in-each-version) lists them, with the defa
 | open-ocean boundary | `ZeroGradientInflow` | `ZeroGradientInflow` | `ZeroGradientInflow` |
 | ice-front pressure gradient | `FullDepthGradient` | `TruncatedDepthGradient` | `FullDepthGradient` |
 | maximum layer thickness | none that binds | `AbsoluteMaxLayerThickness` | `NoMaxLayerThickness` |
-| ice-base slope | `PyGradient` | no counterpart (mesh) | `JlGradient` |
+| ice-base slope (`ice_slope`) | `CentredGradient` | no counterpart (mesh) | `MaskedGradient` |
 
 \* The aliases below keep the Laddie.jl default for these two: `Params<Setup>v1` has
 `PresentLaplacianWeights`, and `Params<Setup>v2` has `AdvectiveMomentumForm`. Select them

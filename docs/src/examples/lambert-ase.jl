@@ -105,6 +105,7 @@ params = Params(; FT,
     alpha, beta, l1, l2,
     rho0_seawater = rho_sw,
     seconds_per_year = 365 * 86400.0,
+    ice_slope = CentredGradient(),
 )
 boundary = BoundaryConditions(;
     grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0),
@@ -121,7 +122,7 @@ boundary = BoundaryConditions(;
 # of metres. It never recovers, and how far it goes depends on round-off: the CPU and the GPU
 # end up with different results. At 0.3 the two backends agree to four digits.
 
-model = Model(grid; forcing, params, boundary, gradient = PyGradient())
+model = Model(grid; forcing, params, boundary)
 sim = Simulation(model; dt = 30.0, nu = 0.8, tstep = AdaptiveDt(cfl_target = 0.3),
                  output = OutputConfig(; name = "ASE", saveday = 1.0, restday = 20.0,
                                        resultdir = joinpath(pkgdir(Laddie), "docs", "output")))

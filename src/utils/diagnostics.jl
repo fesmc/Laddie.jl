@@ -9,17 +9,18 @@ Return melt-rate and velocity statistics for the current state of a model or
 simulation, as a named tuple.  All reductions execute on the device (GPU-safe);
 results are returned as CPU scalars.
 
-- `max_meltrate`  — maximum basal melt rate, m yr⁻¹
-- `mean_meltrate` — area-mean basal melt rate over ice-covered cells, m yr⁻¹
-- `max_speed`     — maximum depth-averaged current speed |u|, m s⁻¹
-- `total_melt`    — area-integrated basal melt (mass flux), Gt yr⁻¹
+- `max_melt`   — maximum net basal melt rate over ice-covered cells, m yr⁻¹
+- `mean_melt`  — area-mean net basal melt rate over ice-covered cells, m yr⁻¹
+- `max_speed`  — maximum depth-averaged current speed |u|, m s⁻¹
+- `total_melt` — area-integrated net basal melt (mass flux), Gt yr⁻¹
+- `refreezing` — area-integrated refreezing (mass flux), Gt yr⁻¹
 
-Melt rates are freshwater equivalent, the unit the model integrates; multiply by
-`rho_freshwater / rho_ice` for ice equivalent.  `total_melt` is the corresponding
-mass flux, `Σ melt · dx · dy · rho_freshwater`, and is the same in either unit.
-
-The fields keep their order, so `max_melt, mean_melt, max_speed = meltstats(sim)`
-still destructures the first three.
+The net basal melt is the interface melt rate `melt` (negative where the base
+refreezes) minus the frazil-ice formation `frazil`, the basal mass balance of the ice.
+`refreezing` is the ice formed, `Σ (max(−melt, 0) + frazil)`, so `total_melt +
+refreezing` is the melting alone.  Rates are freshwater equivalent, the unit the model
+integrates; multiply by `rho_freshwater / rho_ice` for ice equivalent.  The mass fluxes
+are `Σ rate · dx · dy · rho_freshwater`, the same in either unit.
 
 The melt statistics average over `imask` (ice-covered cells), not `tmask`.  Under
 [`ConnectedGapsBC`](@ref) the two differ: gap cells are dynamically active but ice-free
@@ -36,14 +37,20 @@ function meltstats(m::Model)
     imask = m.imask
     d = m.diag
     n = sum(imask)
-    @. d = m.melt * m.seconds_per_year * imask
-    max_meltrate = maximum(d)
-    melt_sum = sum(d)                             # m yr⁻¹ summed over ice cells
-    mean_meltrate = melt_sum / n
-    total_melt = melt_sum * m.dx * m.dy * m.rho_freshwater / _KG_PER_GT
+    to_gigatonnes = m.dx * m.dy * m.rho_freshwater / _KG_PER_GT
+    # The net melt, m yr⁻¹; the maximum over ice cells only, so that it is negative
+    # where every ice cell refreezes.
+    @. d = ifelse(imask > 0, (m.melt - m.frazil) * m.seconds_per_year, -Inf)
+    max_melt = maximum(d)
+    @. d = (m.melt - m.frazil) * m.seconds_per_year * imask
+    net_sum = sum(d)                              # m yr⁻¹ summed over ice cells
+    mean_melt = net_sum / n
+    total_melt = net_sum * to_gigatonnes
+    @. d = (max(-m.melt, 0) + m.frazil) * m.seconds_per_year * imask
+    refreezing = sum(d) * to_gigatonnes
     _launch_tpoint_diag!(_speed_norm_kernel!, m)
     max_speed = maximum(d)
-    return (; max_meltrate, mean_meltrate, max_speed, total_melt)
+    return (; max_melt, mean_melt, max_speed, total_melt, refreezing)
 end
 
 # Per-cell diagnostics on T-points, written into `m.diag`. Velocities are
@@ -117,8 +124,8 @@ function printdiags(sim)
     # Melt statistics over ice-covered cells, and the largest T-point speed, as
     # reported by `meltstats`.
     stats = meltstats(m)
-    d_Mmax = stats.max_meltrate
-    d_Mav = stats.mean_meltrate
+    d_Mmax = stats.max_melt
+    d_Mav = stats.mean_melt
     d_Mtot = stats.total_melt
     d_Vmax = stats.max_speed
 

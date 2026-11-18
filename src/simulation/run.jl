@@ -279,7 +279,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
             # the CFL monitor, the controller and the progress diagnostics.  All of
             # them see the clean stepped state, before any dt re-bootstrap.
             d = _sync_diagnostics(sim.exec, sim)
-            sample && _steady_sample!(sim, r, until, d.stats.mean_meltrate) && break
+            sample && _steady_sample!(sim, r, until, d.stats.mean_melt) && break
             if sync
                 _check_blowup(sim, d, r.step, nt)
                 # Adjust dt for the upcoming steps (no-op under FixedDt).

@@ -5,12 +5,29 @@
     run!(sim; days = 0.5, verbose = false)
     m = sim.model
     st = meltstats(sim)
-    @test keys(st) == (:max_meltrate, :mean_meltrate, :max_speed, :total_melt)
-    mx, mn, sp = st                                # old three-name form still works
-    @test (mx, mn, sp) == (st.max_meltrate, st.mean_meltrate, st.max_speed)
+    @test keys(st) == (:max_melt, :mean_melt, :max_speed, :total_melt, :refreezing)
     area = sum(m.imask) * m.dx * m.dy
-    @test st.total_melt ≈ st.mean_meltrate * area * m.rho_freshwater / 1e12
+    @test st.total_melt ≈ st.mean_melt * area * m.rho_freshwater / 1e12
     @test st.total_melt > 0
+    @test st.refreezing == 0                       # warm ISOMIP+ melts everywhere
+end
+
+@testset "meltstats: net melt and refreezing close the melt budget" begin
+    # Start supercooled under frazil formation, so that the base refreezes and frazil
+    # forms: the net melt and the refreezing then add up to the melting alone.
+    sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                       params = Params(; FT, frazil_ice = RelaxedFrazilIce()))
+    supercool!(sim.model, FT(0.05))
+    Laddie.advance_leapfrog!(sim.model, sim.clock.dt)   # the supercooled levels become past/present
+    m = sim.model
+    st = meltstats(sim)
+    ice = m.imask .> 0
+    to_gt = m.seconds_per_year * m.dx * m.dy * m.rho_freshwater / 1e12
+    @test any(m.melt[ice] .< 0) && any(m.frazil[ice] .> 0)
+    @test st.refreezing > 0
+    @test st.total_melt + st.refreezing ≈ sum(max.(m.melt[ice], 0)) * to_gt
+    @test st.total_melt ≈ sum(m.melt[ice] .- m.frazil[ice]) * to_gt
+    @test st.max_melt == maximum(m.melt[ice] .- m.frazil[ice]) * m.seconds_per_year
 end
 
 @testset "I/O: optional ustar/drho/convection fields and real coordinates" begin
@@ -299,18 +316,21 @@ end
     NCD.Dataset(joinpath(tmp, "series", "output.nc")) do ds
         @test ds["ts_time"][:] ≈ ds["time"][:]
         @test length(ds["ts_time"]) == 5
-        for (ts, map) in (("ts_H", "H"), ("ts_T", "T"), ("ts_S", "S"), ("ts_m", "melt"),
+        # No frazil: the net melt is the map of `melt`.
+        for (ts, map) in (("ts_H", "H"), ("ts_T", "T"), ("ts_S", "S"), ("ts_mean_melt", "melt"),
                           ("ts_tf", "supercooling"))
             for k in 1:5
                 @test ds[ts][k] ≈ sum(ds[map][:, :, k][ice]) / count(ice)
             end
         end
-        @test ds["ts_m"][end] > 0
-        @test ds["ts_m_gt"][:] ≈
-              ds["ts_m"][:] .* count(ice) .* m.dx .* m.dy .* m.rho_freshwater ./ 1e12
+        @test ds["ts_mean_melt"][end] > 0
+        @test ds["ts_total_melt"][:] ≈
+              ds["ts_mean_melt"][:] .* count(ice) .* m.dx .* m.dy .* m.rho_freshwater ./ 1e12
+        @test all(ds["ts_refreezing"][:] .== 0)
         @test all(isfinite, ds["ts_u_norm"][:])
         @test ds["ts_u_norm"][end] > 0
-        @test ds["ts_m_gt"].attrib["units"] == "Gt yr-1"
+        @test ds["ts_total_melt"].attrib["units"] == "Gt yr-1"
+        @test ds["ts_refreezing"].attrib["units"] == "Gt yr-1"
     end
 
     # Finer than the maps, with the final partial window flushed at the end of run!.
@@ -328,7 +348,7 @@ end
     @test isempty(sim.io.tsacc)
     run!(sim; days = 0.5, verbose = false)
     NCD.Dataset(joinpath(tmp, "noseries", "output.nc")) do ds
-        @test !haskey(ds, "ts_time") && !haskey(ds, "ts_m")
+        @test !haskey(ds, "ts_time") && !haskey(ds, "ts_mean_melt")
     end
 
     # Rejected under Reactant before anything is moved (no extension needed).

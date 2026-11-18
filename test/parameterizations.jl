@@ -169,7 +169,7 @@ end
     ice = m.imask .> 0
     @test all(m.melt[ice] .== FT(5.0) / spy)
     @test all(m.melt[.!ice] .== 0)
-    @test meltstats(sim).mean_meltrate ≈ 5.0
+    @test meltstats(sim).mean_melt ≈ 5.0
     # The flow still develops: u★ and entrainment are computed as usual.
     @test maximum(m.ustar) > 0 && maximum(m.entr) > 0
     @test all(isfinite, m.T.present) && all(isfinite, m.H.present)
@@ -531,7 +531,7 @@ end
     centred = run1(CentredMomentumAdvection())
     upstream = run1(UpstreamMomentumAdvection())
     @test upstream.max_speed <= centred.max_speed
-    @test upstream.mean_meltrate ≈ centred.mean_meltrate rtol = 0.05
+    @test upstream.mean_melt ≈ centred.mean_melt rtol = 0.05
 end
 
 @testset "AbstractIceConduction: closures, heat balance, warnings" begin

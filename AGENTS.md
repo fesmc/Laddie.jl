@@ -188,7 +188,7 @@ List the implementations of a scheme with `using InteractiveUtils; subtypes(Ladd
 using Laddie
 sim = build_isomip(; nx = 40, ny = 20)   # a ready Simulation on an ISOMIP cavity
 run!(sim; days = 0.5, verbose = false)   # clock, output, CFL/dt control, blow-up checks
-meltstats(sim)                           # (max_meltrate, mean_meltrate, max_speed, total_melt)
+meltstats(sim)                           # (max_melt, mean_melt, max_speed, total_melt, refreezing)
 ```
 
 Own geometry: `Simulation(Model(Grid(mask, z_draft, dx, dy); forcing))`. For a GPU, pass the backend

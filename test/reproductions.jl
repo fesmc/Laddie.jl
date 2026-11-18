@@ -70,7 +70,7 @@ const REPRODUCTION_MEAN_MELT = (
         for _ in 1:200
             time_step!(sim)
         end
-        @test isapprox(meltstats(sim).mean_meltrate, mean_melt; rtol = 1e-10)
+        @test isapprox(meltstats(sim).mean_melt, mean_melt; rtol = 1e-10)
     end
 end
 

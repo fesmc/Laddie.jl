@@ -75,8 +75,11 @@ their own time axis `ts_time`:
 | `ts_H`, `ts_T`, `ts_S` | mean layer thickness, temperature, salinity | m, °C, psu |
 | `ts_tf` | mean thermal forcing ``T - T_f(S, z_b)`` (the mean of `:supercooling`) | °C |
 | `ts_u_norm` | mean speed on T-points | m s⁻¹ |
-| `ts_m` | mean basal melt rate | m yr⁻¹ |
-| `ts_m_gt` | total basal melt, freshwater mass | Gt yr⁻¹ |
+| `ts_mean_melt` | mean net basal melt rate, `melt − frazil` | m yr⁻¹ |
+| `ts_total_melt` | total net basal melt, freshwater mass | Gt yr⁻¹ |
+| `ts_refreezing` | total refreezing, `max(−melt, 0) + frazil`, freshwater mass | Gt yr⁻¹ |
+
+As in [`meltstats`](@ref), `ts_total_melt + ts_refreezing` is the melting alone.
 
 The fields are accumulated on the device every step, like the time-averaged maps;
 the spatial means are reduced only once per `tsday`, and the series are written to
@@ -256,9 +259,9 @@ const _OUTPUT_FIELDS = (
     ),
 )
 
-# The fields accumulated for the time series (`_accum_series_kernel!`); `melt` gives
-# both `ts_m` and `ts_m_gt`.
-const _SERIES_FIELDS = (:H, :T, :S, :u_norm, :melt)
+# The fields accumulated for the time series (`_accum_series_kernel!`); `net_melt` gives
+# both `ts_mean_melt` and `ts_total_melt`.
+const _SERIES_FIELDS = (:H, :T, :S, :u_norm, :net_melt, :refreezing)
 
 # The time series written to `output.nc`: name, units, long name.
 const _SERIES = (
@@ -270,8 +273,9 @@ const _SERIES = (
         "mean thermal forcing over ice-covered cells, T - Tf(S, z_draft)",
     ),
     ts_u_norm = ("m s-1", "mean speed on t-grid over ice-covered cells"),
-    ts_m = ("m yr-1", "mean basal melt rate over ice-covered cells"),
-    ts_m_gt = ("Gt yr-1", "total basal melt, freshwater mass"),
+    ts_mean_melt = ("m yr-1", "mean net basal melt rate (melt - frazil) over ice-covered cells"),
+    ts_total_melt = ("Gt yr-1", "total net basal melt (melt - frazil), freshwater mass"),
+    ts_refreezing = ("Gt yr-1", "total refreezing (max(-melt, 0) + frazil), freshwater mass"),
 )
 
 # One time-series point: the time (days) and the series, as host numbers.
@@ -494,13 +498,15 @@ _accum_series!(a, m, dt) = launch!(
     a.T,
     a.S,
     a.u_norm,
-    a.melt,
+    a.net_melt,
+    a.refreezing,
     m.H.present,
     m.T.present,
     m.S.present,
     m.U.present,
     m.V.present,
     m.melt,
+    m.frazil,
     size(a.H, 1),
     size(a.H, 2),
     dt,
@@ -511,13 +517,15 @@ _accum_series!(a, m, dt) = launch!(
     T_acc,
     S_acc,
     u_norm_acc,
-    melt_acc,
+    net_melt_acc,
+    refreezing_acc,
     @Const(H),
     @Const(T),
     @Const(S),
     @Const(U),
     @Const(V),
     @Const(melt),
+    frazil,
     Nx,
     Ny,
     dt,
@@ -533,7 +541,10 @@ _accum_series!(a, m, dt) = launch!(
         T_acc[i, j] += T[i, j] * dt
         S_acc[i, j] += S[i, j] * dt
         u_norm_acc[i, j] += _safe_sqrt(u^2 + v^2) * dt
-        melt_acc[i, j] += melt[i, j] * dt
+        # Net melt and the ice formed: frazil is a scalar zero without a frazil scheme.
+        frazil_ij = _at(frazil, i, j)
+        net_melt_acc[i, j] += (melt[i, j] - frazil_ij) * dt
+        refreezing_acc[i, j] += (max(-melt[i, j], zero(FT)) + frazil_ij) * dt
     end
 end
 
@@ -768,7 +779,9 @@ function _record_series!(sim)
     t = io.ts_t_accum
     shelf_mean(x) = x / (sums.ncells * t)
     seconds_per_year = _float64(m.seconds_per_year)
-    melt_total = sums.melt / t * _float64(m.dx * m.dy * m.rho_freshwater)  # kg s⁻¹
+    to_kg_per_s = _float64(m.dx * m.dy * m.rho_freshwater) / t
+    melt_total = sums.net_melt * to_kg_per_s
+    refreezing_total = sums.refreezing * to_kg_per_s
     # T − T_f(S, z_b) with the liquidus of the melt kernel (as `:supercooling`): linear
     # in T and S, so its mean is that of the mean T and S at the mean draft.
     liquidus =
@@ -782,8 +795,9 @@ function _record_series!(sim)
         shelf_mean(sums.S),
         thermal_forcing,
         shelf_mean(sums.u_norm),
-        shelf_mean(sums.melt) * seconds_per_year,
+        shelf_mean(sums.net_melt) * seconds_per_year,
         melt_total * seconds_per_year / _KG_PER_GT,
+        refreezing_total * seconds_per_year / _KG_PER_GT,
     ))
     push!(io.ts_rows, row)
     io.ts_t_accum = 0.0

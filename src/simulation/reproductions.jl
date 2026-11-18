@@ -17,7 +17,7 @@
 # reproduces its parameters, not its numerics.
 # ============================================================================
 
-const DEFAULT_PAPERS_DIR = joinpath(dirname(@__DIR__), "papers")
+const DEFAULT_PAPERS_DIR = joinpath(dirname(dirname(@__DIR__)), "papers")
 
 # The ice temperature of the v1 runs (`Ti` in every config) and of the standalone
 # v2 runs (UPSY's default uniform ice temperature, 270 K).

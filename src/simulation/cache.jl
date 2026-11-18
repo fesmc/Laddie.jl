@@ -6,10 +6,11 @@ every time step.  The physics outputs are read through the model, e.g.
 `model.melt` (m s⁻¹), `model.entr`, `model.drho`, `model.ustar`, `model.Ta`.
 
 `A` is the concrete matrix type (matching the grid and state).  The scheme-dependent
-slots are scalars or fields: `GamT` (`gamT`, `gamS`) is a field for
-`TurbulentGamTMelting`, `UStarGamTMelting` and `PrescribedMelting`, `Conv2` (`conv2`) for
-`RelaxToAmbient`, `Frz` (`frazil`) for `RelaxedFrazilIce`, `PM` (`melt_prescribed`)
-for `PrescribedMelting`, and `Gap` (`gap_drag`, `gap_heat`) for `LeakyGapsBC`.
+slots are scalars or fields: `GamT` (`gamT`, `gamS`) is a scalar under `FixedGamTMelting`,
+`Conv2` (`conv2`) under `ClampDensity` and `ResetToAmbient`, and `Frz` (`frazil`) under
+`NoFrazilIce`, and a field otherwise, user-defined schemes included; `PM`
+(`melt_prescribed`) is a field for `PrescribedMelting`, and `Gap` (`gap_drag`,
+`gap_heat`) for `LeakyGapsBC`.
 
 `adv`, `lap` and `Hq` are shared by the four stepped equations: U, V, T and S are
 stepped one after another, and each consumes its terms before the next one writes
@@ -77,19 +78,18 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,Frz,PM,Gap}
     diag::A
 end
 
+# A scheme-dependent slot is a field by default, so that a scheme defined outside
+# Laddie can write it; the schemes that never do hold a scalar instead.  Every melt
+# scheme but `FixedGamTMelting` sets per-cell transfer velocities (`PrescribedMelting`
+# reports an equivalent one, see `update_melt!`).
+_gamT_init(FT, nx, ny, ::Type) = zeros(FT, nx, ny)
 _gamT_init(FT, _, _, ::Type{<:FixedGamTMelting}) = zero(FT)
-# PrescribedMelting reports a per-cell equivalent gamT (see `update_melt!`), so it
-# takes the array path like TurbulentGamTMelting.
-_gamT_init(FT, nx, ny, ::Type{<:PrescribedMelting}) = zeros(FT, nx, ny)
-_gamT_init(FT, nx, ny, ::Type{<:TurbulentGamTMelting}) = zeros(FT, nx, ny)
-_gamT_init(FT, nx, ny, ::Type{<:UStarGamTMelting}) = zeros(FT, nx, ny)
-_gamT_init(FT, nx, ny, ::Type{<:TwoEquationMelting}) = zeros(FT, nx, ny)
 _prescribed_init(FT, _, _, ::Type) = zero(FT)
 _prescribed_init(FT, nx, ny, ::Type{<:PrescribedMelting}) = zeros(FT, nx, ny)
+_conv2_init(FT, nx, ny, ::Type) = zeros(FT, nx, ny)
 _conv2_init(FT, _, _, ::Type{<:Union{ClampDensity,ResetToAmbient}}) = zero(FT)
-_conv2_init(FT, nx, ny, ::Type{<:RelaxToAmbient}) = zeros(FT, nx, ny)
+_frazil_init(FT, nx, ny, ::Type) = zeros(FT, nx, ny)
 _frazil_init(FT, _, _, ::Type{<:NoFrazilIce}) = zero(FT)
-_frazil_init(FT, nx, ny, ::Type{<:RelaxedFrazilIce}) = zeros(FT, nx, ny)
 _gap_init(FT, _, _, ::Type) = zero(FT)
 _gap_init(FT, nx, ny, ::Type{<:LeakyGapsBC}) = zeros(FT, nx, ny)
 

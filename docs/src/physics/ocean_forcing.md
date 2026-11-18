@@ -10,7 +10,7 @@ to `Model` pairs it with the default `PrescribedIceForcing(-25.0)`.
 |---|---|---|
 | [`OceanForcing1D`](@ref) | one, for the whole domain | idealised setups and single cavities |
 | [`PerBasinOceanForcing1D`](@ref) | one per basin, with a basin index for every cell | domains spanning several basins (e.g. pan-Antarctic) |
-| [`OceanForcing2D`](@ref) | one per grid cell | laterally varying forcing; not on the Reactant backend |
+| [`OceanForcing2D`](@ref) | one per grid cell | laterally varying forcing |
 | [`RampedOceanForcing`](@ref) | a linear ramp in time between two of the above | a gradual switch, e.g. from a cold to a warm ocean in a spin-up; not on the Reactant backend |
 
 [`ISOMIPForcing`](@ref) builds the warm and cold ISOMIP+ profiles as an `OceanForcing1D`;

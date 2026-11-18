@@ -65,9 +65,19 @@ function per_basin_sim(; kw...)
     return Simulation(Model(grid; forcing); kw...)
 end
 
-# Every non-default scheme, in seven runs.  Not covered: TopographicMaxLayerThickness
-# (the kernel of RelativeMaxLayerThickness at fraction 1) and OceanForcing2D (not
-# supported by the Reactant backend yet).
+# OceanForcing2D: a profile per cell, warmer at depth on one side of the cavity.
+function per_cell_sim(; kw...)
+    grid = build_isomip(CPU(); KW...).model.grid
+    nx, ny = grid.input_size
+    z = collect(-800.0:100.0:0.0)
+    warm(j) = j > ny ÷ 2 ? 1.0 : 0.0
+    Tz = [warm(j) + (-1.9 - warm(j)) * (k - 1) / (length(z) - 1) for _ = 1:nx, j = 1:ny, k = 1:length(z)]
+    Sz = [34.7 - 0.7 * (k - 1) / (length(z) - 1) for _ = 1:nx, _ = 1:ny, k = 1:length(z)]
+    return Simulation(Model(grid; forcing = OceanForcing2D(Tz, Sz, z)); kw...)
+end
+
+# Every non-default scheme, in eight runs.  Not covered: TopographicMaxLayerThickness
+# (the kernel of RelativeMaxLayerThickness at fraction 1).
 const SCHEME_SCENARIOS = [
     "mixing" => () -> build_isomip(CPU(); KW...,
         cfl = ConservativeCFL(), tstep = AdaptiveDt(),
@@ -96,6 +106,7 @@ const SCHEME_SCENARIOS = [
                         convection_scheme = ResetToAmbient())),
     "gaps" => gaps_sim,
     "per-basin forcing" => per_basin_sim,
+    "per-cell forcing" => per_cell_sim,
 ]
 
 @testset "Reactant extension" begin

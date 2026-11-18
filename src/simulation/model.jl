@@ -217,6 +217,8 @@ _scalar_type(::Params{FT}) where {FT} = FT
 _is_traced(p::Params) = _float_type(p) !== _scalar_type(p)
 _float_type(f::Union{OceanForcing1D,OceanForcing2D,PerBasinOceanForcing1D}) = eltype(f.Tz)
 _float_type(f::RampedOceanForcing) = _float_type(f.from)
+# A user-defined ocean forcing: its precision is not known, so it is not checked.
+_float_type(::AbstractOceanForcing) = nothing
 
 # Per-cell ambient profiles cover the grid's input arrays and are cropped with them;
 # a single profile is the same everywhere.
@@ -404,16 +406,17 @@ function _validate_model_inputs(resolved_mask, forcing, params, FT)
             "construct the parameters with Params(; FT = $FT, ...) or build the grid with the matching FT",
         ),
     )
-    forcing.ocean isa Union{OceanForcing1D,OceanForcing2D,PerBasinOceanForcing1D,RampedOceanForcing} || throw(
+    forcing.ocean isa AbstractOceanForcing || throw(
         ArgumentError(
-            "Model needs an OceanForcing1D (one ambient profile for the whole " *
-            "domain), a PerBasinOceanForcing1D (one per basin), an OceanForcing2D " *
+            "Model needs an AbstractOceanForcing, such as an OceanForcing1D (one ambient profile " *
+            "for the whole domain), a PerBasinOceanForcing1D (one per basin), an OceanForcing2D " *
             "(one per cell) or a RampedOceanForcing between two of them; got $(typeof(forcing.ocean)).",
         ),
     )
-    _float_type(forcing) === FT || throw(
+    forcing_type = _float_type(forcing)
+    (forcing_type === nothing || forcing_type === FT) || throw(
         ArgumentError(
-            "forcing holds $(_float_type(forcing)) profiles but the grid is Grid{$FT}; " *
+            "forcing holds $forcing_type profiles but the grid is Grid{$FT}; " *
             "construct the forcing with FT = $FT or build the grid with the matching FT",
         ),
     )

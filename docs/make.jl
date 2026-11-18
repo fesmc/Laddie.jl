@@ -120,6 +120,7 @@ makedocs(;
             "Domain cropping" => "numerics/domain_cropping.md",
         ],
         "Preprocessing" => "preprocessing.md",
+        "Adding a scheme" => "extending.md",
         "Reactant backend" => "reactant.md",
         "Examples" => [
             "ISOMIP+" => "generated/isomip.md",

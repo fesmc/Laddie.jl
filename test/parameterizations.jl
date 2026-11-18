@@ -876,3 +876,45 @@ end
     @test all(isfinite, melt_smooth) && melt_smooth != melt_exact
     @test sum(melt_smooth) ≈ sum(melt_exact) rtol = 1e-2
 end
+
+# Scheme families are open: a scheme defined outside Laddie subtypes the abstract type and
+# implements its methods (see "Adding a scheme" in the docs), and the model runs with it.
+struct UserConstantMelt <: AbstractMelting
+    rate::Float64   # m s⁻¹
+end
+function Laddie.update_melt!(m, s::UserConstantMelt)
+    Laddie.update_ustar!(m)                       # u★ drives the entrainment too
+    m.melt .= s.rate .* m.imask
+    m.Tb .= m.l1 .* m.S.present .+ m.l2 .+ m.l3 .* m.z_draft
+    return nothing
+end
+
+struct UserNoConvection <: AbstractConvectionScheme end
+Laddie.update_convection!(m, ::UserNoConvection) = (fill!(m.convection, 0); nothing)
+
+# A forcing's fields are forwarded by the model (`m.T_uniform`), so their names must not
+# be those of other model fields (`T` would clash with the state).
+struct UserUniformOcean <: AbstractOceanForcing
+    T_uniform::Float64   # °C
+    S_uniform::Float64   # psu
+end
+Laddie._update_ambient_fields!(m, o::UserUniformOcean) = (m.Ta .= o.T_uniform; m.Sa .= o.S_uniform; nothing)
+
+@testset "User-defined schemes and forcings run" begin
+    rate = 10 / 31_557_600                        # 10 m/yr
+    sim = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm,
+                       params = Params(; melting = UserConstantMelt(rate),
+                                       convection_scheme = UserNoConvection()))
+    run!(sim; days = 0.2, verbose = false)
+    m = sim.model
+    @test m.gamT isa Matrix{Float64}              # an unknown melt scheme gets fields
+    @test m.conv2 isa Matrix{Float64}
+    @test meltstats(sim).mean_melt ≈ 10 rtol = 1e-3
+    @test all(isfinite, m.T.present) && all(isfinite, m.H.present)
+
+    grid = build_isomip(CPU(); nx = 20, ny = 10).model.grid
+    sim = Simulation(Model(grid; forcing = UserUniformOcean(0.5, 34.6)); dt = 210.0)
+    @test all(sim.model.Ta[sim.model.tmask .> 0] .== 0.5)
+    run!(sim; days = 0.2, verbose = false)
+    @test all(isfinite, sim.model.melt) && meltstats(sim).mean_melt > 0
+end

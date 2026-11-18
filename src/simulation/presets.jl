@@ -149,6 +149,10 @@ _v1_params(; A_h, K_h, H_min, u_tide) = (
     tracer_form = AdvectiveTracerForm(),
     coriolis = CoriolisParameter0D(-1.37e-4),
     ice_slope = CentredGradient(),
+    # Pinned, so that a change of the model-wide default does not move these runs.
+    momentum_form = AdvectiveMomentumForm(),
+    closure_level = PresentClosures(),
+    tracer_bounds = TracerBounds(),
 )
 
 # v1's `slip = 1` on every wall: no slip in the viscosity, a zero ghost in the
@@ -494,6 +498,10 @@ _v2_params(; C_d_top, melting, C_visc, K_h, H_min, H_init, v_cut, H_max, buoyanc
     momentum_advection = UpstreamMomentumAdvection(),
     tracer_form = FluxTracerForm(),
     coriolis = CoriolisParameter0D(-1.37e-4),
+    # Pinned, so that a change of the model-wide default does not move these runs.
+    momentum_form = AdvectiveMomentumForm(),
+    closure_level = PresentClosures(),
+    tracer_bounds = TracerBounds(),
 )
 
 # Zero velocity one grid spacing behind every wall (v2's "no slip"), no momentum

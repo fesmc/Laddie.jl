@@ -732,13 +732,6 @@ end
 
 # Tracer bounds inside the domain only; see `leapfrog_step!`.
 # `quantity` is `Val(:T)` or `Val(:S)`, the ε of `SmoothKinks` it takes.
-@kernel function _clamp_tracer_kernel!(q, @Const(tmask), q_min, q_max, kinks, quantity)
-    q_min, q_max = _val(q_min), _val(q_max)
-    i, j = @index(Global, NTuple)
-    @inbounds q[i, j] =
-        ifelse(tmask[i, j] > 0, _sclamp(kinks, q[i, j], q_min, q_max, _kink_width(kinks, quantity)), q[i, j])
-end
-
 @kernel function _nan_on_shelf_kernel!(flag, @Const(arr), @Const(tmask))
     i, j = @index(Global, NTuple)
     @inbounds flag[i, j] = isnan(arr[i, j]) & (tmask[i, j] > 0)
@@ -773,23 +766,14 @@ function leapfrog_step!(m, dt, nsteps; check_nans = false, clock = nothing)
     check_nans && _check_nans_shelf!(m, "U", m.U.future, clock)
     check_nans && _check_nans_shelf!(m, "V", m.V.future, clock)
 
-    # Tracer bounds (`Params.T_min` … `S_max`).  LADDIE v2 has no counterpart — it
-    # assigns T and S only from the flux-form integration and never bounds them —
-    # and they carry a real cost:
-    # with the tracers pinned the melt rate is bounded too, so an unstable run stays
-    # finite and `_check_blowup` cannot see it.  They are kept because they hold
-    # real-world domains together.
-    #
-    # Applied inside the domain only: unmasked, the salinity floor would raise every
-    # inactive cell from S = 0 to S_min, breaking the invariant that prognostics are
-    # zero outside `tmask` (see `_clamp_thickness!`).
+    # Tracer bounds (`Params.tracer_bounds`, see `AbstractTracerBounds`).
     step_temperature!(m, span)
-    launch!(_clamp_tracer_kernel!, m.T.future, m.tmask, m.T_min, m.T_max, m.params.kinks, Val(:T))
+    apply_tracer_bounds!(m, m.T.future, Val(:T))
     check_nans && _check_nans_shelf!(m, "T", m.T.future, clock)
 
     step_salinity!(m, span)
     _gap_surface!(m, m.gap_heat, span)
-    launch!(_clamp_tracer_kernel!, m.S.future, m.tmask, m.S_min, m.S_max, m.params.kinks, Val(:S))
+    apply_tracer_bounds!(m, m.S.future, Val(:S))
     check_nans && _check_nans_shelf!(m, "S", m.S.future, clock)
     return
 end

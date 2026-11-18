@@ -48,11 +48,15 @@ end
     @test all(isfinite, m.model.melt) && eltype(m.model.melt) == Float32
 end
 
-@testset "Tracer bounds are parameters" begin
-    p = Params(; FT)
-    @test (p.T_min, p.T_max, p.S_min, p.S_max) == (-5, 5, 32, 36)
+@testset "Tracer bounds are a scheme" begin
+    b = Params(; FT).tracer_bounds
+    @test b isa TracerBounds{FT}
+    @test (b.T_min, b.T_max, b.S_min, b.S_max) == (-5, 5, 32, 36)
+    @test_throws ArgumentError TracerBounds(; T_min = 1.0, T_max = 0.0)
+    @test_throws ArgumentError TracerBounds(; S_min = 36.0, S_max = 36.0)
+    @test TracerBounds(; T_min = -5, S_max = Inf) isa TracerBounds{Float64}
     sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                       params = Params(; FT, T_max = 0.5, S_min = 34.0))
+                       params = Params(; FT, tracer_bounds = TracerBounds(; T_max = 0.5, S_min = 34.0)))
     run!(sim; days = 0.5, verbose = false)
     m = sim.model
     act = m.tmask .> 0
@@ -60,4 +64,12 @@ end
     @test maximum(m.T.future[act]) <= 0.5
     @test minimum(m.S.future[act]) >= 34.0
     @test all(m.S.future[.!act] .== 0)          # never applied outside the domain
+
+    # No bounds is the same run as infinite bounds, without the clamp kernel.
+    run_with(bounds) = (s = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                                         params = Params(; FT, tracer_bounds = bounds));
+                        run!(s; days = 0.2, verbose = false); s.model)
+    free = run_with(NoTracerBounds())
+    wide = run_with(TracerBounds(; T_min = -Inf, T_max = Inf, S_min = -Inf, S_max = Inf))
+    @test free.T.present == wide.T.present && free.S.present == wide.S.present
 end

@@ -113,6 +113,7 @@ makedocs(;
             "CFL number" => "numerics/cfl.md",
             "Simulation end" => "numerics/simulation_end.md",
             "Maximum layer thickness" => "numerics/max_layer_thickness.md",
+            "Tracer bounds" => "numerics/tracer_bounds.md",
             "Kinks" => "numerics/kinks.md",
             "Ice-base slope" => "numerics/ice_slope.md",
             "Mask preprocessing" => "numerics/preprocessing.md",

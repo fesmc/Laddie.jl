@@ -115,6 +115,7 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  ice conduction = ", p.ice_conduction)
     println(io, "  eq. of state   = ", p.equation_of_state)
     println(io, "  max layer H    = ", p.max_layer_thickness)
+    println(io, "  tracer bounds  = ", p.tracer_bounds)
     println(io, "  lat. viscosity = ", p.lateral_viscosity)
     println(io, "  lap. weights   = ", p.laplacian_weights)
     println(io, "  front pressure = ", p.front_pressure)

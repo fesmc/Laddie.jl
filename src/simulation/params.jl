@@ -23,6 +23,7 @@ struct Params{
     IC<:AbstractIceConduction,
     EQ<:AbstractEquationOfState,
     MLT<:AbstractMaxLayerThickness,
+    TB<:AbstractTracerBounds,
     LV<:AbstractLateralViscosity,
     LW<:AbstractLaplacianWeights,
     FP<:AbstractFrontPressure,
@@ -85,15 +86,6 @@ struct Params{
     dT_init::FT
     "initial salinity offset from the ambient water (psu, default `-0.1`)"
     dS_init::FT
-    # Tracer bounds (applied in the active domain after each tracer step)
-    "lower temperature bound (°C, default `-5`)"
-    T_min::FT
-    "upper temperature bound (°C, default `5`)"
-    T_max::FT
-    "lower salinity bound (psu, default `32`)"
-    S_min::FT
-    "upper salinity bound (psu, default `36`)"
-    S_max::FT
     # Unit conversions
     "seconds per day, for the day-based simulation and output times (default `86400`)"
     seconds_per_day::FT
@@ -114,6 +106,8 @@ struct Params{
     equation_of_state::EQ
     "upper bound on the layer thickness, an [`AbstractMaxLayerThickness`](@ref) (default none)"
     max_layer_thickness::MLT
+    "bounds on the layer temperature and salinity, an [`AbstractTracerBounds`](@ref) (default `TracerBounds()`)"
+    tracer_bounds::TB
     "lateral momentum viscosity, an [`AbstractLateralViscosity`](@ref) (default constant `A_h`)"
     lateral_viscosity::LV
     "time level of the Laplacian thickness weights, an [`AbstractLaplacianWeights`](@ref)"
@@ -177,10 +171,6 @@ _param_defaults() = (
     H_init = 10.0,
     dT_init = 0.0,
     dS_init = -0.1,
-    T_min = -5.0,
-    T_max = 5.0,
-    S_min = 32.0,
-    S_max = 36.0,
     seconds_per_day = 86400.0,
     seconds_per_year = 365.25 * 24 * 3600,
     entrainment = GasparEntrainment(2.5),
@@ -190,6 +180,7 @@ _param_defaults() = (
     ice_conduction = HollandJenkinsConduction(),
     equation_of_state = LinearEOS(),
     max_layer_thickness = NoMaxLayerThickness(),
+    tracer_bounds = TracerBounds(),
     lateral_viscosity = PrescribedLateralViscosity(),
     laplacian_weights = PresentLaplacianWeights(),
     front_pressure = FullDepthGradient(),
@@ -219,11 +210,8 @@ TurbulentGamTMelting{Float32}(13.8f0, 2432.0f0, 1.95f-6)
 
 `drho_floor` is the value the reference LADDIE code hard-wires.
 
-`T_min`/`T_max` and `S_min`/`S_max` bound the layer temperature and salinity inside
-the active domain after every tracer step.  They are a stability safeguard for real-world domains — the reference
-LADDIE v2 has no such bounds — and they hide a diverging run from the blow-up
-check, since bounded tracers keep the melt rate finite.  Widen them for fresher
-settings such as Greenland fjords.
+`tracer_bounds` bounds the layer temperature and salinity inside the active domain
+after every tracer step; see [`AbstractTracerBounds`](@ref) for what that costs.
 """
 function Params(; FT = Float64, kwargs...)
     names = fieldnames(Params)

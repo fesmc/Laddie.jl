@@ -18,6 +18,7 @@ include("physics/eos.jl")
 include("physics/max_layer_thickness.jl")
 include("physics/coriolis.jl")
 include("numerics/kinks.jl")
+include("numerics/tracer_bounds.jl")
 include("bcs/walls.jl")
 include("bcs/open_ocean.jl")
 include("bcs/gaps.jl")
@@ -86,6 +87,7 @@ export AbstractIceConduction, HollandJenkinsConduction, MeltOnlyConduction, NoCo
     LinearProfileConduction
 export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D
 export AbstractKinks, ExactKinks, SmoothKinks
+export AbstractTracerBounds, NoTracerBounds, TracerBounds
 export AbstractMaxLayerThickness,
     NoMaxLayerThickness,
     AbsoluteMaxLayerThickness,

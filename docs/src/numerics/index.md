@@ -53,7 +53,7 @@ Several limiters guard against numerical blow-up in extreme conditions:
   what remains.
 - A **speed cutoff** ``v_\text{cut}`` scales both velocity components by one
   factor wherever the speed exceeds it, preserving the flow direction.
-- **Tracer bounds** (`Params.T_min` … `S_max`) keep ``T`` and ``S`` in a plausible
+- [Tracer bounds](tracer_bounds.md) keep ``T`` and ``S`` in a plausible
   range; note that they also hide a diverging run from the blow-up check.
 - An optional [maximum layer thickness](max_layer_thickness.md), off by default,
   enforced the same way through detrainment of layer water at its own ``T``, ``S``
@@ -79,6 +79,7 @@ describe one family each:
 | [CFL number](cfl.md) | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `ExactCFL()` |
 | [Simulation end](simulation_end.md) | [`AbstractSimulationEnd`](@ref) | `Simulation(model; stop)`, `run!(sim; until)` | `FixedSimulationEnd()` |
 | [Maximum layer thickness](max_layer_thickness.md) | [`AbstractMaxLayerThickness`](@ref) | `Params(; max_layer_thickness)` | `NoMaxLayerThickness()` |
+| [Tracer bounds](tracer_bounds.md) | [`AbstractTracerBounds`](@ref) | `Params(; tracer_bounds)` | `TracerBounds()` |
 | [Ice-base slope](ice_slope.md) | [`AbstractIceSlopeGradient`](@ref) | `Model(grid; gradient)` | `JlGradient()` |
 | [Mask preprocessing](preprocessing.md) | [`AbstractPreprocess`](@ref) | `Grid(...; preprocess)` | none |
 | [Domain cropping](domain_cropping.md) | [`AbstractDomainCropping`](@ref) | `Grid(...; domain_cropping)` | `MinRectangleDomainCropping()` |

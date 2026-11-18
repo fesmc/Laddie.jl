@@ -171,3 +171,84 @@ active cell, and returns the maximum (the default).  Tighter than
 [`ConservativeCFL`](@ref) at the cost of one kernel pass.
 """
 struct ExactCFL <: AbstractCFL end
+
+# ============================================================================
+# CFL number
+# ============================================================================
+
+# The CFL number of a cell per unit time step: advection plus the internal
+# gravity-wave speed c = √(g·max(0, δρ·H)) in both directions.  Launched by
+# `_launch_tpoint_diag!`, with the argument list of `_speed_norm_kernel!`.
+@kernel function _cfl_rate_kernel!(
+    out,
+    @Const(U),
+    @Const(V),
+    @Const(drho),
+    @Const(H),
+    @Const(tmask),
+    g,
+    dx,
+    dy,
+    Nx,
+    Ny,
+)
+    g, dx, dy = _val(g), _val(dx), _val(dy)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = typeof(g)
+        u = (U[i, j] + U[_xm1(i, Nx), j]) / 2
+        v = (V[i, j] + V[i, _ym1(j, Ny)]) / 2
+        c = _safe_sqrt(g * max(zero(FT), drho[i, j] * H[i, j]))
+        out[i, j] = (abs(u) / dx + abs(v) / dy + c / dx + c / dy) * tmask[i, j]
+    end
+end
+
+# The CFL number of the current state, for the dt controller.  `Simulation.cfl`
+# selects ConservativeCFL or ExactCFL.  The device reductions and the host formula
+# that combines them are separate functions, so that the Reactant extension can
+# compile the reductions and still combine them the same way.
+_cfl_number(sim, reductions = _cfl_reductions(sim.model, sim.cfl)) =
+    _float64(sim.clock.dt) * _cfl_rate(sim.model, sim.cfl, reductions)
+
+# Largest δρ·H over the active domain, for the gravity-wave speed.
+function _max_Hdrho(m)
+    @. m.diag = m.drho * m.H.present * m.tmask
+    return maximum(m.diag)
+end
+
+# Conservative: global max of |U|, |V|, and c taken independently, then combined.
+# Overestimates the true CFL but cheap (three scalar reductions).
+function _cfl_reductions(m, ::ConservativeCFL)
+    d = m.diag
+    @. d = abs(m.U.present) * m.umask
+    umax = maximum(d)
+    @. d = abs(m.V.present) * m.vmask
+    vmax = maximum(d)
+    c = sqrt(m.g * max(zero(m.FT), _max_Hdrho(m)))
+    return (umax, vmax, c)
+end
+_cfl_rate(m, ::ConservativeCFL, (umax, vmax, c)) =
+    (_float64(umax) + _float64(c)) / _float64(m.dx) +
+    (_float64(vmax) + _float64(c)) / _float64(m.dy)
+
+# Exact: per-cell CFL using T-point-interpolated velocities; maximum over active
+# cells.  Tighter than ConservativeCFL at the cost of one kernel pass.
+function _cfl_reductions(m, ::ExactCFL)
+    _launch_tpoint_diag!(_cfl_rate_kernel!, m)
+    return (maximum(m.diag),)
+end
+_cfl_rate(m, ::ExactCFL, (rate,)) = _float64(rate)
+
+# Worst-case CFL: the advective term uses the velocity cap `v_cut` instead of the
+# actual speed.  At startup the flow is ~stationary, so the actual CFL is tiny
+# and useless for sizing dt0; this bounds the advective CFL the developing flow
+# can ever reach (it cannot exceed v_cut), while keeping the real gravity-wave
+# term.  Used by the preemptive startup rescue, not the in-loop controller.
+function _cfl_worstcase(sim)
+    m = sim.model
+    FT = m.FT
+    v_cut = _float64(m.v_cut)
+    c = _float64(sqrt(m.g * max(zero(FT), _sync_diagnostics(sim.exec, sim).Hdrho)))
+    return _float64(sim.clock.dt) *
+           ((v_cut + c) / _float64(m.dx) + (v_cut + c) / _float64(m.dy))
+end

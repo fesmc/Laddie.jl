@@ -1,4 +1,86 @@
 # ============================================================================
+# ISOMIP+ geometry builder
+# ============================================================================
+
+"""
+$(TYPEDSIGNATURES)
+
+Convenience constructor for the idealised ISOMIP+ channel geometry
+([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)).  Builds the mask and ice draft analytically, then the
+`Grid`, `Model` and a ready-to-run [`Simulation`](@ref) of it.
+
+# Arguments
+- `backend`: KernelAbstractions backend.  Default `CPU()`; use `CUDABackend()`
+  for NVIDIA GPU, `ROCBackend()` for AMD, `MetalBackend()` for Apple Silicon.
+- `nx`, `ny`: interior cell counts in x and y (default 240 × 40).
+- `dx`, `dy`: cell size in metres (default 2 km).
+- `xgl`: grounding-line x-position in metres (default 20 km).
+- `xfront`: ice-front x-position in metres (default 460 km).
+- `z_draft_gl`, `z_draft_front`: ice-draft depth at grounding line and ice front in
+  metres (default −720 m and −200 m).
+- `isomipcond`: `:warm` (1 °C at depth) or `:cold` (nearly freezing).
+- `ice_forcing`: an `AbstractIceForcing` supplying the ice temperature `T_ice_base`
+  (default: uniform `PrescribedIceForcing($(DEFAULT_T_ICE_BASE))`).
+- `FT`: floating-point precision type (default `Float64`; use `Float32` for GPU).
+- `params`: `Params` object (default `Params(; FT)`, the ISOMIP+-canonical values).
+- `domain_cropping`, `preprocess`: forwarded to `Grid`.
+- `boundary`, `gradient`: forwarded to `Model`.
+- any other keyword (`dt`, `tstep`, `cfl`, `nu`, `stop`, `output`, `restart`,
+  `debug`) is forwarded to [`Simulation`](@ref).
+
+```julia
+sim = build_isomip(; isomipcond = :cold, tstep = AdaptiveDt())
+run!(sim; days = 30)
+sim.model.melt
+```
+"""
+function build_isomip(
+    backend = CPU();
+    FT = Float64,
+    nx = 240,
+    ny = 40,
+    dx = 2000.0,
+    dy = 2000.0,
+    xgl = 20_000.0,
+    xfront = 460_000.0,
+    z_draft_gl = -720.0,
+    z_draft_front = -200.0,
+    isomipcond = :warm,
+    ice_forcing = PrescribedIceForcing(),
+    params = Params(; FT),
+    boundary = BoundaryConditions(),
+    gradient = JlGradient(),
+    domain_cropping = NoDomainCropping(),
+    preprocess = AbstractPreprocess[],
+    simulation_kwargs...,
+)
+    nx_total, ny_total = nx + 2, ny + 2
+    mask = zeros(Int, nx_total, ny_total)
+    z_draft_raw = zeros(FT, nx_total, ny_total)
+    xgl_ft, xfront_ft = FT(xgl), FT(xfront)
+    zgl_ft, zfr_ft = FT(z_draft_gl), FT(z_draft_front)
+    for j = 1:ny, i = 1:nx
+        x = FT((i - 1) * dx)
+        ip, jp = i + 1, j + 1
+        if x < xgl_ft
+            mask[ip, jp] = 2
+        elseif x <= xfront_ft
+            mask[ip, jp] = 3
+            z_draft_raw[ip, jp] =
+                zgl_ft + (zfr_ft - zgl_ft) * (x - xgl_ft) / (xfront_ft - xgl_ft)
+        end
+    end
+    mask[[1, end], :] .= 1
+    mask[:, [1, end]] .= 1
+
+    forcing = CavityForcing(ISOMIPForcing(isomipcond; FT), ice_forcing)
+
+    grid = Grid(mask, z_draft_raw, dx, dy; preprocess, domain_cropping, backend, FT)
+    model = Model(grid; forcing, params, boundary, gradient)
+    return Simulation(model; simulation_kwargs...)
+end
+
+# ============================================================================
 # Reproductions of published LADDIE v1 and v2 setups.
 #
 # Two levels per experiment:

@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** default since 2026-11-04
 - **Commits:** d33fe0d (feature)
-- **Code:** `PartialSlipGL`, `PartialSlipLand`, `NoSlipGL`, `NoSlipLand`, `NoWallAdvection`, `V1WallAdvection` in `src/boundary_conditions.jl`
+- **Code:** `PartialSlipGL`, `PartialSlipLand`, `NoSlipGL`, `NoSlipLand`, `NoWallAdvection`, `V1WallAdvection` in `src/bcs/walls.jl`
 - **Docs:** `docs/src/numerics/walls.md`
 
 ## Summary

@@ -2,7 +2,7 @@
 
 - **Type:** open question
 - **Status:** bounds on by default (`T_min = −5`, `T_max = 5` °C, `S_min = 32`, `S_max = 36` psu); off in the pan-Antarctic reference runs
-- **Code:** `T_min`, `T_max`, `S_min`, `S_max` in `src/params.jl`; blow-up check in `run!` (c0acc3f)
+- **Code:** `T_min`, `T_max`, `S_min`, `S_max` in `src/simulation/params.jl`; blow-up check in `run!` (c0acc3f)
 
 ## Question
 

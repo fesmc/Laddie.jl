@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** opt-in since 2026-11-10 (`OutputConfig(; tsday)`, off by default)
 - **Commits:** a25fd10 (feature)
-- **Code:** `OutputConfig` `tsday` in `src/io.jl`
+- **Code:** `OutputConfig` `tsday` in `src/utils/io.jl`
 
 ## Summary
 

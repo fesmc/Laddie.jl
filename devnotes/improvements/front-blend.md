@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** opt-in since 2026-11-04 (`front_ocean_forcing(...; blend = FrontBlend(...))`); used in the pan-Antarctic reference runs
 - **Commits:** 89420ae (feature), acda2a3 (blend over `front_length`, default 64 km; source columns cut at their seabed)
-- **Code:** `front_ocean_forcing`, `FrontBlend`, `_front_seeds` in `src/ocean_sources.jl`
+- **Code:** `front_ocean_forcing`, `FrontBlend`, `_front_seeds` in `src/bcs/ocean_sources.jl`
 - **Docs:** `docs/src/physics/ocean_forcing.md`
 
 ## Summary

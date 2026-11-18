@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** opt-in since 2026-11-10 (`SinkGapsBC()` is the default)
 - **Commits:** adf6cb0 (current form: mélange cover α); b6df8c4 (transmission form, replaced)
-- **Code:** `LeakyGapsBC(; ...)` in `src/boundary_conditions.jl`, with `surface_heat_loss` Q and `ice_salinity` S_i
+- **Code:** `LeakyGapsBC(; ...)` in `src/bcs/gaps.jl`, with `surface_heat_loss` Q and `ice_salinity` S_i
 - **Docs:** `docs/src/physics/gaps.md`, "Leaky gaps"
 
 ## Summary

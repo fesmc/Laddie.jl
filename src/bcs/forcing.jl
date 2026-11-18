@@ -9,8 +9,8 @@
 #
 # Ocean profiles are carried on a uniform z-grid.  The concrete vector type is a
 # type parameter V (Vector{FT} on CPU, CuArray{FT,1} on GPU after to_backend),
-# keeping field access type-stable.  The resampling `OceanForcing1D` constructor
-# (requires interpolation logic) is in geometry.jl.
+# keeping field access type-stable.  The resampling `OceanForcing1D(Tz, Sz, z)`
+# constructor follows the struct.
 # ============================================================================
 
 #########################

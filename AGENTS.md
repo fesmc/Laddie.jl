@@ -102,8 +102,24 @@ It solves a vertically-averaged approximation of the Navier-Stokes equations in 
 
 ## Module Structure
 
-`src/` is flat; each process file (`entrainment.jl`, `melting.jl`, `eos.jl`, …) defines one
-abstract scheme type and its implementations. The object structure of a run, from
+`src/` has five folders. `Laddie.jl` includes every file explicitly, in dependency order (scheme types,
+then containers, then kernels, then the run loop):
+
+- `physics/`: one file per process (`entrainment.jl`, `melting.jl`, `eos.jl`, …), each with one abstract
+  scheme type, its implementations, and the `update_*!` that launches its kernels. `secondary_fields.jl`
+  holds `update_secondary_fields!` (the update order) and the friction velocity the schemes share
+- `numerics/`: the leapfrog step (`leapfrog.jl`), stencils, advection and tracer/momentum forms, lateral
+  viscosity, kinks, time stepping and the CFL number
+- `bcs/`: boundary conditions (`walls.jl`, `open_ocean.jl`, `gaps.jl`, the `BoundaryConditions`
+  container) and the forcing at the layer's boundaries (`forcing.jl`, `ocean_sources.jl`)
+- `simulation/`: the containers of a run (`Grid`, `State`, `Cache`, `Params`, `Model`, `Simulation`),
+  the time loop (`run.jl`), the AD entry points (`autodiff.jl`) and ready-made setups (`presets.jl`)
+- `utils/`: generic helpers and kernel launches (`utils.jl`, `backend.jl`), diagnostics, I/O, mask
+  preprocessing, `show`
+
+Names resolve at call time, so a function can live with its scheme even when its file is included before
+`Model`; include order matters only for type annotations in signatures, struct field types and top-level
+code. The object structure of a run, from
 `fieldtree(build_isomip(); maxdepth = 2)` (snippet below, `model` expanded one level further,
 scalar parameters of `Params` abbreviated):
 
@@ -178,14 +194,14 @@ to `Grid` or `build_isomip`, or move an existing model with `to_backend`.
 
 ## Time-Step Flow
 
-`run!` loops over `time_step!` (`src/api.jl`) and handles I/O, adaptive dt and blow-up checks between
-batches. `time_step!` sets the forcing time, calls `_step_model!` (`src/numerics.jl`) and ticks the clock.
+`run!` loops over `time_step!` (`src/simulation/run.jl`) and handles I/O, adaptive dt and blow-up checks between
+batches. `time_step!` sets the forcing time, calls `_step_model!` (`src/numerics/leapfrog.jl`) and ticks the clock.
 `integrate!(model, dt, n)` calls `_step_model!` directly, without a `Simulation`, for AD.
 
 ```
 _step_model!(m, dt, nu)
 ├── advance_leapfrog!               rotate past ← present ← future, then
-│   └── update_secondary_fields!    (src/physics.jl) from the present/past levels:
+│   └── update_secondary_fields!    (src/physics/) from the present/past levels:
 │       ambient T/S → density → convection → melt → frazil → entrainment/detrainment
 ├── leapfrog_step!(m, dt, 2)        centred step over 2Δt, writing the future level:
 │   ├── H   step_thickness!, clamp thickness, precompute_integration_terms!
@@ -273,7 +289,7 @@ _step_model!(m, dt, nu)
 
 ## Reproductions are a regression contract
 
-`src/reproductions.jl` defines `Params*v1/v2` and `Simulation*v1/v2`, which reproduce published LADDIE
+`src/simulation/presets.jl` defines `Params*v1/v2` and `Simulation*v1/v2`, which reproduce published LADDIE
 setups (tested in `test/reproductions.jl`). Each `Params*` alias is pinned by its mean melt on a small
 ISOMIP cavity (`REPRODUCTION_MEAN_MELT`, runs on CI); the `Simulation*` aliases need `papers/` and are
 tested only where it exists.

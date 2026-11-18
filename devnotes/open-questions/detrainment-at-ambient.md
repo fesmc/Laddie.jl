@@ -2,7 +2,7 @@
 
 - **Type:** open question
 - **Status:** unchanged since v1
-- **Code:** `nentr = entr + ent2 − detr` in `_net_entrainment_kernel!` (`src/physics.jl`); the tracer steps in `src/numerics.jl`
+- **Code:** `nentr = entr + ent2 − detr` in `_net_entrainment_kernel!` (`src/physics/entrainment.jl`); the tracer steps in `src/numerics/leapfrog.jl`
 
 ## Question
 

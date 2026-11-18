@@ -9,12 +9,12 @@ numbers `(1)`–`(14)` follow the description paper
 > [LADDIE v2](@cite lambert_one-layer_2026) are noted where they apply.
 
 For each equation we give the form **as published** and, where the kernels in
-[`src/numerics.jl`](https://github.com/fesmc/Laddie.jl) and
-[`src/physics.jl`](https://github.com/fesmc/Laddie.jl) differ algebraically
+[`src/numerics/leapfrog.jl`](https://github.com/fesmc/Laddie.jl) and
+[`src/physics/`](https://github.com/fesmc/Laddie.jl) differ algebraically
 (e.g. expanded out of flux form, or extended), the **form actually integrated**.
 The readable per-term reference implementation lives in
 `test/equation_terms.jl`, one function per term; the fused time-loop
-kernels in `src/numerics.jl` are asserted equal to it by the test suite.
+kernels in `src/numerics/leapfrog.jl` are asserted equal to it by the test suite.
 
 !!! note "Reduced (dimensionless) density"
     The paper carries the *dimensional* density anomaly
@@ -69,7 +69,7 @@ equations below are written with ``H``.
 ## Prognostic equations (1–5)
 
 The model evolves five depth-integrated 2-D fields. The momentum kernels in
-`src/numerics.jl` expand the flux-form left-hand side
+`src/numerics/leapfrog.jl` expand the flux-form left-hand side
 ``\partial(H\,q)/\partial t = q\,\partial H/\partial t + H\,\partial q/\partial t``
 and divide the right-hand sides by the face-interpolated thickness, so the variable
 stepped is ``U`` itself, not ``HU``. The tracer kernels do the same under
@@ -367,7 +367,7 @@ toward ``T_f`` at the rate ``1/\tau``. The salt stays in the layer, see (5).
 
 | eq | quantity | source of truth |
 |----|----------|-----------------|
-| (1) | thickness | `_step_thickness_kernel!` (`numerics.jl`) |
+| (1) | thickness | `_step_thickness_kernel!` (`leapfrog.jl`) |
 | (2) | ``U``-momentum | `_step_u_momentum_kernel!`; terms: `u_*` fns (`test/equation_terms.jl`) |
 | (3) | ``V``-momentum | `_step_v_momentum_kernel!`; terms: `v_*` fns (`test/equation_terms.jl`) |
 | (4) | heat | `_step_temperature_kernel!` + `mat_*` variants |

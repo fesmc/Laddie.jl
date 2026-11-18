@@ -2,7 +2,7 @@
 
 - **Type:** open question
 - **Status:** accepted for reference runs since 2026-11-04 (`AbsoluteMaxLayerThickness(10 000)`, as v2)
-- **Code:** `AbsoluteMaxLayerThickness`, `RelativeMaxLayerThickness` in `src/max_layer_thickness.jl`
+- **Code:** `AbsoluteMaxLayerThickness`, `RelativeMaxLayerThickness` in `src/physics/max_layer_thickness.jl`
 
 ## Question
 

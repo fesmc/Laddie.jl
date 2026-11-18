@@ -2,7 +2,7 @@
 
 - **Type:** open question
 - **Status:** leapfrog + RA (ν = 0.8) with `AdaptiveDt`; reference runs at CFL target 0.4
-- **Code:** `src/timestepping.jl`; `leapfrog_step!` in `src/numerics.jl`
+- **Code:** `src/numerics/timestepping.jl`; `leapfrog_step!` in `src/numerics/leapfrog.jl`
 - **Docs:** `docs/src/numerics/index.md`
 
 ## Question

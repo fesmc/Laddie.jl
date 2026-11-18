@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** in main since 2026-10-23; acts whenever an `AbstractMaxLayerThickness` other than `NoMaxLayerThickness()` (the default) is set
 - **Commits:** 45b4d3e (feature)
-- **Code:** `detr_cap` in `Cache`, computed in `_net_entrainment_kernel!` (`src/physics.jl`); `_clamp_thickness!` kept as a safety net (`src/numerics.jl`)
+- **Code:** `detr_cap` in `Cache`, computed in `_net_entrainment_kernel!` (`src/physics/entrainment.jl`); `_clamp_thickness!` kept as a safety net (`src/numerics/leapfrog.jl`)
 - **Docs:** `docs/src/numerics/max_layer_thickness.md`
 
 ## Summary

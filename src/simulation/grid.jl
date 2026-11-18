@@ -187,7 +187,7 @@ function Geometry(
     # Primary classification.  Shelf (3) and gap (4) cells are both dynamically
     # active — every prognostic is stepped there — so they share `tmask`.  Only
     # shelf cells carry ice, so `imask` is the subset that can melt; see
-    # `AbstractGapsBC` in boundary_conditions.jl.
+    # `AbstractGapsBC` in bcs/gaps.jl.
     tmask = FT.((mask .== 3) .| (mask .== 4))
     imask = FT.(mask .== 3)
     # `grd` is the wall mask — everything the plume cannot flow into — so it unions

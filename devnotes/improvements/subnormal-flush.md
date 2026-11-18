@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** always on since 2026-10-28
 - **Commits:** 823cc7c (feature)
-- **Code:** `_flush_subnormals` in `_to_device` (`src/backend.jl`) and in the sharded placements of the Reactant extension
+- **Code:** `_flush_subnormals` in `_to_device` (`src/utils/backend.jl`) and in the sharded placements of the Reactant extension
 
 ## Summary
 

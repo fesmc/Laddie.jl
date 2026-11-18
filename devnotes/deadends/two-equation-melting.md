@@ -3,7 +3,7 @@
 - **Type:** dead end
 - **Status:** code in main (`TwoEquationMelting`, opt-in, warns on construction); out of the pan-Antarctic physics since 2026-10-27
 - **Commits:** dbabc61 (feature; also adds the heat-to-salt ratio `ratio` of `UStarGamTMelting`, default 35, unchanged)
-- **Code:** `TwoEquationMelting` in `src/melting.jl`
+- **Code:** `TwoEquationMelting` in `src/physics/melting.jl`
 - **Docs:** `docs/src/physics/melting.md`
 
 ## Idea

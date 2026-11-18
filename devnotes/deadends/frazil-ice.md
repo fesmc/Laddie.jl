@@ -3,7 +3,7 @@
 - **Type:** dead end
 - **Status:** code in main, default off (`NoFrazilIce()`); not used in reference runs since 2026-11-04
 - **Commits:** fed5db0 (feature), 9f6b8d7 (merge)
-- **Code:** `RelaxedFrazilIce` in `src/frazil.jl`; `update_frazil!` in `src/physics.jl`; output `:frazil`
+- **Code:** `RelaxedFrazilIce` and `update_frazil!` in `src/physics/frazil.jl`; output `:frazil`
 
 ## Idea
 

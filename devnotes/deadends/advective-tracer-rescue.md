@@ -3,7 +3,7 @@
 - **Type:** dead end
 - **Status:** not implemented (coherent clamp) or tested and dropped (cap floor); `AdvectiveTracerForm()` remains only for v1 reproduction
 - **Commits:** none for the clamp; the cap floor `H_floor` of `RelativeMaxLayerThickness` is in 5d38792
-- **Code:** `AdvectiveTracerForm` in `src/advection.jl`
+- **Code:** `AdvectiveTracerForm` in `src/numerics/advection.jl`
 
 ## Idea
 

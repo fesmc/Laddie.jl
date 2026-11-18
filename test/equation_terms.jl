@@ -3,10 +3,10 @@
 # making the step functions read like the written equations.  Included by setup.jl.
 #
 # These are the readable REFERENCE implementation of the governing equations,
-# written with the whole-array shift and interpolation primitives of src/utils.jl.
+# written with the whole-array shift and interpolation primitives of src/utils/utils.jl.
 # The momentum advection and diffusion terms are copied out of the shared work
 # buffers (`Cache.adv`, `Cache.lap`), which the next term would overwrite.
-# The time loop runs the fused kernels in src/numerics.jl instead (one pass per
+# The time loop runs the fused kernels in src/numerics/leapfrog.jl instead (one pass per
 # prognostic, no intermediate allocations); the testset "Fused kernels match
 # reference equation terms" (numerics.jl) asserts that the kernels reproduce these
 # terms exactly, so the two cannot drift apart silently.

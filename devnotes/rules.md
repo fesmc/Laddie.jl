@@ -18,7 +18,7 @@
   - **Code:** types and functions with their files. No line numbers, because they rot.
   - **Docs:** the documentation page, if one exists (optional).
 - Links between notes: the file name within the same folder (`ice-conduction.md`), `folder/file.md` across folders.
-- Paths: repo-relative for files in Laddie.jl (`src/frazil.jl`). For other public projects, use a GitHub link, e.g. [laddie-perbasin](https://github.com/JanJereczek/laddie-perbasin) for the pan-Antarctic and FRIS runs. Never link private repositories (e.g. the roadmaps), and never use absolute paths on a machine (`/p/...`, `~/...`).
+- Paths: repo-relative for files in Laddie.jl (`src/physics/frazil.jl`). For other public projects, use a GitHub link, e.g. [laddie-perbasin](https://github.com/JanJereczek/laddie-perbasin) for the pan-Antarctic and FRIS runs. Never link private repositories (e.g. the roadmaps), and never use absolute paths on a machine (`/p/...`, `~/...`).
 - Length is not limited. Be concise per item, not short overall.
 - Sections:
   - Improvement: Summary, Evidence, Parts that were needed (optional), Caveats.

@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** opt-in since 2026-10-28 (`ExactKinks()` is the default); used in the pan-Antarctic reference runs
 - **Commits:** 7bb33da (feature)
-- **Code:** `ExactKinks`, `SmoothKinks` in `src/kinks.jl` (`Params(; kinks)`); helpers `_smax0`, `_smax`, `_smin`, `_ssqrt`, `_kink_width`
+- **Code:** `ExactKinks`, `SmoothKinks` in `src/numerics/kinks.jl` (`Params(; kinks)`); helpers `_smax0`, `_smax`, `_smin`, `_ssqrt`, `_kink_width`
 - **Docs:** `docs/src/numerics/kinks.md`
 
 ## Summary

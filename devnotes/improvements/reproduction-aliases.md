@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** in main since 2026-10-28
 - **Commits:** f3f5fd8 (feature), b6e25e8 (docs)
-- **Code:** `Params<case>v1|v2` and `Simulation<case>v1|v2` (e.g. `ParamsASEv1`, `SimulationISOMIPv2`, `SimulationMISOMIPGapsv2`) in `src/reproductions.jl`; `test/reproductions.jl`
+- **Code:** `Params<case>v1|v2` and `Simulation<case>v1|v2` (e.g. `ParamsASEv1`, `SimulationISOMIPv2`, `SimulationMISOMIPGapsv2`) in `src/simulation/presets.jl`; `test/reproductions.jl`
 - **Docs:** `docs/src/examples/reproductions.jl`, `docs/src/API_published.md`
 
 ## Summary

@@ -3,7 +3,7 @@
 - **Type:** dead end
 - **Status:** code in main (`RelativeMaxLayerThickness(f, H_floor)`, opt-in); not used in reference runs since 2026-11-04, which take v2's `AbsoluteMaxLayerThickness(10 000)`
 - **Commits:** 45b4d3e (enforced by detrainment), 5d38792 (`H_floor`)
-- **Code:** `RelativeMaxLayerThickness` in `src/max_layer_thickness.jl`
+- **Code:** `RelativeMaxLayerThickness` in `src/physics/max_layer_thickness.jl`
 - **Docs:** `docs/src/numerics/max_layer_thickness.md`
 
 ## Idea

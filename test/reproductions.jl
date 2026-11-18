@@ -1,4 +1,4 @@
-# Aliases reproducing published LADDIE v1/v2 setups (src/reproductions.jl).
+# Aliases reproducing published LADDIE v1/v2 setups (src/simulation/presets.jl).
 
 const V1_PARAMS = (ParamsCrossonDotsonv1, ParamsFRISv1, ParamsPIGv1, ParamsASEv1)
 const V2_PARAMS = (ParamsISOMIPv2, ParamsAISv2, ParamsASEv2, ParamsPIGv2, ParamsMISOMIPv2,

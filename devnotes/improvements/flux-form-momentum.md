@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** opt-in since 2026-10-29 (`AdvectiveMomentumForm()` and `PresentClosures()` stay the defaults); used in all pan-Antarctic reference runs
 - **Commits:** cf87dcb (feature), daa756e (docs)
-- **Code:** `FluxMomentumForm`, `PastClosures` (`Params(; momentum_form, closure_level)`); `_momentum_update` in `src/numerics.jl`, `_store_outflow!` in `src/stencils.jl`
+- **Code:** `FluxMomentumForm`, `PastClosures` (`Params(; momentum_form, closure_level)`); `_momentum_update` in `src/numerics/leapfrog.jl`, `_store_outflow!` in `src/numerics/stencils.jl`
 - **Docs:** `docs/src/numerics/momentum_form.md`
 
 ## Summary

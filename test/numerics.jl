@@ -1,7 +1,7 @@
 # Numerics: fused kernels vs reference terms, conservation, precision.
 
 @testset "Fused kernels match reference equation terms" begin
-    # The fused step kernels in numerics.jl and the equation-term
+    # The fused step kernels in src/numerics/leapfrog.jl and the equation-term
     # functions in equation_terms.jl implement the same governing equations.
     # Reconstruct one leapfrog step from the term functions and require
     # the kernels to reproduce it, for both the scalar-coefficient

@@ -608,6 +608,73 @@ end
     @test all(isfinite, m_z.melt)
 end
 
+@testset "Open ocean: OutflowOnly lets the layer leave through the front, never enter" begin
+    # The hand-made domain of the front-pressure testsets: an ice front in y and a
+    # SinkGapsBC gap, whose edges are one-sided faces in both directions.  Under the
+    # default the layer flows in through some of them (recirculating its own water);
+    # OutflowOnly clips every one-sided face velocity to point out of the cavity.
+    mk = zeros(Int, 12, 22)
+    mk[1, :] .= 1;  mk[end, :] .= 1
+    mk[:, 1] .= 1;  mk[:, end] .= 1
+    mk[2:11, 2:3]  .= 2
+    mk[2:11, 4:20] .= 3
+    mk[2:11, 21]   .= 0
+    mk[5:7, 10:12] .= 4
+    z_draft = zeros(FT, size(mk))
+    z_draft[mk .== 3] .= FT(-200.0)
+    forcing = ISOMIPForcing(:warm; FT)
+    grid = Grid(mk, z_draft, FT(2000.0), FT(2000.0); domain_cropping = NoDomainCropping())
+    sim(open_ocean; kinks = ExactKinks()) =
+        Simulation(Model(grid; forcing, params = Params(; FT, kinks), boundary = BoundaryConditions(; open_ocean)))
+    g = getfield(Model(grid; forcing), :geometry)
+    # The sign of the outward normal of each face (+1 when the ocean is on the + side,
+    # 0 between two active cells), and the one-sided faces with a live velocity point.
+    # The circshift wraps only into the grounded border ring, where both masks are 0.
+    s_u = g.tmask .- Laddie.xm1(g.tmask)
+    s_v = g.tmask .- Laddie.ym1(g.tmask)
+    front_u = (g.umask .== 1) .& (s_u .!= 0)
+    front_v = (g.vmask .== 1) .& (s_v .!= 0)
+    @test count(front_u) > 0 && count(front_v) > 0
+    outward(m, level) = vcat((s_u .* getfield(m.U, level))[front_u], (s_v .* getfield(m.V, level))[front_v])
+
+    # Started from rest the layer only flows out of this domain, so to give the
+    # assertions teeth, start with 5 cm/s *into* the cavity on every front face.
+    function inflow_start(open_ocean; kinks = ExactKinks(), steps = 5)
+        m = sim(open_ocean; kinks)
+        for level in (:past, :present, :future)
+            getfield(m.model.U, level) .= FT(-0.05) .* s_u .* front_u
+            getfield(m.model.V, level) .= FT(-0.05) .* s_v .* front_v
+        end
+        for _ = 1:steps
+            time_step!(m)
+        end
+        return m.model
+    end
+    # The default keeps flowing in.
+    @test any(<(0), outward(inflow_start(ZeroGradientInflow()), :future))
+    # OutflowOnly clips the newest level on every front face, with exact and with
+    # smooth kinks (the smooth max is ≥ 0 too).  The filtered `present` still holds
+    # a fading share of the imposed inflow: the Robert–Asselin filter mixes in `past`.
+    for kinks in (ExactKinks(), SmoothKinks())
+        m_o = inflow_start(OutflowOnly(); kinks)
+        @test all(>=(0), outward(m_o, :future))
+        @test all(isfinite, m_o.H.future) && all(isfinite, m_o.U.future) && all(isfinite, m_o.V.future)
+    end
+
+    # Started from rest, every level stays outward (the filter mixes nonnegative
+    # values), outflow still happens, and the state differs from both other options.
+    run(open_ocean) = (m = sim(open_ocean); run!(m; days = 0.5, verbose = false); m.model)
+    m_o = run(OutflowOnly())
+    for level in (:past, :present, :future)
+        @test all(>=(0), outward(m_o, level))
+    end
+    @test any(>(0), outward(m_o, :present))
+    @test all(isfinite, m_o.melt) && all(isfinite, m_o.H.present)
+    @test m_o.H.present != run(ZeroGradientInflow()).H.present
+    @test m_o.H.present != run(NoInflow()).H.present
+    @test sprint(show, BoundaryConditions(; open_ocean = OutflowOnly())) |> contains("OutflowOnly")
+end
+
 @testset "Wall advection: none (v2), slip-scaled, v1" begin
     # The slip factor always sets the viscous wall stress; `wall_advection`
     # decides which factor forms the momentum advected across a wall face.

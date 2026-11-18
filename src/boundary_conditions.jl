@@ -254,7 +254,7 @@ _v_walls(m, (slip_gl, slip_land)) = (m.glEv, m.glWv, m.lndEv, m.lndWv, slip_gl, 
 """
 Abstract supertype for the open-ocean boundary condition at the ice front.  Pass a
 concrete instance as `BoundaryConditions(; open_ocean = ...)`:
-[`ZeroGradientInflow`](@ref) (the default) or [`NoInflow`](@ref).
+[`ZeroGradientInflow`](@ref) (the default), [`NoInflow`](@ref) or [`OutflowOnly`](@ref).
 """
 abstract type AbstractOpenOceanBC end
 
@@ -281,6 +281,39 @@ advection is unaffected.
 Select via `BoundaryConditions(; open_ocean = NoInflow())`.
 """
 struct NoInflow <: AbstractOpenOceanBC end
+
+"""
+$(TYPEDEF)
+
+Open-boundary condition at the ice front: a one-way valve.  The layer may leave
+through an ice-front face but never enter: after each momentum step, the new
+face-normal velocity at every ice-front face is clipped to point out of the cavity
+(`max(u_n, 0)` along the outward normal, `clip_front_inflow!`), so an inflow
+face acts as a wall that exerts no stress on the normal flow.
+
+Under [`ZeroGradientInflow`](@ref) an inflow face recirculates the front cell's own
+water, which thickens and cools the front row; under [`NoInflow`](@ref) the inward
+velocity is kept but carries nothing, so the front row thins.  Here the meltwater
+layer is fed only by entrainment and melt, never by water crossing the front.
+Ambient water that really enters a cavity does so below the plume.
+
+The clip acts on the new level only.  The filtered present level, which advects
+the thickness and tracers, relaxes to outward-only within a few steps (an inward
+start, e.g. a restart from another condition, fades through the Robert–Asselin
+filter); during that transient the fluxes carry nothing in, as under
+[`NoInflow`](@ref).
+
+The clip is the τ → 0 limit of a relaxation of the inward normal velocity.  It is
+an instantaneous adjustment rather than a relaxation because the sinks of the
+default [`AdvectiveMomentumForm`](@ref) are explicit, so a relaxation fast enough
+to act as a valve would be unstable.
+
+Gap edges under [`SinkGapsBC`](@ref) are one-sided faces too, so the valve acts
+there as well.  With [`SmoothKinks`](@ref) the clip is smooth (`:u` width).
+
+Select via `BoundaryConditions(; open_ocean = OutflowOnly())`.
+"""
+struct OutflowOnly <: AbstractOpenOceanBC end
 
 #############################
 # Ice-front pressure gradient
@@ -570,7 +603,7 @@ struct BoundaryConditions{
     GB<:AbstractGapsBC,
     WA<:AbstractWallAdvection,
 }
-    "ice front: [`ZeroGradientInflow`](@ref) (default) or [`NoInflow`](@ref)"
+    "ice front: [`ZeroGradientInflow`](@ref) (default), [`NoInflow`](@ref) or [`OutflowOnly`](@ref)"
     open_ocean::OB
     "grounding-line walls: [`PartialSlipGL`](@ref) (default `PartialSlipGL(1.0)`), [`NoSlipGL`](@ref) or [`FreeSlipGL`](@ref)"
     grounding_line::GL

@@ -151,6 +151,9 @@ end
 
 _inflow_weight(::ZeroGradientInflow, FT) = one(FT)
 _inflow_weight(::NoInflow, FT) = zero(FT)
+# As NoInflow: covers the inward present velocities the valve has not yet cleared
+# (an inward start fading through the Robert–Asselin filter).
+_inflow_weight(::OutflowOnly, FT) = _inflow_weight(NoInflow(), FT)
 
 # Momentum advection of U.  H is masked on the fly (`Ht(i, j) = H·tmask`), and the
 # staggered velocity averages are formed here from U and V (`_face_avg`).

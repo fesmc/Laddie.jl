@@ -91,7 +91,7 @@ export AbstractPreprocess,
     FillSmallGroundedPatchesPreprocess,
     MarkGapsPreprocess
 
-export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow
+export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow, OutflowOnly
 export AbstractGroundingLineBC, NoSlipGL, FreeSlipGL, PartialSlipGL
 export AbstractLandBC, NoSlipLand, FreeSlipLand, PartialSlipLand
 export AbstractGapsBC, SinkGapsBC, ConnectedGapsBC, LeakyGapsBC

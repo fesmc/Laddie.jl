@@ -892,6 +892,7 @@ function leapfrog_step!(m, dt, nsteps; check_nans = false, clock = nothing)
     # speed and so needs U and V together (see `clamp_velocities!`).
     step_u_momentum!(m, span)
     step_v_momentum!(m, span)
+    clip_front_inflow!(m, m.boundary.open_ocean)
     clamp_velocities!(m)
     check_nans && _check_nans_shelf!(m, "U", m.U.future, clock)
     check_nans && _check_nans_shelf!(m, "V", m.V.future, clock)
@@ -1058,5 +1059,37 @@ function clamp_velocities!(m)
         m.params.kinks,
     )
     launch!(_apply_scale_kernel!, m.U.future, m.V.future, scaleU, scaleV)
+    return
+end
+
+# The ice-front valve of OutflowOnly on a new face velocity `u`: `n` is the outward
+# normal of a one-sided face (+1 when the ocean is on the + side, −1 when on the −
+# side) and 0 at every other face, which is left untouched.
+@inline _outward_only(kinks, u, n, ε) = ifelse(iszero(n), u, n * _smax0(kinks, n * u, ε))
+
+@kernel function _front_valve_kernel!(U, V, @Const(umask), @Const(vmask), @Const(tmask), kinks)
+    i0, j0 = @index(Global, NTuple)
+    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
+    ε = _kink_width(kinks, :u)
+    @inbounds begin
+        n_u = umask[i, j] * (tmask[i, j] - tmask[i + 1, j])
+        n_v = vmask[i, j] * (tmask[i, j] - tmask[i, j + 1])
+        U[i, j] = _outward_only(kinks, U[i, j], n_u, ε)
+        V[i, j] = _outward_only(kinks, V[i, j], n_v, ε)
+    end
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Clip the new face-normal velocity at every ice-front face to point out of the cavity
+(`u_n ← max(u_n, 0)` along the outward normal), for [`OutflowOnly`](@ref); the other
+open-ocean conditions leave the velocities untouched.  Runs after both momentum
+steps and before the speed cap of `clamp_velocities!`, which scales by a
+positive factor and so keeps the outward sign.
+"""
+clip_front_inflow!(m, ::AbstractOpenOceanBC) = nothing
+function clip_front_inflow!(m, ::OutflowOnly)
+    launch_interior!(_front_valve_kernel!, m.U.future, m.V.future, m.umask, m.vmask, m.tmask, m.params.kinks)
     return
 end

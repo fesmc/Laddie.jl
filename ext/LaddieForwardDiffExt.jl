@@ -1,6 +1,6 @@
 module LaddieForwardDiffExt
 
-using Laddie
+using Laddie: Laddie
 using ForwardDiff: ForwardDiff, Dual
 
 # Strip nested duals too, so the dt controller and the output see plain floats.

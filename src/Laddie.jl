@@ -1,7 +1,12 @@
 module Laddie
-using KernelAbstractions
-using DocStringExtensions
-using ProgressMeter
+using Adapt: Adapt
+using DocStringExtensions: TYPEDEF, TYPEDFIELDS, TYPEDSIGNATURES
+using JLD2: jldopen, jldsave
+using KernelAbstractions: KernelAbstractions, @Const, @index, @kernel, CPU
+using NCDatasets: NCDatasets, NCDataset, defDim, defVar
+using Printf: @sprintf
+using ProgressMeter: Progress, finish!, update!
+using TOML: TOML
 const KA = KernelAbstractions
 
 include("physics/entrainment.jl")

@@ -65,7 +65,7 @@ end
     # Run provenance metadata: full effective configuration on disk
     meta_path = joinpath(rundir, "run_metadata.toml")
     @test isfile(meta_path)
-    meta = Laddie.TOML.parsefile(meta_path)
+    meta = TOML.parsefile(meta_path)
     @test meta["run"]["float_type"] == "Float64"
     @test meta["run"]["backend"] == "CPU"
     @test meta["run"]["laddie_version"] isa String
@@ -150,12 +150,12 @@ end
     end
     latest2 = joinpath(rundir2, "restart_latest.jld2")
     @test isfile(latest2)
-    Laddie.JLD2.jldopen(latest2, "r") do f
+    JLD2.jldopen(latest2, "r") do f
         @test f["t_days"] ≈ 1.5 atol = 0.01   # chained restarts accumulate
     end
 
     # Continuation metadata records the restart offset
-    meta2 = Laddie.TOML.parsefile(joinpath(rundir2, "run_metadata.toml"))
+    meta2 = TOML.parsefile(joinpath(rundir2, "run_metadata.toml"))
     @test meta2["run"]["t_start_days"] ≈ 1.0 atol = 0.01
     @test meta2["simulation"]["restart"] == restartfile
 
@@ -167,8 +167,8 @@ end
     @test eltype(m32.model.H.present) == Float32
     @test m32.model.T.present ≈ Float32.(m_ref.model.T.present)
     legacy = joinpath(tmpdir, "legacy_D.jld2")
-    Laddie.JLD2.jldopen(restartfile, "r") do f
-        Laddie.JLD2.jldsave(legacy; t_days = f["t_days"], dt = f["dt"], D = f["H"],
+    JLD2.jldopen(restartfile, "r") do f
+        JLD2.jldsave(legacy; t_days = f["t_days"], dt = f["dt"], D = f["H"],
                             U = f["U"], V = f["V"], T = f["T"], S = f["S"])
     end
     m_legacy = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, restart = legacy)
@@ -189,7 +189,7 @@ end
                           output = OutputConfig(; name = "coarse", resultdir = tmp, saveday = 0.5))
     run!(coarse; days = 0.5, verbose = false)
     file = joinpath(tmp, "coarse", "restart_latest.jld2")
-    Laddie.JLD2.jldopen(file, "r") do f
+    JLD2.jldopen(file, "r") do f
         @test haskey(f, "tmask") && f["input_size"] == coarse.model.grid.input_size
     end
     fine_sim() = build_isomip(CPU(); nx = 40, ny = 12, dx = 2000.0, dy = 2000.0, xfront = 60_000.0,
@@ -204,8 +204,8 @@ end
     gc, gf = coarse.model.grid, fine.model.grid
     @test first(gc.crop[1]) > 1 && first(gf.crop[1]) != 2 * (first(gc.crop[1]) - 2) + 2   # crops differ
     parent(i, nf, nc) = i == 1 ? 1 : i == nf ? nc : (i - 2) ÷ 2 + 2
-    Hc = Laddie.JLD2.load(file, "H").past
-    tm_c = Laddie.JLD2.load(file, "tmask")
+    Hc = JLD2.load(file, "H").past
+    tm_c = JLD2.load(file, "tmask")
     tm_f = fine.model.tmask .> 0
     checked = 0
     for (jj, j) in enumerate(gf.crop[2]), (ii, i) in enumerate(gf.crop[1])
@@ -221,8 +221,8 @@ end
 
     # A file without the grid (written before it was stored) needs `coarse_grid`.
     legacy = joinpath(tmp, "legacy.jld2")
-    Laddie.JLD2.jldopen(file, "r") do f
-        Laddie.JLD2.jldsave(legacy; t_days = f["t_days"], dt = f["dt"], H = f["H"],
+    JLD2.jldopen(file, "r") do f
+        JLD2.jldsave(legacy; t_days = f["t_days"], dt = f["dt"], H = f["H"],
                             U = f["U"], V = f["V"], T = f["T"], S = f["S"])
     end
     @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), legacy; refine = 2)

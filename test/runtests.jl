@@ -3,6 +3,7 @@ include("setup.jl")
 
 @testset verbose=true "Laddie.jl" begin
     @testset "Code quality" begin include("code_quality.jl") end
+    @testset "Explicit imports" begin include("explicit_imports.jl") end
     @testset "Grid and Model" begin include("grid_and_model.jl") end
     @testset "Geometry ingestion" begin include("geometry_ingestion.jl") end
     @testset "Forcing" begin include("forcing.jl") end

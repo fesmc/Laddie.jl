@@ -26,13 +26,13 @@
     tmp = mktempdir()
     build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                  output = OutputConfig(; name = "tsfix", resultdir = tmp, saveday = 0.5))
-    meta = Laddie.TOML.parsefile(joinpath(tmp, "tsfix", "run_metadata.toml"))
+    meta = TOML.parsefile(joinpath(tmp, "tsfix", "run_metadata.toml"))
     @test meta["simulation"]["time_stepper"]["type"] == "FixedDt"
 
     build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                  tstep = AdaptiveDt(; cfl_target = 0.4),
                  output = OutputConfig(; name = "tsadp", resultdir = tmp, saveday = 0.5))
-    meta2 = Laddie.TOML.parsefile(joinpath(tmp, "tsadp", "run_metadata.toml"))
+    meta2 = TOML.parsefile(joinpath(tmp, "tsadp", "run_metadata.toml"))
     @test meta2["simulation"]["time_stepper"]["type"] == "AdaptiveDt"
     @test meta2["simulation"]["time_stepper"]["cfl_target"] ≈ 0.4
 end
@@ -300,7 +300,7 @@ end
     @test times[end] ≈ 2.0 atol = 0.01
     @test isfile(joinpath(rundir, "restart_000001.jld2"))
     @test isfile(joinpath(rundir, "restart_000002.jld2"))
-    Laddie.JLD2.jldopen(joinpath(rundir, "restart_latest.jld2"), "r") do f
+    JLD2.jldopen(joinpath(rundir, "restart_latest.jld2"), "r") do f
         @test f["t_days"] ≈ 2.0 atol = 0.01
     end
 

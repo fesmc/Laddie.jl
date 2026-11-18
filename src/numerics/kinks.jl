@@ -91,7 +91,7 @@ SmoothKinks(H, u, uH, w, drho, T, S, log) = SmoothKinks(promote(H, u, uH, w, drh
 
 # The kernels take the object whole, so its fields are adapted with the other kernel
 # arguments, as the caps' are (see `max_layer_thickness.jl`).
-KA.Adapt.@adapt_structure SmoothKinks
+Adapt.@adapt_structure SmoothKinks
 
 # The half-width ε of one group, read inside a kernel.  `false` under ExactKinks,
 # whose helpers ignore it; it still survives the arithmetic of a call site (ε/dt).

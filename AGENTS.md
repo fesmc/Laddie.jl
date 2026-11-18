@@ -222,7 +222,10 @@ _step_model!(m, dt, nu)
 
 1. **Type instability** in kernels ruins GPU performance
 2. **Overconstraining types**: use annotations for dispatch, not documentation
-3. **Missing imports**: tests will catch this — add to `using` statements
+3. **Implicit imports**: import every name explicitly (`using X: a, b`), in `src/Laddie.jl` for the
+   package and at the top of each extension. `test/explicit_imports.jl` (ExplicitImports.jl) fails on
+   implicit, stale or non-owner imports; extend its `ignore` lists only for non-public names that have
+   no public alternative
 4. **Subtle bugs from missing method imports**, especially in extensions
 5. **Expecting unexported names**: consider exporting them rather than changing user scripts
 6. **"Type is not callable" errors**: variable name shadows a function — rename or qualify

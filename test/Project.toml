@@ -1,21 +1,27 @@
 [deps]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LLVM = "929cbde3-209d-540e-8aea-75f648917ca0"
 Laddie = "fce96c02-ee64-413e-b3bd-357dacaf3fdc"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
 Aqua = "0.8"
 CUDA = "6"
+ExplicitImports = "1.15"
 ForwardDiff = "1"
+JLD2 = "0.6"
 KernelAbstractions = "0.9"
 # LLVM.jl 10.5 + GPUCompiler 2.22 call LLVMExtraTypeIsScalable, missing from the
 # LLVMExtra_jll 0.0.56 build for Julia 1.12, so CUDA fails to precompile.  Remove the
 # cap once a fresh resolve loads CUDA again.
 LLVM = "~10.4"
 NCDatasets = "0.14"
+TOML = "1"
 Test = "<0.0.1, 1"

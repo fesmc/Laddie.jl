@@ -2,6 +2,9 @@ using Laddie
 using Test
 using KernelAbstractions
 using Aqua
+using ExplicitImports
+using JLD2
+using TOML
 using ForwardDiff
 import CUDA
 

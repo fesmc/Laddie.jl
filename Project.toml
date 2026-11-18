@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["JanJereczek <jan.jereczek@gmail.com> and contributors"]
 
 [deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
@@ -22,6 +23,7 @@ LaddieForwardDiffExt = "ForwardDiff"
 LaddieReactantExt = ["Reactant", "CUDA"]
 
 [compat]
+Adapt = "4"
 CUDA = "6.2"
 DocStringExtensions = "0.9.5, 0.10"
 ForwardDiff = "1"

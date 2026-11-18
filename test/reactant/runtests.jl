@@ -5,12 +5,21 @@
 #     julia --project=test/reactant test/reactant/runtests.jl
 #
 # Uses the GPU when CUDA is functional (native kernels), else Reactant's CPU target.
-using Laddie, Reactant, CUDA, KernelAbstractions, Random, Test
+using Laddie, Reactant, CUDA, KernelAbstractions, ExplicitImports, Random, Test
 using Reactant: Enzyme
 
 const GPU = CUDA.functional()
 Reactant.set_default_backend(GPU ? "gpu" : "cpu")
 const KW = (; nx = 40, ny = 20, isomipcond = :warm)
+
+# The imports of LaddieReactantExt, which is loaded only here (see test/explicit_imports.jl).
+# The extension is built on Laddie internals and Reactant's own API, so non-public names
+# are allowed.
+@testset "Explicit imports" begin
+    test_explicit_imports(Laddie;
+        all_explicit_imports_are_public = false,
+        all_qualified_accesses_are_public = false)
+end
 
 prognostics(m) = [Array(getfield(getproperty(m, v), :present)) for v in (:H, :U, :V, :T, :S)]
 maxrel(a, b) = maximum(maximum(abs, x .- y) / max(maximum(abs, y), eps()) for (x, y) in zip(a, b))

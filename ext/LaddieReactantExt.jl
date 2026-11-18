@@ -6,14 +6,12 @@ module LaddieReactantExt
 # and diagnostics compiled as small programs of their own.  See
 # `laddie-roadmap/reactant.md` for the background and the measurements.
 
-using Laddie
-using Laddie: ReactantBackend, Model, Simulation
-using Reactant
-using Reactant: @compile, @trace, ConcreteRNumber
-using CUDA
-using KernelAbstractions
+using Adapt: Adapt
+using CUDA: CUDA
+using KernelAbstractions: KernelAbstractions, CPU
+using Laddie: Laddie, Model, ReactantBackend, to_backend
+using Reactant: Reactant, @trace, ConcreteRNumber
 const KA = KernelAbstractions
-const Adapt = KA.Adapt
 
 # ============================================================================
 # Kernel launches while tracing

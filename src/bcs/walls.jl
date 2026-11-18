@@ -216,7 +216,7 @@ Select via `BoundaryConditions(; wall_advection = NoWallAdvection())` (the defau
 struct NoWallAdvection <: AbstractWallAdvection end
 
 """
-\$(TYPEDEF)
+$(TYPEDEF)
 
 LADDIE v1's wall advection: the upwind momentum advection sees the wall slip
 factor minus one, as a ghost velocity `(2 - slip)·u`.

@@ -51,22 +51,6 @@ function OceanForcing1D(
     return OceanForcing1D(FT.(T_new), FT.(S_new), FT.(z_new), FT(1.0), FT(z_new[1]))
 end
 
-function _interp1d(x, y, xi)
-    out = similar(xi)
-    for (k, xk) in enumerate(xi)
-        if xk <= x[1]
-            out[k] = y[1]
-        elseif xk >= x[end]
-            out[k] = y[end]
-        else
-            j = searchsortedlast(x, xk)
-            t = (xk - x[j]) / (x[j+1] - x[j])
-            out[k] = y[j] + t * (y[j+1] - y[j])
-        end
-    end
-    return out
-end
-
 
 # ============================================================================
 # Geometry helpers for builders

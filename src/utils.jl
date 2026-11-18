@@ -77,3 +77,58 @@ end
 # has a method of its own (when a type parameter does not show in the fields, or the
 # constructor validates what a rebuild must let through, such as a zero AD tangent).
 _rebuild(::Type{T}, fields...) where {T} = Base.typename(T).wrapper(fields...)
+
+# ============================================================================
+# Scalar helpers for kernels
+# ============================================================================
+
+# Zero where `b` is zero.  The divisor of the unused branch is swapped for one as well:
+# reverse-mode AD (Enzyme) still differentiates that branch, and its zero adjoint
+# times 1/0 would give NaN.
+@inline _safe_div(a, b) = ifelse(iszero(b), zero(a), a / ifelse(iszero(b), one(b), b))
+# The plain value of a number, without derivative parts.  Used where a value
+# leaves the differentiable computation: integer indices, the dt controller,
+# display and file output.  The ForwardDiff extension strips `Dual` numbers.
+@inline _primal(x) = x
+_float64(x) = Float64(_primal(x))
+# `sqrt` for arguments that reach exactly zero (a speed at rest, a clipped
+# discriminant), with a zero derivative there instead of the NaN of `0 × Inf`.  The
+# same double `ifelse` as `_safe_div`, for Enzyme; the ForwardDiff extension has its
+# own method for `Dual`s.
+@inline _safe_sqrt(x) = ifelse(iszero(x), zero(x), sqrt(ifelse(iszero(x), one(x), x)))
+# A kernel's scalar argument as a plain value.  The kernels unwrap their scalars
+# with it on entry.  `getindex(x::Number)` is `x` for floats and `Dual`s; a scalar
+# traced by Reactant arrives as a device reference, which `x[]` loads, so that the
+# kernel body computes with a plain float (`FT(…)`, `clamp`, `promote` do not work
+# on the reference).  Arrays pass through: some slots are scalars or fields.
+@inline _val(x::Number) = x[]
+@inline _val(x::NamedTuple) = map(_val, x)
+@inline _val(x) = x
+
+# Elementwise product `out = a·b`.
+@kernel function _product_kernel!(out, @Const(a), @Const(b))
+    i, j = @index(Global, NTuple)
+    @inbounds out[i, j] = a[i, j] * b[i, j]
+end
+
+# ============================================================================
+# Host-side interpolation
+# ============================================================================
+
+# Linear interpolation of the points (x, y), `x` sorted ascending, at `xi`; constant
+# beyond the end points.
+function _interp1d(x, y, xi)
+    out = similar(xi)
+    for (k, xk) in enumerate(xi)
+        if xk <= x[1]
+            out[k] = y[1]
+        elseif xk >= x[end]
+            out[k] = y[end]
+        else
+            j = searchsortedlast(x, xk)
+            t = (xk - x[j]) / (x[j+1] - x[j])
+            out[k] = y[j] + t * (y[j+1] - y[j])
+        end
+    end
+    return out
+end

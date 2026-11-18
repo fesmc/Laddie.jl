@@ -1,3 +1,51 @@
+# ============================================================================
+# Kernel launches
+# ============================================================================
+
+# Launch `kernel!(out, args...)` over the full extent of `out`, on its backend.  Every
+# kernel writes its first argument, and every array has the grid's size.
+# CPU: long blocks along the first (column-major inner) index keep the inner loops
+# vectorisable, and a grid smaller than one block runs on a single task instead of
+# paying the spawn overhead — measured 1.1–1.8× faster than (8, 8) from 80×20 to
+# 1000×1000 cells on 1–16 threads.
+_workgroup(::CPU) = (128, 32)
+_workgroup(::Any) = (32, 8)   # GPU: 256 threads, warp-aligned x-dimension
+
+launch!(kernel!, out, args...) = launch_range!(kernel!, size(out), out, args...)
+
+# Launch a stencil kernel over the interior cells only, the full array minus its
+# one-cell border ring.  The kernel offsets its index by one past the ring, so
+# `i ± 1`, `j ± 1` always stay inside the array and need no periodic wrap: the
+# border ring is never active, and a stencil output there was only ever multiplied
+# by a zero mask.  Plain `i ± 1` also keeps the indices affine, which lets Reactant
+# raise the neighbour reads to slices; for the wrapped reads that remain, see the
+# forms Reactant handles at `_xp1`.
+launch_interior!(kernel!, out, args...) = launch_range!(kernel!, size(out) .- 2, out, args...)
+
+# Launch over `ndrange`, a block of `out` that the kernel places itself.  `launch!`
+# and `launch_interior!` go through here, and so does every backend method (the
+# Reactant extension's).
+function launch_range!(kernel!, ndrange, out, args...)
+    backend = _launch_backend(KA.get_backend(out))
+    kernel!(backend, _workgroup(backend))(out, args...; ndrange)
+    return nothing
+end
+
+# CPU: static thread assignment (`@threads :static` instead of one `@spawn` per
+# chunk), so the same chunk of the grid lands on the same thread in every kernel
+# and its arrays stay in that core's cache.  With dynamic assignment the chunks
+# migrate between cores from kernel to kernel; on the 241×466 ASE grid that made
+# 2 threads no faster than 1, and 8 threads only 1.7× (3.3× static, with the
+# threads pinned).  `:static` cannot run inside another threaded region, so a
+# launch from within `@threads` falls back to dynamic assignment.
+_launch_backend(backend) = backend
+_launch_backend(backend::CPU) =
+    ccall(:jl_in_threaded_region, Cint, ()) == 0 ? CPU(; static = true) : backend
+
+# ============================================================================
+# Moving models between backends
+# ============================================================================
+
 _to_device(backend, a::AbstractArray) =
     (b = KA.allocate(backend, eltype(a), size(a)); copyto!(b, _flush_subnormals(a)); b)
 

@@ -521,83 +521,6 @@ end
     end
 end
 
-# `LeakyGapsBC`: the open-water surface of a gap, operator-split after the T and S
-# steps.  `gap_heat` holds the heat loss of each gap cell, (1 − α) Q for mélange
-# cover α.  It first cools the layer, by Q dt/(ρ₀ c_p H).  Once the layer reaches the
-# surface freezing point, the rest forms sea ice, with the latent heat holding T at
-# the freezing point.  The ice takes the water thickness h = c_p δT H / L out of the
-# layer (δT the part of the cooling below freezing) and keeps `ice_salinity`; the rest
-# of its salt stays in the thinner layer, as for frazil:
-#
-#     H' = H − h,   S' = (S H − S_ice h) / H'.
-#
-# Then convection: where the layer is denser than the water beneath it (δρ < 0), T
-# and S relax towards that water (Ta, Sa) on `convection_time`, as under
-# `RelaxToAmbient`, and H relaxes towards H_min at the same rate: the convected water
-# leaves the layer.  Every gap cell convects, whatever its cover.
-# Without leaky gaps `gap_heat` is a scalar and this is skipped.
-_gap_surface!(m, ::Number, dt) = nothing
-function _gap_surface!(m, ::AbstractArray, dt)
-    gaps = m.boundary.gaps
-    launch!(
-        _gap_surface_kernel!,
-        m.T.future,
-        m.S.future,
-        m.H.future,
-        m.Ta,
-        m.Sa,
-        m.z_draft,
-        m.tmask,
-        m.imask,
-        m.gap_heat,
-        m.H_min,
-        m.rho0_seawater,
-        m.c_p,
-        m.L,
-        m.l1,
-        m.l2,
-        m.l3,
-        gaps.ice_salinity,
-        gaps.convection_time,
-        _eos_coefficients(m),
-        dt,
-    )
-    return
-end
-
-@kernel function _gap_surface_kernel!(
-    T, S, H, @Const(Ta), @Const(Sa), @Const(z_draft), @Const(tmask), @Const(imask), @Const(Q),
-    H_min, rho0, c_p, L, l1, l2, l3, S_ice, tau, eos, dt,
-)
-    rho0, c_p, L, dt, H_min, tau = _val(rho0), _val(c_p), _val(L), _val(dt), _val(H_min), _val(tau)
-    l1, l2, l3, S_ice, eos = _val(l1), _val(l2), _val(l3), _val(S_ice), _val(eos)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(T)
-        Ti, Si, Hi, z = T[i, j], S[i, j], H[i, j], z_draft[i, j]
-        gap = (tmask[i, j] > 0) & iszero(imask[i, j])
-        # Cooling over the step (K), zero where Q is.  `H > 0` in active cells; the
-        # max only guards inactive ones (H = 0, Q = 0).
-        cool = Q[i, j] * dt / (rho0 * c_p * max(Hi, eps(FT)))
-        Tf = l1 * Si + l2 + l3 * z
-        # The part of the cooling that would take T below freezing forms ice instead;
-        # all of it if the layer is already at or below freezing.
-        freeze = min(cool, max(Tf - Ti + cool, zero(FT)))
-        T1 = Ti - cool + freeze
-        # Frozen water thickness, never more than takes the layer to H_min.
-        h = min(c_p * freeze * Hi / L, max(Hi - H_min, zero(FT)))
-        H1 = Hi - h
-        # (S H − S_ice h)/H', written so that h = 0 leaves S bit-identical.
-        S1 = Si + (Si - S_ice) * h / max(H1, eps(FT))
-        # Convection, backward Euler on `tau`.
-        unstable = gap & (_drho(Sa[i, j], S1, Ta[i, j], T1, _layer_depth(z, H1), eos) < 0)
-        k = ifelse(unstable, dt / tau, zero(FT))
-        T[i, j] = ifelse(unstable, (T1 + k * Ta[i, j]) / (1 + k), T1)
-        S[i, j] = ifelse(unstable, (S1 + k * Sa[i, j]) / (1 + k), S1)
-        H[i, j] = ifelse(unstable, (H1 + k * H_min) / (1 + k), H1)
-    end
-end
-
 function step_thickness!(m, dt)
     launch!(
         _step_thickness_kernel!,
@@ -1012,37 +935,5 @@ function clamp_velocities!(m)
         m.params.kinks,
     )
     launch!(_apply_scale_kernel!, m.U.future, m.V.future, scaleU, scaleV)
-    return
-end
-
-# The ice-front valve of OutflowOnly on a new face velocity `u`: `n` is the outward
-# normal of a one-sided face (+1 when the ocean is on the + side, −1 when on the −
-# side) and 0 at every other face, which is left untouched.
-@inline _outward_only(kinks, u, n, ε) = ifelse(iszero(n), u, n * _smax0(kinks, n * u, ε))
-
-@kernel function _front_valve_kernel!(U, V, @Const(umask), @Const(vmask), @Const(tmask), kinks)
-    i0, j0 = @index(Global, NTuple)
-    i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
-    ε = _kink_width(kinks, :u)
-    @inbounds begin
-        n_u = umask[i, j] * (tmask[i, j] - tmask[i + 1, j])
-        n_v = vmask[i, j] * (tmask[i, j] - tmask[i, j + 1])
-        U[i, j] = _outward_only(kinks, U[i, j], n_u, ε)
-        V[i, j] = _outward_only(kinks, V[i, j], n_v, ε)
-    end
-end
-
-"""
-$(TYPEDSIGNATURES)
-
-Clip the new face-normal velocity at every ice-front face to point out of the cavity
-(`u_n ← max(u_n, 0)` along the outward normal), for [`OutflowOnly`](@ref); the other
-open-ocean conditions leave the velocities untouched.  Runs after both momentum
-steps and before the speed cap of `clamp_velocities!`, which scales by a
-positive factor and so keeps the outward sign.
-"""
-clip_front_inflow!(m, ::AbstractOpenOceanBC) = nothing
-function clip_front_inflow!(m, ::OutflowOnly)
-    launch_interior!(_front_valve_kernel!, m.U.future, m.V.future, m.umask, m.vmask, m.tmask, m.params.kinks)
     return
 end

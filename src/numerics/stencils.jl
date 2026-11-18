@@ -18,18 +18,10 @@
 @inline _yp1(j, N) = ifelse(j + 1 > N, j + 1 - N, j + 1)
 @inline _ym1(j, N) = ifelse(j - 1 < 1, j - 1 + N, j - 1)
 
-# The slip factor of a wall face, from the grounding-line and land indicators `gl`
-# and `lnd` of the face and the slip factors `slip_gl`, `slip_land` (`_u_walls`/
-# `_v_walls`); zero off the walls.  The indicators partition the wall faces (the
-# grounding line takes precedence at mixed corners), so exactly one of the two
-# factors applies on a wall.
-#
 # The helpers here that read arrays carry their own `@inbounds`, like `_other_x`
 # and `_face_mass_x`: a kernel's `@inbounds` block does not reach into a called
 # function, even an inlined one, and the bounds checks left there stop the CPU
 # kernels from vectorising (3–4x slower).
-@inline _slip(slip_gl, slip_land, gl, lnd, i, j) =
-    @inbounds slip_gl * gl[i, j] + slip_land * lnd[i, j]
 
 # Masked two-point average of `a` over the cells (i, j) and (i2, j2): the mean of the
 # active ones, zero if neither is active.  The kernels form their staggered
@@ -126,12 +118,6 @@ end
         out[i, j] = flux_N + flux_S + flux_E + flux_W
     end
 end
-
-_inflow_weight(::ZeroGradientInflow, FT) = one(FT)
-_inflow_weight(::NoInflow, FT) = zero(FT)
-# As NoInflow: covers the inward present velocities the valve has not yet cleared
-# (an inward start fading through the Robert–Asselin filter).
-_inflow_weight(::OutflowOnly, FT) = _inflow_weight(NoInflow(), FT)
 
 # Momentum advection of U.  H is masked on the fly (`Ht(i, j) = H·tmask`), and the
 # staggered velocity averages are formed here from U and V (`_face_avg`).

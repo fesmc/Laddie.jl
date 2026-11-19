@@ -4,7 +4,7 @@
 - **Status:** opt-in since 2026-11-10 (`SinkGapsBC()` is the default)
 - **Commits:** adf6cb0 (current form: mélange cover α); b6df8c4 (transmission form, replaced)
 - **Code:** `LeakyGapsBC(; ...)` in `src/bcs/gaps.jl`, with `surface_heat_loss` Q and `ice_salinity` S_i
-- **Docs:** `docs/src/physics/gaps.md`, "Leaky gaps"
+- **Docs:** `docs/src/bcs/gaps.md`, "Leaky gaps"
 
 ## Summary
 
@@ -44,3 +44,4 @@ Year-200 geometries of Jesse et al. (2026), total melt over days 20–30 (Gt/yr)
 
 - Q = 0 by default until a regional value is chosen. Winter polynyas reach a few hundred W m⁻².
 - The earlier transmission form (b6df8c4: T → T_a, H → H_min, U, V → 0 at a rate −ln α·|u|/L) owed its "in between" response to heating the gap. It was replaced.
+- What remains open on gaps (spill depth on real geometries, thick-ice cliffs, gaps open to the sea, v2 residuals, a real-geometry test) is in `open-questions/gap-physics.md`.

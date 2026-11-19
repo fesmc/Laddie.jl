@@ -24,7 +24,7 @@ Largest stable ω·Δt of leapfrog + RA on dq/dt = iωq:
   This was measured before `FluxMomentumForm`.
 - Under warm (Mathiot) forcing, the adjoint still grows, at thick (150–370 m), slow (≤ 0.13 m/s) cells, not thin ones.
   The usable gradient window is ~1 d at CFL 0.4 and ~5 d at CFL 0.2. `PastClosures` does not help.
-  The 1 m/s speed cap made it worse (one Filchner cell held at the cap).
+  The 1 m/s speed cap made it worse (one Filchner cell held at the cap). `RelaxToAmbientConvection` instead of the v2 floor leaves the window unchanged (clean to 2 d at CFL 0.2, blow-up at 5 d).
 
 ## Candidate explanations
 

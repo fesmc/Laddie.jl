@@ -25,6 +25,17 @@ Warm ISOMIP+ at 4 km, 20 days, against `FullDepthFrontPressure` + `ZeroGradientO
 The front row is the last ice cell of each row, the interior three cells upstream.
 Under `FullDepthFrontPressure` the thickness-gradient term at the ice front is about 150× its interior value on the same run: the masked neighbour's `H = 0` is read as a real thickness.
 
+Pan-Antarctic, fitted v2 setup, warm forcing, 50-day continuations at 2 and 1 km ([laddie-perbasin](https://github.com/JanJereczek/laddie-perbasin)), `ZeroGradientFrontPressure`:
+
+| open ocean | melt 2 km / 1 km (Gt/yr) | resolution gap | front row at 2 km: melt (m/yr), \|u\| (m/s), TF (°C), H (m) |
+|---|---|---|---|
+| `ZeroGradientOpenOceanBC` | 13636 / 12604 | 1032 (8 %) | 36.0, 0.218, 1.81, 99.5 |
+| `NoInflowOpenOceanBC` | 16515 / 13770 | 2745 (17 %) | 71.8, 0.290, 2.40, 21.0 |
+| `OutflowOnlyOpenOceanBC` | 13123 / 12466 | 657 (5 %) | 28.0, 0.127, 2.39, 24.2 |
+
+Under the valve the front row is as fast as the second row (0.136 m/s) and barely thicker (18 m there), so the pile-up is gone; the interior 10 km from the front has H ≈ 30–43 m.
+The front-pressure scheme alone changes little: the front row stays thick under all three with zero-gradient inflow.
+
 ## Parts that were needed
 
 - **A clip, not a relaxation.** The valve is the τ → 0 limit of a relaxation of the inward normal velocity. A relaxation fast enough to act as a valve would be unstable, because the sinks of `AdvectiveMomentumForm` are explicit.
@@ -32,9 +43,12 @@ Under `FullDepthFrontPressure` the thickness-gradient term at the ice front is a
 - **Order with the speed cap.** `clip_front_inflow!` runs after both momentum steps and before `clamp_velocities!`, which scales by a positive factor and so keeps the outward sign.
 - **Bit-identity of v1.** `front_pgf_weight` and `front_drho_weight` gate each term by `1 + w*(tmask_stag - 2)`; `w = 0` multiplies by exactly 1, so `FullDepthFrontPressure` reproduces LADDIE v1 bit for bit.
 - **A test cavity with a flat draft** needs `FullDepthFrontPressure`: nothing else drives a flow through its front from rest.
+- **Alternatives considered.** Ambient inflow (inflow faces carry the ocean's T and S at the draft) imports warm water with no entrainment law behind it. A relaxation zone of physical width behind the front (5–10 km) is resolution-independent, but what to relax towards is arbitrary and adds a tuning knob. A Froude condition on outflow faces is a dead end (`deadends/froude-front-condition.md`).
 
 ## Caveats
 
+- The front row still melts about 2× the interior, through its thermal forcing, at a rate similar at 2 and 1 km, so its integrated melt still scales with the cell size (549 vs 247 Gt/yr pan-Antarctic). No velocity condition addresses this thermal excess.
+- Not mapped yet: how many front faces are inflow under the valve, and where (Ross, Ronne, Amundsen), i.e. how much of the front it changes.
 - LADDIE v1 keeps both terms (`integrate.py`, `-g·ip_t(Ddrho)·(Dxm1 - D)/dx` with `Dxm1 = roll(D*tmask)`).
 - The LADDIE v2 code drops the thickness term at calving-front faces (`laddie_velocity.f90`, `IF (mask_cf_b .OR. mask_gl_b)`), and its comment says "Assume dH/dx and ddrho/dx = 0", but it keeps the `ddrho_amb_dx_b` term. `ZeroGradientFrontPressure` follows the description paper (Lambert et al. 2026, "zero lateral gradients are applied to all main variables"), not the v2 code.
 - Under `ZeroGradientOpenOceanBC` an inflow face recirculates the front cell's own water, which thickens and cools the front row; under `NoInflowOpenOceanBC` the inward velocity carries nothing, so the front row thins.

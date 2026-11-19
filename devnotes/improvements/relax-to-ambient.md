@@ -1,15 +1,15 @@
 # Convection by relaxation to ambient
 
 - **Type:** improvement
-- **Status:** opt-in (`ResetToAmbient(0.005)` is the default); used in the pan-Antarctic reference runs since 2026-10-30, and in gap cells under `LeakyGapsBC` whatever the scheme
-- **Commits:** in Laddie.jl since the first port of v1 (June 2026), as v1's `convop = 2`; gap use in adf6cb0
-- **Code:** `AbstractConvectionScheme`, `ClampDensity`, `ResetToAmbient`, `RelaxToAmbient` in `src/physics/convection.jl`; `_update_conv2!` in `src/numerics/leapfrog.jl`
+- **Status:** default since 2026-11-18 (`RelaxToAmbientConvection(3600)`; before, `ResetToAmbient(0.005)`); used in the pan-Antarctic reference runs since 2026-10-30, and in gap cells under `LeakyGapsBC` whatever the scheme
+- **Commits:** in Laddie.jl since the first port of v1 (June 2026), as v1's `convop = 2`; gap use in adf6cb0; default with τ = 3600 s in 6fdbc74
+- **Code:** `AbstractConvection`, `ClampDensityConvection`, `ResetToAmbientConvection`, `RelaxToAmbientConvection` in `src/physics/convection.jl`; `update_convective_relaxation!` in `src/numerics/leapfrog.jl`
 - **Docs:** `docs/src/physics/convection.md`
 
 ## Summary
 
 Where the layer is denser than the ambient beneath it (δρ < 0), it is statically unstable and would overturn and mix.
-`RelaxToAmbient` relaxes T and S towards T_a and S_a on `convection_time` (default 10⁴ s), through the sink `−(qᵖ − q_a)·conv2` with `conv2 = [δρ < 0]·H/τ`, at the past level.
+`RelaxToAmbient` relaxes T and S towards T_a and S_a on `convection_time` (default 3600 s; 10⁴ s before 2026-11-18), through the sink `−(qᵖ − q_a)·conv2` with `conv2 = [δρ < 0]·H/τ`, at the past level.
 LADDIE v2 has only a buoyancy floor (`ClampDensity`). It holds an unstable layer in place with no buoyancy driving, so under warm, freshened forcing the plume collapses and melt falls.
 None of the LADDIE papers describes a convection closure.
 
@@ -55,5 +55,5 @@ The front boundary condition (`NoInflow`) changes melt by +5 %, the convection s
   Gaspar entrainment uses `max(δρ, drho_floor)` and stays finite, but the warm dt falls (2 km: 233 s vs 372 s cold; 500 m: 32 s vs 93 s). The cause is not traced yet.
 - `ResetToAmbient` fires below `d_rho_min/ρ₀`, not only below zero, so it also resets marginally stable cells.
 - The ambient in the cavity is the front profile at every depth, whatever the plume has done to it. A strong halocline in that profile is what makes the layer unstable.
-- Not compared on ISOMIP+ Ocean1–3 or against v2 there yet.
+- Not compared on ISOMIP+ Ocean1–3 or against v2 there yet. The open points are collected in `open-questions/convection-closure.md`.
 - Warm-scenario results from v2 with its floor may underestimate the melt response where the ambient becomes lighter than the plume. That is an inference, not tested on v2.

@@ -51,3 +51,5 @@ Second-half means at the two corner cells:
 - `PastClosures` adds nothing visible at these cells. It is kept because its scalar threshold is much higher.
 - It does not cure the adjoint growth in the warm (Mathiot) state, which sits in thick, slow cells: see `open-questions/leapfrog-stability.md`.
 - Both defaults are bit-identical to 7bb33da (ISOMIP+, centred and upstream momentum advection).
+- Not checked: the field map of λΔt = (4e + 2C_d|U|)·Δt/H against its 0.575 limit over a whole domain, and the same at 1 km and on Crosson–Dotson / ISOMIP+.
+- Not needed so far: an exact backward Euler for the 1/H of the entrainment in the H equation, H⁺ = [b + √(b² + 8Δt·A)]/2 with A = 2μu★³/(g δρ).

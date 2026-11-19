@@ -89,6 +89,13 @@ It solves a vertically-averaged approximation of the Navier-Stokes equations in 
 - Use `jldoctest` blocks. Plain `julia` blocks are only exceptionally allowed since they are not tested by CI.
 - Include `# output` with verifiable output; prefer `show` methods over boolean comparisons
 - Use unicode for math (`Δt`, `η`, `ρ`), not LaTeX — LaTeX doesn't render in the REPL
+- Be concise. A docstring says, in this order and nothing more: what it is or does (one or two
+  sentences); the governing equation, its source, units and defaults; its fields or arguments, and
+  what a function returns or mutates; for an option of a family, when to choose it (one sentence);
+  `Select via …` or a `jldoctest`. Aim for ≤ 100 words of prose; only an entry point (`Grid`,
+  `Model`, `Simulation`, `run!`) may list more keywords. Comparisons with sibling options, run
+  numbers, history and line references into other codes go to the family's docs page; design
+  rationale and dead ends to a devnote; implementation notes to a `#` comment above the docstring
 
 ## Naming Conventions
 
@@ -161,7 +168,7 @@ Simulation
 │   ├── boundary :: BoundaryConditions  # open_ocean, grounding_line_slip, land_slip, gaps, wall_advection
 │   └── forcing :: CavityForcing        # ocean (ambient T/S profiles), ice (ice-base temperature)
 ├── clock :: Clock                      # time, iteration, dt
-├── time_stepper                               # time stepper (FixedTimeStepper / AdaptiveTimeStepper)
+├── time_stepper                        # FixedTimeStepper / AdaptiveTimeStepper
 ├── cfl                                 # CFL check
 ├── stop                                # simulation end criterion
 ├── output :: OutputConfig              # saveday, diagday, restday, tsday, resultdir, fields

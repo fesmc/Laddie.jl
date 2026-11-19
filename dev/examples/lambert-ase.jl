@@ -92,28 +92,33 @@ forcing = CavityForcing(OceanForcing1D(Tz, Sz, z; FT), PrescribedIceForcing(-25.
 
 params = Params(; FT,
     melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
-    entrainment = GasparEntrainment(2.5),
+    entrainment = GasparEntrainment(; mu = 2.5, max_detrainment = 1e-3),
+    equation_of_state = LinearEOS(; alpha, beta),
     lateral_viscosity = NonlinearLateralViscosity(1.0),
     momentum_advection = UpstreamMomentumAdvection(),
-    front_pressure = TruncatedDepthGradient(),
-    convection_scheme = ClampDensity(0.005),
+    front_pressure = TruncatedDepthFrontPressure(),
+    convection = ClampDensityConvection(0.005),
     coriolis = CoriolisParameter0D(-1.37e-4),
     A_h = 20.0, K_h = 4.0,
     C_d = 2.5e-3, C_d_top = 1.1e-3,
     H_init = 1.0, H_min = 1.0, dT_init = 0.0, dS_init = -0.1,
-    u_tide = 0.01, v_cut = 1.4, max_detrainment = 1e-3,
-    alpha, beta, l1, l2,
+    u_tide = 0.01, v_cut = 1.4,
+    l1, l2,
     rho0_seawater = rho_sw,
     seconds_per_year = 365 * 86400.0,
+    ice_slope = CentredIceSlope(),
+    ## Laddie's defaults differ from what the published run used:
+    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel(),
+    tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsIceConduction(),
 )
 boundary = BoundaryConditions(;
-    grounding_line = PartialSlipGL(1.0), land = PartialSlipLand(1.0),
-    open_ocean = ZeroGradientInflow(), wall_advection = NoWallAdvection(),
+    grounding_line_slip = PartialSlipAtGL(1.0), land_slip = PartialSlipAtLand(1.0),
+    open_ocean = ZeroGradientOpenOceanBC(), wall_advection = NoWallAdvection(),
 )
 
 # ## Run
 #
-# The run lasts 20 days, as in the paper. The time step is an [`AdaptiveDt`](@ref) that
+# The run lasts 20 days, as in the paper. The time step is an [`AdaptiveTimeStepper`](@ref) that
 # settles near 115 s. The fields shown below are the average over the last day.
 #
 # The CFL target of 0.3 matters. At 0.4 the time step grows to 160 s, and around day 8 the
@@ -121,8 +126,8 @@ boundary = BoundaryConditions(;
 # of metres. It never recovers, and how far it goes depends on round-off: the CPU and the GPU
 # end up with different results. At 0.3 the two backends agree to four digits.
 
-model = Model(grid; forcing, params, boundary, gradient = PyGradient())
-sim = Simulation(model; dt = 30.0, nu = 0.8, tstep = AdaptiveDt(cfl_target = 0.3),
+model = Model(grid; forcing, params, boundary)
+sim = Simulation(model; dt = 30.0, nu = 0.8, time_stepper = AdaptiveTimeStepper(cfl_target = 0.3),
                  output = OutputConfig(; name = "ASE", saveday = 1.0, restday = 20.0,
                                        resultdir = joinpath(pkgdir(Laddie), "docs", "output")))
 run!(sim; days = 20)

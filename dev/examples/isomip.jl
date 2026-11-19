@@ -85,15 +85,21 @@ println("mean melt $(round(mean_melt; digits = 2)) m/yr, max melt $(round(max_me
 # The same warm configuration, run for one day by the original LADDIE v1 code
 # (`runladdie.py config_isomip_compare.toml`, geometry from `gen_isomip_geom.py`), is stored
 # in `docs/assets/restart_000001.nc`. Laddie.jl repeats the day with the v1 ice-base
-# slope (`PyGradient`), the v1 walls (its `slip = 1`: no slip in the viscosity,
-# [`V1WallAdvection`](@ref) in the advection; see [Wall slip](../physics/walls.md)) and
-# the v1 tracer step (`AdvectiveTracerForm`), and the two end states are compared cell
-# by cell.
+# slope (`CentredIceSlope`), the v1 walls (its `slip = 1`: no slip in the viscosity,
+# [`V1WallAdvection`](@ref) in the advection; see [Wall slip](../bcs/walls.md)) and
+# the v1 tracer step (`AdvectiveTracerForm`), and the settings where Laddie's defaults
+# differ from v1 (convection, conduction, momentum form, closure level, tracer bounds); the
+# two end states are compared cell by cell.
 
-v1_walls = BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
-                              wall_advection = V1WallAdvection())
-sim_py = build_isomip(; isomipcond = :warm, gradient = PyGradient(), boundary = v1_walls,
-                      params = Params(; tracer_form = AdvectiveTracerForm()))
+v1_walls = BoundaryConditions(; grounding_line_slip = NoSlipAtGL(), land_slip = NoSlipAtLand(),
+                              wall_advection = V1WallAdvection(), open_ocean = ZeroGradientOpenOceanBC())
+sim_py = build_isomip(; isomipcond = :warm, boundary = v1_walls,
+                      params = Params(; tracer_form = AdvectiveTracerForm(), ice_slope = CentredIceSlope(),
+                                      convection = ResetToAmbientConvection(0.005),
+                                      ice_conduction = HollandJenkinsIceConduction(),
+                                      momentum_form = AdvectiveMomentumForm(),
+                                      closure_level = PresentClosureLevel(), tracer_bounds = TracerBounds(),
+                                      front_pressure = FullDepthFrontPressure()))
 run!(sim_py; days = 1.0, verbose = false)
 mj = sim_py.model
 
@@ -134,13 +140,13 @@ fig
 #
 # How long until the cavity settles? A coarser grid (80 × 20) keeps this quick. `run!`
 # continues from the current state and clock, so the run advances one day at a time and
-# records the melt after each. The same loop runs with [`AdaptiveDt`](@ref), which picks
+# records the melt after each. The same loop runs with [`AdaptiveTimeStepper`](@ref), which picks
 # `dt` to hold a target CFL number instead of using a fixed step.
 
 ndays = 30
 spinup = Dict(
     "fixed dt" => build_isomip(; isomipcond = :warm, nx = 80, ny = 20),
-    "adaptive dt" => build_isomip(; isomipcond = :warm, nx = 80, ny = 20, tstep = AdaptiveDt()),
+    "adaptive dt" => build_isomip(; isomipcond = :warm, nx = 80, ny = 20, time_stepper = AdaptiveTimeStepper()),
 )
 series = Dict(k => zeros(ndays, 3) for k in keys(spinup))   # mean melt, max melt, max H
 for (k, sim) in spinup, d in 1:ndays

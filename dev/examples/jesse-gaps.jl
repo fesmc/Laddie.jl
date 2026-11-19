@@ -155,15 +155,15 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 #     `laddie_viscosity` (`Ah` in Table A1, 10) is the coefficient of that parameterisation in the
 #     interior — not a viscosity in m² s⁻¹ — but v2's *wall* term uses the same number as a
 #     plain viscosity, which is `A_h` here;
-#   * [`TruncatedDepthGradient`](@ref): v2's pressure gradient at the ice front;
-#   * [`ClampDensity`](@ref): v2's only convection treatment, a buoyancy floor;
+#   * [`TruncatedDepthFrontPressure`](@ref): v2's pressure gradient at the ice front;
+#   * [`ClampDensityConvection`](@ref): v2's only convection treatment, a buoyancy floor;
 #   * `max_detrainment`: v2 hard-codes a 1e-3 m s⁻¹ cap (`laddie_physics.f90`), and unlike
 #     v1's 0.5 it binds.
 #
 # Walls are v2's, which are the defaults: zero velocity one grid spacing behind the
 # grounding line and land in the viscosity (v2's "no slip", slip factor 1 here), and
 # no momentum across a wall, since both of v2's advection schemes skip grounded
-# neighbours ([`NoWallAdvection`](@ref)). See [Wall slip](../physics/walls.md).
+# neighbours ([`NoWallAdvection`](@ref)). See [Wall slip](../bcs/walls.md).
 #
 # One v2 setting is deliberately left off: its `'upstream'` momentum advection, which
 # Laddie.jl has as [`UpstreamMomentumAdvection`](@ref) — the momentum riding on the thickness
@@ -177,30 +177,31 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 
 params = Params(; FT,
     melting = UStarGamTMelting(3.0e-2),
-    entrainment = GasparEntrainment(2.5),
-    drho_floor = 0.005 / rho0,
+    entrainment = GasparEntrainment(; mu = 2.5, drho_floor = 0.005 / rho0, max_detrainment = 1e-3),
     lateral_viscosity = NonlinearLateralViscosity(10.0),
-    front_pressure = TruncatedDepthGradient(),
-    convection_scheme = ClampDensity(0.005),
+    front_pressure = TruncatedDepthFrontPressure(),
+    convection = ClampDensityConvection(0.005),
     coriolis = CoriolisParameter0D(-1.37e-4),
     A_h = 10.0,                         # the wall term of v2's viscosity
     C_d = 2.5e-3, C_d_top = 2.5e-3,
     K_h = 10.0,
-    max_detrainment = 1e-3,
     rho0_seawater = rho0, rho_ice = 917.0,
     H_min = 1.0, u_tide = 0.01, v_cut = 1.0,
     H_init = 2.0, dT_init = 0.0, dS_init = -0.1,
+    ## Laddie's defaults differ from what the published run used:
+    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel(),
+    tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsIceConduction(),
 )
 
 # ## Runs
 #
 # Each geometry runs from rest with the treatment that produced it, under
-# [`AdaptiveDt`](@ref), which sets the time step from a target CFL number instead of fixing
+# [`AdaptiveTimeStepper`](@ref), which sets the time step from a target CFL number instead of fixing
 # it; it settles near 145 s, against the 100 s of the coupled runs. The total melt levels off after about 20 days, but the flow near the grounding
 # line stays unsteady, so the fields shown are averages over days 20 to 30, sampled twice a
 # day.
 #
-# Sample the average in much shorter calls than this and `AdaptiveDt` will re-bootstrap the
+# Sample the average in much shorter calls than this and `AdaptiveTimeStepper` will re-bootstrap the
 # leapfrog on nearly every step — each `run!` is then too short for its own check interval —
 # which inflates the melt rate by tens of percent.
 
@@ -212,7 +213,7 @@ function run_snapshot(s, gaps)
                 domain_cropping = MinRectangleDomainCropping(margin = round(Int, 6e3 / dx)))
     model = Model(grid; forcing, params,
                   boundary = BoundaryConditions(; gaps, wall_advection = NoWallAdvection()))
-    sim = Simulation(model; dt = 100.0, tstep = AdaptiveDt())
+    sim = Simulation(model; dt = 100.0, time_stepper = AdaptiveTimeStepper())
     run!(sim; days = SPINUP, verbose = false)
     m = sim.model
     melt, speed = zero(Array(m.melt)), zero(Array(m.melt))

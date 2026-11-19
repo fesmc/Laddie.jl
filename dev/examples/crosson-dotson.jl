@@ -9,8 +9,8 @@ defaults, and make a good starting point for a realistic cavity. Four of them ma
   * `nu = 0.8`: `nu = 0.1` is unstable at `dt = 120 s` and inflates the mean melt sevenfold.
   * No cap on the layer thickness ([`NoMaxLayerThickness`](@ref), the default): capping `H`
     at the water column cuts melt by ~90 % (see [`AbstractMaxLayerThickness`](@ref)).
-  * `ClampDensity` convection, as in the reference (the default `ResetToAmbient`: −0.07 %).
-  * `PyGradient`, the reference's ice-base slope (the default `JlGradient`: −0.8 %).
+  * `ClampDensityConvection` convection, as in the reference (`ResetToAmbientConvection`: −0.07 %).
+  * `CentredIceSlope`, the reference's ice-base slope (the default `MaskedIceSlope`: −0.8 %).
 
 The code is **not executed** by the documentation build, as it needs BedMachine v2 and the
 reference file on disk.
@@ -74,18 +74,24 @@ params = Params(; FT,
     A_h = 25.0, K_h = 25.0,
     C_d = 2.5e-3, C_d_top = 1.1e-3,
     H_min = 2.8, u_tide = 0.01,
-    max_detrainment = 0.5, v_cut = 1.414,
+    v_cut = 1.414,
     H_init = 10.0, dT_init = -0.1, dS_init = -0.1,
     coriolis = CoriolisParameter0D(-1.37e-4),
-    entrainment = GasparEntrainment(2.5),
+    entrainment = GasparEntrainment(; mu = 2.5, max_detrainment = 0.5),
     melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
-    convection_scheme = ClampDensity(0.005),
+    convection = ClampDensityConvection(0.005),
     tracer_form = AdvectiveTracerForm(),  # the reference steps T and S, not H·T and H·S
+    ice_slope = CentredIceSlope(),        # the reference's slope stencil
+    ## Laddie's defaults differ from what the published run used:
+    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel(),
+    tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsIceConduction(),
+    front_pressure = FullDepthFrontPressure(),
 )
-## The reference's slip = 1 on every wall: no slip in the viscosity, v1's advective ghost.
-boundary = BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
-                              wall_advection = V1WallAdvection())
-model = Model(grid; forcing, params, boundary, gradient = PyGradient())
+## The reference's slip = 1 on every wall: no slip in the viscosity, v1's advective ghost;
+## zero-gradient inflow at the ice front, as in v1.
+boundary = BoundaryConditions(; grounding_line_slip = NoSlipAtGL(), land_slip = NoSlipAtLand(),
+                              wall_advection = V1WallAdvection(), open_ocean = ZeroGradientOpenOceanBC())
+model = Model(grid; forcing, params, boundary)
 sim = Simulation(model; dt = 120.0, nu = 0.8)
 
 ## Like the reference: 50 days, averaged over the last 5.

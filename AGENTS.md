@@ -97,6 +97,11 @@ It solves a vertically-averaged approximation of the Navier-Stokes equations in 
 - **Functions**: snake_case — `time_step!`; functions that return values are not PascalCase, except named
   setups that return a configured object like a constructor (`ISOMIPForcing`, `ParamsISOMIPv2`, `SimulationPIGv1`)
 - **Kernels**: underscore prefix and `_kernel!` suffix — `_accum_series_kernel!`
+- **Scheme types**: a concrete subtype ends with the suffix of its abstract type, the abstract name without
+  `Abstract` — `FluxTracerForm <: AbstractTracerForm`, `SinkGapsBC <: AbstractGapsBC`. Prefer renaming the
+  abstract type when its suffix is too long to repeat. Exceptions are decided with the human, case by case:
+  a dimension tag may follow the suffix (`CoriolisParameter0D`, `OceanForcing1D`, `PerBasinOceanForcing1D`),
+  and the internal grid locations `Center`, `Face` (`AbstractLoc`) follow the C-grid convention
 - **Variables**: English long name or readable unicode math notation — never mix abbreviated and
   full forms (e.g., `cond` vs `condition`) to imply a difference; be specific
 
@@ -137,10 +142,10 @@ Simulation
 │   │                                   # one slot per exchangeable scheme:
 │   │   ├── entrainment                 #   AbstractEntrainment
 │   │   ├── melting                     #   AbstractMelting
-│   │   ├── convection_scheme           #   AbstractConvectionScheme
+│   │   ├── convection_scheme           #   AbstractConvection
 │   │   ├── frazil_ice                  #   AbstractFrazilIce
 │   │   ├── ice_conduction              #   AbstractIceConduction
-│   │   ├── equation_of_state           #   AbstractEquationOfState
+│   │   ├── equation_of_state           #   AbstractEOS
 │   │   ├── max_layer_thickness
 │   │   ├── tracer_bounds               #   NoTracerBounds (default) / TracerBounds
 │   │   ├── lateral_viscosity
@@ -151,12 +156,12 @@ Simulation
 │   │   ├── momentum_form               #   FluxMomentumForm (default) / AdvectiveMomentumForm
 │   │   ├── closure_level
 │   │   ├── coriolis                    #   AbstractCoriolisParameter
-│   │   ├── ice_slope                   #   MaskedGradient (default) / CentredGradient
+│   │   ├── ice_slope                   #   MaskedIceSlope (default) / CentredIceSlope
 │   │   └── kinks                       #   AbstractKinks (ExactKinks / SmoothKinks)
 │   ├── boundary :: BoundaryConditions  # open_ocean, grounding_line, land, gaps, wall_advection
 │   └── forcing :: CavityForcing        # ocean (ambient T/S profiles), ice (ice-base temperature)
 ├── clock :: Clock                      # time, iteration, dt
-├── tstep                               # time stepper (FixedDt / AdaptiveDt)
+├── tstep                               # time stepper (FixedTimeStepper / AdaptiveTimeStepper)
 ├── cfl                                 # CFL check
 ├── stop                                # simulation end criterion
 ├── output :: OutputConfig              # saveday, diagday, restday, tsday, resultdir, fields
@@ -214,7 +219,7 @@ _step_model!(m, dt, nu)
 ```
 
 - The `Simulation` constructor bootstraps the leapfrog with one forward step (`_bootstrap_leapfrog!`,
-  `leapfrog_step!(m, dt, 1)`); so does a dt change under `AdaptiveDt` and a restart
+  `leapfrog_step!(m, dt, 1)`); so does a dt change under `AdaptiveTimeStepper` and a restart
 - `adv`, `lap` and `Hq` in `Cache` are shared work arrays: U, V, T and S are stepped one after another and
   each consumes them before the next one writes them. Do not read them across steps
 - A new process usually enters as an `update_*!` in `update_secondary_fields!` (ordered by its inputs) and

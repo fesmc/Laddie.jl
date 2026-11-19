@@ -13,16 +13,18 @@
     # For production runs use the default MaskedIceSlope() which avoids spurious
     # slopes from ocean/grounded neighbours.  Likewise the Python walls are v1's
     # slip = 1 (no slip in the viscosity, V1WallAdvection), not the v2 default, and
-    # Python steps the tracers in advective form, not the flux-form default.
+    # Python steps the tracers in advective form, not the flux-form default, and keeps the
+    # full one-sided pressure gradient and the zero-gradient inflow at the ice front.
     py_restart = joinpath(@__DIR__, "..", "docs", "assets", "restart_000001.nc")
     if isfile(py_restart)
         v1_walls = BoundaryConditions(; grounding_line_slip = NoSlipAtGL(), land_slip = NoSlipAtLand(),
-                                      wall_advection = V1WallAdvection())
+                                      wall_advection = V1WallAdvection(), open_ocean = ZeroGradientOpenOceanBC())
         v1_params = Params(; tracer_form = AdvectiveTracerForm(), ice_slope = CentredIceSlope(),
                             convection = ResetToAmbientConvection(0.005),
                             ice_conduction = HollandJenkinsIceConduction(),
                             momentum_form = AdvectiveMomentumForm(),
-                            closure_level = PresentClosureLevel(), tracer_bounds = TracerBounds())
+                            closure_level = PresentClosureLevel(), tracer_bounds = TracerBounds(),
+                            front_pressure = FullDepthFrontPressure())
         m = build_isomip(; isomipcond = :warm, boundary = v1_walls,
                          params = v1_params)
         run!(m; days = 1.0, verbose = false)

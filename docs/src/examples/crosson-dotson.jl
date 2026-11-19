@@ -85,10 +85,12 @@ params = Params(; FT,
     ## Laddie's defaults differ from what the published run used:
     momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel(),
     tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsIceConduction(),
+    front_pressure = FullDepthFrontPressure(),
 )
-## The reference's slip = 1 on every wall: no slip in the viscosity, v1's advective ghost.
+## The reference's slip = 1 on every wall: no slip in the viscosity, v1's advective ghost;
+## zero-gradient inflow at the ice front, as in v1.
 boundary = BoundaryConditions(; grounding_line_slip = NoSlipAtGL(), land_slip = NoSlipAtLand(),
-                              wall_advection = V1WallAdvection())
+                              wall_advection = V1WallAdvection(), open_ocean = ZeroGradientOpenOceanBC())
 model = Model(grid; forcing, params, boundary)
 sim = Simulation(model; dt = 120.0, nu = 0.8)
 

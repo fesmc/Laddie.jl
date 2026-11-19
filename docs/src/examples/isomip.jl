@@ -92,13 +92,14 @@ println("mean melt $(round(mean_melt; digits = 2)) m/yr, max melt $(round(max_me
 # two end states are compared cell by cell.
 
 v1_walls = BoundaryConditions(; grounding_line_slip = NoSlipAtGL(), land_slip = NoSlipAtLand(),
-                              wall_advection = V1WallAdvection())
+                              wall_advection = V1WallAdvection(), open_ocean = ZeroGradientOpenOceanBC())
 sim_py = build_isomip(; isomipcond = :warm, boundary = v1_walls,
                       params = Params(; tracer_form = AdvectiveTracerForm(), ice_slope = CentredIceSlope(),
                                       convection = ResetToAmbientConvection(0.005),
                                       ice_conduction = HollandJenkinsIceConduction(),
                                       momentum_form = AdvectiveMomentumForm(),
-                                      closure_level = PresentClosureLevel(), tracer_bounds = TracerBounds()))
+                                      closure_level = PresentClosureLevel(), tracer_bounds = TracerBounds(),
+                                      front_pressure = FullDepthFrontPressure()))
 run!(sim_py; days = 1.0, verbose = false)
 mj = sim_py.model
 

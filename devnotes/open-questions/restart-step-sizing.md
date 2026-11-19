@@ -16,6 +16,7 @@ Should they take the actual step length?
 - Under the flux tracer form, the clamp is coherent (the clipped volume leaves with its own tracer), so the remainder no longer corrupts T and S.
 - This was first suspected for a NaN at iteration 10 (pan-Antarctic 1 km, flux form, 0.8 cap). The NaN went away with the coherent clamp, so the sizing was not shown to matter.
 - It is a v1 convention (`precompute_integration_terms!`).
+- Since 2026-11-19 a restart from a file at the same dt continues the leapfrog exactly, with no restart step (`init_from_restart!`). Restart steps remain at the first step, at dt changes under `AdaptiveTimeStepper`, after a refined restart, and after a restart at another dt under `FixedTimeStepper`.
 - `AdaptiveDt` restarts the leapfrog at every dt change. Splitting a run into many short `run!` calls also adds restarts: +41 % mean melt in one 1 km test.
 
 ## Candidate explanations

@@ -935,11 +935,20 @@ end
     init_from_restart!(sim, path; refine = 1, coarse_grid = nothing)
 
 Load H, U, V, T, S from the JLD2 restart file at `path` into all three leapfrog
-levels of the model's `Var` structs, set the clock to the restart time, then call
-`update_secondary_fields!` and one bootstrap integration step.  The saved CPU
+levels of the model's `Var` structs and set the clock to the restart time.  The saved CPU
 arrays are copied to the model's backend (CPU or GPU) and converted to its
 element type, so a restart written at one precision or on one backend loads on
 another.  [`Simulation`](@ref) calls it for its `restart` keyword.
+
+The file holds the three levels of a leapfrog step and the dt that separates them, so a
+restart onto the same grid **continues the run exactly**: a run of 2 days equals one of
+1 day, restarted, plus 1 day, to the last bit.  This needs the same dt:
+- [`AdaptiveTimeStepper`](@ref) resumes at the file's dt.
+- [`FixedTimeStepper`](@ref) (and a stepper of your own) keeps the dt the simulation was built
+  with.  When it differs from the file's, the leapfrog restarts with one forward step at the
+  new dt, and the log says so.
+A file written before the dt was stored, and a refined restart (below), restart the
+leapfrog the same way.  A file that stores the active cells must match the model's.
 
 With `refine = f > 1`, `path` is the restart of a run whose cells are `f` times
 coarser, on the same full domain: each coarse cell holds `f × f` fine ones, and
@@ -961,11 +970,11 @@ function init_from_restart!(sim, path::AbstractString; refine::Integer = 1, coar
     refine ≥ 1 || throw(ArgumentError("refine must be a positive integer, got $refine"))
     m = sim.model
     sim.io.restartfile = path
-    jldopen(path, "r") do f
+    exact = jldopen(path, "r") do f
         sim.clock.time = f["t_days"] * _float64(m.seconds_per_day)
-        # Resume at the saved dt when present (adaptive runs); older files
-        # without it keep the dt the simulation was constructed with.
-        haskey(f, "dt") && (sim.clock.dt = m.FT(f["dt"] / refine))
+        file_dt = haskey(f, "dt") ? f["dt"] / refine : nothing
+        exact = refine == 1 ? _restart_dt!(sim, sim.time_stepper, file_dt) : _refined_dt!(sim, file_dt)
+        refine == 1 && haskey(f, "tmask") && _check_restart_tmask(m, f["tmask"], path)
         fine = refine == 1 ? (name, a, dst) -> a : _refiner(m, f, refine, coarse_grid)
         for (name, var) in pairs(_prognostics(m))
             # Restarts from before the layer thickness was renamed D → H store it as "D".
@@ -986,12 +995,68 @@ function init_from_restart!(sim, path::AbstractString; refine::Integer = 1, coar
                 copyto!(dst, convert(Array{eltype(dst)}, src))
             end
         end
+        return exact
     end
     _set_forcing_time!(sim)
-    _bootstrap_leapfrog!(m, sim.clock.dt; _nan_check(sim)...)
+    _restart_leapfrog!(sim, exact)
     refined = refine == 1 ? "" : " (refined $(refine)×)"
     _print2log(sim, "Restarted from $(path)$(refined) at $(_t_days(sim)) days")
     return sim
+end
+
+# The dt a restart continues with, by time stepper: true when the three levels of the
+# file are a leapfrog step of that dt (`file_dt` is `nothing` for files without one).
+function _restart_dt!(sim, ::AdaptiveTimeStepper, file_dt)
+    file_dt === nothing && return false
+    sim.clock.dt = sim.model.FT(file_dt)
+    return true
+end
+function _restart_dt!(sim, ::AbstractTimeStepper, file_dt)
+    file_dt === nothing && return false
+    same = sim.clock.dt == sim.model.FT(file_dt)
+    if !same
+        note = @sprintf(
+            "restart written at dt = %.1f s; restarting the leapfrog at this simulation's %.1f s",
+            file_dt,
+            _float64(sim.clock.dt)
+        )
+        @info note
+        _print2log(sim, note)
+    end
+    return same
+end
+
+# A refined restart takes the coarse run's dt divided by the refinement, whatever the
+# stepper, and always restarts the leapfrog.
+function _refined_dt!(sim, file_dt)
+    file_dt === nothing || (sim.clock.dt = sim.model.FT(file_dt))
+    return false
+end
+
+# Continue from the restored levels, or restart the leapfrog with a forward step.  On
+# continuing, the secondary fields are refreshed from the restored levels, so that the
+# output and diagnostics before the first step read the restart state; the next step
+# recomputes them all.
+function _restart_leapfrog!(sim, exact::Bool)
+    m = sim.model
+    if exact
+        update_secondary_fields!(m, sim.clock.dt)
+    else
+        _bootstrap_leapfrog!(m, sim.clock.dt; _nan_check(sim)...)
+    end
+    return
+end
+
+function _check_restart_tmask(m, tmask, path)
+    active = Array(m.tmask) .> 0
+    size(tmask) == size(active) || return   # the per-field size check names the mismatch
+    tmask == active || throw(
+        ArgumentError(
+            "the restart $path has $(count(tmask)) active cells, the model $(count(active)), " *
+            "and they differ in $(count(tmask .!= active)) cells; restart onto the same mask",
+        ),
+    )
+    return
 end
 
 # The coarse run's grid as the restart file stores it, or as `coarse_grid` gives it

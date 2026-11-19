@@ -356,3 +356,43 @@ end
     sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, output)
     @test_throws ArgumentError to_backend(sim, ReactantBackend())
 end
+
+@testset "Restart: a continuation equals the straight run, to the last bit" begin
+    # 216 s divides a quarter day, so both runs take the same 200 steps.
+    tmp = mktempdir()
+    levels(m) = [copy(getfield(v, l)) for v in (m.H, m.U, m.V, m.T, m.S) for l in (:past, :present, :future)]
+    for (label, params) in (("default", Params()), ("reset", Params(; convection = ResetToAmbientConvection(0.005))))
+        build(name; kw...) = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, dt = 216.0, params,
+                                          output = OutputConfig(; name, resultdir = tmp, saveday = 0.25), kw...)
+        straight = build("straight-$label")
+        run!(straight; days = 0.5, verbose = false)
+        first = build("first-$label")
+        run!(first; days = 0.25, verbose = false)
+        file = joinpath(tmp, "first-$label", "restart_latest.jld2")
+        second = build("second-$label"; restart = file)
+        @test second.model.H.present == first.model.H.present
+        run!(second; days = 0.25, verbose = false)
+        @test second.clock.time == straight.clock.time
+        @test levels(second.model) == levels(straight.model)
+    end
+
+    # A different dt under FixedTimeStepper: kept, and the leapfrog restarts (logged).
+    file = joinpath(tmp, "first-default", "restart_latest.jld2")
+    out = OutputConfig(; name = "other-dt", resultdir = tmp, saveday = 0.25)
+    sim = @test_logs (:info, r"restarting the leapfrog at this simulation's 180.0 s") build_isomip(
+        CPU(); nx = 20, ny = 10, isomipcond = :warm, dt = 180.0, output = out, restart = file)
+    @test sim.clock.dt == 180.0
+    @test occursin("restart written at dt = 216.0 s", read(joinpath(tmp, "other-dt", "log.txt"), String))
+    # AdaptiveTimeStepper resumes at the file's dt.
+    sim = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, dt = 180.0,
+                       time_stepper = AdaptiveTimeStepper(), restart = file)
+    @test sim.clock.dt == 216.0
+
+    # The stored active cells must match the model's.
+    m = sim.model
+    active = Array(m.tmask) .> 0
+    @test Laddie._check_restart_tmask(m, active, file) === nothing
+    other = copy(active)
+    other[findfirst(active)] = false
+    @test_throws ArgumentError Laddie._check_restart_tmask(m, other, file)
+end

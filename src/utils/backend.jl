@@ -48,6 +48,10 @@ _launch_backend(backend::CPU) =
 
 _to_device(backend, a::AbstractArray) =
     (b = KA.allocate(backend, eltype(a), size(a)); copyto!(b, _flush_subnormals(a)); b)
+# To the host, the array is copied first and flushed there: the flush's `map` would read a
+# device array element by element, which Reactant's arrays refuse (the CPU copy that
+# `meltstats`, the log line, the output and the restarts of a Reactant run read).
+_to_device(::CPU, a::AbstractArray) = _flush_subnormals(Array(a))
 
 # Subnormal floats set to zero.  A velocity at rest decays geometrically under drag
 # and, in Float32 on CUDA (which keeps subnormals), can end up at ~1e-42 rather than

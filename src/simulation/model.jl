@@ -39,14 +39,9 @@ end
 """
 $(TYPEDEF)
 
-The model: geometry, physics and prognostic state.  It knows nothing about time
-integration — wrap it in a [`Simulation`](@ref) to advance it with `run!`.
-
-The fields are `Matrix{FT}` on CPU and `CuArray{FT,2}` on GPU.
-Use `to_backend(m, backend)` to obtain a model on a different backend —
-it returns a new `Model` with the matching array types.
-
-Fields are accessed directly on `m` through a flat forwarding layer:
+The model: geometry, physics and prognostic state, on the grid's backend and precision. It
+knows nothing about time stepping; wrap it in a [`Simulation`](@ref) to run it, and move it
+with [`to_backend`](@ref). Fields of its parts are read directly on `m`:
 
 | Access pattern | Source struct | Examples |
 |----------------|--------------|---------|
@@ -60,12 +55,7 @@ Fields are accessed directly on `m` through a flat forwarding layer:
 | `m.Tz`, `m.Sz`, `m.z` | Forcing (ocean) | ambient profile arrays |
 | `m.T_ice_farfield` | Forcing (ice) | ice temperature above the basal boundary layer (see `PrescribedIceForcing`) |
 
-`m.FT` returns the floating-point type (`Float64` or `Float32`) of the scalar
-parameters, which `Model` checks against the grid and forcing, and `m.nx`, `m.ny`
-the interior cell counts.
-
-`Grid`, `Geometry` and `Params` are immutable after construction.  `Cache` and
-`State` fields are mutable and updated in place each time step.
+`m.FT` is the float type of the scalar parameters; `m.nx`, `m.ny` the interior cell counts.
 
 # Fields
 $(TYPEDFIELDS)
@@ -426,44 +416,20 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Assemble a `Model` on `grid` from a forcing, a parameter set and boundary
-conditions, and set its initial prognostic fields.  Wrap the result in a
-[`Simulation`](@ref) to run it.
-
-The model derives everything that depends on its choices from the grid and keeps
-it in its `Geometry`: the gap-resolved mask (`boundary.gaps` decides whether gap
-cells `4` are active or demoted to open ocean, so the same grid can drive both
-treatments), the active-cell and velocity masks, the wall indicators, the
-ice-base slope (`params.ice_slope`) and the Coriolis field (`params.coriolis`).
-
-Land (`1`) and grounded ice (`2`) are both walls to the plume and are unioned into
-`grd`, but they stay distinct throughout: only `2` is a grounding line (`gl`, and
-the `boundary.grounding_line_slip` slip condition), while `1` is rock (`lnd`, and
-`boundary.land_slip`).  Both default to LADDIE v2's wall (slip factor 1) and can be set
-independently.
+Assemble a `Model` on `grid` from a forcing, a parameter set and boundary conditions, and set
+its initial prognostic fields. The model derives its `Geometry` (gap-resolved mask,
+masks, wall indicators, ice-base slope, Coriolis field) from the grid and these choices.
 
 # Keywords
-- `forcing` (required): a `CavityForcing`, or an ocean forcing alone (e.g.
-  `ISOMIPForcing`, `OceanForcing1D`), which is paired with a uniform
-  `PrescribedIceForcing($(DEFAULT_T_ICE_FARFIELD))`.  A 2D ice temperature `T_ice_farfield` must
-  cover the grid's input arrays (`grid.input_size`); it is cropped with the grid.
-- `params`: a `Params` object with all physical constants and parameterizations
-  (default `Params(; FT)` at the grid's precision).  A 2D latitude in
-  `params.coriolis` is cropped with the grid, like the ice temperature.
-- `boundary`: a [`BoundaryConditions`](@ref) (default `BoundaryConditions()`: LADDIE
-  v2's walls, otherwise the conditions both LADDIE versions share).
+- `forcing` (required): a [`CavityForcing`](@ref), or an ocean forcing alone, paired with
+  `PrescribedIceForcing($(DEFAULT_T_ICE_FARFIELD))`.
+- `params`: a [`Params`](@ref) at the grid's precision (default `Params(; FT)`).
+- `boundary`: a [`BoundaryConditions`](@ref) (default `BoundaryConditions()`).
 
-The model lives on the grid's backend and precision; `params` and `forcing` must
-match that precision (an `ArgumentError` is thrown otherwise).  It holds its
-initial fields only; secondary fields (melt, entrainment, …) are computed when a
-`Simulation` is constructed from it, because they depend on the time step.
-
-The outermost ring of the grid is never computed by the stencils.  It must hold no
-active cell (3 or 4), and no active cell may border one of its ocean cells: an ice
-front needs at least one ocean cell between it and the ring.  Walls (land or
-grounded ice) may sit on the ring right next to the shelf.  An `ArgumentError` is
-thrown otherwise; [`MinRectangleDomainCropping`](@ref) with its minimum margin of 2
-always satisfies this.
+Full-domain 2D inputs (ice temperature, latitude, ocean forcing) are cropped with the grid.
+The border ring must hold no active cell, and an ice front needs an ocean cell between it and
+the ring ([`MinRectangleDomainCropping`](@ref) ensures both); an `ArgumentError` is thrown
+otherwise, or when the precisions differ.
 
 # Example
 ```julia

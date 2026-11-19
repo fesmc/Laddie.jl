@@ -33,6 +33,14 @@ values stored at ocean cells (`z_draft=0`) and grounded cells (`z_draft=bed`).
 """
 struct MaskedIceSlope <: AbstractIceSlope end
 
+"""
+    icebase_slope(scheme, tmask, z_draft, dx, dy, FT) -> (dzdx, dzdy)
+
+The ice-base slope along x and y under the [`AbstractIceSlope`](@ref) `scheme`, computed
+once when the model is built.
+"""
+function icebase_slope end
+
 function icebase_slope(::CentredIceSlope, tmask, z_draft_ft, dx_ft, dy_ft, FT)
     return gradient_x(z_draft_ft, dx_ft), gradient_y(z_draft_ft, dy_ft)
 end
@@ -85,28 +93,22 @@ end
 # Geometry{A, M} — everything derived from the grid once a model has decided
 # which cells are active.  Owned by the Model; the Grid itself carries only what is
 # independent of any modelling choice.
+#
+# Neighbour values of the masks and the stagger counts (active cells in a two-point
+# average) are not stored: the kernels read them from the neighbouring cell, and the
+# reference equation terms (test/equation_terms.jl) use `ip_count` & co. (utils.jl).
+# `A` and `M` are the float and integer matrix types, with no separate element-type
+# parameter, so traced or dual arrays fit them as they are.
 # ============================================================================
 
 """
 $(TYPEDEF)
 
-Everything derived from a [`Grid`](@ref) once a [`Model`](@ref) has decided which
-cells are active: the gap-resolved mask, the masks and wall indicators, the
-ice-base slope and the Coriolis field.  Read through the model, e.g. `model.tmask`.
-
-Neighbour values of the masks and the stagger counts (active cells in a two-point
-average) are not stored: the kernels read them from the neighbouring cell, and the
-reference equation terms (test/equation_terms.jl) use `ip_count` & co. (utils.jl).
-
-`A` is the float matrix type (`Matrix{FT}` on CPU, `CuArray{FT,2}` on GPU) and `M`
-the integer mask's, with no separate element-type parameter, so traced or dual
-arrays fit them as they are.  `resolved_mask` stays on the CPU for host-side
-branching.
-
-The wall-indicator names keep the reference's compass letters: read `N`/`S`/`E`/`W`
-as +y/−y/+x/−x.  The grounding-line (`gl…`) and land (`lnd…`) indicators partition
-the wall faces, with the grounding line taking precedence at a face touching both,
-so each wall face gets exactly one slip factor.
+Everything derived from a [`Grid`](@ref) once a [`Model`](@ref) has decided which cells are
+active: the gap-resolved mask, the masks and wall indicators, the ice-base slope and the
+Coriolis field. Read through the model, e.g. `model.tmask`. Wall indicators use compass
+letters, `N`/`S`/`E`/`W` = +y/−y/+x/−x; the grounding-line (`gl…`) and land (`lnd…`) ones
+partition the wall faces, the grounding line taking precedence.
 
 # Fields
 $(TYPEDFIELDS)
@@ -343,33 +345,22 @@ case it is taken from them.
 | `3`   | floating ice shelf (active plume cells) |
 | `4`   | ice-shelf gap (ice-free; treated as the model's [`AbstractGapsBC`](@ref) decides) |
 
-`mask` and `z_draft` must include the one-cell border ring, i.e. have size
-`(nx+2, ny+2)` where `nx × ny` are the interior cells: **the first index runs along
-x, the second along y**, the order NetCDF readers such as NCDatasets hand you.
-`z_draft` is the ice-base depth in metres (negative downward); values outside
-grounded ice and shelf are ignored and zeroed, and shallow shelf drafts are clamped
+`mask` and `z_draft` include the one-cell border ring, size `(nx+2, ny+2)`, with **the first
+index along x**, as NetCDF readers such as NCDatasets return them. `z_draft` is the ice-base
+depth (m, negative); it is zeroed outside the ice, and shelf drafts shallower than 1 m are set
 to −1 m.
 
 # Keywords
-- `x`, `y`: cell-centre coordinates (m) of the input arrays, of length `size(mask, 1)`
-  and `size(mask, 2)` — border ring included, like every other input — e.g. the
-  projection coordinates of a BedMachine subset.  They must be uniformly spaced
-  (ascending or descending); their spacing sets `dx`/`dy`, or must match them when
-  both are given.  They are cropped with the mask and written to the NetCDF output.
-  By default `x = dx · (0:size(mask, 1) - 1)`, and likewise for `y`.
-- `z_bed`: bed elevation (same size), or `nothing` (default) for none; only the
-  topographic caps of [`AbstractMaxLayerThickness`](@ref) use it.
-- `preprocess`: mask preprocessing steps applied in order before cropping, e.g.
-  [`MarkGapsPreprocess`](@ref) or `FillSmallShelfPatchesPreprocess()`.  The
-  caller's `mask` is not modified.
-- `domain_cropping`: `MinRectangleDomainCropping()` (default) or `NoDomainCropping()`.
-  Gap cells count as active, so a gap is never cropped away.
-- `backend`: KernelAbstractions backend of the arrays (default `CPU()`).
-- `FT`: floating-point precision type (default `Float64`).
+- `x`, `y`: uniformly spaced cell-centre coordinates (m) of the input arrays, border ring
+  included; their spacing sets (or must match) `dx`, `dy`. Default `dx · (0:size(mask, 1) - 1)`.
+- `z_bed`: bed elevation (same size), for the topographic caps of
+  [`AbstractMaxLayerThickness`](@ref); default `nothing`.
+- `preprocess`: mask preprocessing steps applied before cropping, e.g. [`MarkGapsPreprocess`](@ref).
+- `domain_cropping`: [`MinRectangleDomainCropping`](@ref) (default) or [`NoDomainCropping`](@ref).
+- `backend` (default `CPU()`), `FT` (default `Float64`).
 
-Full-domain fields a model is given later — a 2D latitude or ice
-temperature `T_ice_farfield` — must match the size of the arrays passed here; the model crops
-them with `grid.crop`.
+Full-domain fields given to the model later (a 2D latitude, ice temperature or ocean forcing)
+have the size of `mask`; the model crops them with `grid.crop`.
 
 ```julia
 grid = Grid(mask, z_draft, 500.0, 500.0)

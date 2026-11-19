@@ -87,10 +87,9 @@ _is_active(v::Integer) = v == 3 || v == 4
 """
 $(TYPEDSIGNATURES)
 
-Derive the 4-class LADDIE domain mask from BedMachine-style bed-elevation and
-ice-thickness arrays.  Both arrays should cover the *interior* domain of size
-`(nx, ny)`; the returned mask has size `(nx+2, ny+2)` with a one-cell border
-ring of `1` (land/boundary).
+Derive the LADDIE domain mask from BedMachine-style bed elevation `bed` (m, positive up) and ice
+`thickness` (m) on the interior `(nx, ny)`; the result is `(nx+2, ny+2)`, with a border ring
+of `1`.
 
 | Value | Meaning         | Condition                             |
 |-------|-----------------|---------------------------------------|
@@ -99,31 +98,9 @@ ring of `1` (land/boundary).
 | `2`   | grounded ice    | `thickness > 0` and `h_af ≥ 0`        |
 | `3`   | floating shelf  | `thickness > 0` and `h_af < 0`        |
 
-Height above flotation: `h_af = thickness × (rho_ice/rho_sw) + bed`.  Gaps (`4`)
-are not derived here; mark them with [`MarkGapsPreprocess`](@ref).
-
-Ice-free cells are split by bed elevation, which is the `thickness → 0` limit of the
-flotation test: exposed bedrock — nunataks, rock islands inside a shelf, ice-free
-coastline — is **land**, not ocean.  Were it ocean, every such island would act as
-an open-boundary sink in the middle of the cavity.
-
-The default densities are BedMachine's (917 and 1028 kg m⁻³), so the mask agrees
-with the dataset's own; they need not match the model's `Params.rho_ice`.
-
-# Arguments
-- `bed`:      bed elevation (m, positive above sea level).
-- `thickness`: ice thickness (m, positive where ice is present).
-- `rho_ice`:  ice density (kg m⁻³, default 917).
-- `rho_sw`:   seawater density (kg m⁻³, default 1028).
-
-# Example
-```julia
-ds    = NCDataset("BedMachineAntarctica-v3.nc")
-z_bed = Float64.(Array(ds["bed"][i1:i2, j1:j2]))
-h_ice = Float64.(Array(ds["thickness"][i1:i2, j1:j2]))
-close(ds)
-mask = build_laddie_mask(z_bed, h_ice)
-```
+with `h_af = thickness × rho_ice/rho_sw + bed` the height above flotation. Exposed bedrock is
+land, so a rock island in a shelf is a wall, not an open-ocean sink. Gaps (`4`) are marked by
+[`MarkGapsPreprocess`](@ref). The default densities (kg m⁻³) are BedMachine's.
 """
 function build_laddie_mask(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
     nx, ny = size(bed)
@@ -173,21 +150,10 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Compute ice-base depth (m, negative below sea level) from BedMachine-style arrays.
-Returns a `(nx+2, ny+2)` matrix (interior domain with border ring zeroed).
-
-- **Floating cells** (`h_af < 0`): `z_draft = -thickness * rho_ice/rho_sw` (Archimedes).
-- **Grounded cells** (`h_af >= 0`): `z_draft = bed` (ice base rests on the bed).
-- **Ocean / border cells**: `z_draft = 0`.
-
-Pass the result directly as the `z_draft` argument of [`Grid`](@ref), which clamps
-very shallow shelf cells and zeroes the draft outside grounded ice and shelf.
-
-# Arguments
-- `bed`:      bed elevation (m, positive above sea level).
-- `thickness`: ice thickness (m, positive where ice is present).
-- `rho_ice`:  ice density (kg m⁻³, default 917).
-- `rho_sw`:   seawater density (kg m⁻³, default 1028).
+Ice-base depth (m, negative below sea level) from BedMachine-style arrays, as a
+`(nx+2, ny+2)` matrix for [`Grid`](@ref): `-thickness * rho_ice/rho_sw` where the ice floats
+(`h_af < 0`), `bed` where it is grounded, `0` elsewhere and on the border ring. Arguments as for
+[`build_laddie_mask`](@ref).
 """
 function ice_base_depth(bed, thickness; rho_ice = 917.0, rho_sw = 1028.0)
     nx, ny = size(bed)
@@ -211,29 +177,9 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Remove isolated ocean pockets from a LADDIE mask by flood-filling from the main
-ocean.  Ocean cells (`mask == 0`) that are not connected (4-connectivity) to the
-outer ocean are reclassified as land (`mask == 1`).
-
-The outer ocean is identified as all ocean cells reachable from the outermost ring
-of the array.  Noisy topography (e.g. BedMachine) occasionally creates small
-enclosed ocean patches fully surrounded by ice; these cause spurious ice-front
-dynamics and numerical instabilities.
-
-An enclosed pocket becomes **land**, not grounded ice: there is no ice there, and
-conflating the two hides which walls are rock and which are the grounding line.
-
-Modifies `mask` in-place and returns the number of cells that were reclassified.
-
-# Arguments
-- `mask`: integer mask matrix as returned by [`build_laddie_mask`](@ref).
-
-# Example
-```julia
-mask = build_laddie_mask(z_bed, h_ice)
-n = fill_ocean_holes!(mask)
-println("Reclassified \$n isolated ocean cells")
-```
+Turn enclosed ocean pockets of `mask` into land (`0` → `1`): ocean cells not 4-connected to the
+ocean on the outer ring. Land, not grounded ice, since there is no ice there. Modifies `mask`
+and returns the number of cells changed.
 """
 function fill_ocean_holes!(mask::AbstractMatrix{Int})
     # Seed: ocean cells on the outermost ring of the array, or directly inside it.
@@ -253,28 +199,9 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Remove isolated floating-shelf patches from a LADDIE mask by flood-filling from
-shelf cells connected to the open ocean.  Shelf cells (`mask == 3`) that have no
-4-connected path to any ocean cell (`mask == 0`) are reclassified as grounded ice
-(`mask == 2`).
-
-Noisy topography can produce small shelf patches fully enclosed by grounded ice
-with no ice front; these are physically inconsistent and can cause instabilities.
-
-Modifies `mask` in-place and returns the number of cells reclassified.  Call
-[`fill_ocean_holes!`](@ref) first so that isolated ocean pockets do not
-artificially seed shelf connectivity.
-
-# Arguments
-- `mask`: integer mask matrix as returned by [`build_laddie_mask`](@ref).
-
-# Example
-```julia
-mask = build_laddie_mask(z_bed, h_ice)
-fill_ocean_holes!(mask)
-n = fill_shelf_holes!(mask)
-println("Reclassified \$n isolated shelf cells")
-```
+Turn shelf patches with no 4-connected path to the open ocean into grounded ice (`3` → `2`): a
+shelf with no ice front. Call [`fill_ocean_holes!`](@ref) first, so that enclosed pockets do
+not count as ocean. Modifies `mask` and returns the number of cells changed.
 """
 function fill_shelf_holes!(mask::AbstractMatrix{Int})
     # Seed: active cells next to the ocean.  The fill runs through active cells only,
@@ -293,35 +220,10 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Remove undersized isolated grounded-ice patches from a LADDIE mask.  Each
-4-connected component of grounded cells (`mask == 2`) that is *not* connected
-to the outermost ring of the array is identified; any such component with
-fewer than `min_cells` cells is reclassified as floating shelf (`mask == 3`).
-
-Components that touch the border ring are part of the main grounded ice sheet
-and are never modified, regardless of size.  Only truly isolated grounded
-patches — pinning points, rumples, or topographic artefacts inside the shelf —
-are candidates for removal.
-
-Modifies `mask` in-place and returns the number of cells reclassified.
-Recommended to call [`fill_ocean_holes!`](@ref) and
-[`fill_shelf_holes!`](@ref) first so that the shelf geometry is clean before
-removing pinning points.
-
-# Arguments
-- `mask`:      integer mask matrix as returned by [`build_laddie_mask`](@ref).
-- `min_cells`: minimum number of cells an isolated grounded component must have
-  to be retained (default 10).  Components strictly smaller than this are
-  reclassified as shelf.
-
-# Example
-```julia
-mask = build_laddie_mask(z_bed, h_ice)
-fill_ocean_holes!(mask)
-fill_shelf_holes!(mask)
-n = fill_small_grounded_patches!(mask, 20)
-println("Reclassified \$n cells in undersized isolated grounded patches")
-```
+Turn isolated grounded patches (not connected to the outer ring) of fewer than `min_cells`
+cells into shelf (`2` → `3`): pinning points and rumples too small to resolve. Call
+[`fill_ocean_holes!`](@ref) and [`fill_shelf_holes!`](@ref) first. Modifies `mask` and
+returns the number of cells changed.
 """
 function fill_small_grounded_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
     n_filled = 0
@@ -339,35 +241,9 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Remove undersized floating-shelf patches from a LADDIE mask.  Each
-4-connected component of shelf cells (`mask == 3`) is identified; any
-component with fewer than `min_cells` cells is reclassified as grounded
-ice (`mask == 2`).
-
-A component of only a few cells cannot meaningfully resolve the LADDIE
-plume dynamics: the centred-difference stencil spans ≥ 2 cells in each
-direction, and the depth-averaged momentum balance requires at least
-O(10) cells to develop a coherent flow.  Removing these micro-patches
-eliminates spurious gradients and numerical instabilities in noisy
-real-world topography (e.g. BedMachine).
-
-Modifies `mask` in-place and returns the number of cells reclassified.
-Recommended to call [`fill_ocean_holes!`](@ref) and
-[`fill_shelf_holes!`](@ref) first.
-
-# Arguments
-- `mask`:      integer mask matrix as returned by [`build_laddie_mask`](@ref).
-- `min_cells`: minimum number of cells a shelf component must have to be
-  retained (default 10).  Components strictly smaller than this are removed.
-
-# Example
-```julia
-mask = build_laddie_mask(z_bed, h_ice)
-fill_ocean_holes!(mask)
-fill_shelf_holes!(mask)
-n = fill_small_shelf_patches!(mask, 20)
-println("Removed \$n cells in undersized shelf patches")
-```
+Turn shelf patches of fewer than `min_cells` cells into grounded ice (`3` → `2`): a patch of a
+few cells cannot resolve a coherent flow. Call [`fill_ocean_holes!`](@ref) and
+[`fill_shelf_holes!`](@ref) first. Modifies `mask` and returns the number of cells changed.
 """
 function fill_small_shelf_patches!(mask::AbstractMatrix{Int}, min_cells::Int = 10)
     n_filled = 0
@@ -443,26 +319,10 @@ end
 """
 $(TYPEDEF)
 
-Mark ice-shelf gaps from a reference ice footprint: every open-ocean cell (`0`)
-where `refgeo` marks ice becomes a gap (`4`).  This mirrors the `refgeo_Hi > 0`
-test of the reference implementation — a gap is an ice-free cell where the
-reference geometry had ice, not a topological property of the mask.
-
-`refgeo` may be a `Bool` matrix, or any numeric matrix in which positive entries
-mark ice (e.g. a reference ice thickness).  It must match the size of the mask
-passed to `Grid`, since preprocessing runs before domain cropping — which is
-also what keeps a gap at the edge of the footprint from being cropped away before
-it exists.
-
-Identifying gaps is a statement about geometry; what happens *in* a gap is the
-boundary condition, [`SinkGapsBC`](@ref) or [`ConnectedGapsBC`](@ref).  Place this
-step after any hole-filling steps in the `preprocess` list, so the gaps it marks
-are not reclassified afterwards.
-
-```julia
-grid = Grid(mask, z_draft, dx, dy; preprocess = [MarkGapsPreprocess(reference_thickness)])
-Model(grid; forcing, boundary = BoundaryConditions(; gaps = ConnectedGapsBC()))
-```
+Mark ice-shelf gaps from a reference ice footprint: every open-ocean cell (`0`) where `refgeo`
+marks ice (`true`, or positive) becomes a gap (`4`), as the `refgeo_Hi > 0` test of LADDIE v2.
+`refgeo` has the size of the mask. Place it after any hole-filling steps; what happens in a gap
+is the [`AbstractGapsBC`](@ref).
 
 # Fields
 $(TYPEDFIELDS)
@@ -471,6 +331,13 @@ struct MarkGapsPreprocess{R<:AbstractMatrix} <: AbstractPreprocess
     "reference ice footprint (`Bool`, or numeric with positive entries marking ice)"
     refgeo::R
 end
+
+"""
+    preprocess!(mask, step)
+
+Apply the [`AbstractPreprocess`](@ref) `step` to `mask` in place.
+"""
+function preprocess! end
 
 function preprocess!(mask, p::MarkGapsPreprocess)
     size(p.refgeo) == size(mask) || throw(
@@ -514,26 +381,10 @@ struct NoDomainCropping <: AbstractDomainCropping end
 """
 $(TYPEDEF)
 
-Crop the grid inputs (mask, draft, bed, coordinates, and any full-domain field a
-model is given later) to the smallest rectangle that contains all dynamically
-active cells (floating shelf `mask == 3` and gaps `mask == 4`), expanded by `margin`
-cells in every direction.  Pass as `Grid(...; domain_cropping)`; this is the default.
-
-`margin` must be at least 2.  The stencils skip the outermost ring, so an active
-cell must not border an ocean cell of that ring (see `Model`), and with a margin of
-1 an ice front at the edge of the cropped box would do exactly that.  The default
-of 4 leaves a little context around the cavity, which mostly matters for plotting —
-a tight crop puts the ice front hard against the frame.  Use `margin = 2` for the
-tightest domain the solver accepts.
-
-The result is clipped to the input array, so a `margin` larger than the available
-padding simply keeps what is there.  If the domain is already minimal, the arrays
-are returned unchanged.
-
-`multiple` rounds the size of the cropped grid up to a multiple of it (one integer
-for both axes, or one per axis as a tuple), by keeping more cells at the end of the
-axis, then at its start: a grid sharded over a device mesh
-([`ReactantBackend`](@ref)) must split evenly.  It must fit in the input array.
+Crop the grid inputs (and any full-domain field a model is given later) to the smallest
+rectangle holding the active cells (`3` and `4`), expanded by `margin ≥ 2` cells and clipped
+to the input. `multiple` rounds the cropped size up to a multiple, per axis or for both, as a
+grid sharded over a device mesh needs. The default; see [Domain cropping](@ref).
 
 # Fields
 $(TYPEDFIELDS)
@@ -545,9 +396,14 @@ $(TYPEDFIELDS)
     multiple::M = 1
 end
 
-# Index ranges of the kept sub-rectangle.  Returned rather than applied so every
-# full-domain input — mask, draft, bed, and a 2D ice temperature — is sliced
-# with one identical pair of ranges.
+"""
+    crop_ranges(mask, cropping) -> (rows, cols)
+
+The index ranges of `mask` that [`Grid`](@ref) keeps under the
+[`AbstractDomainCropping`](@ref) `cropping`; every full-domain input is sliced with them.
+"""
+function crop_ranges end
+
 crop_ranges(mask, ::NoDomainCropping) = axes(mask, 1), axes(mask, 2)
 
 function crop_ranges(mask, cropping::MinRectangleDomainCropping)

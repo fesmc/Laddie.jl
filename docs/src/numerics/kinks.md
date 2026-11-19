@@ -36,11 +36,27 @@ Params(; kinks = SmoothKinks(; H = 0.0, u = 0.0, uH = 0.0, w = 0.0,
                                drho = 0.0, T = 0.0, S = 0.0, log = 0.1))   # γ_T only
 ```
 
+Each ε acts on one group of kinks:
+
+| ε | where |
+|---|---|
+| `H` | `H_min` top-up, cap detrainment against the cap and the `H_min` floor |
+| `u` | upwind tracer and thickness fluxes, the centred momentum advection's `sign(u)`, the speed cap, `√` of the drag, speed, deformation and Holland's shear |
+| `uH` | donor of the momentum under [`UpstreamMomentumAdvection`](@ref) (sign of the face mass flux) |
+| `w` | split of the Gaspar rate into entrainment and detrainment, `max_detrainment`, the melt discriminant |
+| `drho` | `drho_floor` of Gaspar entrainment, the `ClampDensityConvection` floor |
+| `T` | conductive `c_i` at the freezing point, frazil supercooling, the temperature bounds of [`TracerBounds`](@ref) |
+| `S` | the salinity bounds of `TracerBounds` |
+| `log` | floor of the log-layer term of [`TurbulentGamTMelting`](@ref) |
+
 Kinks that the state sits on exactly, rather than crosses, are left exact. A blend
 there would shift the result by about ε/4 in every step. This covers the
 `max(0, ⋅)` guard of the cap detrainment, the clamp of `H` after the thickness step
 and the share of the flux-form tracer update that follows it: the minimum-thickness
 entrainment and the cap detrainment bring the stepped `H` exactly to its bounds.
+Also left exact are the convective switches of `ResetToAmbientConvection` and
+`RelaxToAmbientConvection`, the ``\gamma_T`` of [`PrescribedMelting`](@ref), the depth
+interpolation of the forcing and the time-step controller.
 
 On a 3-day ISOMIP+ run with the LADDIE v2 schemes, the default widths move the
 mean melt by less than 0.1 %. In a cold setup where the `T_max` bound binds, the

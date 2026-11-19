@@ -4,7 +4,7 @@
 - **Status:** opt-in since 2026-11-04 (`front_ocean_forcing(...; blend = FrontBlend(...))`); used in the pan-Antarctic reference runs
 - **Commits:** 89420ae (feature), acda2a3 (blend over `front_length`, default 64 km; source columns cut at their seabed)
 - **Code:** `front_ocean_forcing`, `FrontBlend`, `_front_seeds` in `src/bcs/ocean_sources.jl`
-- **Docs:** `docs/src/physics/ocean_forcing.md`
+- **Docs:** `docs/src/bcs/ocean_forcing.md`
 
 ## Summary
 
@@ -38,6 +38,11 @@ Steps in the ambient T to a 4-neighbour at the same depth (the cell's draft), bl
 - The result is still a `PerBasinOceanForcing1D`, with a row per source column and per blended cavity cell.
   At 2 km that is 384 015 × 30 (0.12 GB at Float32), against 1.4 GB for an `OceanForcing2D` (23 GB at 500 m).
 - It builds in ~10 s at 2 km.
+
+- The blend is over a length of front, `front_length / dx` sources, so the same length is blended at every resolution.
+  The default of 64 km fits best, among 8 to 512 km, the water inside the cavities of the ISMIP7 ocean models that resolve them (NEMO of Mathiot et al. 2023; the merge of Naughten et al. 2021 and Jourdain et al. 2022), predicted from their own front columns cut at the seabed.
+- Source columns are cut at their own seabed (`cut = true`) before they extend flat.
+  Ocean products are commonly extrapolated through land and below the seabed, often with warm off-shelf water, and a cavity deeper than its front would otherwise read that extrapolation.
 
 ## Caveats
 

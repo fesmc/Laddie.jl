@@ -73,6 +73,12 @@ The three schemes that solve it differ only in ``\gamma_T`` and ``\gamma_S``:
   ``\gamma_S = \gamma_T / 35``. The ISOMIP+ default.
 - [`TurbulentGamTMelting`](@ref): both are computed from ``u_\star`` via a log-layer
   formulation ([Holland & Jenkins 1999](@cite holland_modeling_1999); [Lambert et al. (2023), Eqs. 11–12](@cite lambert_modelling_2023)).
+  The log term is floored at zero (``u_\star H/\nu_0 \ge 1``): below that the layer is thinner
+  than its own viscous sublayer, where the log law does not hold, and the unbounded log would
+  drive the denominator through zero. The floor never binds at the default parameters, where
+  `u_tide` and `H_min` keep ``u_\star H/\nu_0`` above about 170; the constructor checks that
+  ``12.5\,\mathrm{Pr}^{2/3} > 8.68`` (and likewise for ``\mathrm{Sc}``), so both denominators
+  stay positive.
 - [`UStarGamTMelting`](@ref): ``\gamma_T = \Gamma_T u_\star`` and ``\gamma_S = \gamma_T / r``
   with ``r`` = 35 by default. This is [LADDIE v2](../versions.md)'s `'uniform'` option and what the
   ISOMIP+ protocol tunes. A `ratio` other than 35 (e.g. 70) is experimental.

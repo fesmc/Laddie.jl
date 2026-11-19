@@ -17,13 +17,25 @@ the velocity. Its coefficient is selected with `Params(; lateral_viscosity = ...
   not to `A_h`. `C_visc/100` plays the role of a squared Smagorinsky constant; the default
   10 corresponds to ``C_s \approx 0.32``.
 
-The grounding-line and land walls carry the scheme's own coefficient, as in the v2
-reference; how strongly they brake the flow is the slip factor, set separately (see
+The grounding-line and land walls carry the scheme's own coefficient, with the neighbour
+replaced by the ghost velocity ``(1 - s)\,u`` of the slip factor ``s``. With the default
+``s = 1`` the ghost is zero, as in the v2 reference, which treats grounded and land neighbours
+as ordinary cells at rest (`laddie_velocity.f90`); only at the border of its mesh does v2 apply
+the bare `C%laddie_viscosity` as a constant, which Laddie.jl has no counterpart of. How strongly the walls brake the flow is the slip
+factor, set separately (see
 [Wall slip](../bcs/walls.md)). Two things are *not* affected by this choice:
 
 - **Tracer diffusion.** The tracer diffusivity `Params.K_h` is always a constant.
 - **Shear entrainment.** [`HollandEntrainment`](@ref) uses `A_h` and `K_h` as its length
   scale either way.
+
+!!! note "C-grid staggering"
+    The v2 reference collocates `U` and `V` at triangle centres, so its velocity difference
+    `dUabs` is direct. On the staggered C-grid the cross-component is first interpolated onto
+    this component's points, with the 4-point average the quadratic drag uses for the speed
+    (`ip_half(jm_half(V))` for the `U` equation, `jp_half(im_half(U))` for `V`). The difference
+    is the full vector ``\lVert\delta\mathbf{u}\rVert = \sqrt{\delta U^2 + \delta V^2}``, so one
+    isotropic coefficient serves both components of a face.
 
 The time level of the thickness that weights the Laplacian is a separate, numerical
 choice: [Laplacian weights](../numerics/laplacian_weights.md). There is no viscous

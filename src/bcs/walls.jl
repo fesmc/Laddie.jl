@@ -35,16 +35,10 @@ abstract type AbstractSlipAtGL end
 """
 $(TYPEDEF)
 
-No-slip momentum boundary condition at the grounding line: the tangential
-velocity vanishes at walls bordering grounded ice (mask value `2`), i.e. at the
-face between the last shelf cell and the grounded cell.  Implemented as a slip
-factor of `2` on grounding-line faces.  Land walls (mask value `1`) are governed
-independently by `BoundaryConditions.land_slip`.
-
-This is the viscous wall of LADDIE v1 as published (`slip = 1` in its configs:
-v1 adds its factor to a stencil that already holds one unit of wall stress); see
-[`V1WallAdvection`](@ref) for its advective part.  It is stronger than LADDIE v2's
-"no slip", which is [`PartialSlipAtGL`](@ref)`(1.0)`.
+No-slip momentum boundary condition at the grounding line: slip factor `2` on walls bordering
+grounded ice (mask value `2`), so the tangential velocity vanishes at the wall face. LADDIE
+v1's viscous wall; stronger than LADDIE v2's "no slip", which is [`PartialSlipAtGL`](@ref)`(1.0)`.
+See [Wall slip](@ref) for the convention.
 
 Select via `BoundaryConditions(; grounding_line_slip = NoSlipAtGL())`.
 """
@@ -83,7 +77,14 @@ struct PartialSlipAtGL{FT} <: AbstractSlipAtGL
     PartialSlipAtGL(factor::Real) = (f = _check_slip(factor); new{typeof(f)}(f))
 end
 
-# Slip factor applied at grounding-line faces (0 = free slip, 1 = v2, 2 = no slip).
+"""
+    slip_factor(bc, FT)
+
+Slip factor of the wall condition `bc` ([`AbstractSlipAtGL`](@ref), [`AbstractSlipAtLand`](@ref)),
+from `0` (free slip) to `2` (no slip), as an `FT`; see [Wall slip](@ref).
+"""
+function slip_factor end
+
 slip_factor(::FreeSlipAtGL, FT) = zero(FT)
 slip_factor(::NoSlipAtGL, FT) = FT(2)
 slip_factor(bc::PartialSlipAtGL, FT) = FT(bc.factor)
@@ -240,8 +241,15 @@ Select via `BoundaryConditions(; wall_advection = V1WallAdvection())`.
 """
 struct V1WallAdvection <: AbstractWallAdvection end
 
-# Slip factors seen by the momentum-advection kernels, as opposed to the viscous
-# wall stress, which always uses `_viscosity_slips`.
+"""
+    advection_slips(m, wall_advection) -> (s_gl, s_lnd)
+
+The slip factors the momentum-advection kernels see at grounding-line and land walls under
+the [`AbstractWallAdvection`](@ref) `wall_advection`; the viscous wall stress always uses the
+slip conditions themselves.
+"""
+function advection_slips end
+
 advection_slips(m) = advection_slips(m, m.boundary.wall_advection)
 advection_slips(m, ::SlipScaledWallAdvection) = _wall_slips(m)
 advection_slips(m, ::NoWallAdvection) = (zero(m.FT), zero(m.FT))

@@ -72,7 +72,8 @@ plume and 25 % for a warm one at 500 m).
 !!! warning "Experimental"
     `RoquetEOS` is experimental and logs a warning when constructed. [Roquet et al. (2015)](@cite roquet_defining_2015) fit it to the
     open ocean in Conservative Temperature and Absolute Salinity, which Laddie takes as its temperature
-    and salinity (only salinity differences enter, so the offset to practical salinity cancels), and say
+    and salinity (only salinity differences enter, so the offset to practical salinity cancels; the
+    difference between Conservative and potential temperature is below 0.01 K in cold water), and say
     it serves understanding rather than realistic simulation (TEOS-10 does).
     Supercooled cavity water is an extrapolation. The constants `alpha` and `beta` belong to
     `LinearEOS`, and an ambient profile built as neutral for them (as in the examples) is not neutral

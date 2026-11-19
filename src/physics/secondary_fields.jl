@@ -16,9 +16,15 @@ function update_secondary_fields!(m, dt)
     return
 end
 
-# Friction velocity at the T-point: u★ = √(C_d_top · (im_half(U)² + jm_half(V)² + u_tide²))
-# im_half(U)[i,j] = (U[i,j] + U[i−1,j]) / 2,  jm_half(V)[i,j] = (V[i,j] + V[i,j−1]) / 2,
-# at the level of `Params.closure_level`.
+"""
+    update_ustar!(m)
+
+Friction velocity on T-points, `m.ustar = √(C_d_top (Ū² + V̄² + u_tide²))`, with the velocities
+averaged onto the T-point at the level of `Params.closure_level`. A melting scheme calls it,
+since the entrainment needs it too.
+"""
+function update_ustar! end
+
 function update_ustar!(m)
     launch_interior!(
         _ustar_kernel!,

@@ -27,7 +27,9 @@ because ``T = T_a`` removes the thermal term.
 \mathrm{conv2} = \frac{[\delta\rho < 0]\,H}{\mathrm{convection\_time}},
 ```
 
-evaluated at the past leapfrog level (see the [equation reference](equations.md)). The two
+evaluated at the past leapfrog level (see the [equation reference](equations.md)). Its default
+`convection_time` of one hour is the order of the time an unstable layer takes to overturn, and
+gave good pan-Antarctic runs. The two
 others act on the fields directly, once at the start of each step, before the melt and
 entrainment are computed, and again after the Robert–Asselin filter.
 

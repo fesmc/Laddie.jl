@@ -15,7 +15,9 @@ carried through the faces of a velocity control volume, is a choice,
 
 v2's two schemes, `'upstream'` and `'fesom'`, differ only in how the face-normal velocity
 is built from the staggered fields of its mesh, a question that does not arise on a
-C-grid; `UpstreamMomentumAdvection` stands for both.
+C-grid; `UpstreamMomentumAdvection` stands for both. Like v2, it takes both the thickness and
+the velocity from the donor side (`Hstar_b(ti)` vs `Hstar_b(tj)` in `compute_divQUV_upstream`
+and `compute_divQUV_fesom`, `laddie_velocity.f90`).
 
 Building the fluxes from the mass fluxes has two consequences. Walls carry no momentum,
 because they carry no mass, so [wall momentum advection](../bcs/wall_advection.md) has no effect

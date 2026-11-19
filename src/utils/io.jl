@@ -29,62 +29,15 @@ DebugConfig(check_nans) = DebugConfig{Bool}(check_nans)
 """
 $(TYPEDEF)
 
-Output configuration of a [`Simulation`](@ref): run directory, output cadence,
-restart cadence, and which fields are written.  All fields have sensible
-defaults; a plain `OutputConfig()` disables file I/O (`saveday = 0`).
+Output configuration of a [`Simulation`](@ref): run directory, output and restart cadence, and
+the fields written. `OutputConfig()` writes nothing; `saveday > 0` writes time-averaged maps
+to `output.nc` every `saveday` days, a log line every `diagday` days and a restart every
+`restday` days. `tsday` adds time series of shelf means.
 
-Set `saveday > 0` to enable file I/O: time-averaged fields in `output.nc` every
-`saveday` days, a line of diagnostics in the log every `diagday` days, and a JLD2
-restart every `restday` days (plus one at the end of every `run!`).  Event times
-are absolute on the simulation clock, so a simulation advanced by several `run!`
-calls writes on the same cadence as one advanced by a single call.
-
-`fields` names the variables of `output.nc`.  Time averages:
-
-| name | field | units |
-|------|-------|-------|
-| `:Ut`, `:Vt` | x- and y-velocity averaged onto T-points | m s⁻¹ |
-| `:Uu`, `:Vv` | x- and y-velocity on their own u- and v-points | m s⁻¹ |
-| `:H`, `:T`, `:S` | layer thickness, temperature, salinity | m, °C, psu |
-| `:melt` | basal melt rate | m yr⁻¹ |
-| `:entr`, `:detr` | entrainment and detrainment rates | m yr⁻¹ |
-| `:ent2` | the extra entrainment that keeps `H ≥ H_min` | m yr⁻¹ |
-| `:detr_cap` | the detrainment that keeps `H` under `max_layer_thickness` | m yr⁻¹ |
-| `:frazil` | frazil-ice formation, freshwater equivalent (zero unless `RelaxedFrazilIce`) | m yr⁻¹ |
-| `:Tbase`, `:Tamb` | temperature at the ice–ocean interface, ambient temperature at the layer base | °C |
-| `:gammaT` | turbulent heat-exchange velocity | m s⁻¹ |
-| `:ustar` | friction velocity at the ice base | m s⁻¹ |
-| `:drho` | reduced density contrast with the ambient water | – |
-| `:convective_instability` | fraction of time a cell was convectively unstable | – |
-| `:supercooling` | ``T - T_f(S, z_b)``, the layer temperature above its freezing point at the ice base (negative where supercooled) | °C |
-
-The maps are written as `float_type` (`Float32` by default, `Float64` on request), with
-the fill value NaN on every cell outside the active cells (`tmask`), and compressed
-losslessly (deflate level 1 with shuffle). NetCDF readers return these cells as
-missing (NCDatasets) or NaN (xarray, ncview).
-
-Static fields, written once: `:mask` (the mask and the margin flags `at_isf`,
-`at_grl`, `at_lnd`, `at_gap`) and `:z_draft` (the ice draft, m).
-
-Time series, off by default: set `tsday` to write, every `tsday` days, the means over
-the ice-covered cells (`imask`) of the fields averaged over the `tsday` window, on
-their own time axis `ts_time`:
-
-| name | series | units |
-|------|--------|-------|
-| `ts_H`, `ts_T`, `ts_S` | mean layer thickness, temperature, salinity | m, °C, psu |
-| `ts_tf` | mean thermal forcing ``T - T_f(S, z_b)`` (the mean of `:supercooling`) | °C |
-| `ts_u_norm` | mean speed on T-points | m s⁻¹ |
-| `ts_mean_melt` | mean net basal melt rate, `melt − frazil` | m yr⁻¹ |
-| `ts_total_melt` | total net basal melt, freshwater mass | Gt yr⁻¹ |
-| `ts_refreezing` | total refreezing, `max(−melt, 0) + frazil`, freshwater mass | Gt yr⁻¹ |
-
-As in [`meltstats`](@ref), `ts_total_melt + ts_refreezing` is the melting alone.
-
-The fields are accumulated on the device every step, like the time-averaged maps;
-the spatial means are reduced only once per `tsday`, and the series are written to
-`output.nc` together with the maps.  Not available under a
-[`ReactantBackend`](@ref): `to_backend` rejects a simulation with `tsday` set.
+`fields` takes `:Ut`, `:Vt`, `:Uu`, `:Vv`, `:H`, `:T`, `:S`, `:melt`, `:entr`, `:detr`, `:ent2`,
+`:detr_cap`, `:frazil`, `:Tbase`, `:Tamb`, `:gammaT`, `:ustar`, `:drho`,
+`:convective_instability`, `:supercooling`, `:mask` and `:z_draft`; their units, the time
+series and the file format are on the [Output and restarts](@ref) page.
 
 ```jldoctest
 julia> OutputConfig(; name = "warm", saveday = 1.0, fields = (:H, :melt, :entr))
@@ -918,11 +871,9 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Write a JLD2 restart file containing all three leapfrog levels of H, U, V,
-T, S at every `output.restday`-day interval.  Called once per time step inside
-`run!`; the final state is written by `run!` after the loop.  Also writes
-`restart_latest.jld2`.  Arrays are moved to CPU before saving so the file is
-backend-agnostic; the native `FT` precision is preserved.
+Write a JLD2 restart (the three leapfrog levels of H, U, V, T, S, and `dt`) every
+`output.restday` days, and `restart_latest.jld2`; `run!` also writes one at its end. The arrays
+are saved on the CPU at the model's precision.
 """
 function saverestart!(sim)
     _event_due(sim, sim.io.nextrest) || return
@@ -934,37 +885,12 @@ end
 """
     init_from_restart!(sim, path; refine = 1, coarse_grid = nothing)
 
-Load H, U, V, T, S from the JLD2 restart file at `path` into all three leapfrog
-levels of the model's `Var` structs and set the clock to the restart time.  The saved CPU
-arrays are copied to the model's backend (CPU or GPU) and converted to its
-element type, so a restart written at one precision or on one backend loads on
-another.  [`Simulation`](@ref) calls it for its `restart` keyword.
-
-The file holds the three levels of a leapfrog step and the dt that separates them, so a
-restart onto the same grid **continues the run exactly**: a run of 2 days equals one of
-1 day, restarted, plus 1 day, to the last bit.  This needs the same dt:
-- [`AdaptiveTimeStepper`](@ref) resumes at the file's dt.
-- [`FixedTimeStepper`](@ref) (and a stepper of your own) keeps the dt the simulation was built
-  with.  When it differs from the file's, the leapfrog restarts with one forward step at the
-  new dt, and the log says so.
-A file written before the dt was stored, and a refined restart (below), restart the
-leapfrog the same way.  A file that stores the active cells must match the model's.
-
-With `refine = f > 1`, `path` is the restart of a run whose cells are `f` times
-coarser, on the same full domain: each coarse cell holds `f × f` fine ones, and
-the fine domain, border ring included, is `f .* (coarse size .- 2) .+ 2` cells, or
-up to `f - 1` more at the far end of an axis (a grid coarsened by whole blocks drops
-the remainder of its source grid); those extra cells keep the state `sim` was built with.
-Each fine cell takes H, T and S of the coarse cell it lies in where that cell was
-active, and each fine velocity point the cell-centred velocity of that coarse cell
-(the mean of its two faces), on the fine velocity masks.  Fine cells whose coarse
-cell was not active (a finer shelf reaches further) keep the state `sim` was built
-with, so call this on a simulation started from rest.  dt is the restart's divided
-by `f`.  The two runs may crop their domains differently.  The coarse grid is read
-from the restart file; files written before it was stored there need the coarse
-run's [`Grid`](@ref) as `coarse_grid`.
-
-Geometry (masks, z_draft) must already be initialised before calling this.
+Load the leapfrog levels of H, U, V, T, S from the JLD2 restart at `path`, onto the model's
+backend and precision, and set the clock to the restart time. On the same grid and `dt` the
+run continues to the last bit; [`FixedTimeStepper`](@ref) keeps its own `dt` and restarts the
+leapfrog if the file's differs. `refine = f > 1` loads the restart of a run `f` times coarser
+(`coarse_grid` for files that do not store it). [`Simulation`](@ref) calls it for its
+`restart` keyword. Details on the [Output and restarts](@ref) page.
 """
 function init_from_restart!(sim, path::AbstractString; refine::Integer = 1, coarse_grid = nothing)
     refine ≥ 1 || throw(ArgumentError("refine must be a positive integer, got $refine"))

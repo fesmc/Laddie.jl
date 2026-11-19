@@ -51,7 +51,7 @@ fields of the model they read and write.
 | [`AbstractClosureLevel`](@ref) | `Params(; closure_level)` | `closure_field` | `numerics/advection.jl` |
 | [`AbstractKinks`](@ref) | `Params(; kinks)` | `kink_width` and the smooth switches (`smooth_max`, `smooth_min`, `smooth_clamp`, …) | `numerics/kinks.jl` |
 | [`AbstractIceSlope`](@ref) | `Params(; ice_slope)` | `icebase_slope` | `simulation/grid.jl` |
-| [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `front_pgf_weight` | `bcs/open_ocean.jl` |
+| [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `front_pgf_weight`, `front_drho_weight` | `bcs/open_ocean.jl` |
 | [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `inflow_weight`; `clip_front_inflow!` for a valve | `bcs/open_ocean.jl` |
 | [`AbstractSlipAtGL`](@ref) | `BoundaryConditions(; grounding_line_slip)` | `slip_factor` | `bcs/walls.jl` |
 | [`AbstractSlipAtLand`](@ref) | `BoundaryConditions(; land_slip)` | `slip_factor` | `bcs/walls.jl` |
@@ -83,17 +83,56 @@ fields of the model they read and write.
   `Laddie._safe_div`, and route a new `max`/`min` through the kink helpers of
   [`AbstractKinks`](@ref), so that the scheme keeps working with ForwardDiff and Reactant.
 
-## Documented extension methods
+## Extension methods
 
-The methods of the table that carry a docstring. The others are documented by the
-built-in methods next to them, in the file the table names.
+The methods of the table, grouped by family, and the helpers a new scheme calls.
 
 ```@docs
 compute_entrainment!
 update_melt!
+update_ustar!
 update_convection!
+update_convective_relaxation!
 update_frazil!
+conduction_coefficients
+eos_coefficients
+cap_layer_thickness
+coriolis_field
 apply_tracer_bounds!
+laplace_U
+laplace_V
+laplacian_thickness
+advect_U
+advect_V
+momentum_outflow
+tracer_update
+thickness_tendency
+outflow_rate!
+momentum_update
+momentum_thickness_tendency
+momentum_flux_terms
+explicit_sink
+closure_field
+kink_width
+smooth_max
+smooth_min
+smooth_clamp
+icebase_slope
+front_pgf_weight
+front_drho_weight
+inflow_weight
 clip_front_inflow!
+slip_factor
+advection_slips
+gaps_mask
 update_ambient_fields!
+init_adaptive_dt!
+adapt_dt!
+cfl_reductions
+cfl_rate
+end_seconds
+needs_melt_sample
+steady_reached
+preprocess!
+crop_ranges
 ```

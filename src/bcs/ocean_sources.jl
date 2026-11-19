@@ -79,24 +79,15 @@ end
 """
     front_sources(mask; wet = trues(size(mask)), depth = nothing) -> (source, lost)
 
-The open-ocean cell whose water column forces each cavity cell, on a Laddie `mask`
-(border ring included, as [`Grid`](@ref) takes it):
+The open-ocean cell whose water column forces each cavity cell, on a Laddie `mask` (border ring
+included). Open ocean is the `0` cells connected to the domain edge; the cavity is the rest of
+the floating ice (`3`), gaps (`4`) and enclosed water. A front cell takes its deepest `wet`
+open-ocean neighbour (lowest `depth`); every other cavity cell takes the source of the front
+nearest through the cavity (8-neighbour chamfer distance), or, if none reaches it, in a
+straight line.
 
-  * open ocean: the `0` cells connected (4-neighbour) to the edge of the domain;
-  * cavity: floating ice (`3`), gaps (`4`) and enclosed water (`0` cells not
-    connected to the open ocean);
-  * a cavity cell next to open ocean takes the deepest such neighbour that is
-    `wet` (has water data) as its source: the one with the lowest `depth` (a matrix
-    the size of `mask`, e.g. the bed elevation), or the first when `depth` is not
-    given;
-  * every other cavity cell takes the source of the front nearest *through the
-    cavity* (8-neighbour chamfer distance), so that no front reaches across
-    grounded ice or land;
-  * cavity cells that no front reaches, the source of the nearest front in a
-    straight line.
-
-Returns the linear index into `mask` of the source of every cavity cell (0
-elsewhere), and the number of cavity cells that took a straight line.
+Returns the linear index of each cavity cell's source (0 elsewhere), and the number of cells
+that took a straight line.
 """
 function front_sources(mask::AbstractMatrix{<:Integer}; wet = trues(size(mask)), depth = nothing)
     cavity, src, dist = _front_seeds(mask, wet, depth)
@@ -179,25 +170,12 @@ end
 """
     FrontBlend(front_length = 64e3; dx)
 
-Blend the front columns that force a cavity cell, for [`front_ocean_forcing`](@ref):
-every cavity cell sees the weighted mean of the open-ocean source columns of the
-`front_length` (m) of calving front closest to it, that is of its
-``n = `` `front_length` / `dx` closest sources (at least one), distances measured
-through the cavity as in [`front_sources`](@ref). `dx` is the cell size (m), so the
-same length of front is blended at every resolution.
-
-Source ``k`` at distance ``d_k`` takes the weight ``d_{n+1} - d_k``, normalised, with
-``d_{n+1}`` the distance of the first source left out. A source therefore enters and
-leaves a cell's blend at zero weight, and the forcing has no steps where the nearest
-front changes. Such steps make one-cell-wide lines of convergence and runaway layer
-thickness in the cavity. A cell that no more than ``n`` sources reach takes all of
-them, equally. With ``n = 1`` every cell takes one nearest front, as without a
-blend; where two are exactly as near, it may be the other one.
-
-The default of 64 km fits best, among 8 to 512 km, the water inside the cavities of
-the ISMIP7 ocean models that resolve them (NEMO of Mathiot et al. 2023; the merge of
-Naughten et al. 2021 and Jourdain et al. 2022), predicted from their own front
-columns, cut at the seabed.
+Blend the front columns that force a cavity cell, for [`front_ocean_forcing`](@ref): each cavity
+cell takes the weighted mean of the source columns of its `n = front_length / dx` closest
+sources (distance through the cavity, as in [`front_sources`](@ref)). Source ``k`` at distance
+``d_k`` weighs ``d_{n+1} - d_k``, normalised, so a source enters and leaves a blend at zero
+weight and the forcing has no steps where the nearest front changes. `front_length` and
+`dx` in m; the 64 km default is calibrated in the `front-blend` devnote.
 """
 struct FrontBlend
     "the number of closest sources each cavity cell blends"
@@ -337,31 +315,20 @@ end
 """
     front_ocean_forcing(T, S, z, mask; depth = nothing, blend = nothing, cut = true, FT = Float64)
 
-Ambient forcing from outside the ice fronts only, as an ocean model without
-cavities would give it: every cavity cell of `mask` takes the water column of its
-open-ocean source ([`front_sources`](@ref)), extended flat below that column's
-water.  `T`, `S` are `(nx, ny, nz)` on the depths `z` (uniform) for the full domain
-of `mask`, border ring included, with `NaN` where there is no water; only cells
-with water in both can be sources.  `depth` is the bed elevation (m, negative,
-size of `mask`): it ranks the open-ocean neighbours of a front cell, the deepest
-winning; without it, the column with the most levels of water wins.
+Ambient forcing from outside the ice fronts only, as an ocean model without cavities gives
+it: every cavity cell of `mask` takes the water column of its open-ocean source
+([`front_sources`](@ref)), extended flat below its deepest water.
 
-With `cut` (the default; it needs `depth`), every source column is cut at its own
-seabed first: its levels below `depth` are dropped (the shallowest level with data
-is always kept), so that the column extends flat from its deepest level above the
-seabed. Ocean products are commonly extrapolated through land and below the seabed
-(horizontally from the nearest water at each depth, often warm off-shelf water),
-and a cavity deeper than its front would otherwise read that extrapolation.
-`cut = false` keeps the columns as they are.
+- `T`, `S`: `(nx, ny, nz)` on the uniform depths `z`, for the full domain of `mask`, `NaN`
+  where there is no water.
+- `depth`: bed elevation (m, size of `mask`); the deepest open-ocean neighbour of a front
+  cell wins (without it, the column with the most water).
+- `cut`: cut each source column at its own seabed first (needs `depth`), so that ocean data
+  extrapolated below the seabed is not read.
+- `blend`: a [`FrontBlend`](@ref), to blend the columns of nearby fronts.
 
-With `blend = FrontBlend(front_length; dx)` ([`FrontBlend`](@ref)), every cavity
-cell takes instead the weighted mean of the source columns of the `front_length` of
-front closest to it, so the forcing has no steps where the nearest front changes.
-
-Returns a [`PerBasinOceanForcing1D`](@ref) with one profile per source column and,
-blended, one more per cavity cell that blends several: `n_rows × nz` numbers
-instead of the full 3D field.  Cells outside the cavities take the profile of the
-nearest cavity cell, so every cell has one.
+Returns a [`PerBasinOceanForcing1D`](@ref) with one profile per source column (and per
+blended cell); cells outside the cavities take the nearest cavity cell's.
 """
 function front_ocean_forcing(
     T::AbstractArray{<:Real,3},

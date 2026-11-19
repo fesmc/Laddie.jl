@@ -8,24 +8,17 @@ Pass a concrete instance as `Params(; lateral_viscosity = ...)`:
 [`PrescribedLateralViscosity`](@ref) (constant coefficient, the default) or
 [`NonlinearLateralViscosity`](@ref) (shear-scaled, as in LADDIE v2).
 
-The momentum equations carry the lateral friction `∇·(A_h H ∇u)`: with a constant `A_h` as in
-LADDIE v1 ([Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 2–3), or with the shear-scaled
-coefficient of the LADDIE v2 code ([Lambert et al. 2026](@cite lambert_one-layer_2026)).
-
-Tracer diffusivity `Params.K_h` is always a constant and is unaffected.
+The momentum equations carry the lateral friction `∇·(A_h H ∇u)`. Tracer diffusivity
+`Params.K_h` is always a constant.
 """
 abstract type AbstractLateralViscosity end
 
 """
 $(TYPEDEF)
 
-Constant-coefficient Laplacian lateral viscosity (the default): the diffusive
-flux at every interior face is `Params.A_h * ΔU / dy` (or `ΔV / dx`), i.e. a
-plain Laplacian with a single global coefficient, matching LADDIE v1.
-
-The grounding-line/land wall stress scales with `Params.A_h` too; its strength
-relative to an interior face is the wall slip factor (`BoundaryConditions.grounding_line_slip`
-/ `.land_slip`).
+Constant-coefficient Laplacian lateral viscosity, `Params.A_h` everywhere (the default), as in
+LADDIE v1 ([Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 2–3). Wall stress relative to an interior face is set
+by the slip factor of [`BoundaryConditions`](@ref).
 
 Select via `Params(; lateral_viscosity = PrescribedLateralViscosity())` (the default).
 """
@@ -34,45 +27,17 @@ struct PrescribedLateralViscosity <: AbstractLateralViscosity end
 """
 $(TYPEDEF)
 
-Shear-scaled lateral viscosity, as used by the LADDIE v2
-implementation (`laddie_velocity.f90:260`). Instead of a constant coefficient,
-the viscosity at each interior face is
+Shear-scaled (Smagorinsky-type) lateral viscosity of the LADDIE v2 code
+([Lambert et al. 2026](@cite lambert_one-layer_2026)): at each face
 
 ```
 A_h^eff = C_visc/100 Δ ‖δu‖,
 ```
 
-with `Δ` the grid spacing across that face (`dx` for east/west faces, `dy` for
-north/south) and `‖δu‖ = √(δU² + δV²)`
-the magnitude of the full velocity-difference *vector* across it — the
-reference's `dUabs`, so one isotropic coefficient serves both momentum
-components on a face. The flux of each component then goes as
-`‖δu‖ δU`. This is a Smagorinsky-type parameterisation — near-zero viscosity in
-smooth flow, large viscosity where shear is strong — rather than the plain
-Laplacian of [`PrescribedLateralViscosity`](@ref).
-
-`C_visc/100` plays the role of a squared Smagorinsky constant, so the default
-corresponds to `Cs ≈ 0.32`.
-
-Because `Δ` is supplied internally, `C_visc` is resolution-independent and
-directly comparable to the reference's config value. It is *not* comparable to
-`Params.A_h`, which is a diffusivity in m² s⁻¹.
-
-Wall faces carry the same shear-scaled coefficient, with the neighbour replaced by
-the ghost velocity `(1 - s)·u` of the wall slip factor `s`
-(`BoundaryConditions.grounding_line_slip` / `.land_slip`). With the default `s = 1` the ghost
-is zero, as in the reference, which treats grounded and land neighbours as
-ordinary cells with zero velocity (`laddie_velocity.f90:259-267`). Only at the
-border of its mesh does the reference apply the bare `C%laddie_viscosity` as a
-constant (`laddie_velocity.f90:249-254`), which Laddie.jl has no counterpart of.
-`Params.A_h` plays no part under this scheme.
-
-!!! note "C-grid staggering"
-    The reference collocates `U` and `V` at triangle centres, so `dUabs` is a
-    direct difference. On Laddie.jl's staggered C-grid the cross-component must
-    first be interpolated onto this component's points; the same 4-point average
-    the quadratic-drag term uses for the speed magnitude is applied
-    (`ip_half(jm_half(V))` for the `U` equation, `jp_half(im_half(U))` for `V`).
+with `Δ` the grid spacing across the face and `‖δu‖` the magnitude of the velocity-difference
+vector across it. `C_visc` is dimensionless and resolution-independent, comparable to v2's
+configuration value but not to `Params.A_h`, which plays no part here. Walls take the ghost
+velocity of the slip factor. See [Lateral viscosity](@ref).
 
 Select via `Params(; lateral_viscosity = NonlinearLateralViscosity(10.0))`.
 
@@ -115,6 +80,14 @@ Weight the Laplacians with the lagged, filtered `H.past`, so the thickness weigh
 the same time level as the diffused field. This is what the LADDIE v1 code does.
 """
 struct PastLaplacianWeights <: AbstractLaplacianWeights end
+
+"""
+    laplacian_thickness(m, weights)
+
+The thickness that weights the viscous and diffusive Laplacians under the
+[`AbstractLaplacianWeights`](@ref) `weights`: `m.H.present` or `m.H.past`.
+"""
+function laplacian_thickness end
 
 laplacian_thickness(m) = laplacian_thickness(m, m.laplacian_weights)
 laplacian_thickness(m, ::PresentLaplacianWeights) = m.H.present

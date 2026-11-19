@@ -102,18 +102,12 @@ function OceanForcing1D(
 end
 
 """
-Ambient T/S profiles for the ISOMIP+ protocol ([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)), returned
-as an [`OceanForcing1D`](@ref).  Profiles are linear from the surface
-(T = −1.9 °C, S = 33.8 psu) to the values below at 720 m depth, the bottom of the
-ISOMIP+ domain.  Below it they keep extrapolating linearly, as in LADDIE v1, so a
-layer whose base reaches below 720 m sees water beyond those values (the warm
-profile is 18 °C at −5000 m).
+Ambient T/S profiles of the ISOMIP+ protocol ([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)), as an
+[`OceanForcing1D`](@ref): linear from the surface (−1.9 °C, 33.8 psu) to the values below at
+720 m, and extrapolated linearly beneath, as in LADDIE v1.
 
-- `isomipcond = :warm`: T = +1.0 °C, S = 34.7 psu at depth (strong melting).
-- `isomipcond = :cold`: T = −1.9 °C, S = 34.55 psu at depth (near-freezing).
-
-Used automatically by `build_isomip`; pass it as the `forcing` argument of
-`Model` to use it with another geometry.
+- `isomipcond = :warm`: 1.0 °C, 34.7 psu at 720 m.
+- `isomipcond = :cold`: −1.9 °C, 34.55 psu at 720 m.
 
 ```jldoctest
 julia> ISOMIPForcing(:cold; FT = Float32)
@@ -194,26 +188,14 @@ Base.show(io::IO, f::OceanForcing2D) = print(
 """
 $(TYPEDEF)
 
-Ambient T/S from a handful of vertical profiles, one per basin, and a map assigning
-every grid cell to a basin.  Each cell samples its basin's profile at the depth of
-its plume base, exactly as an [`OceanForcing1D`](@ref) would.  This is the forcing
-of a domain that spans several basins (e.g. pan-Antarctic) when each basin is forced
-by its own front profile: `n_basins × nz` numbers instead of an
-[`OceanForcing2D`](@ref)'s `nx × ny × nz`.
+Ambient T/S from one vertical profile per basin and a map assigning every cell to a basin;
+each cell samples its basin's profile as an [`OceanForcing1D`](@ref) would. For domains
+spanning several basins: `n_basins × nz` numbers instead of the `nx × ny × nz` of an
+[`OceanForcing2D`](@ref). `basin` covers the full domain, and every cell, land included,
+must hold a valid index.
 
-`basin` covers the full domain including the border ring (like a 2D `T_ice_farfield`),
-and `Model` crops it with the grid.  Every cell must hold a valid basin index in
-`1:size(Tz, 1)`, land and ocean included (the ambient kernel runs on every cell).
-Assign cells outside any basin to the nearest one before building the forcing.
-
-Construct it from per-basin [`OceanForcing1D`](@ref)s with
-`PerBasinOceanForcing1D(profiles, basin)`, which resamples them onto a common
-grid, or from `(n_basins, nz)` matrices on uniform levels with
-`PerBasinOceanForcing1D(Tz, Sz, z, basin)`.  A "basin" is any group of cells
-sharing a profile: [`front_ocean_forcing`](@ref) builds one with a profile per
-ice-front water column, which cells of the cavity behind it share.
-
-Supported by the Reactant backend, including differentiation through it.
+Construct it from per-basin `OceanForcing1D`s, `PerBasinOceanForcing1D(profiles, basin)`, or
+from `(n_basins, nz)` matrices, `PerBasinOceanForcing1D(Tz, Sz, z, basin)`.
 
 # Fields
 $(TYPEDFIELDS)
@@ -309,22 +291,10 @@ Base.show(io::IO, f::PerBasinOceanForcing1D) = print(
 """
 $(TYPEDEF)
 
-Ambient T/S that ramps linearly from one ocean forcing to another: `from` up to day
-`start`, `to` from day `start + duration` on, and in between
-`(1 − w)·from + w·to` with `w = (t − start)/duration`, `t` in days of model time.  The ambient kernel blends the two profile tables as it
-samples them, so the cost is the second table and nothing per step beyond it.  Since the
-depth interpolation is linear, sampling the blend equals blending the samples.
-
-`from` and `to` must be of the same type ([`OceanForcing1D`](@ref),
-[`PerBasinOceanForcing1D`](@ref) or [`OceanForcing2D`](@ref)) on the same depth
-grid, and a `PerBasinOceanForcing1D` pair on the same basin map.  The weight follows the
-simulation clock: [`time_step!`](@ref) sets it before each step, and a restart sets it
-from the restart's time, so a run restarted within the ramp resumes it.  For a gradual
-switch to a perturbed ocean in a spin-up, e.g. from cold to warm, instead of an abrupt
-one.
-
-Not supported by the Reactant backend: under Reactant the weight would be frozen at its
-value when the program is traced.
+Ambient T/S that ramps linearly in time from `from` to `to`: `(1 − w)·from + w·to` with
+`w = clamp((t − start)/duration, 0, 1)`, `t` in days of model time. `from` and `to` are of
+the same type on the same depth grid (and basin map). The weight follows the clock, also
+across a restart. Not supported by the Reactant backend, which would freeze the weight.
 
 ```julia
 RampedOceanForcing(cold, warm; start = 600, duration = 100)   # days
@@ -383,46 +353,23 @@ Base.show(io::IO, f::RampedOceanForcing) = print(
 #########################
 
 """
-Supertype of every ice forcing: the state of the ice above the layer.  Subtypes
-must provide `T_ice_farfield` (°C, ≤ 0), the ice temperature ``T_i`` that the
-[`AbstractIceConduction`](@ref) parameterisation uses for the heat conducted into the ice;
-see [`PrescribedIceForcing`](@ref) for what it is and is not.
+Supertype of every ice forcing: the state of the ice above the layer. Subtypes provide a field
+`T_ice_farfield` (°C, ≤ 0), read by the [`AbstractIceConduction`](@ref) scheme.
 """
 abstract type AbstractIceForcing end
 
 """
 $(TYPEDEF)
 
-Ice temperature ``T_i`` held fixed for the whole run.
-
-`T_ice_farfield` is the temperature of the ice away from the base, not at it: the base
-is at the interface temperature ``T_b``, the freezing point, which the melt solve
-computes every step.  The ice column is not resolved; the heat conducted into the ice
-is a parameterisation ([`AbstractIceConduction`](@ref)), and ``T_i`` is the temperature of the
-ice *above* the thin thermal boundary layer at the base (its far field), into which the ice is advected
-as it melts.  For [`HollandJenkinsIceConduction`](@ref) ([Holland & Jenkins
-1999](@cite holland_modeling_1999)) and the default [`MeltOnlyIceConduction`](@ref), a steady ice column, that is the ice-shelf **surface temperature** (Wiskandt &
-Jourdain 2025 use the 1980–2019 mean snow-surface temperature).  With an ice sheet
-model at hand, the ice temperature 50–100 m above the base, as a 2D field, carries the
-transient and upstream-advected state of the ice instead.  Were ``T_i`` the basal
-temperature, ``T_i = T_b`` and it would have no effect.
-
-`T_ice_farfield` may be given as a scalar (uniform ice, the common standalone case)
-or as a full-domain matrix the same size as `mask`, letting a colder interior sit
-next to a temperate ice front.  `Model` converts either form to an `FT` matrix on
-the model grid, cropping it alongside the mask, so `m.T_ice_farfield` is always a
-grid-shaped field.
-
-Colder ice absorbs more heat per unit melt, so a lower `T_ice_farfield` means less
-melt for the same thermal driving: `L_eff` runs from 3.34e5 J kg⁻¹ at 0 °C to
-3.84e5 at −25 °C, a 15 % spread.
+Ice temperature `T_ice_farfield` (°C) held fixed for the whole run: the temperature of the
+ice above the basal boundary layer, typically the surface temperature, not the basal
+temperature. A scalar, or a matrix the size of `mask` that `Model` crops with the grid. Its
+meaning and range are on the [Ice forcing](@ref) page.
 
 ```jldoctest
 julia> PrescribedIceForcing(-25.0)   # uniform, the default
 PrescribedIceForcing(T_ice_farfield = -25.0 °C)
 ```
-
-A matrix the size of `mask`, `PrescribedIceForcing(T_ice_matrix)`, gives a 2D ice temperature.
 
 # Fields
 $(TYPEDFIELDS)

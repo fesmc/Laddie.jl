@@ -13,8 +13,16 @@ to `Model` pairs it with the default `PrescribedIceForcing(-25.0)`.
 | [`OceanForcing2D`](@ref) | one per grid cell | laterally varying forcing |
 | [`RampedOceanForcing`](@ref) | a linear ramp in time between two of the above | a gradual switch, e.g. from a cold to a warm ocean in a spin-up; not on the Reactant backend |
 
+`RampedOceanForcing` blends the two profile tables as the ambient kernel samples them; the
+depth interpolation is linear, so sampling the blend equals blending the samples, and the
+only cost is the second table. Its weight is set from the clock by [`time_step!`](@ref)
+before each step, and from the restart time on a restart, so a run restarted within the
+ramp resumes it.
+
 [`ISOMIPForcing`](@ref) builds the warm and cold ISOMIP+ profiles as an `OceanForcing1D`;
-see the [ISOMIP+ example](../generated/isomip.md#Forcing) for plots. For ocean models
+see the [ISOMIP+ example](../generated/isomip.md#Forcing) for plots. Below the 720 m of the
+ISOMIP+ domain they keep extrapolating linearly, as in LADDIE v1, so a layer reaching deeper
+sees water beyond the protocol's values (the warm profile is 18 °C at −5000 m). For ocean models
 without ice-shelf cavities, [`front_ocean_forcing`](@ref) builds a
 `PerBasinOceanForcing1D` with one profile per ice-front water column, shared by the cavity
 cells behind it.

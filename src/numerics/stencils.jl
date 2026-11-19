@@ -665,6 +665,15 @@ end
 momentum_advection_U(m, outflow = nothing) = advect_U(m, m.momentum_advection, outflow)
 momentum_advection_V(m, outflow = nothing) = advect_V(m, m.momentum_advection, outflow)
 
+"""
+    advect_U(m, scheme, outflow)
+
+Momentum-advection term of the U equation under the [`AbstractMomentumAdvection`](@ref)
+`scheme`, written into and returned as `m.adv`. `outflow` (an array, or `nothing`) receives the
+rate at which the point's own velocity leaves its control volume (see [`momentum_outflow`](@ref)).
+"""
+function advect_U end
+
 function advect_U(m, ::UpstreamMomentumAdvection, outflow)
     nx, ny = size(m.U.present)
     launch_interior!(
@@ -686,6 +695,13 @@ function advect_U(m, ::UpstreamMomentumAdvection, outflow)
     )
     return m.adv
 end
+
+"""
+    advect_V(m, scheme, outflow)
+
+As [`advect_U`](@ref), for the V equation.
+"""
+function advect_V end
 
 function advect_V(m, ::UpstreamMomentumAdvection, outflow)
     nx, ny = size(m.V.present)
@@ -758,7 +774,24 @@ function laplace_T(out, m, var)
     )
     return out
 end
+
+"""
+    laplace_U(m, viscosity)
+
+Lateral-viscosity term of the U equation under the [`AbstractLateralViscosity`](@ref)
+`viscosity`, weighted by [`laplacian_thickness`](@ref), written into and returned as `m.lap`.
+"""
+function laplace_U end
+
 laplace_U(m) = laplace_U(m, m.lateral_viscosity)
+
+"""
+    laplace_V(m, viscosity)
+
+As [`laplace_U`](@ref), for the V equation.
+"""
+function laplace_V end
+
 laplace_V(m) = laplace_V(m, m.lateral_viscosity)
 
 # PrescribedLateralViscosity: the plain Laplacian kernel, with the global A_h

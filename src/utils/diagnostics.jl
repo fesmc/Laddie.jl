@@ -8,30 +8,16 @@
 """
 $(TYPEDSIGNATURES)
 
-Return melt-rate and velocity statistics for the current state of a model or
-simulation, as a named tuple.  All reductions execute on the model's device (GPU-safe),
-except for a simulation on the Reactant backend, which is reduced on a CPU copy;
-results are returned as CPU scalars.
+Melt and speed statistics of the current state of a model or simulation, as a named tuple of
+CPU scalars:
 
-- `max_melt`   — maximum net basal melt rate over ice-covered cells, m yr⁻¹
-- `mean_melt`  — area-mean net basal melt rate over ice-covered cells, m yr⁻¹
-- `max_speed`  — maximum depth-averaged current speed |u|, m s⁻¹
-- `total_melt` — area-integrated net basal melt (mass flux), Gt yr⁻¹
-- `refreezing` — area-integrated refreezing (mass flux), Gt yr⁻¹
+- `max_melt`, `mean_melt`: maximum and mean net basal melt rate over ice-covered cells (m yr⁻¹)
+- `max_speed`: maximum speed |u| (m s⁻¹)
+- `total_melt`: integrated net basal melt (Gt yr⁻¹)
+- `refreezing`: integrated refreezing (Gt yr⁻¹)
 
-The net basal melt is the interface melt rate `melt` (negative where the base
-refreezes) minus the frazil-ice formation `frazil`, the basal mass balance of the ice.
-`refreezing` is the ice formed, `Σ (max(−melt, 0) + frazil)`, so `total_melt +
-refreezing` is the melting alone.  Rates are freshwater equivalent, the unit the model
-integrates; multiply by `rho_freshwater / rho_ice` for ice equivalent.  The mass fluxes
-are `Σ rate · dx · dy · rho_freshwater`, the same in either unit.
-
-The melt statistics average over `imask` (ice-covered cells), not `tmask`.  Under
-[`ConnectedGapsBC`](@ref) the two differ: gap cells are dynamically active but ice-free
-and melt exactly zero, so averaging over `tmask` would dilute the mean by the gap area.
-This diverges from LADDIE v2, whose `domain_a` integration includes gaps; with no gaps
-in the mask the two masks coincide and the statistics are unchanged.  `max_speed` stays
-on `tmask` — the layer really does flow through gaps, and that flow is the point.
+The net basal melt is `melt − frazil`, freshwater equivalent; `total_melt + refreezing` is the
+melting alone. See [Melt statistics](@ref).
 """
 meltstats(sim::Simulation) = meltstats(_diag_model(sim.exec, sim))
 

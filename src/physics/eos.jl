@@ -1,23 +1,14 @@
 """
-Abstract supertype for the equation of state: the buoyancy contrast
-`δρ = (ρ_a − ρ)/ρ₀` of the ambient water against the layer, which sets the pressure
-gradient, the entrainment and the convective stability.  Pass a concrete instance as
-`Params(; equation_of_state = ...)`:
-
- - [`LinearEOS`](@ref) (the default)
- - [`RoquetEOS`](@ref)
-
-All contrasts have the form
+Abstract supertype for the equation of state: the buoyancy contrast `δρ = (ρ_a − ρ)/ρ₀` of the
+ambient water against the layer. Pass a concrete instance as `Params(; equation_of_state = ...)`:
+[`LinearEOS`](@ref) (the default) or [`RoquetEOS`](@ref). All have the form
 
 ```
-δρ = β (S_a − S) − (a₀ + a_T T̄ + a_Z Z) (T_a − T),
-T̄ = ½ (T_a + T),
+δρ = β (S_a − S) − (a₀ + a_T T̄ + a_Z Z) (T_a − T),    T̄ = ½ (T_a + T),
 ```
 
-with ``Z`` the depth of the layer mid-point (positive downward), so that the thermal expansion
-`α = a₀ + a_T T̄ + a_Z Z` is linear in temperature (cabbeling) and depth
-(thermobaricity).  The parameterisations differ only in the four coefficients, which are scalars
-computed where the kernels are launched.
+with `Z` the depth of the layer mid-point; a scheme supplies the four coefficients
+([`eos_coefficients`](@ref)).
 """
 abstract type AbstractEOS end
 
@@ -50,25 +41,10 @@ The simplified polynomial equation of state of [Roquet et al. (2015, their Eq. 1
 ρ′ = −(C_b/2) (Θ − Θ₀)² − T_h Z Θ + b₀ S_A,
 ```
 
-the simplest form that has both **cabbeling** (the thermal expansion falls with temperature) and
-**thermobaricity** (it rises with depth) and whose parameters are directly interpretable:
-`C_b` the sensitivity of `α` to `Θ`, `Θ₀` the temperature at which the surface
-`α` vanishes, `T_h` its sensitivity to depth, `b₀` the (constant) haline contraction.  The
-thermal expansion is `α = C_b(Θ − Θ₀) + T_h Z`, i.e. 0.029 kg m⁻³ K⁻¹ at the
-surface freezing point (−1.9 °C), 0.041 at 500 m, and 0.068 at 0.5 °C and 500 m, where the linear
-default has 0.038 throughout.  The defaults are the values of the paper.  The constants are
-rescaled by `ρ₀` (`Params.rho0_seawater`) to the reduced contrast of the model.
-
-
-!!! warning "Experimental"
-    Constructing a `RoquetEOS` logs a warning.  [Roquet et al. (2015)](@cite roquet_defining_2015) fit it to the open ocean
-    (`Θ` down to −1.9 °C, `S_A` ≈ 34–35 g kg⁻¹, `Z` to 5000 m) and in Conservative
-    Temperature and Absolute Salinity, which this model takes as its temperature and salinity.
-    Since ``b_0`` is constant, only salinity differences enter and the offset between Absolute and
-    Practical Salinity cancels; the difference between Conservative and potential temperature is
-    below 0.01 K in cold water.  Supercooled cavity water is an extrapolation.  They stress that it serves understanding rather than realistic simulation,
-    for which they recommend TEOS-10; what it adds here is a thermal expansion that is right
-    near the freezing point, which their simulations show matters most for polar stratification.
+the simplest form with cabbeling (the thermal expansion `α = C_b(Θ − Θ₀) + T_h Z` falls with
+temperature) and thermobaricity (it rises with depth). The defaults are the paper's values,
+rescaled by `ρ₀`. Experimental: warns when constructed; its range of validity is discussed on
+the [Equation of state](@ref) page.
 
 # Example
 
@@ -103,10 +79,15 @@ RoquetEOS(Cb::Real, Theta0::Real, Th::Real, b0::Real) = RoquetEOS(promote(Cb, Th
 _rebuild(::Type{<:RoquetEOS}, Cb, Theta0, Th, b0) =
     RoquetEOS{typeof(Cb)}(Cb, Theta0, Th, b0)
 
-# The coefficients of the contrast `δρ = beta ΔS − (a0 + aT T̄ + aZ Z) ΔT` as the kernels
-# take them, a NamedTuple of scalars (which `_val` unwraps) built where a kernel is
-# launched.  For `LinearEOS` the thermal expansion is `a0 = alpha` with `aT = aZ = 0`,
-# so that the contrast is that of the constant coefficients to the last bit.
+"""
+    eos_coefficients(m, eos) -> (; beta, a0, aT, aZ)
+
+The coefficients of `δρ = β ΔS − (a₀ + a_T T̄ + a_Z Z) ΔT` (see [`AbstractEOS`](@ref)) under the
+equation of state `eos`, as a NamedTuple of scalars built where a kernel is launched.
+"""
+function eos_coefficients end
+
+# LinearEOS: a0 = alpha, aT = aZ = 0, so the contrast is the constant-coefficient one to the last bit.
 eos_coefficients(m) = eos_coefficients(m, m.params.equation_of_state)
 eos_coefficients(m, eos::LinearEOS) = (; beta = eos.beta, a0 = eos.alpha, aT = zero(m.FT), aZ = zero(m.FT))
 function eos_coefficients(m, eos::RoquetEOS)

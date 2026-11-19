@@ -14,9 +14,8 @@ abstract type AbstractTimeStepper end
 """
 $(TYPEDEF)
 
-Constant time step (the default): `dt` stays at the value the `Simulation` was
-constructed with for the whole run.  Reproduces LADDIE v1.x behaviour exactly,
-so the default integration is bit-for-bit unchanged.
+Constant time step (the default): `dt` stays at the value the `Simulation` was built with, as
+in LADDIE v1.
 
 Select via `Simulation(model; time_stepper = FixedTimeStepper())` (the default).
 """
@@ -25,33 +24,13 @@ struct FixedTimeStepper <: AbstractTimeStepper end
 """
 $(TYPEDEF)
 
-Predictive CFL-limited adaptive time stepping.  Every `ncheck` steps the
-advective–gravity-wave CFL number is measured and `dt` is nudged toward the
-step that would hit `cfl_target`:
+CFL-limited adaptive time stepping. Every `ncheck` steps the advective–gravity-wave CFL number
+is measured and `dt` scaled by `factor = (cfl_target / cfl)^q`: at once when above the target,
+by at most `max_growth` when below `grow_hyst * cfl_target`, and not at all in between. Each
+change re-bootstraps the leapfrog, so sample fields in one long `run!` call, not many short
+ones; see [Time stepping](@ref).
 
-```
-factor = (cfl_target / cfl)^q
-```
-
-Because the CFL number is linear in `dt`, `q = 1` would land exactly on the target
-if the flow did not change in the meantime; `q < 1` under-corrects (smoother, less
-oscillatory), `q > 1` over-corrects.
-The adjustment is asymmetric and predictive — it never rejects a step:
-
-- above target (`cfl > cfl_target`) → shrink immediately by `factor`;
-- well below target (`cfl < grow_hyst * cfl_target`) → grow by `factor`, but
-  no more than `max_growth` per adjustment;
-- in between → hold (hysteresis band keeps changes rare, which matters because
-  each change re-bootstraps the leapfrog).
-
-Each re-bootstrap disturbs the fields for a few steps, and the check interval is
-at most 5 % of the steps of the `run!` call.  So do not sample a field in many short
-`run!` calls: at a few dozen steps per call, `dt` is checked and usually changed nearly
-every step, which inflated a 10-day mean melt rate by 41 % on a 1 km geometry.  Use
-one longer call with time-averaged output instead.
-
-Select via `Simulation(model; time_stepper = AdaptiveTimeStepper())`; override fields as needed, e.g.
-`AdaptiveTimeStepper(; cfl_target = 0.4, ncheck = 10)`.
+Select via `Simulation(model; time_stepper = AdaptiveTimeStepper(; cfl_target = 0.4))`.
 
 # Fields
 $(TYPEDFIELDS)
@@ -123,18 +102,28 @@ _check_interval(::AbstractTimeStepper, nt, steps_per_day) = min(max(1, nt ÷ 20)
 _check_interval(ts::AdaptiveTimeStepper, nt, steps_per_day) =
     min(clamp(ts.ncheck, 1, max(1, nt ÷ 20)), steps_per_day)
 
-# In-loop hook called at the check cadence from `run!`, with the CFL already
-# measured at the shared sync point.  FixedTimeStepper is a pure no-op (the default
-# integration is unchanged).  AdaptiveTimeStepper adjusts dt predictively for the
-# upcoming steps — it never rejects a step, so there is no rollback.
+"""
+    adapt_dt!(sim, stepper, cfl)
+
+Adjust `sim.clock.dt` from the measured CFL number `cfl`; `run!` calls it every check
+interval. A no-op under [`FixedTimeStepper`](@ref); [`AdaptiveTimeStepper`](@ref) scales `dt`
+toward its target and never rejects a step.
+"""
+function adapt_dt! end
+
 adapt_dt!(sim, ::FixedTimeStepper, cfl) = nothing
 adapt_dt!(sim, ts::AdaptiveTimeStepper, cfl) =
     (_apply_dt!(sim, ts, cfl; allow_grow = true); nothing)
 
-# Pre-loop hook: rescue a too-large dt0 before the first step (shrink-only).
-# Uses the worst-case CFL (advection at the velocity cap), because at t = 0 the
-# flow is ~stationary and the actual CFL underestimates what the spinning-up
-# flow will reach.
+"""
+    init_adaptive_dt!(sim, stepper)
+
+Before the first step of `run!`, shrink a too-large `dt` from the worst-case CFL number
+(advection at `v_cut`), since a layer at rest underestimates the flow to come. A no-op under
+[`FixedTimeStepper`](@ref).
+"""
+function init_adaptive_dt! end
+
 init_adaptive_dt!(sim, ::FixedTimeStepper) = nothing
 function init_adaptive_dt!(sim, ts::AdaptiveTimeStepper)
     _apply_dt!(sim, ts, _cfl_worstcase(sim); allow_grow = false)
@@ -216,6 +205,14 @@ function _max_Hdrho(m)
     return maximum(m.diag)
 end
 
+"""
+    cfl_reductions(m, cfl) -> Tuple
+
+The device reductions (a tuple of scalars) that [`cfl_rate`](@ref) needs under the
+[`AbstractCFL`](@ref) `cfl`, taken at a sync point of `run!`.
+"""
+function cfl_reductions end
+
 # Conservative: global max of |U|, |V|, and c taken independently, then combined.
 # Overestimates the true CFL but cheap (three scalar reductions).
 function cfl_reductions(m, ::ConservativeCFL)
@@ -227,6 +224,15 @@ function cfl_reductions(m, ::ConservativeCFL)
     c = sqrt(m.g * max(zero(m.FT), _max_Hdrho(m)))
     return (umax, vmax, c)
 end
+
+"""
+    cfl_rate(m, cfl, reductions)
+
+The CFL rate (s⁻¹; the CFL number is `rate · dt`) under the [`AbstractCFL`](@ref) `cfl`,
+from the `reductions` of [`cfl_reductions`](@ref).
+"""
+function cfl_rate end
+
 cfl_rate(m, ::ConservativeCFL, (umax, vmax, c)) =
     (_float64(umax) + _float64(c)) / _float64(m.dx) +
     (_float64(vmax) + _float64(c)) / _float64(m.dy)

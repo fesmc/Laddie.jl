@@ -155,24 +155,9 @@ rsim = to_backend(sim, ReactantBackend())        # move to Reactant
 run!(rsim; days = 30)                            # compiled on the first call
 ```
 
-With a `mesh` (a `Reactant.Sharding.Mesh`), the grid is split over several devices:
-every field is sharded along `partition`, one mesh axis name (or `nothing`) per grid
-axis, and XLA exchanges the halos between the devices.  The default `partition`
-splits the second grid axis (contiguous slabs) over a one-axis mesh, and both grid
-axes over a two-axis mesh.  Each split grid axis must be divisible by its number of
-devices: crop with `MinRectangleDomainCropping(; multiple)` to round the grid up.
-The native kernels of the GPU default cannot be split, so on a mesh `fusion = :auto`
-raises them: `:kernel` over one mesh axis, `:xla` over two.
-
-```julia
-mesh = Reactant.Sharding.Mesh(collect(0:3), (:y,))          # 4 devices
-crop = MinRectangleDomainCropping(; multiple = (1, 4))
-grid = Grid(mask, z_draft, dx, dy; domain_cropping = crop)
-rsim = to_backend(Simulation(Model(grid; forcing)), ReactantBackend(; mesh))
-```
-
-Results agree with the KernelAbstractions backends to round-off, not bit for bit:
-XLA reorders floating-point operations.
+With a `mesh` (a `Reactant.Sharding.Mesh`) the grid is split over several devices along
+`partition`; each split axis must be divisible by its number of devices. Results agree with
+the KernelAbstractions backends to round-off. See [Reactant backend](@ref).
 
 # Fields
 $(TYPEDFIELDS)

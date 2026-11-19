@@ -1,24 +1,23 @@
+# `A` is the concrete matrix type (matching the grid and state).  The scheme-dependent slots
+# are scalars or fields: `GamT` (`gamT`, `gamS`) is a scalar under `FixedGamTMelting`, `Conv2`
+# (`conv2`) under `ClampDensityConvection` and `ResetToAmbientConvection`, and `Frz`
+# (`frazil`) under `NoFrazilIce`, and a field otherwise, user-defined schemes included; `PM`
+# (`melt_prescribed`) is a field for `PrescribedMelting`, and `Gap` (`gap_drag`, `gap_heat`)
+# for `LeakyGapsBC`.
+#
+# `adv`, `lap` and `Hq` are shared by the four stepped equations: U, V, T and S are stepped
+# one after another, and each consumes its terms before the next one writes them.  In
+# between, `adv` and `lap` hold the speed limiter's per-point scale factors.
+# `NonlinearLateralViscosity` fills `Hq` with the collocated cross-velocity and `adv` with the
+# thickness on the velocity points before its Laplacian kernel, which is why the momentum
+# steps form the Laplacian before the advection term.
 """
 $(TYPEDEF)
 
-Pre-allocated diagnostic and scratch fields of a [`Model`](@ref), updated in place
-every time step.  The physics outputs are read through the model, e.g.
-`model.melt` (m s⁻¹), `model.entr`, `model.drho`, `model.ustar`, `model.Ta`.
-
-`A` is the concrete matrix type (matching the grid and state).  The scheme-dependent
-slots are scalars or fields: `GamT` (`gamT`, `gamS`) is a scalar under `FixedGamTMelting`,
-`Conv2` (`conv2`) under `ClampDensityConvection` and `ResetToAmbientConvection`, and `Frz` (`frazil`) under
-`NoFrazilIce`, and a field otherwise, user-defined schemes included; `PM`
-(`melt_prescribed`) is a field for `PrescribedMelting`, and `Gap` (`gap_drag`,
-`gap_heat`) for `LeakyGapsBC`.
-
-`adv`, `lap` and `Hq` are shared by the four stepped equations: U, V, T and S are
-stepped one after another, and each consumes its terms before the next one writes
-them.  In between, `adv` and `lap` hold the speed limiter's per-point scale factors.
-`NonlinearLateralViscosity` fills `Hq` with the collocated cross-velocity and `adv`
-with the thickness on the velocity points before its Laplacian kernel, which is
-why the momentum steps form the Laplacian before the advection term.  `diag` is
-never read by the time step, so any host-side diagnostic may overwrite it.
+Pre-allocated diagnostic and scratch fields of a [`Model`](@ref), updated in place every time
+step and read through the model, e.g. `model.melt` (m s⁻¹), `model.entr`, `model.drho`.
+`adv`, `lap` and `Hq` are work arrays shared by the stepped equations; `diag` is free for
+host-side diagnostics.
 
 # Fields
 $(TYPEDFIELDS)

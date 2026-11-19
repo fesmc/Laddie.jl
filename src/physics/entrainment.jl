@@ -22,13 +22,10 @@ is solved for the net entrainment `ė`:
 ė = (2μ/g) u⋆³/(H δρ) − (δρ_b/δρ) ṁ.
 ```
 
-This is the scheme LADDIE v1 calls `'Gaspar'` (`physics.py`) and
-v2 calls `'Gaspar1988'` (`laddie_physics.f90`, `compute_entrainment`); it is
-verified bit-for-bit against the LADDIE v1 code and is the **default**.
+LADDIE v1's `'Gaspar'` and v2's `'Gaspar1988'`, verified bit for bit against the v1 code; the
+default.
 
-Select via `Params(; entrainment = GasparEntrainment(2.5))`, or with keywords,
-`GasparEntrainment(; mu = 2.5, max_detrainment = 1e-3)`.  `drho_floor` is the value the
-reference LADDIE code hard-wires.
+Select via `Params(; entrainment = GasparEntrainment(; mu = 2.5))`.
 
 # Fields
 $(TYPEDFIELDS)
@@ -135,15 +132,9 @@ $(TYPEDSIGNATURES)
 
 Compute entrainment/detrainment rates and assemble the net entrainment
 `m.nentr = entr + ent2 - detr` that enters the thickness and tracer equations.
-`ent2` is the minimum additional entrainment rate needed to prevent H falling
-below `H_min` after the upcoming thickness step; it is computed here (before
-stepping) from `H.past`, matching the LADDIE v1 code.
-
-`detr_cap` is the mirror image for the upper bound `Params.max_layer_thickness`:
-the detrainment rate that brings the same first guess of `H` down to the cap, as
-LADDIE v2 does (`laddie_thickness.f90`).  It removes layer water at the layer's own
-T, S and velocity, so it thins the layer without changing its tracers or momentum
-(see the step kernels in `leapfrog.jl`); it is zero wherever the cap does not bind.
+`ent2` is the extra entrainment that keeps the first guess of `H` above `H_min`, and `detr_cap`
+the detrainment that brings it down to `Params.max_layer_thickness`, both from `H.past` before
+the step (LADDIE v1 and v2). `detr_cap` leaves at the layer's own T, S and velocity.
 """
 function update_entrainment!(m, dt)
     compute_entrainment!(m, m.entrainment)

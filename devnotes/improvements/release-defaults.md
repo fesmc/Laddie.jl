@@ -51,4 +51,4 @@ Its traced AD needed the profile arrays' element type untied from the scalar `FT
 ## Caveats
 
 - Neither LADDIE v1 nor v2 bounds T or S, so the aliases' `TracerBounds()` pin keeps Laddie.jl's earlier behaviour, not the published code's.
-- Most extension points of the open families are internal, underscore-prefixed functions (`_compute_entrainment!`, `_eos_coefficients`, …); `docs/src/extending.md` lists them.
+- The extension points of the open families were internal, underscore-prefixed functions at first; b18ca51 made them public and exported (`compute_entrainment!`, `eos_coefficients`, …), each with a docstring listed in `docs/src/extending.md`.

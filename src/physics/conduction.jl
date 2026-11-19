@@ -15,10 +15,8 @@ as `Params(; ice_conduction = ...)`:
  - [`NoIceConduction`](@ref)
  - [`LinearProfileIceConduction`](@ref)
 
-`NoIceConduction` and `LinearProfileIceConduction` are experimental and warn when constructed.  The ice
-temperature ``T_i`` they use is the `T_ice_farfield` of the ice forcing
-([`PrescribedIceForcing`](@ref)), which plays the role of the ice surface
-temperature ``T_s`` of the paper.
+`NoIceConduction` and `LinearProfileIceConduction` are experimental and warn. The surface
+temperature ``T_s`` of the paper is the ice forcing's `T_ice_farfield`.
 """
 abstract type AbstractIceConduction end
 
@@ -44,12 +42,9 @@ $(TYPEDEF)
 The parameterisation of [`HollandJenkinsIceConduction`](@ref), but with no conduction into the ice
 where the layer is not melting it: `q_cond = ṁ c_i (T_b − T_i)` for
 `ṁ > 0`, zero otherwise ([Wiskandt & Jourdain 2025](@cite wiskandt_brief_2025), Eq. 2C with
-`max(ṁ, 0)`).  Their argument is that a refreezing ice base carries marine
-ice close to the freezing point throughout, so there is no gradient to conduct along.
-
-The switch is the sign of the thermal forcing ``T - T_f(S, z_b)``, which has the sign
-of `ṁ` and needs no iteration of the melt equations.  Where it is not positive,
-the latent heat is the plain ``L``.
+`max(ṁ, 0)`): a refreezing base carries marine ice near the freezing point, with no gradient to
+conduct along. The switch is the sign of the thermal forcing `T − T_f(S, z_b)`, which has the
+sign of `ṁ`.
 
 Select via `Params(; ice_conduction = MeltOnlyIceConduction())` (the default).
 """
@@ -83,13 +78,10 @@ Steady linear temperature profile through the ice, with no advection ([Wiskandt 
 q_cond = (k_i (T_f − T_s))/(ρ_fw H_i),
 ```
 
-with `T_f` the freezing point at the layer salinity (so that `q_cond` does not
-depend on `ṁ` and the melt equation stays quadratic), `T_s` the `T_ice_farfield` of the
-ice forcing, and ``H_i`` the ice thickness, taken from the draft by hydrostatic
-equilibrium, `H_i = −z_b ρ₀/ρ_ice` with `Params.rho0_seawater` and
-`Params.rho_ice`.  The flux acts for melting and refreezing alike.  A thermal steady
-state between base and surface takes of order `(H_i/2)²/κ_i` (about 1000 years for
-400 m), which only the large, slow ice shelves reach.
+with `T_f` the freezing point at the layer salinity (so the melt equation stays quadratic),
+`T_s` the ice forcing's `T_ice_farfield`, and `H_i = −z_b ρ₀/ρ_ice` from hydrostatic
+equilibrium. Acts for melting and refreezing alike; only large, slow shelves reach the steady
+state it assumes (see [Ice conduction](@ref)).
 
 Select via `Params(; ice_conduction = LinearProfileIceConduction())`; warns when constructed.
 
@@ -107,9 +99,15 @@ end
 
 LinearProfileIceConduction(conductivity::FT) where {FT} = LinearProfileIceConduction{FT}(conductivity)
 
-# What the melt kernels need of a parameterisation, as three scalars so that no object has to
-# cross into a kernel: the factors on `c_i` where the thermal forcing T − T_f is
-# positive (melting) and where it is not, and the conductivity of the fixed flux.
+"""
+    conduction_coefficients(scheme, FT) -> (c_melt, c_freeze, k)
+
+The [`AbstractIceConduction`](@ref) `scheme` as three scalars for the melt kernels: the
+factors on `c_i` where the thermal forcing `T − T_f` is positive and where it is not, and the
+conductivity of a fixed conductive flux.
+"""
+function conduction_coefficients end
+
 conduction_coefficients(::HollandJenkinsIceConduction, FT) = (one(FT), one(FT), zero(FT))
 conduction_coefficients(::MeltOnlyIceConduction, FT) = (one(FT), zero(FT), zero(FT))
 conduction_coefficients(::NoIceConduction, FT) = (zero(FT), zero(FT), zero(FT))

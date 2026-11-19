@@ -4,7 +4,6 @@ At the ice front, and at the edges of gaps under [`SinkGapsBC`](@ref), the layer
 the open ocean. Layer properties leave freely; what enters is set by
 `BoundaryConditions(; open_ocean = ...)`:
 
-- [`OutflowOnlyOpenOceanBC`](@ref), the default: a one-way valve, described below.
 - [`ZeroGradientOpenOceanBC`](@ref), LADDIE v1 and v2: all fields are extrapolated with zero
   gradient, so inflow from the ambient ocean carries the properties of the cell it enters.
 - [`NoInflowOpenOceanBC`](@ref): where the flow enters through an ice-front face, the thickness and
@@ -15,8 +14,10 @@ the open ocean. Layer properties leave freely; what enters is set by
   velocity at every ice-front face is clipped to point out of the cavity, so the layer
   can leave but never enter; the fluxes carry nothing in, as under `NoInflowOpenOceanBC`, while an
   inward start fades from the filtered level. Under the other two, an
-  inflow face either recirculates the front cell's own water (thickening the front row)
-  or keeps an inward velocity that carries nothing (thinning it).
+  inflow face either recirculates the front cell's own water (thickening and cooling the
+  front row) or keeps an inward velocity that carries nothing (thinning it). Under the valve
+  the layer is fed only by entrainment and melt; ambient water that really enters a cavity
+  does so below the plume.
 
 The valve is the default, with [`ZeroGradientFrontPressure`](@ref). On a warm ISOMIP+ cavity
 at 4 km over 20 days, against zero-gradient inflow with [`FullDepthFrontPressure`](@ref):

@@ -5,11 +5,10 @@ contrast `δρ` falls below zero.  Pass a concrete instance as
 `Params(; convection = ...)`: [`RelaxToAmbientConvection`](@ref) (the default),
 [`ResetToAmbientConvection`](@ref) or [`ClampDensityConvection`](@ref).
 
-The layer is unstable where `δρ = (ρ_a − ρ)/ρ₀ < 0`. No LADDIE paper describes a convection
-closure, so the schemes follow the reference codes: `ResetToAmbientConvection` and `RelaxToAmbientConvection` the
-LADDIE v1 code of [Lambert et al. (2023)](@cite lambert_modelling_2023), `ClampDensityConvection` the
-buoyancy floor of the LADDIE v2 code of [Lambert et al. (2026)](@cite lambert_one-layer_2026).
-`RelaxToAmbientConvection` adds the tracer sink `−(q − q_a) conv2`, `conv2 = [δρ < 0] H/convection_time`.
+No LADDIE paper describes a convection closure: `ResetToAmbientConvection` and
+`RelaxToAmbientConvection` follow the LADDIE v1 code ([Lambert et al. 2023](@cite lambert_modelling_2023)),
+`ClampDensityConvection` the buoyancy floor of the LADDIE v2 code
+([Lambert et al. 2026](@cite lambert_one-layer_2026)).
 """
 abstract type AbstractConvection end
 
@@ -36,7 +35,8 @@ $(TYPEDEF)
 
 Handle convective instability by instantly resetting T and S to their ambient values
 wherever the contrast falls below `d_rho_min / Params.rho0_seawater`, with S lowered by
-`d_rho_min / (rho0_seawater * beta)` so that the reset cell has exactly that contrast.
+`d_rho_min / (rho0_seawater β)`, with `β` the haline coefficient of the equation of state, so
+that the reset cell has exactly that contrast.
 
 Select via `Params(; convection = ResetToAmbientConvection(0.005))`.
 
@@ -53,9 +53,8 @@ $(TYPEDEF)
 
 Handle convective instability by relaxing T and S of unstable cells toward
 ambient values over a prescribed timescale (applied implicitly in the tracer
-time step via the `conv2` term).  The default: a continuous relaxation rather than the
-instantaneous reset of [`ResetToAmbientConvection`](@ref).  One hour is the order of the time an
-unstable layer takes to overturn, and gave good pan-Antarctic runs.
+time step as the sink `−(q − q_a) conv2`, `conv2 = [δρ < 0] H/convection_time`. The default;
+a continuous alternative to [`ResetToAmbientConvection`](@ref).
 
 Select via `Params(; convection = RelaxToAmbientConvection(3600.0))` (the default).
 
@@ -77,9 +76,7 @@ $(TYPEDSIGNATURES)
 Flag convectively unstable cells and clamp `δρ` to a minimum positive value
 so the plume remains lighter than ambient.
 
-Applies in gap cells too (`tmask` but not `imask`): the buoyancy floor is the one
-convection treatment LADDIE v2 also has, and it applies there over its whole active
-domain, gaps included.
+Applies in gap cells too, as LADDIE v2's floor does over its whole active domain.
 """
 function update_convection!(m, cs::ClampDensityConvection)
     thr = cs.d_rho_min / m.rho0_seawater
@@ -107,11 +104,8 @@ $(TYPEDSIGNATURES)
 Flag convectively unstable cells, then instantly reset their T/S to ambient
 values so the density remains stable.
 
-Restricted to ice-covered cells (`imask`).  In a gap the ambient profile is sampled at
-the sea surface, where it is cold and fresh, so `drho < 0` is close to unconditional
-there; resetting would overwrite the T/S anomaly the layer is carrying across the gap
-and rebuild the meltwater sink that [`ConnectedGapsBC`](@ref) exists to remove.  LADDIE
-v2 has no reset scheme to copy here, so this is a Laddie.jl-only decision.
+Restricted to ice-covered cells (`imask`): in a gap, ambient is surface water and the reset would
+rebuild the sink [`ConnectedGapsBC`](@ref) removes (see [Convection](@ref)).
 """
 function update_convection!(m, cs::ResetToAmbientConvection)
     thr = cs.d_rho_min / m.rho0_seawater
@@ -177,9 +171,7 @@ $(TYPEDSIGNATURES)
 Flag convectively unstable cells; relaxation is applied implicitly during the
 tracer time step via `conv2`.
 
-Restricted to ice-covered cells (`imask`) for the same reason as
-[`ResetToAmbientConvection`](@ref) — relaxing a gap cell towards surface ambient is a slower
-version of the same sink.
+Restricted to ice-covered cells (`imask`), as [`ResetToAmbientConvection`](@ref).
 """
 function update_convection!(m, ::RelaxToAmbientConvection)
     launch!(_flag_unstable_ice_kernel!, m.convective_instability, m.drho, m.imask)

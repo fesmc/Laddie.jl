@@ -6,11 +6,8 @@ Abstract supertype for how the model treats its kinks: the switches of `max`, `m
 instance as `Params(; kinks = ...)`: [`ExactKinks`](@ref) (the default) or
 [`SmoothKinks`](@ref).
 
-The kinks make the model piecewise smooth.  A derivative exists almost everywhere, but
-it jumps where a switch flips, and gradient-based optimisers can stall there.  Over a
-long window, an adjoint that multiplies through such switches every step can also grow
-much faster than the finite-difference response does.  `SmoothKinks` replaces each
-switch by a ``C^1`` blend over a band of width ε, outside which the model is unchanged.
+The kinks make the model piecewise smooth, which can stall gradient-based optimisers and
+inflate long-window adjoints; see [Kinks](@ref).
 """
 abstract type AbstractKinks end
 
@@ -27,42 +24,11 @@ struct ExactKinks <: AbstractKinks end
 """
 $(TYPEDEF)
 
-Smooth every kink over a band of half-width ε, one ε per physical quantity:
-
-  * `max(x, 0)` becomes the ``C^1`` quadratic blend ``(x + ε)^2 / 4ε`` for
-    ``|x| < ε`` and is exact outside the band.  `max(a, b)`, `min(a, b)`, `clamp`,
-    `|x|` and the upwind splits `u±` follow from it, so `u⁺ + u⁻ = u`
-    still holds and the upwind fluxes stay conservative.
-  * `√x` (of `max(x, 0)`) is blended into the quadratic
-    ``(x + 3ε^2)^2 / 16ε^3`` below ``x = ε^2``, which removes the unbounded slope at
-    zero, and is exact above it.
-  * The step of the conductive `c_i` at the freezing point is blended with a cubic
-    smoothstep over `T − T_f ∈ [−ε_T, ε_T]`.
-
-Where each ε acts:
-
-| ε | where |
-|---|---|
-| `H` | `H_min` top-up, cap detrainment against the cap and the `H_min` floor |
-| `u` | upwind tracer and thickness fluxes, the centred momentum advection's `sign(u)`, the speed cap, `√` of the drag, speed, deformation and Holland's shear |
-| `uH` | donor of the momentum under [`UpstreamMomentumAdvection`](@ref) (sign of the face mass flux) |
-| `w` | split of the Gaspar rate into entrainment and detrainment, `max_detrainment`, the melt discriminant |
-| `drho` | `drho_floor` of Gaspar entrainment, the `ClampDensityConvection` floor |
-| `T` | conductive `c_i` at the freezing point, frazil supercooling, `T_min`/`T_max` |
-| `S` | `S_min`/`S_max` |
-| `log` | floor of the log-layer term of [`TurbulentGamTMelting`](@ref) |
-
-An ε of zero keeps that group's kinks exact, so the groups can be switched on one at a
-time.
-
-Not smoothed are the kinks that the state sits on exactly rather than crosses, where
-a blend would bias every step by about ε/4: the outer `max(0, ⋅)` of the cap
-detrainment (zero wherever the cap does not bind), the clamp of `H` after the
-thickness step (a safety net behind `ent2` and the cap detrainment, which bring the
-stepped `H` exactly to its bounds) and the share of the flux-form tracer update that
-follows that clamp.  Nor are the convective switches of `ResetToAmbientConvection` and
-`RelaxToAmbientConvection`, the γ_T of [`PrescribedMelting`](@ref), the depth interpolation of
-the forcing, or the time-step controller.
+Smooth every kink over a band of half-width ε, one ε per physical quantity (the fields), and
+leave it exact outside: `max(x, 0)` becomes the ``C^1`` blend ``(x + ε)^2 / 4ε`` for
+``|x| < ε``, from which `max`, `min`, `clamp`, `|x|` and the upwind split follow (still
+conservative); `√x` becomes ``(x + 3ε^2)^2 / 16ε^3`` below ``x = ε^2``. An ε of zero keeps its
+group exact. Which kinks each ε smooths, and which stay exact, is on the [Kinks](@ref) page.
 
 Select via `Params(; kinks = SmoothKinks())`, or e.g. `SmoothKinks(; H = 0.5)`.
 
@@ -93,8 +59,14 @@ SmoothKinks(H, u, uH, w, drho, T, S, log) = SmoothKinks(promote(H, u, uH, w, drh
 # arguments, as the caps' are (see `max_layer_thickness.jl`).
 Adapt.@adapt_structure SmoothKinks
 
-# The half-width ε of one group, read inside a kernel.  `false` under ExactKinks,
-# whose helpers ignore it; it still survives the arithmetic of a call site (ε/dt).
+"""
+    kink_width(kinks, group)
+
+The half-width ε of the kink `group` (a field name of [`SmoothKinks`](@ref): `:H`, `:u`, …),
+read inside kernels; `false` under [`ExactKinks`](@ref), whose helpers ignore it.
+"""
+function kink_width end
+
 @inline kink_width(::ExactKinks, ::Symbol) = false
 @inline kink_width(k::SmoothKinks, s::Symbol) = _val(getfield(k, s))
 @inline kink_width(k, ::Val{s}) where {s} = kink_width(k, s)
@@ -117,10 +89,35 @@ end
 # min(x, 0), the downwind half of an upwind split.
 @inline _sneg(::ExactKinks, x, ε) = min(x, zero(x))
 @inline _sneg(k::SmoothKinks, x, ε) = min(x, zero(x)) - _smax0(k, -abs(x), ε)
+
+"""
+    smooth_max(kinks, a, b, ε)
+
+`max(a, b)`, blended over the half-width `ε` under [`SmoothKinks`](@ref) and exact under
+[`ExactKinks`](@ref). Use it, or [`smooth_min`](@ref), [`smooth_clamp`](@ref), for a new switch.
+"""
+function smooth_max end
+
 @inline smooth_max(::ExactKinks, a, b, ε) = max(a, b)
 @inline smooth_max(k::SmoothKinks, a, b, ε) = max(a, b) + _smax0(k, -abs(a - b), ε)
+
+"""
+    smooth_min(kinks, a, b, ε)
+
+`min(a, b)`, as [`smooth_max`](@ref).
+"""
+function smooth_min end
+
 @inline smooth_min(::ExactKinks, a, b, ε) = min(a, b)
 @inline smooth_min(k::SmoothKinks, a, b, ε) = min(a, b) - _smax0(k, -abs(a - b), ε)
+
+"""
+    smooth_clamp(kinks, x, lo, hi, ε)
+
+`clamp(x, lo, hi)`, as [`smooth_max`](@ref).
+"""
+function smooth_clamp end
+
 @inline smooth_clamp(::ExactKinks, x, lo, hi, ε) = clamp(x, lo, hi)
 @inline smooth_clamp(k::SmoothKinks, x, lo, hi, ε) = smooth_min(k, smooth_max(k, x, lo, ε), hi, ε)
 # |x| as sign(x)·x, the form of the centred momentum advection.

@@ -16,7 +16,14 @@ end
 # Time integration (Lambert et al. 2023)
 # ==================================================================
 
-# Only `RelaxToAmbientConvection` relaxes through `conv2`; the other schemes leave it alone.
+"""
+    update_convective_relaxation!(m, convection)
+
+Set the relaxation rate `m.conv2 = [δρ < 0] H/convection_time` on ice-covered cells under
+[`RelaxToAmbientConvection`](@ref); nothing for the other schemes.
+"""
+function update_convective_relaxation! end
+
 update_convective_relaxation!(::Any, ::AbstractConvection) = nothing
 function update_convective_relaxation!(m, cs::RelaxToAmbientConvection)
     # `imask`, not `tmask`: gap cells are never relaxed towards ambient.  See
@@ -115,6 +122,13 @@ end
 @inline _unclamped_thickness(H_past, convH, melt, nentr, detr_cap, frazil, i, j, dt) =
     @inbounds H_past[i, j] + (convH[i, j] + melt[i, j] + nentr[i, j] - detr_cap[i, j] - _at(frazil, i, j)) * dt
 
+"""
+    momentum_thickness_tendency(form, U, dHdt)
+
+The `-U ∂H/∂t` term of [`AdvectiveMomentumForm`](@ref); zero under [`FluxMomentumForm`](@ref).
+"""
+function momentum_thickness_tendency end
+
 # The two `momentum_form`s (see `AbstractMomentumForm`).  The advective form steps U
 # with `-U ∂H/∂t` and all sinks in its rhs, at the present level.  The flux form steps
 # the transport H̄U: `-U ∂H/∂t` drops out, and the terms that remove momentum at the
@@ -124,8 +138,27 @@ end
 # needs neither and reads no array for them.
 @inline momentum_thickness_tendency(::AdvectiveMomentumForm, U, dHdt) = -U * dHdt
 @inline momentum_thickness_tendency(::FluxMomentumForm, U, dHdt) = zero(U)
+
+"""
+    explicit_sink(form, x)
+
+The part of a momentum sink `x` kept in the explicit right-hand side: all of it under
+[`AdvectiveMomentumForm`](@ref), none under [`FluxMomentumForm`](@ref), which takes it at the
+new level.
+"""
+function explicit_sink end
+
 @inline explicit_sink(::AdvectiveMomentumForm, x) = x
 @inline explicit_sink(::FluxMomentumForm, x) = zero(x)
+
+"""
+    momentum_flux_terms(form, H_past, H_future, convH, melt, nentr, detr, detr_cap, frazil, tmask, i, j, i2, j2, tm, dt) -> (H_old, H_new, sink)
+
+What [`momentum_update`](@ref) needs at the velocity point between cells `(i, j)` and
+`(i2, j2)`: the face thickness of the past and of the new level, and the sink rate (m s⁻¹) taken
+at the new level. Zeros under [`AdvectiveMomentumForm`](@ref).
+"""
+function momentum_flux_terms end
 
 @inline function momentum_flux_terms(::AdvectiveMomentumForm, H_past, H_future, convH, melt, nentr, detr,
                                       detr_cap, frazil, tmask, i, j, i2, j2, tm, dt)
@@ -152,6 +185,15 @@ end
     @inbounds max(H_future[i, j], _unclamped_thickness(H_past, convH, melt, nentr, detr_cap, frazil, i, j, dt)) *
               tmask[i, j]
 
+"""
+    momentum_update(form, U_past, U_present, rhs, H1, H_old, H_new, sink, outflow, mask, dt)
+
+The new velocity at a velocity point under the [`AbstractMomentumForm`](@ref) `form`:
+`U⁻ + dt · rhs/H̄` for the advective form, `(H̄⁻U⁻ + dt · rhs)/(H̄⁺ + dt · s)` for the flux
+form (see [`FluxMomentumForm`](@ref)).
+"""
+function momentum_update end
+
 # `sink` is the rate (m s⁻¹) at which the flux form removes momentum at the new level.
 # `outflow` is the advective part of it, the rate at which the point's own velocity
 # leaves through the faces of its control volume (upstream advection only, else
@@ -162,9 +204,15 @@ end
 @inline momentum_update(::FluxMomentumForm, U_past, U_present, rhs, H1, H_old, H_new, sink, outflow, mask, dt) =
     ifelse(mask > 0, _safe_div(H_old * U_past + (rhs + outflow * U_present) * dt, H_new + (sink + outflow) * dt), U_past)
 
-# The buffer the upstream momentum advection writes its outflow rate into, or
-# `nothing`: only the flux form with upstream advection takes it at the new level.
-# `Hq` is free once the Laplacian has used it (see `Cache`).
+"""
+    momentum_outflow(m, form, advection)
+
+The buffer the momentum advection writes its outflow rate into (`m.Hq`, free once the
+Laplacian has used it), or `nothing`: only [`FluxMomentumForm`](@ref) with
+[`UpstreamMomentumAdvection`](@ref) takes the outflow at the new level.
+"""
+function momentum_outflow end
+
 momentum_outflow(m) = momentum_outflow(m, m.params.momentum_form, m.momentum_advection)
 momentum_outflow(m, ::FluxMomentumForm, ::UpstreamMomentumAdvection) = m.Hq
 momentum_outflow(m, ::AbstractMomentumForm, ::AbstractMomentumAdvection) = nothing
@@ -356,6 +404,13 @@ end
 @inline _at(x::Number, i, j) = x
 @inline _at(x::AbstractArray, i, j) = @inbounds x[i, j]
 
+"""
+    thickness_tendency(form, q, dHdt)
+
+The `-q ∂H/∂t` term of [`AdvectiveTracerForm`](@ref); zero under [`FluxTracerForm`](@ref).
+"""
+function thickness_tendency end
+
 # The two `tracer_form`s (see `AbstractTracerForm`).  The advective form steps the
 # tracer with the product-rule term `-q ∂H/∂t` in its rhs; the flux form steps the
 # content H·q and divides by the new thickness, so that term drops out.  Masked
@@ -378,6 +433,17 @@ end
 # flushes several times over in one step would lose more tracer than it holds.
 @inline thickness_tendency(::AdvectiveTracerForm, q, dHdt) = -q * dHdt
 @inline thickness_tendency(::FluxTracerForm, q, dHdt) = zero(q)
+
+"""
+    tracer_update(form, q_past, q_present, rhs, sink, H1, H_past, H_future, H_star, qa, tmask, dt)
+
+The new tracer value of a cell under the [`AbstractTracerForm`](@ref) `form`:
+`q⁻ + dt · rhs/H` for the advective form; for the flux form the content `H⁻q⁻ + dt · rhs`, with
+the `sink` at the new level and the water added by the `H_min` floor at `qa`, over the new
+thickness (see [`FluxTracerForm`](@ref)).
+"""
+function tracer_update end
+
 @inline tracer_update(::AdvectiveTracerForm, q_past, q_present, rhs, sink, H1, H_past, H_future, H_star, qa, tmask, dt) =
     q_past + _safe_div(rhs, H1) * tmask * dt
 @inline function tracer_update(::FluxTracerForm, q_past, q_present, rhs, sink, H1, H_past, H_future, H_star, qa, tmask, dt)
@@ -390,10 +456,15 @@ end
     )
 end
 
-# The outflow rate of each cell (m s⁻¹), the volume leaving through its faces per unit
-# area: the outgoing half of the face fluxes of `_upwind_advection_T_kernel!`, whose
-# donor is the cell itself.  Only the flux form needs it (`tracer_update`); it goes
-# into `Hq`, which the tracer's own advection term has consumed by then.
+"""
+    outflow_rate!(m, form)
+
+Write the outflow rate of each cell (m s⁻¹), the volume leaving through its faces per unit
+area, into `m.Hq` for [`FluxTracerForm`](@ref) (see [`tracer_update`](@ref)); nothing under
+[`AdvectiveTracerForm`](@ref).
+"""
+function outflow_rate! end
+
 outflow_rate!(m, ::AdvectiveTracerForm) = nothing
 function outflow_rate!(m, ::FluxTracerForm)
     launch_interior!(
@@ -896,14 +967,9 @@ $(TYPEDSIGNATURES)
 Cap the flow **speed** at `Params.v_cut` by scaling both velocity components with
 one factor, `(U, V) *= min(1, v_cut / |u|)`, so the flow direction is preserved.
 
-This mirrors LADDIE v2 (`laddie_velocity.f90`, "Cutoff velocities to ensure
-Uabs <= Uabs_max").  Clamping each component independently would rotate the
-velocity vector whenever one component saturates and the other does not, and
-admit speeds up to `√2 · v_cut` along the diagonal.
-
-On the C-grid each component is scaled with the speed at its own point, formed
-with a 4-point average of the other component; all factors are computed from the
-unlimited field before either component is scaled.
+As LADDIE v2 (`laddie_velocity.f90`); clamping each component instead would rotate the flow
+and admit `√2 · v_cut` on the diagonal. Each component is scaled with the speed at its own
+point (4-point average of the other component), from the unlimited field.
 """
 function clamp_velocities!(m)
     # The scale factors live in the `adv`/`lap` work buffers: both momentum steps

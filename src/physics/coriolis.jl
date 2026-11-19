@@ -13,9 +13,7 @@ Supertype of the Coriolis-parameter options.  Select with
 `Params(; coriolis = ...)`; see [`CoriolisParameter0D`](@ref) (an f-plane) and
 [`CoriolisParameter2D`](@ref) (f from latitude).
 
-`f` enters the momentum equations as `−f k̂ × u`, with `f = 2Ω sin φ` at latitude `φ`. The
-default f-plane value is the one of the ISOMIP+ protocol
-([Asay-Davis et al. 2016](@cite asay-davis_experimental_2016)).
+`f` enters the momentum equations as `−f k̂ × u`.
 """
 abstract type AbstractCoriolisParameter end
 
@@ -32,9 +30,8 @@ const DEFAULT_CORIOLIS_F = -1.37e-4
 Latitude [°N] that reproduces [`DEFAULT_CORIOLIS_F`](@ref) through
 `f = 2Ω sin φ` — about 69.95 °S.
 
-Derived from `DEFAULT_CORIOLIS_F` rather than written as a rounded −70.0 so that
-`CoriolisParameter2D()` and `CoriolisParameter0D()` agree to the last bit; a
-rounded value would leave the two defaults 0.1 % apart for no reason.
+Derived rather than rounded to −70.0, so that the defaults of `CoriolisParameter2D` and
+`CoriolisParameter0D` agree to the last bit.
 """
 const DEFAULT_LATITUDE = asind(DEFAULT_CORIOLIS_F / (2 * EARTH_ROTATION_RATE))
 
@@ -61,24 +58,14 @@ $(TYPEDEF)
 
 Coriolis parameter from latitude, `f = 2Ω sin φ`.
 
-`lat` is in degrees north (negative in the Southern Hemisphere) and may be
-
-- a scalar — still an f-plane, but stated geographically rather than as a raw
-  frequency. The default reproduces [`CoriolisParameter0D`](@ref)'s default
-  exactly, so swapping one for the other changes nothing until `lat` is set.
-- a full-domain matrix the same size as `mask` — a genuine β-plane. `Model`
-  crops it alongside the mask, so `m.f` is always a grid-shaped field.
-
-Across the Antarctic shelves `f` runs from −1.32e-4 at 65 °S to −1.44e-4 at
-80 °S, roughly a 9 % spread; the Rossby radius scales as 1/f, so a large domain
-feels it even though the range looks narrow.
+`lat` (°N, negative in the Southern Hemisphere) is a scalar, an f-plane whose default equals
+[`CoriolisParameter0D`](@ref)'s, or a matrix the size of `mask` (a β-plane), which `Model`
+crops with the grid.
 
 ```jldoctest
 julia> Params(; coriolis = CoriolisParameter2D(-75.0)).coriolis   # f-plane at 75°S
 CoriolisParameter2D(lat = -75.0°N)
 ```
-
-A matrix of latitudes the size of `mask`, `CoriolisParameter2D(lat_matrix)`, varies `f` across the domain.
 
 # Fields
 $(TYPEDFIELDS)
@@ -91,9 +78,14 @@ end
 "Coriolis parameter from latitude in degrees north."
 _f_from_lat(lat, FT) = FT(2 * EARTH_ROTATION_RATE * sind(Float64(lat)))
 
-# Expand a Coriolis choice into a full-domain field on T-points.  Runs on the
-# grid's input size, so a 2D latitude is validated against the mask the caller
-# passed to `Grid` and then cropped with it.
+"""
+    coriolis_field(scheme, sz, FT)
+
+The Coriolis parameter (s⁻¹) on T-points under the [`AbstractCoriolisParameter`](@ref)
+`scheme`, as a matrix of the grid's input size `sz`, which `Model` crops with the grid.
+"""
+function coriolis_field end
+
 coriolis_field(cp::CoriolisParameter0D, sz, FT) = fill(FT(cp.f), sz)
 
 function coriolis_field(cp::CoriolisParameter2D, sz, FT)

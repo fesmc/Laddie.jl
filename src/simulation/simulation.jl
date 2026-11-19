@@ -45,20 +45,8 @@ FixedSimulationEnd(t_end) = (t = float(t_end); FixedSimulationEnd{typeof(t)}(t))
 """
 $(TYPEDEF)
 
-Stop early once the cavity reaches a quasi-steady state, or after `t_end` days,
-whichever comes first.  Steadiness is detected when the **relative** change in
-the domain-mean basal melt rate (over floating ice) between successive
-diagnostic samples falls below `tol`:
-
-```
-|m̄_(k+1) − m̄_k| / |m̄_k| < tol
-```
-
-`tol` is dimensionless, so it means the same thing in a warm cavity (melt of
-order 100 m yr⁻¹) and a cold one (order 1 m yr⁻¹).  Samples are taken once per
-simulated day (not every step), which is cheap, robust to the leapfrog
-computational mode, and independent of the run length.  `t_end` is a safety cap on
-the duration of the `run!` call.
+Stop once the relative change of the mean melt rate over ice between daily samples,
+`|m̄_(k+1) − m̄_k| / |m̄_k|`, falls below `tol`, or after `t_end` days of the `run!` call.
 
 Select via `run!(sim; until = SteadyStateSimulationEnd(tol = 1e-3, t_end = 365.0))`.
 
@@ -76,16 +64,35 @@ end
 SteadyStateSimulationEnd(tol, t_end) =
     (p = promote(float(tol), float(t_end)); SteadyStateSimulationEnd{eltype(p)}(p...))
 
-# Hard time cap in seconds (both criteria carry one).
+"""
+    end_seconds(stop, seconds_per_day)
+
+Duration (s) of a `run!` call under the [`AbstractSimulationEnd`](@ref) `stop`; by default
+`stop.t_end` days.
+"""
+function end_seconds end
+
 end_seconds(e::AbstractSimulationEnd, spd) = e.t_end * spd
 
-# Whether `run!` must sample the mean melt rate at each diagnostic check.
+"""
+    needs_melt_sample(stop)
+
+Whether `run!` samples the mean melt rate daily for the [`AbstractSimulationEnd`](@ref)
+`stop`, to pass to [`steady_reached`](@ref).
+"""
+function needs_melt_sample end
+
 needs_melt_sample(::AbstractSimulationEnd) = false
 needs_melt_sample(::SteadyStateSimulationEnd) = true
 
-# Early-stop test from successive domain-mean melt samples (m yr⁻¹).
-# FixedSimulationEnd never stops early; SteadyStateSimulationEnd stops once the relative
-# change drops below tol (the first sample, with no predecessor, never stops).
+"""
+    steady_reached(stop, mean_new, mean_prev)
+
+Whether `run!` stops early, from two successive daily samples of the mean melt rate
+(m yr⁻¹); never for [`FixedSimulationEnd`](@ref), nor at the first sample.
+"""
+function steady_reached end
+
 steady_reached(::AbstractSimulationEnd, mean_new, mean_prev) = false
 function steady_reached(e::SteadyStateSimulationEnd, mean_new, mean_prev)
     (isfinite(mean_prev) && mean_prev != 0) || return false
@@ -204,7 +211,8 @@ Wrap `model` in a simulation, initialise its leapfrog time levels, and (when
 - `stop`: default stopping criterion of [`run!`](@ref), a
   [`FixedSimulationEnd`](@ref) (default, 30 days) or [`SteadyStateSimulationEnd`](@ref).
 - `output`: an [`OutputConfig`](@ref); the default disables file I/O.
-- `restart`: path to a JLD2 restart file, or `nothing` (default) to start from
+- `restart`: path to a JLD2 restart file (see `init_from_restart!`), or `nothing`
+  (default) to start from the model's initial state.
   the model's initial state.  Restores the prognostic fields, the clock time
   and the time step.
 - `debug`: a [`DebugConfig`](@ref).

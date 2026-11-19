@@ -3,99 +3,42 @@
 #############################
 
 """
-Abstract supertype for the treatment of ice-shelf gaps — ice-free cells inside
-the shelf domain, marked `4` in the mask.  Pass a concrete instance as
-`BoundaryConditions(; gaps = ...)`: [`SinkGapsBC`](@ref) (the default, gaps act as sinks),
-[`ConnectedGapsBC`](@ref) (gaps stay dynamically connected), or [`LeakyGapsBC`](@ref)
-(connected and partly covered by mélange, with an open-water surface that loses heat
-and lets the layer convect).
+Abstract supertype for the treatment of ice-shelf gaps, the ice-free cells inside the shelf
+domain marked `4` in the mask. Pass a concrete instance as `BoundaryConditions(; gaps = ...)`:
+[`SinkGapsBC`](@ref) (the default), [`ConnectedGapsBC`](@ref) or [`LeakyGapsBC`](@ref).
 """
 abstract type AbstractGapsBC end
 
 """
 $(TYPEDEF)
 
-Treat ice-shelf gaps — ice-free cells inside the ice-shelf domain, marked `4` in
-the domain mask — as sinks of the meltwater layer (the default, and the behaviour
-of LADDIE v1.x).  Gap cells are demoted to open ocean (`0`) at model construction,
-so a meltwater current reaching a gap loses its heat and momentum to the ambient
-ocean exactly as it would at the calving front, and cannot drive melting further
-downstream.
+Ice-shelf gaps as sinks of the layer: gap cells are demoted to open ocean (`0`) when the model
+is built, so their edges act like the calving front. LADDIE v1's behaviour.
 
 Select via `BoundaryConditions(; gaps = SinkGapsBC())` (the default).
-
-See also [`ConnectedGapsBC`](@ref).
 """
 struct SinkGapsBC <: AbstractGapsBC end
 
 """
 $(TYPEDEF)
 
-Treat ice-shelf gaps as dynamically connected: the meltwater layer keeps being
-integrated across ice-free cells inside the ice-shelf domain, so heat and momentum
-are advected downstream and can drive melting on the far side of the gap.  No
-melting occurs within a gap itself — there is no glacial ice to melt — so no
-meltwater volume or buoyancy is added there.
+Ice-shelf gaps as dynamically connected: the layer is stepped across gap cells, so heat and
+momentum carry on downstream; no melt occurs in a gap. With [`SinkGapsBC`](@ref), the two
+end-members of [Jesse et al. (2026)](@cite jesse_ice-sheet_2026); see [Ice-shelf gaps](@ref).
+Mark gaps directly, or with [`MarkGapsPreprocess`](@ref).
 
-Gap cells are those marked `4` in the domain mask.  Mark them either directly (a
-coupled ice-sheet driver knows its own reference geometry) or from a reference ice
-footprint with [`MarkGapsPreprocess`](@ref) in the `preprocess` list of [`Grid`](@ref).  This
-boundary condition only decides what happens in the cells so marked.
-
-Motivated by [Jesse et al. (2026, https://doi.org/10.5194/egusphere-2026-4237)](@cite jesse_ice-sheet_2026),
-who show that the choice between this treatment and [`SinkGapsBC`](@ref) can alter
-coupled ice-volume loss by an amount comparable to 1 °C of ocean warming.  The two
-are deliberate end-members; reality lies somewhere between them.
-
-# Example
-
-```julia
-boundary = BoundaryConditions(; gaps = ConnectedGapsBC())
-Model(Grid(mask, z_draft, dx, dy); forcing, boundary)   # gaps already marked as 4
-grid = Grid(mask, z_draft, dx, dy; preprocess = [MarkGapsPreprocess(refgeo_H)])
-Model(grid; forcing, boundary)                          # gaps from a footprint
-```
+Select via `BoundaryConditions(; gaps = ConnectedGapsBC())`.
 """
 struct ConnectedGapsBC <: AbstractGapsBC end
 
 """
 $(TYPEDEF)
 
-Treat ice-shelf gaps as connected and partly covered by mélange and sea ice, with
-cover fraction α ∈ [0, 1] (`melange_cover`, default `0.9`).  The covered part acts on
-the layer as the ice shelf does; the open part exchanges heat with the atmosphere, and
-the layer convects where it loses its buoyancy.
-
-The gaps stay dynamically active as under [`ConnectedGapsBC`](@ref): the layer's
-thickness is set by transport, entrainment, the sea ice the open water forms and
-convection, never by a prescribed relaxation.  Melting is zero in gaps, as under
-`ConnectedGapsBC`.
-
-**Drag.**  The ice-ocean drag `Params.C_d` is scaled by α in gap cells (by the mean
-cover of the two cells of a velocity face).  `ConnectedGapsBC` applies the full drag in
-gaps, as if they were covered; open water (α = 0) applies none.
-
-**Surface heat loss.**  The open fraction loses `(1 − α) Q` to the atmosphere, for
-`Q = surface_heat_loss` (W m⁻², default `0`).  It first cools the layer, by
-`(1 − α) Q dt/(ρ₀ c_p H)`.  Once the layer reaches the surface freezing point, the rest
-forms sea ice of salinity `ice_salinity` (default 5 psu): the frozen water leaves the
-layer, its salt beyond `ice_salinity` stays (brine rejection).
-
-**Convection.**  Where the layer is denser than the water beneath it (δρ < 0), its T
-and S relax towards that water's on `convection_time` (s, default `10⁴`), as under
-[`RelaxToAmbientConvection`](@ref), and its thickness relaxes towards `H_min` at the same rate:
-the convected water leaves the layer.  This acts in every gap cell, whatever the cover
-and whatever the model's `convection`, which leaves gap cells alone.
-
-The two ends:
-
-- `α = 1`: full drag, no surface exchange.  This is `ConnectedGapsBC`, plus convection
-  in gaps: bit-identical to it wherever no gap cell turns unstable.
-- `α = 0`: open water, no drag, the full heat loss `Q`.  Whether this comes close to
-  [`SinkGapsBC`](@ref) depends on `Q`: the sink is not built in.
-
-Neither α nor `Q` is constrained by observations in this setting; `Q` can be compared
-with estimates of the heat loss of coastal polynyas (a few hundred W m⁻² in winter).
+Ice-shelf gaps as under [`ConnectedGapsBC`](@ref), partly covered by mélange and sea ice of
+fraction α (`melange_cover`). In gap cells the ice–ocean drag is scaled by α, the open part
+loses `(1 − α) Q` to the atmosphere (cooling the layer, then forming sea ice), and the layer
+convects towards the water beneath where it is unstable. `α = 1` is `ConnectedGapsBC` plus
+convection; the equations are on the [Ice-shelf gaps](@ref) page.
 
 # Example
 
@@ -142,11 +85,14 @@ end
 LeakyGapsBC(; melange_cover = 0.9, surface_heat_loss = 0.0, ice_salinity = 5.0, convection_time = 1e4) =
     LeakyGapsBC(melange_cover, surface_heat_loss, ice_salinity, convection_time)
 
-# Resolve mask value 4 (gap) into the classification the selected treatment implies.
-# Runs at model construction, before the Geometry is derived: SinkGapsBC demotes gaps
-# to open ocean, so every mask derivation sees exactly the v1.x geometry;
-# ConnectedGapsBC keeps them.  Marking gaps in the first place is
-# `MarkGapsPreprocess`'s job.
+"""
+    gaps_mask(mask, gaps)
+
+`mask` with its gap cells (`4`) resolved as the [`AbstractGapsBC`](@ref) `gaps` implies:
+demoted to open ocean under [`SinkGapsBC`](@ref), kept otherwise. Runs when the model is built.
+"""
+function gaps_mask end
+
 gaps_mask(mask, ::SinkGapsBC) = ifelse.(mask .== 4, 0, mask)
 gaps_mask(mask, ::ConnectedGapsBC) = mask
 gaps_mask(mask, ::LeakyGapsBC) = mask

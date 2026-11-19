@@ -180,33 +180,13 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Advance simulation `sim` until the criterion `until` is met.
-
-`until` is an [`AbstractSimulationEnd`](@ref) measured from the clock time at
-which `run!` is called: [`FixedSimulationEnd`](@ref) runs for a fixed duration,
-[`SteadyStateSimulationEnd`](@ref) stops early once the mean melt rate is quasi-steady.  It
-defaults to `sim.stop`; as a shorthand, `run!(sim; days = 30.0)` is equivalent to
-`run!(sim; until = FixedSimulationEnd(t_end = 30.0))`.
-
-The clock is never reset, so successive calls continue the same simulation:
-`run!(sim; days = 10); run!(sim; days = 10)` ends at day 20, and output and
-restart files are stamped accordingly.  Each call rounds its own duration to a
-whole number of steps, so a sequence of calls matches one long call exactly only
-when the durations are multiples of `dt`.
-
-Each step is one [`time_step!`](@ref).  When `sim.output.saveday > 0`, the
-output fields are accumulated after every step, `saveseries!`, `savefields!`,
-`printdiags` and `saverestart!` write whenever their interval is due, and the call ends by flushing
-the partial averaging window and writing a restart.  When
-`verbose = true`, a progress bar with throughput and ETA is displayed;
-melt/thickness/speed diagnostics attached to the bar refresh every ~5 % of
-steps, and at least once per simulated day (they are device reductions, so they are
-deliberately not per-step).
-
-Before stepping, a warning is emitted if the advective CFL number at the
-velocity cap `v_cut` exceeds 1.  At the same cadence the prognostic fields are
-checked for non-finite values; on blow-up the run aborts with an error
-instead of integrating NaNs.
+Advance simulation `sim` until `until` is met, an [`AbstractSimulationEnd`](@ref) measured from
+the current clock time (default `sim.stop`; `days = 30` is short for
+`until = FixedSimulationEnd(t_end = 30)`). The clock is never reset, so successive calls
+continue the run. Each step is one [`time_step!`](@ref); output, diagnostics and restarts are
+written when due (see [Output and restarts](@ref)), and the call ends with a restart.
+`verbose` shows a progress bar. The run warns when the worst-case CFL number exceeds 1 and
+aborts on non-finite fields.
 
 Returns `sim` for chaining.
 """

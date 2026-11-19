@@ -144,12 +144,12 @@ including the border ring (like a 2D `T_ice_farfield`); `Model` crops them with 
 grid.  Each cell samples its own column at the depth of its plume base, and depths
 outside the grid take the nearest level, as for [`OceanForcing1D`](@ref).
 
-Not exported, and not yet supported by the Reactant backend.
-
 # Fields
 $(TYPEDFIELDS)
 """
-struct OceanForcing2D{FT,A<:AbstractArray{FT,3},V<:AbstractVector{FT}} <: AbstractOceanForcing
+# The arrays' element type is not tied to `FT`: under `trace_parameters` the scalars
+# `dz` and `z0` are traced numbers while the profiles stay plain arrays.
+struct OceanForcing2D{FT,A<:AbstractArray{<:Any,3},V<:AbstractVector} <: AbstractOceanForcing
     "ambient temperature per cell and level (°C)"
     Tz::A
     "ambient salinity per cell and level (psu)"

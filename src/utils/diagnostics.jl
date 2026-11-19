@@ -6,7 +6,8 @@
 $(TYPEDSIGNATURES)
 
 Return melt-rate and velocity statistics for the current state of a model or
-simulation, as a named tuple.  All reductions execute on the device (GPU-safe);
+simulation, as a named tuple.  All reductions execute on the model's device (GPU-safe),
+except for a simulation on the Reactant backend, which is reduced on a CPU copy;
 results are returned as CPU scalars.
 
 - `max_melt`   — maximum net basal melt rate over ice-covered cells, m yr⁻¹
@@ -29,7 +30,9 @@ This diverges from LADDIE v2, whose `domain_a` integration includes gaps; with n
 in the mask the two masks coincide and the statistics are unchanged.  `max_speed` stays
 on `tmask` — the layer really does flow through gaps, and that flow is the point.
 """
-meltstats(sim::Simulation) = meltstats(sim.model)
+# On the model the log line reads (`_diag_model`): under Reactant a CPU copy refreshed from
+# the device, since eager reductions on device arrays compile one program per call.
+meltstats(sim::Simulation) = meltstats(_diag_model(sim.exec, sim))
 
 const _KG_PER_GT = 1e12     # kilogrammms per gigatonne
 

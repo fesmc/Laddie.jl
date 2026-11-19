@@ -123,6 +123,9 @@ const SCHEME_SCENARIOS = [
             # Native kernels are the KA kernels (bit-identical in Float64 with fixed
             # dt); raised ones and XLA's reductions agree to round-off.
             @test err < (FT == Float64 ? 1e-10 : 1e-3)
+            # meltstats of a Reactant simulation reduces its CPU copy.
+            @test meltstats(rsim).mean_melt ≈ meltstats(ref).mean_melt rtol = (FT == Float64 ? 1e-10 : 1e-3)
+            @test meltstats(rsim).max_speed ≈ meltstats(ref).max_speed rtol = (FT == Float64 ? 1e-10 : 1e-3)
         end
     end
 

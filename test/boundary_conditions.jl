@@ -497,19 +497,19 @@ end
     end
 end
 
-@testset "Front pressure: FullDepthFrontPressure is default/v1, TruncatedDepthFrontPressure drops the term" begin
+@testset "Front pressure: FullDepthFrontPressure is v1, TruncatedDepthFrontPressure drops the term" begin
     # The depth-gradient part of the PGF at a one-sided face (ice front, or a
     # SinkGapsBC gap-sink edge) differs between references: Python LADDIE v1.x
     # keeps the one-sided difference toward a masked-to-zero neighbour, LADDIE
     # v2 drops the term (mask_cf_b truncation).  See f90-diffs.md §4.
     p_full = Params(; FT, front_pressure = FullDepthFrontPressure())
     p_trunc = Params(; FT, front_pressure = TruncatedDepthFrontPressure())
-    @test Params(; FT).front_pressure isa FullDepthFrontPressure   # v1 is the default
+    @test Params(; FT).front_pressure isa ZeroGradientFrontPressure   # the default
 
-    m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+    m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p_full)
     run!(m; days = 0.5, verbose = false)
     g = getfield(m.model, :geometry)
-    # Under the default the interior term is live and the gate is exactly 1.0,
+    # Under FullDepthFrontPressure the interior term is live and the gate is exactly 1.0,
     # so nothing is altered anywhere.
     up = u_pressure_depth(m.model)
     @test any(!iszero, up[Laddie.ip_count(g.tmask).==2])
@@ -611,9 +611,12 @@ end
 
 @testset "Open ocean: OutflowOnlyOpenOceanBC lets the layer leave through the front, never enter" begin
     # The hand-made domain of the front-pressure testsets: an ice front in y and a
-    # SinkGapsBC gap, whose edges are one-sided faces in both directions.  Under the
-    # default the layer flows in through some of them (recirculating its own water);
-    # OutflowOnlyOpenOceanBC clips every one-sided face velocity to point out of the cavity.
+    # SinkGapsBC gap, whose edges are one-sided faces in both directions.  Under
+    # zero-gradient inflow the layer flows in through some of them (recirculating its own
+    # water); OutflowOnlyOpenOceanBC clips every one-sided face velocity to point out of the
+    # cavity.  The draft is flat, so only FullDepthFrontPressure drives a flow through the
+    # front from rest; under the default ZeroGradientFrontPressure the front faces stay at
+    # rest and the three open-ocean conditions coincide.
     mk = zeros(Int, 12, 22)
     mk[1, :] .= 1;  mk[end, :] .= 1
     mk[:, 1] .= 1;  mk[:, end] .= 1
@@ -626,7 +629,8 @@ end
     forcing = ISOMIPForcing(:warm; FT)
     grid = Grid(mk, z_draft, FT(2000.0), FT(2000.0); domain_cropping = NoDomainCropping())
     sim(open_ocean; kinks = ExactKinks()) =
-        Simulation(Model(grid; forcing, params = Params(; FT, kinks), boundary = BoundaryConditions(; open_ocean)))
+        Simulation(Model(grid; forcing, params = Params(; FT, kinks, front_pressure = FullDepthFrontPressure()),
+                         boundary = BoundaryConditions(; open_ocean)))
     g = getfield(Model(grid; forcing), :geometry)
     # The sign of the outward normal of each face (+1 when the ocean is on the + side,
     # 0 between two active cells), and the one-sided faces with a live velocity point.
@@ -651,7 +655,7 @@ end
         end
         return m.model
     end
-    # The default keeps flowing in.
+    # Zero-gradient inflow (v1/v2, no longer the default) keeps flowing in.
     @test any(<(0), outward(inflow_start(ZeroGradientOpenOceanBC()), :future))
     # OutflowOnlyOpenOceanBC clips the newest level on every front face, with exact and with
     # smooth kinks (the smooth max is ≥ 0 too).  The filtered `present` still holds

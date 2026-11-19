@@ -66,7 +66,10 @@ const REPRODUCTION_MEAN_MELT = (
 
 @testset "Params aliases: mean melt regression" begin
     for (f, mean_melt) in REPRODUCTION_MEAN_MELT
-        sim = build_isomip(CPU(); nx = 40, ny = 20, params = f())
+        # The pins measure the Params aliases with the open-ocean condition they were set
+        # with (the default until 2026-11-19), so a change of that default does not move them.
+        boundary = BoundaryConditions(; open_ocean = ZeroGradientOpenOceanBC())
+        sim = build_isomip(CPU(); nx = 40, ny = 20, params = f(), boundary)
         for _ in 1:200
             time_step!(sim)
         end

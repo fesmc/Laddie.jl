@@ -14,9 +14,9 @@ LADDIE v1 and v2 disagree on what to do about this, so
 
 | option | thickness gradient | density gradient | matches |
 |---|---|---|---|
-| [`FullDepthFrontPressure`](@ref) (default) | kept | kept | LADDIE v1 |
+| [`FullDepthFrontPressure`](@ref) | kept | kept | LADDIE v1 |
 | [`TruncatedDepthFrontPressure`](@ref) | dropped | kept | LADDIE v2 |
-| [`ZeroGradientFrontPressure`](@ref) | dropped | dropped | [LADDIE v2 description paper](@cite lambert_one-layer_2026) |
+| [`ZeroGradientFrontPressure`](@ref) (default) | dropped | dropped | [LADDIE v2 description paper](@cite lambert_one-layer_2026) |
 
 - `FullDepthFrontPressure` reproduces LADDIE v1, which Laddie.jl is ported from and
   validated against. Measured on a warm ISOMIP+ run, the thickness-gradient term is
@@ -27,6 +27,8 @@ LADDIE v1 and v2 disagree on what to do about this, so
   ``\tfrac12 g\,\bar H^2\,(\delta\rho_{x-1}-\delta\rho)/\Delta x``. This is the zero
   lateral gradient at the calving front stated in the LADDIE v2 description paper
   ([Lambert et al. (2026)](@cite lambert_one-layer_2026)); the v2 code keeps the density term.
+  It is the default, with [`OutflowOnlyOpenOceanBC`](@ref); see
+  [Open-ocean boundary](open_ocean.md) for the comparison.
 
 None of them affects the grounding line, where no momentum equation is solved.
 

@@ -17,7 +17,7 @@ end
     @test occursin("20×", replace(s, "10×20" => "20×10")) || occursin("interior", s)
     @test occursin("forcing", s) && occursin("params", s)
     @test !occursin("dt", s)   # the model knows nothing about time stepping
-    @test occursin("boundary: BoundaryConditions(open ocean = ZeroGradientOpenOceanBC", s)
+    @test occursin("boundary: BoundaryConditions(open ocean = OutflowOnlyOpenOceanBC", s)
     @test length(s) < 800   # not a field dump
 
     ss = plain(m)

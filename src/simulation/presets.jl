@@ -153,6 +153,7 @@ _v1_params(; A_h, K_h, H_min, u_tide) = (
     momentum_form = AdvectiveMomentumForm(),
     closure_level = PresentClosureLevel(),
     tracer_bounds = TracerBounds(),
+    front_pressure = FullDepthFrontPressure(),
 )
 
 # v1's `slip = 1` on every wall: no slip in the viscosity, a zero ghost in the
@@ -505,9 +506,10 @@ _v2_params(; C_d_top, melting, C_visc, K_h, H_min, H_init, v_cut, H_max, buoyanc
 )
 
 # Zero velocity one grid spacing behind every wall (v2's "no slip"), no momentum
-# across walls: the defaults, spelled out.
+# across walls; zero-gradient inflow at the ice front, as in v2 (pinned, not the default).
 _v2_boundary(; gaps = SinkGapsBC()) = BoundaryConditions(;
     gaps,
+    open_ocean = ZeroGradientOpenOceanBC(),
     grounding_line = PartialSlipAtGL(1.0),
     land = PartialSlipAtLand(1.0),
     wall_advection = NoWallAdvection(),

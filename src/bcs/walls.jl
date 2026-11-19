@@ -230,7 +230,7 @@ advection:
 ```jldoctest
 julia> BoundaryConditions(; grounding_line = NoSlipAtGL(), land = NoSlipAtLand(),
                           wall_advection = V1WallAdvection())
-BoundaryConditions(open ocean = ZeroGradientOpenOceanBC, grounding line = NoSlipAtGL, land = NoSlipAtLand, gaps = SinkGapsBC, wall advection = V1WallAdvection)
+BoundaryConditions(open ocean = OutflowOnlyOpenOceanBC, grounding line = NoSlipAtGL, land = NoSlipAtLand, gaps = SinkGapsBC, wall advection = V1WallAdvection)
 ```
 
 A v1 `slip` below 1 maps to `PartialSlipAtGL(slip + 1)`; above 1 it has no

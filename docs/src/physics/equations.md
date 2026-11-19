@@ -127,10 +127,10 @@ is then a full one-sided gradient, as if ``H`` collapsed to zero across one grid
 LADDIE v1 and v2 disagree on what to do about this, so
 [`AbstractFrontPressure`](@ref) makes it a choice:
 
-- [`FullDepthFrontPressure`](@ref) (**default**) keeps the term, reproducing LADDIE v1, which
+- [`FullDepthFrontPressure`](@ref) keeps the term, reproducing LADDIE v1, which
   Laddie.jl is ported from and validated against.
 - [`TruncatedDepthFrontPressure`](@ref) drops it, as the LADDIE v2 code does at calving-front faces. Measured on a warm ISOMIP+ run, the term is ~150× larger at the
-  ice front than in the interior under the default.
+  ice front than in the interior under `FullDepthFrontPressure`.
 - [`ZeroGradientFrontPressure`](@ref) drops it and the density-gradient term
   ``\tfrac12 g\,\bar H^2\,(\delta\rho_{x-1}-\delta\rho)/\Delta x`` as well, whose
   neighbour ``\delta\rho`` is likewise masked to `0` there. This is the zero lateral

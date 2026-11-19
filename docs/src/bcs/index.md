@@ -9,8 +9,8 @@ Each of these is a family of types under one abstract supertype, as the
 |---------------|---------------|---------|
 | [`AbstractSlipAtGL`](@ref), [`AbstractSlipAtLand`](@ref) | `BoundaryConditions(; grounding_line, land)` | `PartialSlipAtGL(1.0)`, `PartialSlipAtLand(1.0)` |
 | [`AbstractWallAdvection`](@ref) | `BoundaryConditions(; wall_advection)` | `NoWallAdvection()` |
-| [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `ZeroGradientOpenOceanBC()` |
-| [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `FullDepthFrontPressure()` |
+| [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `OutflowOnlyOpenOceanBC()` |
+| [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `ZeroGradientFrontPressure()` |
 | [`AbstractGapsBC`](@ref) | `BoundaryConditions(; gaps)` | `SinkGapsBC()` |
 | [`AbstractOceanForcing`](@ref) | `Model(grid; forcing)` | — |
 | [`AbstractIceForcing`](@ref) | `Model(grid; forcing)` | `PrescribedIceForcing(-25)` |

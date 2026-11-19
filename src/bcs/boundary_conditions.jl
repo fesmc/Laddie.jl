@@ -15,11 +15,11 @@ are those of both LADDIE versions.
 
 ```jldoctest
 julia> BoundaryConditions(; land = FreeSlipAtLand(), gaps = ConnectedGapsBC())
-BoundaryConditions(open ocean = ZeroGradientOpenOceanBC, grounding line = PartialSlipAtGL, land = FreeSlipAtLand, gaps = ConnectedGapsBC, wall advection = NoWallAdvection)
+BoundaryConditions(open ocean = OutflowOnlyOpenOceanBC, grounding line = PartialSlipAtGL, land = FreeSlipAtLand, gaps = ConnectedGapsBC, wall advection = NoWallAdvection)
 
 julia> BoundaryConditions(; grounding_line = NoSlipAtGL(), land = NoSlipAtLand(),   # LADDIE v1 walls
                           wall_advection = V1WallAdvection())
-BoundaryConditions(open ocean = ZeroGradientOpenOceanBC, grounding line = NoSlipAtGL, land = NoSlipAtLand, gaps = SinkGapsBC, wall advection = V1WallAdvection)
+BoundaryConditions(open ocean = OutflowOnlyOpenOceanBC, grounding line = NoSlipAtGL, land = NoSlipAtLand, gaps = SinkGapsBC, wall advection = V1WallAdvection)
 ```
 
 # Fields
@@ -32,7 +32,7 @@ struct BoundaryConditions{
     GB<:AbstractGapsBC,
     WA<:AbstractWallAdvection,
 }
-    "ice front: [`ZeroGradientOpenOceanBC`](@ref) (default), [`NoInflowOpenOceanBC`](@ref) or [`OutflowOnlyOpenOceanBC`](@ref)"
+    "ice front: [`OutflowOnlyOpenOceanBC`](@ref) (default), [`ZeroGradientOpenOceanBC`](@ref) or [`NoInflowOpenOceanBC`](@ref)"
     open_ocean::OB
     "grounding-line walls: [`PartialSlipAtGL`](@ref) (default `PartialSlipAtGL(1.0)`), [`NoSlipAtGL`](@ref) or [`FreeSlipAtGL`](@ref)"
     grounding_line::GL
@@ -45,7 +45,7 @@ struct BoundaryConditions{
 end
 
 BoundaryConditions(;
-    open_ocean = ZeroGradientOpenOceanBC(),
+    open_ocean = OutflowOnlyOpenOceanBC(),
     grounding_line = PartialSlipAtGL(1.0),
     land = PartialSlipAtLand(1.0),
     gaps = SinkGapsBC(),

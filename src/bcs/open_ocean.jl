@@ -5,7 +5,7 @@
 """
 Abstract supertype for the open-ocean boundary condition at the ice front.  Pass a
 concrete instance as `BoundaryConditions(; open_ocean = ...)`:
-[`ZeroGradientOpenOceanBC`](@ref) (the default), [`NoInflowOpenOceanBC`](@ref) or [`OutflowOnlyOpenOceanBC`](@ref).
+[`OutflowOnlyOpenOceanBC`](@ref) (the default), [`ZeroGradientOpenOceanBC`](@ref) or [`NoInflowOpenOceanBC`](@ref).
 """
 abstract type AbstractOpenOceanBC end
 
@@ -15,7 +15,9 @@ $(TYPEDEF)
 Open-boundary condition at the ice front: zero-gradient extrapolation of all
 fields, with inflow from the ambient ocean permitted.
 
-Select via `BoundaryConditions(; open_ocean = ZeroGradientOpenOceanBC())` (the default).
+LADDIE v1 (`boundop = 1`) and v2 use this condition; the reproduction aliases pin it.
+
+Select via `BoundaryConditions(; open_ocean = ZeroGradientOpenOceanBC())`.
 """
 struct ZeroGradientOpenOceanBC <: AbstractOpenOceanBC end
 
@@ -62,7 +64,11 @@ to act as a valve would be unstable.
 Gap edges under [`SinkGapsBC`](@ref) are one-sided faces too, so the valve acts
 there as well.  With [`SmoothKinks`](@ref) the clip is smooth (`:u` width).
 
-Select via `BoundaryConditions(; open_ocean = OutflowOnlyOpenOceanBC())`.
+This is the default: with [`ZeroGradientFrontPressure`](@ref), on a warm ISOMIP+ cavity at
+4 km, it keeps the total melt of the zero-gradient inflow within 0.4 % and removes its
+melt anomaly in the front row (front-to-interior melt 0.93 instead of 1.87).
+
+Select via `BoundaryConditions(; open_ocean = OutflowOnlyOpenOceanBC())` (the default).
 """
 struct OutflowOnlyOpenOceanBC <: AbstractOpenOceanBC end
 
@@ -112,10 +118,9 @@ end
 Abstract supertype for the treatment of the layer-thickness- and density-gradient
 parts of the pressure-gradient force at one-sided faces — the ice front, and the
 edges of a gap demoted to ocean by [`SinkGapsBC`](@ref).  Pass a concrete instance
-as `Params(; front_pressure = ...)`: [`FullDepthFrontPressure`](@ref) (LADDIE v1
-v1.x, the default), [`TruncatedDepthFrontPressure`](@ref) (LADDIE v2) or
-[`ZeroGradientFrontPressure`](@ref) (the zero-lateral-gradient condition stated by
-[Lambert et al. 2026](@cite lambert_one-layer_2026)).
+as `Params(; front_pressure = ...)`: [`ZeroGradientFrontPressure`](@ref) (the default, the
+zero-lateral-gradient condition stated by [Lambert et al. 2026](@cite lambert_one-layer_2026)),
+[`FullDepthFrontPressure`](@ref) (LADDIE v1) or [`TruncatedDepthFrontPressure`](@ref) (LADDIE v2).
 
 The grounding line is unaffected either way — no momentum equation is solved there.
 """
@@ -131,10 +136,10 @@ neighbour's stored thickness, which masking pins to `0` there. The term is thus
 a full one-sided gradient, as if `H` fell to zero across one grid cell.
 
 This is what LADDIE v1 does (`integrate.py`, `-g·ip_t(Ddrho)·(Dxm1 -
-D)/dx` with `Dxm1 = roll(D*tmask)`), so it is **the default** and the setting
-under which Laddie.jl reproduces the LADDIE v1 code.
+D)/dx` with `Dxm1 = roll(D*tmask)`), so it is the setting under which Laddie.jl
+reproduces the LADDIE v1 code, pinned in the v1 reproduction aliases.
 
-Select via `Params(; front_pressure = FullDepthFrontPressure())` (the default).
+Select via `Params(; front_pressure = FullDepthFrontPressure())`.
 
 See also [`TruncatedDepthFrontPressure`](@ref).
 """
@@ -180,15 +185,17 @@ lateral gradients are applied to all main variables (H, U, V, T, and S)" at the
 calving front. The v2 code comments the same intent (`laddie_velocity.f90:119`,
 "Assume dH/dx and ddrho/dx = 0") but keeps the `ddrho_amb_dx_b` term in its code.
 
-Select via `Params(; front_pressure = ZeroGradientFrontPressure())`.
+This is the default, together with [`OutflowOnlyOpenOceanBC`](@ref).
+
+Select via `Params(; front_pressure = ZeroGradientFrontPressure())` (the default).
 """
 struct ZeroGradientFrontPressure <: AbstractFrontPressure end
 
 # Weights `w` in the per-face gate `1 + w*(tmask_stag - 2)`, which is 1 on a
 # fully-interior face (tmask_stag == 2) either way, and at a one-sided face
 # (tmask_stag == 1) is 1 for w = 0 (term kept) / 0 for w = 1 (term dropped).
-# w = 0 multiplies the term by exactly 1.0, so the default is bit-identical to
-# LADDIE v1.  `_front_pgf_weight` gates the thickness-gradient term,
+# w = 0 multiplies the term by exactly 1.0, so FullDepthFrontPressure is bit-identical
+# to LADDIE v1.  `_front_pgf_weight` gates the thickness-gradient term,
 # `_front_drho_weight` the density-gradient term.
 _front_pgf_weight(::FullDepthFrontPressure, x) = zero(x)
 _front_pgf_weight(::TruncatedDepthFrontPressure, x) = one(x)

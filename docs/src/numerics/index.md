@@ -33,11 +33,11 @@ cases — while the border cells are masked out and contribute nothing to the
 dynamics. The physical boundaries are:
 
 - **Grounding line and land**: zero-flux walls, each with its own slip factor; see
-  [Wall slip](../physics/walls.md) and [Wall momentum advection](../physics/wall_advection.md).
-- **Ice front**: an open boundary; see [Open-ocean boundary](../physics/open_ocean.md) and
-  [Ice-front pressure gradient](../physics/front_pressure.md).
+  [Wall slip](../bcs/walls.md) and [Wall momentum advection](../bcs/wall_advection.md).
+- **Ice front**: an open boundary; see [Open-ocean boundary](../bcs/open_ocean.md) and
+  [Ice-front pressure gradient](../bcs/front_pressure.md).
 - **Ice-shelf gaps**: either sinks, like the ice front, or part of the active domain;
-  see [Ice-shelf gaps](../physics/gaps.md).
+  see [Ice-shelf gaps](../bcs/gaps.md).
 
 Before any of this, the input mask can be cleaned up by a list of
 [preprocessing steps](preprocessing.md) and [cropped](domain_cropping.md) to the cavity,

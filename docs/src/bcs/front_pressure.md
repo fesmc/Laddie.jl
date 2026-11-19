@@ -2,7 +2,7 @@
 
 The pressure-gradient force in the momentum equations has three parts: the ice-base
 slope, the layer-thickness gradient and the density gradient (see the
-[equation reference](equations.md)). The last two difference a cell against
+[equation reference](../physics/equations.md)). The last two difference a cell against
 its neighbour. At a **one-sided face** — the ice front, or a [`SinkGapsBC`](@ref)
 gap edge — that neighbour is not part of the active domain, and masking pins its stored
 ``H`` and ``\delta\rho`` to `0`. The thickness-gradient term

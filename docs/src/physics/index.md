@@ -61,18 +61,10 @@ the forcing. The pages of this section describe one family each:
 | [`AbstractFrazilIce`](@ref) | `Params(; frazil_ice)` | `NoFrazilIce()` |
 | [`AbstractLateralViscosity`](@ref) | `Params(; lateral_viscosity)` | `PrescribedLateralViscosity()` |
 | [`AbstractCoriolisParameter`](@ref) | `Params(; coriolis)` | `CoriolisParameter0D()` |
-| [`AbstractOceanForcing`](@ref) | `Model(grid; forcing)` | — |
-| [`AbstractIceForcing`](@ref) | `Model(grid; forcing)` | `PrescribedIceForcing(-25)` |
-| [`AbstractSlipAtGL`](@ref), [`AbstractSlipAtLand`](@ref) | `BoundaryConditions(; grounding_line, land)` | `PartialSlipAtGL(1.0)`, `PartialSlipAtLand(1.0)` |
-| [`AbstractWallAdvection`](@ref) | `BoundaryConditions(; wall_advection)` | `NoWallAdvection()` |
-| [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `ZeroGradientOpenOceanBC()` |
-| [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `FullDepthFrontPressure()` |
-| [`AbstractGapsBC`](@ref) | `BoundaryConditions(; gaps)` | `SinkGapsBC()` |
 
 Each default is the choice a plain run makes. The [LADDIE versions](../versions.md) page
 gives, for every parameterisation and for the numerical choices, the option that v1 and v2
 each use. Options marked *experimental* log a warning when constructed.
 
-The ice forcing has a single member, [`PrescribedIceForcing`](@ref), which supplies the
-ice temperature ``T_i`` used by the [melting](melting.md) and
-[ice conduction](ice_conduction.md) parameterisations.
+The walls, the open ocean and the ice front, gaps, and the ocean and ice forcing are described in
+[Boundary conditions](../bcs/index.md).

@@ -47,7 +47,7 @@ includes it, `imask` (ice-covered cells) does not, and its draft sits at the sea
   itself off.
 
 The ambient profile in a gap is sampled at the sea surface, so the layer there reads as
-convectively unstable almost unconditionally; see [Convection](convection.md) for how each
+convectively unstable almost unconditionally; see [Convection](../physics/convection.md) for how each
 scheme handles that. Frazil ice does not form in gaps either.
 
 ## Leaky gaps
@@ -75,7 +75,7 @@ H' = H - h, \qquad S' = \frac{S H - S_i h}{H'},
 
 with ``\delta T_f`` the part of the cooling below the freezing point, which the latent
 heat holds the layer at. The frozen water leaves the layer and its salt beyond ``S_i``
-stays: brine rejection, with the bookkeeping of [frazil ice](frazil_ice.md).
+stays: brine rejection, with the bookkeeping of [frazil ice](../physics/frazil_ice.md).
 
 **Convection.** Where the layer is denser than the water beneath it
 (``\delta\rho < 0``), its ``T`` and ``S`` relax towards ``T_a`` and ``S_a`` on the time
@@ -83,7 +83,7 @@ scale τ (`convection_time`, default 10⁴ s), as under [`RelaxToAmbientConvecti
 thickness relaxes towards ``H_\mathrm{min}`` at the same rate, so the convected water
 leaves the layer. This runs in every gap cell, whatever the cover and whatever the
 model's convection scheme, which leaves gap cells alone (see
-[Convection in gaps](convection.md#Convection-in-gaps)).
+[Convection in gaps](../physics/convection.md#Convection-in-gaps)).
 
 With ``\alpha = 1`` there is no surface exchange and the full drag: this is
 `ConnectedGapsBC`, plus convection, and identical to it wherever no gap cell turns

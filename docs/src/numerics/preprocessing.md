@@ -21,7 +21,7 @@ directly: [`fill_ocean_holes!`](@ref), [`fill_shelf_holes!`](@ref),
 gap is an ice-free cell where the reference geometry had ice, not a topological property
 of the mask. Place it after any hole-filling steps, so the gaps it marks are not
 reclassified afterwards. What happens in a gap is the [gaps boundary
-condition](../physics/gaps.md).
+condition](../bcs/gaps.md).
 
 ```julia
 grid = Grid(mask, z_draft, dx, dy;

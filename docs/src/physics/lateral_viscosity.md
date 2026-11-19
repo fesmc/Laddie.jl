@@ -19,7 +19,7 @@ the velocity. Its coefficient is selected with `Params(; lateral_viscosity = ...
 
 The grounding-line and land walls carry the scheme's own coefficient, as in the v2
 reference; how strongly they brake the flow is the slip factor, set separately (see
-[Wall slip](walls.md)). Two things are *not* affected by this choice:
+[Wall slip](../bcs/walls.md)). Two things are *not* affected by this choice:
 
 - **Tracer diffusion.** The tracer diffusivity `Params.K_h` is always a constant.
 - **Shear entrainment.** [`HollandEntrainment`](@ref) uses `A_h` and `K_h` as its length

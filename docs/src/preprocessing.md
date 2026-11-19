@@ -28,7 +28,7 @@ Each stage has its own page; this one says what they are for and in which order 
 | stage | what it does | where |
 |---|---|---|
 | geometry ingestion | the 4-class mask, the ice-base depth and the bed from BedMachine-style arrays | [`build_laddie_mask`](@ref), [`ice_base_depth`](@ref), [`bed_elevation`](@ref) |
-| mask preprocessing | removes holes and small patches, marks [ice-shelf gaps](physics/gaps.md) | [Mask preprocessing](numerics/preprocessing.md) |
+| mask preprocessing | removes holes and small patches, marks [ice-shelf gaps](bcs/gaps.md) | [Mask preprocessing](numerics/preprocessing.md) |
 | domain cropping | cuts the arrays to the cavity | [Domain cropping](numerics/domain_cropping.md) |
 | ice-base slope | derives the slope from the draft, mask-aware | [Ice-base slope](numerics/ice_slope.md) |
 | ocean forcing | brings a 3D ocean field onto the cells, and fills its missing values | [`regrid_ocean`](@ref), [`fill_ocean!`](@ref), [`front_ocean_forcing`](@ref) |

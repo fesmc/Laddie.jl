@@ -33,7 +33,7 @@ entrainment are computed, and again after the Robert–Asselin filter.
 
 ## Convection in gaps
 
-The ambient profile in an ice-free [gap](gaps.md) is sampled at the sea surface, the
+The ambient profile in an ice-free [gap](../bcs/gaps.md) is sampled at the sea surface, the
 coldest and freshest water in the column, so the layer there reads as convectively
 unstable almost unconditionally. [`ResetToAmbientConvection`](@ref) and [`RelaxToAmbientConvection`](@ref) are
 therefore restricted to ice-covered cells: resetting a gap cell towards surface ambient
@@ -45,7 +45,7 @@ also applies over its whole active domain.
 
 [`LeakyGapsBC`](@ref) brings its own convection to gap cells, independent of the scheme
 chosen here: where the layer turns denser than the water beneath it, it relaxes towards
-that water and detrains, as described in [Leaky gaps](gaps.md#Leaky-gaps).
+that water and detrains, as described in [Leaky gaps](../bcs/gaps.md#Leaky-gaps).
 
 ## API
 

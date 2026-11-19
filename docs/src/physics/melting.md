@@ -1,7 +1,7 @@
 # Melting
 
 The melt rate ``\dot m`` (m s⁻¹ of freshwater, positive for melting) is computed on
-ice-covered cells only; ice-free [gap](gaps.md) cells never melt. Five schemes are
+ice-covered cells only; ice-free [gap](../bcs/gaps.md) cells never melt. Five schemes are
 available through `Params(; melting = ...)`:
 
 | scheme | equations | transfer coefficients |

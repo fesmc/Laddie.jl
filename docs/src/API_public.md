@@ -77,7 +77,7 @@ CavityForcing
 
 ### Ocean
 
-The ocean forcing types are described in [Ocean forcing](physics/ocean_forcing.md).
+The ocean forcing types are described in [Ocean forcing](bcs/ocean_forcing.md).
 
 #### From a 3D ocean field
 
@@ -98,7 +98,4 @@ fill_ocean!
 
 ### Ice
 
-```@docs
-AbstractIceForcing
-PrescribedIceForcing
-```
+The ice forcing types are described in [Ice forcing](bcs/ice_forcing.md).

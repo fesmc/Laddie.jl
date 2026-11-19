@@ -135,6 +135,8 @@ function ISOMIPForcing(isomipcond::Symbol = :warm; FT = Float64)
     return OceanForcing1D(Tz, Sz, z, dz, z0)
 end
 
+# The arrays' element type is not tied to `FT`: under `trace_parameters` the scalars
+# `dz` and `z0` are traced numbers while the profiles stay plain arrays.
 """
 $(TYPEDEF)
 
@@ -147,8 +149,6 @@ outside the grid take the nearest level, as for [`OceanForcing1D`](@ref).
 # Fields
 $(TYPEDFIELDS)
 """
-# The arrays' element type is not tied to `FT`: under `trace_parameters` the scalars
-# `dz` and `z0` are traced numbers while the profiles stay plain arrays.
 struct OceanForcing2D{FT,A<:AbstractArray{<:Any,3},V<:AbstractVector} <: AbstractOceanForcing
     "ambient temperature per cell and level (°C)"
     Tz::A

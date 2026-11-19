@@ -2,6 +2,9 @@
 # Diagnostics: melt and speed statistics, the log line
 # ============================================================================
 
+# A simulation is reduced on the model the log line reads (`_diag_model`): under Reactant a
+# CPU copy refreshed from the device, since eager reductions on device arrays compile one
+# program per call.
 """
 $(TYPEDSIGNATURES)
 
@@ -30,8 +33,6 @@ This diverges from LADDIE v2, whose `domain_a` integration includes gaps; with n
 in the mask the two masks coincide and the statistics are unchanged.  `max_speed` stays
 on `tmask` — the layer really does flow through gaps, and that flow is the point.
 """
-# On the model the log line reads (`_diag_model`): under Reactant a CPU copy refreshed from
-# the device, since eager reductions on device arrays compile one program per call.
 meltstats(sim::Simulation) = meltstats(_diag_model(sim.exec, sim))
 
 const _KG_PER_GT = 1e12     # kilogrammms per gigatonne

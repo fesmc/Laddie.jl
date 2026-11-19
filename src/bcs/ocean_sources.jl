@@ -111,7 +111,7 @@ function front_sources(mask::AbstractMatrix{<:Integer}; wet = trues(size(mask)),
     # winding back and forth needs more, so repeat until nothing changes.
     while true
         c1 = sweep!(CartesianIndices(mask), fwd)
-        c2 = sweep!(Iterators.reverse(CartesianIndices(mask)), bwd)
+        c2 = sweep!(reverse(CartesianIndices(mask)), bwd)
         c1 || c2 || break
     end
     lost = cavity .& (src .== 0)

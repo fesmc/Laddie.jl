@@ -3,11 +3,12 @@
 # loaded extensions too.  Allowed non-public names: `@adapt_structure`, `Base.RefValue`
 # and `Base.typename` are the standard spellings; the ForwardDiff extension extends
 # Laddie internals (`_primal`, `_safe_sqrt`) and uses `Dual` and `ForwardDiff.value`,
-# which ForwardDiff documents but does not declare public.
+# which ForwardDiff documents but does not declare public.  `TOML.print` is the only
+# writer of TOML; it is public from Julia 1.11, which added the `public` keyword.
 # `test_explicit_imports` runs its own `@test`s.
 
 test_explicit_imports(Laddie;
     all_explicit_imports_are_public = (; ignore = (:Dual,)),
     all_qualified_accesses_are_public = (;
         ignore = (Symbol("@adapt_structure"), :RefValue, :typename,
-                  :_primal, :_safe_sqrt, :value)))
+                  :_primal, :_safe_sqrt, :value, :print)))

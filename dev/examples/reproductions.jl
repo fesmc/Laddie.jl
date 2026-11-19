@@ -13,8 +13,8 @@ runs of [Lambert et al. (2023)](@cite lambert_modelling_2023), the LADDIE v2 run
     for [`run!`](@ref). Any [`Simulation`](@ref) keyword overrides the setup's.
 
 The values follow the code that produced each paper's results, i.e. the run's own
-configuration file. Where the paper says otherwise, the alias's docstring says so (see
-[Published setups](@ref)). LADDIE v2 runs on an unstructured mesh with forward–backward
+configuration file. [Published setups](@ref) lists each alias's values and where the paper
+says otherwise. LADDIE v2 runs on an unstructured mesh with forward–backward
 Runge–Kutta time stepping, and Laddie.jl on a C-grid with leapfrog, so the v2 aliases share
 v2's parameters but not its numerics.
 

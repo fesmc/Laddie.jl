@@ -23,5 +23,5 @@ KernelAbstractions = "0.9"
 # cap once a fresh resolve loads CUDA again.
 LLVM = "~10.4"
 NCDatasets = "0.14"
-TOML = "1"
+TOML = "<0.0.1, 1"
 Test = "<0.0.1, 1"

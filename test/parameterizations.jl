@@ -745,9 +745,11 @@ end
     p32 = quiet(() -> Params(; FT = Float32, equation_of_state = RoquetEOS()))
     @test p32.equation_of_state === RoquetEOS{Float32}(0.011f0, -4.5f0, 2.5f-5, 0.77f0)
 
-    # The coefficients: the linear ones are the Params constants, with no T or Z dependence.
+    # The coefficients: the linear ones are the scheme's constants, with no T or Z dependence.
     m_lin = mk().model
-    @test Laddie.eos_coefficients(m_lin) === (; beta = m_lin.beta, a0 = m_lin.alpha, aT = zero(FT), aZ = zero(FT))
+    lin = m_lin.params.equation_of_state
+    @test lin === LinearEOS{FT}(FT(3.733e-5), FT(7.843e-4))
+    @test Laddie.eos_coefficients(m_lin) === (; beta = lin.beta, a0 = lin.alpha, aT = zero(FT), aZ = zero(FT))
     m_rq = mk(equation_of_state = eos).model
     c = Laddie.eos_coefficients(m_rq)
     ρ0 = m_rq.rho0_seawater
@@ -778,15 +780,11 @@ end
     act = m.tmask .> 0
     @test m.drho[act] ≈ ref[act] rtol = 1e-9
     @test all(iszero, m.drho[.!act])
-    # An `alpha` override still moves a LinearEOS run (the constants stay the source of truth) ...
-    m1 = mk().model; m2 = mk(alpha = 2 * m1.alpha).model
+    # A LinearEOS `alpha` moves the run; `Params` no longer has the constants.
+    m1 = mk().model; m2 = mk(equation_of_state = LinearEOS(; alpha = 2 * lin.alpha)).model
     Laddie.update_density!(m1); Laddie.update_density!(m2)
     @test m1.drho != m2.drho
-    # ... and does not touch a RoquetEOS one.
-    m3 = mk(equation_of_state = eos, alpha = 2 * m1.alpha).model
-    m4 = mk(equation_of_state = eos).model
-    Laddie.update_density!(m3); Laddie.update_density!(m4)
-    @test m3.drho == m4.drho
+    @test !hasfield(Params, :alpha) && !hasfield(Params, :beta)
 
     # ResetToAmbientConvection resets to a contrast of exactly the threshold, whatever the EOS.
     for e in (LinearEOS(), eos)

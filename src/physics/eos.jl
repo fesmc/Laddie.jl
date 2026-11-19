@@ -24,10 +24,22 @@ abstract type AbstractEOS end
 """
 $(TYPEDEF)
 
-Linear equation of state, `δρ = β (S_a − S) − α (T_a − T)`, with the
-constants `Params.alpha` and `Params.beta`.  The default, and the behaviour of LADDIE v1 and v2.
+Linear equation of state, `δρ = β (S_a − S) − α (T_a − T)`, with constant thermal
+expansion `alpha` and haline contraction `beta`.  The default, and the behaviour of LADDIE v1
+and v2 (whose values are the defaults).
+
+Select via `Params(; equation_of_state = LinearEOS())`, or `LinearEOS(; alpha = 3.8e-5)`.
+
+# Fields
+$(TYPEDFIELDS)
 """
-struct LinearEOS <: AbstractEOS end
+@kwdef struct LinearEOS{FT} <: AbstractEOS
+    "thermal expansion coefficient α (K⁻¹, default `3.733e-5`)"
+    alpha::FT = 3.733e-5
+    "haline contraction coefficient β (psu⁻¹, default `7.843e-4`)"
+    beta::FT = 7.843e-4
+end
+LinearEOS(alpha, beta) = LinearEOS(promote(alpha, beta)...)
 
 """
 $(TYPEDEF)
@@ -47,7 +59,6 @@ surface freezing point (−1.9 °C), 0.041 at 500 m, and 0.068 at 0.5 °C and 50
 default has 0.038 throughout.  The defaults are the values of the paper.  The constants are
 rescaled by `ρ₀` (`Params.rho0_seawater`) to the reduced contrast of the model.
 
-`Params.alpha` and `Params.beta` are not used by this equation of state.
 
 !!! warning "Experimental"
     Constructing a `RoquetEOS` logs a warning.  [Roquet et al. (2015)](@cite roquet_defining_2015) fit it to the open ocean
@@ -97,7 +108,7 @@ _rebuild(::Type{<:RoquetEOS}, Cb, Theta0, Th, b0) =
 # launched.  For `LinearEOS` the thermal expansion is `a0 = alpha` with `aT = aZ = 0`,
 # so that the contrast is that of the constant coefficients to the last bit.
 eos_coefficients(m) = eos_coefficients(m, m.params.equation_of_state)
-eos_coefficients(m, ::LinearEOS) = (; beta = m.beta, a0 = m.alpha, aT = zero(m.FT), aZ = zero(m.FT))
+eos_coefficients(m, eos::LinearEOS) = (; beta = eos.beta, a0 = eos.alpha, aT = zero(m.FT), aZ = zero(m.FT))
 function eos_coefficients(m, eos::RoquetEOS)
     rho0 = m.rho0_seawater
     return (; beta = eos.b0 / rho0, a0 = -eos.Cb * eos.Theta0 / rho0, aT = eos.Cb / rho0, aZ = eos.Th / rho0)

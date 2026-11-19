@@ -26,7 +26,9 @@ This is the scheme LADDIE v1 calls `'Gaspar'` (`physics.py`) and
 v2 calls `'Gaspar1988'` (`laddie_physics.f90`, `compute_entrainment`); it is
 verified bit-for-bit against the LADDIE v1 code and is the **default**.
 
-Select via `Params(; entrainment = GasparEntrainment(2.5))`.
+Select via `Params(; entrainment = GasparEntrainment(2.5))`, or with keywords,
+`GasparEntrainment(; mu = 2.5, max_detrainment = 1e-3)`.  `drho_floor` is the value the
+reference LADDIE code hard-wires.
 
 # Fields
 $(TYPEDFIELDS)
@@ -34,7 +36,14 @@ $(TYPEDFIELDS)
 @kwdef struct GasparEntrainment{FT} <: AbstractEntrainment
     "dimensionless efficiency parameter (ISOMIP+ default `2.5`)"
     mu::FT = 2.5
+    "lower bound on δρ in the production term, which divides by it (–, default `1e-4`)"
+    drho_floor::FT = 1e-4
+    "upper bound on the detrainment rate (m s⁻¹, default `1e6`, i.e. unbounded)"
+    max_detrainment::FT = 1e6
 end
+GasparEntrainment(mu, drho_floor, max_detrainment) =
+    GasparEntrainment(promote(mu, drho_floor, max_detrainment)...)
+GasparEntrainment(mu) = GasparEntrainment(; mu)
 
 """
 $(TYPEDEF)
@@ -111,8 +120,8 @@ function compute_entrainment!(m, ep::GasparEntrainment)
         m.melt,
         m.tmask,
         (ep.mu + ep.mu) / m.g,
-        m.max_detrainment,
-        m.drho_floor,
+        ep.max_detrainment,
+        ep.drho_floor,
         eos_coefficients(m),
         m.l1,
         m.l2,

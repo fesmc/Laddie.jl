@@ -46,10 +46,6 @@ struct Params{
     A_h::FT
     "lateral tracer diffusivity (m² s⁻¹, default `1`)"
     K_h::FT
-    "upper bound on the detrainment rate (m s⁻¹, default `1e6`, i.e. unbounded)"
-    max_detrainment::FT
-    "lower bound on δρ in the buoyancy-entrainment production term, which divides by it (–, default `1e-4`)"
-    drho_floor::FT
     "minimum layer thickness, kept by extra entrainment and a final clamp (m, default `1`)"
     H_min::FT
     "speed cap applied to the velocity after each momentum step (m s⁻¹, default `1.414`)"
@@ -69,11 +65,7 @@ struct Params{
     c_p::FT
     "specific heat capacity of ice (J kg⁻¹ K⁻¹, default `2009`)"
     c_i::FT
-    # EOS (the linear constants, used by `LinearEOS`) and the linear liquidus
-    "thermal expansion coefficient of `LinearEOS` (K⁻¹, default `3.733e-5`)"
-    alpha::FT
-    "haline contraction coefficient of `LinearEOS` (psu⁻¹, default `7.843e-4`)"
-    beta::FT
+    # The linear liquidus
     "liquidus slope in salinity, T_f = l1·S + l2 + l3·z (K psu⁻¹, default `-5.73e-2`)"
     l1::FT
     "liquidus offset (°C, default `8.32e-2`)"
@@ -103,7 +95,7 @@ struct Params{
     frazil_ice::FZ
     "heat conduction into the ice at the interface, an [`AbstractIceConduction`](@ref) (default `MeltOnlyIceConduction()`)"
     ice_conduction::IC
-    "equation of state, an [`AbstractEOS`](@ref) (default linear, with `alpha` and `beta`)"
+    "equation of state, an [`AbstractEOS`](@ref) (default `LinearEOS()`)"
     equation_of_state::EQ
     "upper bound on the layer thickness, an [`AbstractMaxLayerThickness`](@ref) (default none)"
     max_layer_thickness::MLT
@@ -155,8 +147,6 @@ _param_defaults() = (
     C_d_top = 1.1e-3,
     A_h = 6.0,
     K_h = 1.0,
-    max_detrainment = 1e6,
-    drho_floor = 1e-4,
     H_min = 1.0,
     v_cut = 1.414,
     u_tide = 0.01,
@@ -166,8 +156,6 @@ _param_defaults() = (
     L = 3.34e5,
     c_p = 3.974e3,
     c_i = 2009.0,
-    alpha = 3.733e-5,
-    beta = 7.843e-4,
     l1 = -5.73e-2,
     l2 = 8.32e-2,
     l3 = 7.61e-4,
@@ -211,8 +199,6 @@ julia> params = Params(; coriolis = CoriolisParameter0D(0.0), melting = Turbulen
 julia> params.melting
 TurbulentGamTMelting{Float32}(13.8f0, 2432.0f0, 1.95f-6)
 ```
-
-`drho_floor` is the value the reference LADDIE code hard-wires.
 
 `tracer_bounds` bounds the layer temperature and salinity inside the active domain
 after every tracer step; see [`AbstractTracerBounds`](@ref) for what that costs.

@@ -34,8 +34,8 @@ const V2_PARAMS = (ParamsISOMIPv2, ParamsAISv2, ParamsASEv2, ParamsPIGv2, Params
         @test p.A_h == p.lateral_viscosity.C_visc
         @test p.tracer_form isa FluxTracerForm
         @test p.convection isa ClampDensityConvection
-        @test p.drho_floor ≈ p.convection.d_rho_min / p.rho0_seawater
-        @test (p.rho0_seawater, p.L, p.max_detrainment) == (1027.0, 3.335e5, 1e-3)
+        @test p.entrainment.drho_floor ≈ p.convection.d_rho_min / p.rho0_seawater
+        @test (p.rho0_seawater, p.L, p.entrainment.max_detrainment) == (1027.0, 3.335e5, 1e-3)
     end
     @test ParamsISOMIPv2().melting == UStarGamTMelting(2.78e-2)
     @test ParamsMISOMIPv2().melting == UStarGamTMelting(2.03e-2)

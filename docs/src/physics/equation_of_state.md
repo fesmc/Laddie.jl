@@ -26,14 +26,14 @@ nonlinear mostly through ``\alpha``, which falls towards the freezing point
 
 | equation of state | ``\delta\rho`` | ``\alpha`` |
 |---|---|---|
-| [`LinearEOS`](@ref) (default) | ``\beta\,\Delta S - \alpha\,\Delta T`` | constant, `Params.alpha` |
+| [`LinearEOS`](@ref) (default) | ``\beta\,\Delta S - \alpha\,\Delta T`` | constant, `LinearEOS.alpha` |
 | [`RoquetEOS`](@ref) | ``\beta\,\Delta S - (a_0 + a_T \bar T + a_Z Z)\,\Delta T`` | ``\bigl[C_b(\bar\Theta - \Theta_0) + T_h Z\bigr]/\rho_0`` |
 
 where ``\Delta X = X_a - X``.
 
 ## Linear
 
-[`LinearEOS`](@ref) uses the constants `Params.alpha` and `Params.beta`
+[`LinearEOS`](@ref) uses its constants `alpha` and `beta`
 (``a_T = a_Z = 0``). It is the equation of state of [LADDIE v1 and v2](../versions.md), and
 reproduces their contrast to the last bit.
 
@@ -74,8 +74,8 @@ plume and 25 % for a warm one at 500 m).
     open ocean in Conservative Temperature and Absolute Salinity, which Laddie takes as its temperature
     and salinity (only salinity differences enter, so the offset to practical salinity cancels), and say
     it serves understanding rather than realistic simulation (TEOS-10 does).
-    Supercooled cavity water is an extrapolation. `Params.alpha` and `Params.beta` are used by
-    `LinearEOS` only, and an ambient profile built as neutral for them (as in the examples) is not neutral
+    Supercooled cavity water is an extrapolation. The constants `alpha` and `beta` belong to
+    `LinearEOS`, and an ambient profile built as neutral for them (as in the examples) is not neutral
     for another equation of state.
 
 ## API

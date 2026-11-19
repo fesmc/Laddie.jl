@@ -28,7 +28,7 @@ for the net rate ``\dot e``:
 Here ``g_a' = g\,\delta\rho`` is the reduced gravity against the ambient water and
 ``g_b' = g\,\delta\rho_b`` that against the interface water, at ``T_b`` and ``S_b``. The
 positive part is entrainment, the negative part detrainment, bounded by
-`Params.max_detrainment` (unbounded by default). This is the reference LADDIE v1
+`GasparEntrainment(; max_detrainment)` (unbounded by default). This is the reference LADDIE v1
 `'Gaspar'` and v2 `'Gaspar1988'` scheme, verified bit-for-bit against the LADDIE v1 code.
 
 ## Shear entrainment ([Holland & Jenkins 1999](@cite holland_modeling_1999))

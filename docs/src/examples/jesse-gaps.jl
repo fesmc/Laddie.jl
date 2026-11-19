@@ -177,8 +177,7 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 
 params = Params(; FT,
     melting = UStarGamTMelting(3.0e-2),
-    entrainment = GasparEntrainment(2.5),
-    drho_floor = 0.005 / rho0,
+    entrainment = GasparEntrainment(; mu = 2.5, drho_floor = 0.005 / rho0, max_detrainment = 1e-3),
     lateral_viscosity = NonlinearLateralViscosity(10.0),
     front_pressure = TruncatedDepthFrontPressure(),
     convection = ClampDensityConvection(0.005),
@@ -186,7 +185,6 @@ params = Params(; FT,
     A_h = 10.0,                         # the wall term of v2's viscosity
     C_d = 2.5e-3, C_d_top = 2.5e-3,
     K_h = 10.0,
-    max_detrainment = 1e-3,
     rho0_seawater = rho0, rho_ice = 917.0,
     H_min = 1.0, u_tide = 0.01, v_cut = 1.0,
     H_init = 2.0, dT_init = 0.0, dS_init = -0.1,

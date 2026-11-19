@@ -3,8 +3,8 @@ module LaddieReactantExt
 # Runs a Laddie simulation through Reactant.jl: `to_backend(sim, ReactantBackend())`
 # moves the arrays to Reactant, and `run!` then advances the simulation in compiled
 # batches of steps (a traced `@trace for` loop), with the dt control, blow-up check
-# and diagnostics compiled as small programs of their own.  See
-# `laddie-roadmap/reactant.md` for the background and the measurements.
+# and diagnostics compiled as small programs of their own (measurements:
+# docs/src/reactant.md; kernel forms: devnotes/improvements/reactant-kernel-forms.md).
 
 using Adapt: Adapt
 using CUDA: CUDA
@@ -29,8 +29,6 @@ const KA = KernelAbstractions
 #   :kernel   a barrier on every kernel's arrays after it runs (≈ one fusion per kernel)
 #   :xla      no barriers: XLA's heuristics decide.  The only strategy Enzyme can
 #             differentiate (barriers have no derivative rule).
-# A barrier before each stencil kernel instead (`:stencil`, removed 2026-09-24) was
-# slower than `:kernel` on every grid: 2.2× at 2000×2000.
 const FUSION_STRATEGIES = (:native, :kernel, :xla)
 # The strategy of the program being traced; set by `_compile` around each trace.
 # Global mutable state, the documented exception in AGENTS.md: the launch overlay reads it
@@ -75,10 +73,8 @@ end
 # kernels keep that workgroup, as on the CUDA backend.
 #
 # Reactant 0.2.286 mis-lowers a raised kernel whose one block has 2^22 iterations or
-# more: it writes only a sliver of the ndrange (a 4-point stencil over 2048 × 2048
-# writes 2048 points) and leaves the rest untouched, so a step silently does
-# nothing (pan-Antarctic grids finer than 3 km). From that size the raised kernels
-# keep the workgroup too: slower, but correct.
+# more: it writes only a sliver of the ndrange, so a step silently does nothing.  From
+# that size the raised kernels keep the workgroup too: slower, but correct.
 const MAX_RAISED_BLOCK = 2^22
 function _launch_traced!(kernel!, ndrange, args)
     f = TRACING_FUSION[]

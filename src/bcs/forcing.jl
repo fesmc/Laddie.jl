@@ -429,12 +429,8 @@ _as_cavity_forcing(f) = throw(
 # ============================================================================
 
 # The profile levels around the layer base z_draft − H of cell (i, j): the 1-based
-# indices `lo`, `hi` and the weight of `hi`.  The depth index is made finite and clamped
-# to [0, nz − 1] in float first, so that `unsafe_trunc` always receives a representable
-# value: the checked `trunc` leaves an InexactError branch (a trap) that Reactant cannot
-# raise.  The weight subtracts `floor`, not the index converted back: Enzyme on raised
-# kernels (Reactant 0.2.286) passes the derivative through the int round trip, so
-# `depth_idx - FT(idx_lo)` gets a zero tangent.
+# indices `lo`, `hi` and the weight of `hi`.  The finite clamp before `unsafe_trunc` and
+# the weight taken from `floor` follow devnotes/improvements/reactant-kernel-forms.md.
 @inline function _depth_levels(z_draft, H, z0, dz, nz, i, j)
     FT = typeof(z0)
     depth_idx = @inbounds (z_draft[i, j] - H[i, j] - z0) / dz

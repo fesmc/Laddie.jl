@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** default since 2026-10-27
 - **Commits:** 5d38792 (feature), 9f6b8d7 (merge), 865303b (default flip)
-- **Code:** `FluxTracerForm`, `AdvectiveTracerForm` in `src/numerics/advection.jl`; `_tracer_update`, `_outflow_rate!` in `src/numerics/leapfrog.jl`
+- **Code:** `FluxTracerForm`, `AdvectiveTracerForm` in `src/numerics/advection.jl`; `tracer_update`, `outflow_rate!` in `src/numerics/leapfrog.jl`
 
 ## Summary
 

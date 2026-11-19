@@ -71,11 +71,8 @@ end
 end
 
 # `dt` is the base time step.  dH/dt is always taken over 2·dt, as in LADDIE v1
-# v1 (`prepare_integrate`), although `H.future` and `H.past` are only dt apart in
-# the bootstrap step, which therefore sees half the thickness tendency.  Dividing
-# by the true step length instead is not a free fix: the ISOMIP+ spin-up is
-# sensitive to that one step, and the 1-day LADDIE v1 verification then fails
-# (max |ΔH| 3 → 35 m, mean melt −3 %).
+# (`prepare_integrate`), also in the bootstrap step, whose levels are only dt apart
+# (devnotes/open-questions/restart-step-sizing.md).
 function precompute_integration_terms!(m, dt)
     launch!(
         _integration_terms_kernel!,
@@ -129,13 +126,9 @@ The `-U ∂H/∂t` term of [`AdvectiveMomentumForm`](@ref); zero under [`FluxMom
 """
 function momentum_thickness_tendency end
 
-# The two `momentum_form`s (see `AbstractMomentumForm`).  The advective form steps U
-# with `-U ∂H/∂t` and all sinks in its rhs, at the present level.  The flux form steps
-# the transport H̄U: `-U ∂H/∂t` drops out, and the terms that remove momentum at the
-# layer's own U — detrainment, cap detrainment, frazil and drag — leave the rhs for
-# the denominator, at the new level.  Its face thicknesses are those of the past level
-# and of the new one, `max(H⁺, H*)` (see `FluxMomentumForm`); the advective form
-# needs neither and reads no array for them.
+# The two `momentum_form`s (see `FluxMomentumForm`).  The flux form steps the
+# transport H̄U: `-U ∂H/∂t` drops out, and the sinks at the layer's own U (detrainment,
+# cap detrainment, frazil, drag) move from the rhs to the denominator, at the new level.
 @inline momentum_thickness_tendency(::AdvectiveMomentumForm, U, dHdt) = -U * dHdt
 @inline momentum_thickness_tendency(::FluxMomentumForm, U, dHdt) = zero(U)
 
@@ -279,14 +272,9 @@ _or_zero(::Nothing, FT) = zero(FT)
         ipjmV = half * (half * (Vd[i, j] + Vd[i, jm1]) + half * (Vd[ip1, j] + Vd[ip1, jm1]))
         speed = _ssqrt(kinks, Ud[i, j]^2 + ipjmV^2, kink_width(kinks, :u))
         C_dU = _face_drag(C_d, gap_drag, i, j, ip1, j)   # mélange cover in gaps (LeakyGapsBC)
-        # tmip is 2 at a fully-interior face (both neighbours active) and 1 at a
-        # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where the
-        # masked neighbour thickness is a zero stand-in rather than a real one.
-        # pgf_w selects what happens there: 0 (FullDepthFrontPressure, the LADDIE v1
-        # behaviour) keeps the term and leaves this an exact multiply by
-        # 1.0; 1 (TruncatedDepthFrontPressure) drops it, as LADDIE v2 does at
-        # mask_cf_b faces.  drho_w gates the density-gradient term the same
-        # way, 1 only under ZeroGradientFrontPressure.  See AbstractFrontPressure.
+        # tmip is 1 at a one-sided face (ice front, gap-sink edge), 2 elsewhere.  The
+        # weights pgf_w and drho_w of the `AbstractFrontPressure` drop the H-gradient and
+        # density-gradient terms there (weight 1) or keep them (0, an exact multiply by 1).
         pgf_gate = one(FT) + pgf_w * (tmip - FT(2))
         drho_gate = one(FT) + drho_w * (tmip - FT(2))
         H_next = H1[ip1, j] * tmask[ip1, j]
@@ -411,26 +399,12 @@ The `-q ∂H/∂t` term of [`AdvectiveTracerForm`](@ref); zero under [`FluxTrace
 """
 function thickness_tendency end
 
-# The two `tracer_form`s (see `AbstractTracerForm`).  The advective form steps the
-# tracer with the product-rule term `-q ∂H/∂t` in its rhs; the flux form steps the
-# content H·q and divides by the new thickness, so that term drops out.  Masked
-# cells keep their past value under both.
-#
-# Under the flux form the content belongs to the unclamped thickness `H_star` of
-# `_step_thickness_kernel!`, and `_clamp_thickness!` may since have moved H_future
-# away from it.  The clamp then has to move water with its matching tracer, as the
-# preventive `detr_cap` and `ent2` do: volume cut at the cap leaves at the layer's
-# own q, volume added by the floor comes in at ambient `qa`.  Dividing the content
-# by the clamped H instead would scale q by H_star/H_future.
-#
-# The flux form also takes the terms that remove layer water at its own q — the
-# outflow through the cell faces and the cap detrainment, plus for T the frazil
-# formation, together the rate `sink` (m s⁻¹) — at the new level instead of the
-# present one.  rhs carries them as
-# `-sink·q_present`; they are added back to the content and moved into the
-# denominator.  q⁺ is then a weighted mean of q⁻ and the waters coming in, with
-# nonnegative weights at any step: explicit, a thin cell that a thick neighbour
-# flushes several times over in one step would lose more tracer than it holds.
+# The two `tracer_form`s (see `FluxTracerForm`, devnotes/improvements/flux-form-tracers.md).
+# Masked cells keep their past value under both.  The flux form takes the terms that
+# remove layer water at its own q (face outflow, cap detrainment, for T frazil), the
+# rate `sink` (m s⁻¹), at the new level: rhs carries them as `-sink·q_present`, so they
+# are added back to the content and moved into the denominator.  q⁺ is then a weighted
+# mean of q⁻ and the waters coming in, with nonnegative weights at any step.
 @inline thickness_tendency(::AdvectiveTracerForm, q, dHdt) = -q * dHdt
 @inline thickness_tendency(::FluxTracerForm, q, dHdt) = zero(q)
 

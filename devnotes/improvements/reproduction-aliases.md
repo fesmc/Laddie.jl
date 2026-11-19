@@ -10,7 +10,7 @@
 
 Aliases rebuild the published LADDIE runs: v1 from Lambert et al. (2023), and v2 from Lambert et al. (2026) and Jesse et al. (2026).
 Only published runs get an alias. There is none for current Laddie.jl, whose aim is one parameter set.
-Where the code and the paper disagree, the alias follows the code, and its docstring warns.
+Where the code and the paper disagree, the alias follows the code, and `docs/src/API_published.md` lists the differences.
 v2's numerics (FB-RK3) are not reproduced.
 
 ## Evidence
@@ -32,5 +32,7 @@ Full runs against the stored reference output (mean melt, spatial correlation):
   `SimulationASEv1` reproduces the run as made (dx 500 m on 1 km cells); `SimulationASEv1Theoretical` uses 1 km.
   FRIS v1 may be affected too, but this cannot be verified.
 - v1 aliases use the shipped configs, not the paper's Table 2 where they differ (μ 2.5, not 0.5), plus `AdvectiveTracerForm`, `PyGradient` and the v1 walls (`wall-slip-convention.md`).
+- v2 geometries come from v2's output remapped from its mesh to a regular grid, which smears the mask along the grounding line and the domain edge (ISOMIP+: 512 floating cells where v2 had no layer, 104 with a layer that do not float).
+  The shelf is the ice that floats there: taking it from v2's layer instead turns those cells into walls and fits v2 worse (ISOMIP+ melt pattern correlation 0.71 against 0.93).
 - v2 aliases take their values from the shipped `.cfg` files. There are no `SimulationAISv2` or `SimulationPIGv2`, because their inputs are not bundled.
 - ASE v2 with centred momentum advection blows up (H 153 m vs 32 m): see `deadends/centred-momentum-advection.md`.

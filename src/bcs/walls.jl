@@ -259,7 +259,6 @@ advection_slips(m, ::V1WallAdvection) = _viscosity_slips(m)
 # their arguments: the grounding-line and land indicators of the two wall faces
 # (north and south of a u-point, east and west of a v-point), then the slip factors
 # `(slip_gl, slip_land)` of `_viscosity_slips` or `advection_slips`.  Separate arguments,
-# not one NamedTuple: a NamedTuple of arrays unpacked inside a kernel costs the CPU
-# kernels up to a third of their time.
+# not one NamedTuple (devnotes/improvements/reactant-kernel-forms.md).
 _u_walls(m, (slip_gl, slip_land)) = (m.glNu, m.glSu, m.lndNu, m.lndSu, slip_gl, slip_land)
 _v_walls(m, (slip_gl, slip_land)) = (m.glEv, m.glWv, m.lndEv, m.lndWv, slip_gl, slip_land)

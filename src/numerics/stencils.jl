@@ -1,27 +1,12 @@
-
-# Periodic neighbour indices along each axis.  Arrays are [ix, iy]: `_xp1`/`_xm1`
-# step the first index, `_yp1`/`_ym1` the second.  These are index directions, not
-# compass directions — the grid axes of a projected domain need not align with
-# east/north (see the note on the shift primitives in utils.jl).  The time-step
-# stencils are launched over the interior (`launch_interior!`) and use plain
-# `i ± 1`; the wrap remains only where a stencil must also cover the border ring:
-# the collocated cross-velocities of `NonlinearLateralViscosity` (a u-point at
-# index 1 is a real face), the second-neighbour reads of the upstream momentum
-# advection, and the host-side diagnostics and output averages.
-# Written as a comparison of the shifted index, not `i == N ? 1 : i + 1`: Reactant
-# raises this form of a wrapped read to a rotation, which shards as a halo exchange,
-# and the equality form to a gather, which shards as an all-gather of the whole
-# field.  So does a read wrapped along both axes at once (see `_v_half_kernel!`),
-# and one inside a branch (see `_face_mass_x`).
+# Periodic neighbour indices along the first (`_xp1`, `_xm1`) and second array axis:
+# index directions, not compass directions.  The time-step stencils run over the
+# interior (`launch_interior!`) with plain `i ± 1`; the wrap is left only where a stencil
+# also covers the border ring.  The forms of the wrapped reads here, and the `@inbounds`
+# inside the helpers that read arrays, follow devnotes/improvements/reactant-kernel-forms.md.
 @inline _xp1(i, N) = ifelse(i + 1 > N, i + 1 - N, i + 1)
 @inline _xm1(i, N) = ifelse(i - 1 < 1, i - 1 + N, i - 1)
 @inline _yp1(j, N) = ifelse(j + 1 > N, j + 1 - N, j + 1)
 @inline _ym1(j, N) = ifelse(j - 1 < 1, j - 1 + N, j - 1)
-
-# The helpers here that read arrays carry their own `@inbounds`, like `_other_x`
-# and `_face_mass_x`: a kernel's `@inbounds` block does not reach into a called
-# function, even an inlined one, and the bounds checks left there stop the CPU
-# kernels from vectorising (3–4x slower).
 
 # Masked two-point average of `a` over the cells (i, j) and (i2, j2): the mean of the
 # active ones, zero if neither is active.  The kernels form their staggered
@@ -29,12 +14,8 @@
 @inline _face_avg(a, mask, i, j, i2, j2) =
     @inbounds _safe_div(a[i, j] + a[i2, j2], mask[i, j] + mask[i2, j2])
 # The same average for the cell (i, j) and its neighbour (i + di, j + dj), but zero on
-# the border ring, where the pre-computed fields were never written.  For a stencil
-# that reads the average at a neighbouring cell, which may be on the ring.  Both reads
-# stay in bounds at every call site (the cell is a neighbour of an interior cell and
-# the offset points inwards), so the average is always formed and then selected with
-# `ifelse`: a branch here is raised by Reactant to a reduction Enzyme cannot
-# differentiate.
+# the border ring, for a stencil that reads it at a neighbouring cell.  Both reads stay
+# in bounds at every call site, so the average is always formed, then selected.
 @inline function _face_avg_ring0(a, mask, i, j, di, dj)
     Nx, Ny = size(a)
     inner = (1 < i < Nx) & (1 < j < Ny)
@@ -338,22 +319,13 @@ end
 end
 
 # Shear-scaled (NonlinearLateralViscosity) counterparts of _laplace_U_kernel!/
-# _laplace_V_kernel!: same geometry and masking, but each interior flux term gets
-# its own coefficient visc_? * |Δu| in place of a single constant A_h, where |Δu|
-# is the magnitude of the full velocity-difference *vector* across that face
-# (the reference's dUabs), not just the component being diffused — hence `other`,
-# the cross-component collocated onto this component's points.  Where
-# visc_x/visc_y = C_visc * dx/100 and C_visc * dy/100 carry the reference's
-# dUabs * triCw / 100 scaling (laddie_velocity.f90:260).  A wall face is an ordinary
-# face whose neighbour is the ghost velocity (1 − s)·u: the stored zero plus the
-# extra `slip` = s − 1 of `_viscosity_slips`, inside the shear-scaled coefficient as
-# well, so that free slip (s = 0) is exactly stress-free.  At s = 1 this is v2's
-# grounded neighbour with zero velocity (laddie_velocity.f90:259-267).
-#
-# `other` and `Hface` (H on this component's points, masked) are read from fields
-# that `laplace_U`/`laplace_V` fill first, since each is needed at several stencil
-# points: forming them inline triples the kernels' CPU cost.  On the GPU the extra
-# passes cost about as much as they save.
+# _laplace_V_kernel!: each flux term gets the coefficient visc_? · |Δu|, with |Δu| the
+# magnitude of the velocity-difference vector across the face (v2's dUabs, hence
+# `other`, the cross-component on this component's points) and visc_? = C_visc · d?/100
+# (v2's dUabs · triCw / 100, `laddie_velocity.f90`).  A wall face's neighbour is the
+# ghost (1 − s)·u, so free slip (s = 0) is stress-free and s = 1 is v2's grounded
+# neighbour at rest.  `other` and `Hface` are pre-computed fields: each is read at
+# several stencil points, and forming them inline triples the CPU cost.
 @kernel function _nonlinear_laplace_U_kernel!(
     out,
     @Const(var),
@@ -485,22 +457,14 @@ function upwind_advection_T(out, m, var)
 end
 
 # ---------------------------------------------------------------------------
-# Donor-cell momentum advection (UpstreamMomentumAdvection)
-#
-# Flux form, built so the momentum fluxes ride on the *mass* fluxes of the
-# thickness equation: `_face_mass_x`/`_face_mass_y` are the donor-cell `H·u` of
-# `_upwind_advection_T_kernel!` (same zero-gradient treatment of an ocean
-# neighbour, same `umask`/`vmask` gate), averaged onto the staggered face from
-# the two adjacent T-cell faces.  Momentum comes from the upstream side of that
-# flux.  Consistency with discrete continuity is the point: a centred face
-# thickness with an upstream velocity lets momentum cross faces that carry no
-# mass, and blows up on a real geometry.
+# Donor-cell momentum advection (UpstreamMomentumAdvection): the momentum fluxes ride
+# on the mass fluxes of the thickness equation (`_face_mass_x`/`_face_mass_y`, the
+# donor-cell H·u of `_upwind_advection_T_kernel!` averaged onto the staggered face),
+# with momentum from the upstream side, consistent with discrete continuity.
 # ---------------------------------------------------------------------------
 
 # Mass flux through the x-face at u-point (i, j), i.e. between T(i, j) and
-# T(i+1, j).  Zero-gradient thickness when the donor side is open ocean.  `ifelse`,
-# not a branch: the read at `ip1` wraps on the last column, and Reactant raises a
-# wrapped read inside a branch to a gather (an all-gather when sharded).
+# T(i+1, j).  Zero-gradient thickness when the donor side is open ocean.
 @inline function _face_mass_x(U, H, tmask, ocn, umask, i, j, Nx, kinks)
     @inbounds begin
         ip1 = _xp1(i, Nx)
@@ -787,9 +751,7 @@ function _laplace!(m, lv::NonlinearLateralViscosity, q)
 end
 
 # 4-point collocation of the cross-velocity component, as `ip_half(jm_half(V))`
-# and `jp_half(im_half(U))` without the intermediate arrays, in two passes that
-# each average along one axis: in one pass the read would be wrapped along both
-# axes at once, which Reactant raises to a gather.
+# and `jp_half(im_half(U))`, in two passes that each average along one axis.
 @kernel function _v_half_kernel!(out, @Const(V), Ny)
     i, j = @index(Global, NTuple)
     @inbounds out[i, j] = (V[i, j] + V[i, _ym1(j, Ny)]) / 2

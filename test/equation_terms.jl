@@ -45,11 +45,11 @@ using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, 
 @inline u_advection(m) = copy(momentum_advection_U(m))
 # Per-face weight on the depth-gradient PGF term: always 1 on a fully-interior
 # face; at a one-sided face (ice front, SinkGapsBC gap-sink edge) 1 under
-# FullDepthGradient and 0 under TruncatedDepthGradient.  See AbstractFrontPressure.
+# FullDepthFrontPressure and 0 under TruncatedDepthFrontPressure.  See AbstractFrontPressure.
 @inline _pgf_gate(m, tmask_stag) =
     one(m.FT) .+ _front_pgf_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
 # The same gate on the density-gradient PGF term: 0 at a one-sided face only
-# under ZeroGradientFront.
+# under ZeroGradientFrontPressure.
 @inline _drho_gate(m, tmask_stag) =
     one(m.FT) .+ _front_drho_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
 
@@ -106,7 +106,7 @@ using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, 
 @inline v_detrainment(m) = (m.detr .+ jp_t(m, m.detr_cap) .+ jp_t(m, frazil_field(m))) .* m.V.present
 
 # The prognostic level the closures read (`Params.closure_level`).
-closure_level(m, v) = m.params.closure_level isa PastClosures ? v.past : v.present
+closure_level(m, v) = m.params.closure_level isa PastClosureLevel ? v.past : v.present
 
 # One momentum step of U from `rhs`, the momentum terms without U·∂H/∂t, drag and
 # detrainment, in the model's `momentum_form`: the advective form adds those terms
@@ -171,7 +171,7 @@ function tracer_step(::FluxTracerForm, m, q, rhs, dt, extra_sink)
 end
 # Kh·∇²q  (horizontal diffusion)
 @inline tracer_diffusion(m, q_past) = m.K_h .* laplace_T(similar(q_past), m, q_past)
-# (q_past − qa)·conv2  (convective relaxation, RelaxToAmbient only)
+# (q_past − qa)·conv2  (convective relaxation, RelaxToAmbientConvection only)
 @inline tracer_convection(m, q_past, qa) = (q_past .- qa) .* m.conv2
 # ḟ·(L/c_p − T)  (frazil: latent heat released, water removed at T; temperature only,
 # since the salt stays behind)

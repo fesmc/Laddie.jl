@@ -99,7 +99,7 @@ end
         forcing = CavityForcing(ISOMIPForcing(:warm; FT), ice),
         params = Params(; FT, entrainment = GasparEntrainment(FT(2.5)),
                         melting = FixedGamTMelting(FT(0.00018))),
-        boundary = BoundaryConditions(; open_ocean = ZeroGradientInflow())))
+        boundary = BoundaryConditions(; open_ocean = ZeroGradientOpenOceanBC())))
 
     # An explicit CavityForcing with the same uniform value is bit-identical to
     # the implicit default, so the move is provably inert.

@@ -2,16 +2,16 @@
 Abstract supertype for the treatment of convective instability: cells where the
 layer is denser than the ambient water beneath it, i.e. where the reduced density
 contrast `δρ` falls below zero.  Pass a concrete instance as
-`Params(; convection_scheme = ...)`: [`RelaxToAmbient`](@ref) (the default),
-[`ResetToAmbient`](@ref) or [`ClampDensity`](@ref).
+`Params(; convection_scheme = ...)`: [`RelaxToAmbientConvection`](@ref) (the default),
+[`ResetToAmbientConvection`](@ref) or [`ClampDensityConvection`](@ref).
 
 The layer is unstable where `δρ = (ρ_a − ρ)/ρ₀ < 0`. No LADDIE paper describes a convection
-closure, so the schemes follow the reference codes: `ResetToAmbient` and `RelaxToAmbient` the
-LADDIE v1 code of [Lambert et al. (2023)](@cite lambert_modelling_2023), `ClampDensity` the
+closure, so the schemes follow the reference codes: `ResetToAmbientConvection` and `RelaxToAmbientConvection` the
+LADDIE v1 code of [Lambert et al. (2023)](@cite lambert_modelling_2023), `ClampDensityConvection` the
 buoyancy floor of the LADDIE v2 code of [Lambert et al. (2026)](@cite lambert_one-layer_2026).
-`RelaxToAmbient` adds the tracer sink `−(q − q_a) conv2`, `conv2 = [δρ < 0] H/convection_time`.
+`RelaxToAmbientConvection` adds the tracer sink `−(q − q_a) conv2`, `conv2 = [δρ < 0] H/convection_time`.
 """
-abstract type AbstractConvectionScheme end
+abstract type AbstractConvection end
 
 """
 $(TYPEDEF)
@@ -21,12 +21,12 @@ minimum positive value, `d_rho_min / Params.rho0_seawater`, so the plume remains
 than ambient.  T and S are left unchanged.  This is the buoyancy floor of LADDIE v2,
 `max(drho_amb, buoyancy_min/rho_sw)` with `buoyancy_min = 5e-3`.
 
-Select via `Params(; convection_scheme = ClampDensity(0.005))`.
+Select via `Params(; convection_scheme = ClampDensityConvection(0.005))`.
 
 # Fields
 $(TYPEDFIELDS)
 """
-@kwdef struct ClampDensity{FT} <: AbstractConvectionScheme
+@kwdef struct ClampDensityConvection{FT} <: AbstractConvection
     "minimum density contrast `ρ_a − ρ` (kg m⁻³, default `0.005`); divided by `Params.rho0_seawater` to compare with `δρ`"
     d_rho_min::FT = 0.005
 end
@@ -38,12 +38,12 @@ Handle convective instability by instantly resetting T and S to their ambient va
 wherever the contrast falls below `d_rho_min / Params.rho0_seawater`, with S lowered by
 `d_rho_min / (rho0_seawater * beta)` so that the reset cell has exactly that contrast.
 
-Select via `Params(; convection_scheme = ResetToAmbient(0.005))`.
+Select via `Params(; convection_scheme = ResetToAmbientConvection(0.005))`.
 
 # Fields
 $(TYPEDFIELDS)
 """
-@kwdef struct ResetToAmbient{FT} <: AbstractConvectionScheme
+@kwdef struct ResetToAmbientConvection{FT} <: AbstractConvection
     "threshold density contrast `ρ_a − ρ` that triggers the reset (kg m⁻³, default `0.005`); divided by `Params.rho0_seawater` to compare with `δρ`"
     d_rho_min::FT = 0.005
 end
@@ -54,15 +54,15 @@ $(TYPEDEF)
 Handle convective instability by relaxing T and S of unstable cells toward
 ambient values over a prescribed timescale (applied implicitly in the tracer
 time step via the `conv2` term).  The default: a continuous relaxation rather than the
-instantaneous reset of [`ResetToAmbient`](@ref).  One hour is the order of the time an
+instantaneous reset of [`ResetToAmbientConvection`](@ref).  One hour is the order of the time an
 unstable layer takes to overturn, and gave good pan-Antarctic runs.
 
-Select via `Params(; convection_scheme = RelaxToAmbient(3600.0))` (the default).
+Select via `Params(; convection_scheme = RelaxToAmbientConvection(3600.0))` (the default).
 
 # Fields
 $(TYPEDFIELDS)
 """
-@kwdef struct RelaxToAmbient{FT} <: AbstractConvectionScheme
+@kwdef struct RelaxToAmbientConvection{FT} <: AbstractConvection
     "relaxation timescale (s, default `3600`)"
     convection_time::FT = 3600.0
 end
@@ -81,7 +81,7 @@ Applies in gap cells too (`tmask` but not `imask`): the buoyancy floor is the on
 convection treatment LADDIE v2 also has, and it applies there over its whole active
 domain, gaps included.
 """
-function update_convection!(m, cs::ClampDensity)
+function update_convection!(m, cs::ClampDensityConvection)
     thr = cs.d_rho_min / m.rho0_seawater
     launch!(_clamp_density_kernel!, m.convection, m.drho, thr, m.params.kinks)
     return nothing
@@ -113,7 +113,7 @@ there; resetting would overwrite the T/S anomaly the layer is carrying across th
 and rebuild the meltwater sink that [`ConnectedGapsBC`](@ref) exists to remove.  LADDIE
 v2 has no reset scheme to copy here, so this is a Laddie.jl-only decision.
 """
-function update_convection!(m, cs::ResetToAmbient)
+function update_convection!(m, cs::ResetToAmbientConvection)
     thr = cs.d_rho_min / m.rho0_seawater
     eos = _eos_coefficients(m)
     S_adj = cs.d_rho_min / (m.rho0_seawater * eos.beta)
@@ -178,10 +178,10 @@ Flag convectively unstable cells; relaxation is applied implicitly during the
 tracer time step via `conv2`.
 
 Restricted to ice-covered cells (`imask`) for the same reason as
-[`ResetToAmbient`](@ref) — relaxing a gap cell towards surface ambient is a slower
+[`ResetToAmbientConvection`](@ref) — relaxing a gap cell towards surface ambient is a slower
 version of the same sink.
 """
-function update_convection!(m, ::RelaxToAmbient)
+function update_convection!(m, ::RelaxToAmbientConvection)
     launch!(_flag_unstable_ice_kernel!, m.convection, m.drho, m.imask)
 end
 

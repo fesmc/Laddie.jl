@@ -9,8 +9,8 @@ defaults, and make a good starting point for a realistic cavity. Four of them ma
   * `nu = 0.8`: `nu = 0.1` is unstable at `dt = 120 s` and inflates the mean melt sevenfold.
   * No cap on the layer thickness ([`NoMaxLayerThickness`](@ref), the default): capping `H`
     at the water column cuts melt by ~90 % (see [`AbstractMaxLayerThickness`](@ref)).
-  * `ClampDensity` convection, as in the reference (`ResetToAmbient`: −0.07 %).
-  * `CentredGradient`, the reference's ice-base slope (the default `MaskedGradient`: −0.8 %).
+  * `ClampDensityConvection` convection, as in the reference (`ResetToAmbientConvection`: −0.07 %).
+  * `CentredIceSlope`, the reference's ice-base slope (the default `MaskedIceSlope`: −0.8 %).
 
 The code is **not executed** by the documentation build, as it needs BedMachine v2 and the
 reference file on disk.
@@ -79,15 +79,15 @@ params = Params(; FT,
     coriolis = CoriolisParameter0D(-1.37e-4),
     entrainment = GasparEntrainment(2.5),
     melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
-    convection_scheme = ClampDensity(0.005),
+    convection_scheme = ClampDensityConvection(0.005),
     tracer_form = AdvectiveTracerForm(),  # the reference steps T and S, not H·T and H·S
-    ice_slope = CentredGradient(),        # the reference's slope stencil
+    ice_slope = CentredIceSlope(),        # the reference's slope stencil
     ## Laddie's defaults differ from what the published run used:
-    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosures(),
-    tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsConduction(),
+    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel(),
+    tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsIceConduction(),
 )
 ## The reference's slip = 1 on every wall: no slip in the viscosity, v1's advective ghost.
-boundary = BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
+boundary = BoundaryConditions(; grounding_line = NoSlipAtGL(), land = NoSlipAtLand(),
                               wall_advection = V1WallAdvection())
 model = Model(grid; forcing, params, boundary)
 sim = Simulation(model; dt = 120.0, nu = 0.8)

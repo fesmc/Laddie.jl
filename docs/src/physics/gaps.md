@@ -79,7 +79,7 @@ stays: brine rejection, with the bookkeeping of [frazil ice](frazil_ice.md).
 
 **Convection.** Where the layer is denser than the water beneath it
 (``\delta\rho < 0``), its ``T`` and ``S`` relax towards ``T_a`` and ``S_a`` on the time
-scale τ (`convection_time`, default 10⁴ s), as under [`RelaxToAmbient`](@ref), and its
+scale τ (`convection_time`, default 10⁴ s), as under [`RelaxToAmbientConvection`](@ref), and its
 thickness relaxes towards ``H_\mathrm{min}`` at the same rate, so the convected water
 leaves the layer. This runs in every gap cell, whatever the cover and whatever the
 model's convection scheme, which leaves gap cells alone (see

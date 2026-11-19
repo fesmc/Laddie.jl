@@ -155,8 +155,8 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 #     `laddie_viscosity` (`Ah` in Table A1, 10) is the coefficient of that parameterisation in the
 #     interior — not a viscosity in m² s⁻¹ — but v2's *wall* term uses the same number as a
 #     plain viscosity, which is `A_h` here;
-#   * [`TruncatedDepthGradient`](@ref): v2's pressure gradient at the ice front;
-#   * [`ClampDensity`](@ref): v2's only convection treatment, a buoyancy floor;
+#   * [`TruncatedDepthFrontPressure`](@ref): v2's pressure gradient at the ice front;
+#   * [`ClampDensityConvection`](@ref): v2's only convection treatment, a buoyancy floor;
 #   * `max_detrainment`: v2 hard-codes a 1e-3 m s⁻¹ cap (`laddie_physics.f90`), and unlike
 #     v1's 0.5 it binds.
 #
@@ -180,8 +180,8 @@ params = Params(; FT,
     entrainment = GasparEntrainment(2.5),
     drho_floor = 0.005 / rho0,
     lateral_viscosity = NonlinearLateralViscosity(10.0),
-    front_pressure = TruncatedDepthGradient(),
-    convection_scheme = ClampDensity(0.005),
+    front_pressure = TruncatedDepthFrontPressure(),
+    convection_scheme = ClampDensityConvection(0.005),
     coriolis = CoriolisParameter0D(-1.37e-4),
     A_h = 10.0,                         # the wall term of v2's viscosity
     C_d = 2.5e-3, C_d_top = 2.5e-3,
@@ -191,19 +191,19 @@ params = Params(; FT,
     H_min = 1.0, u_tide = 0.01, v_cut = 1.0,
     H_init = 2.0, dT_init = 0.0, dS_init = -0.1,
     ## Laddie's defaults differ from what the published run used:
-    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosures(),
-    tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsConduction(),
+    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel(),
+    tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsIceConduction(),
 )
 
 # ## Runs
 #
 # Each geometry runs from rest with the treatment that produced it, under
-# [`AdaptiveDt`](@ref), which sets the time step from a target CFL number instead of fixing
+# [`AdaptiveTimeStepper`](@ref), which sets the time step from a target CFL number instead of fixing
 # it; it settles near 145 s, against the 100 s of the coupled runs. The total melt levels off after about 20 days, but the flow near the grounding
 # line stays unsteady, so the fields shown are averages over days 20 to 30, sampled twice a
 # day.
 #
-# Sample the average in much shorter calls than this and `AdaptiveDt` will re-bootstrap the
+# Sample the average in much shorter calls than this and `AdaptiveTimeStepper` will re-bootstrap the
 # leapfrog on nearly every step — each `run!` is then too short for its own check interval —
 # which inflates the melt rate by tens of percent.
 
@@ -215,7 +215,7 @@ function run_snapshot(s, gaps)
                 domain_cropping = MinRectangleDomainCropping(margin = round(Int, 6e3 / dx)))
     model = Model(grid; forcing, params,
                   boundary = BoundaryConditions(; gaps, wall_advection = NoWallAdvection()))
-    sim = Simulation(model; dt = 100.0, tstep = AdaptiveDt())
+    sim = Simulation(model; dt = 100.0, tstep = AdaptiveTimeStepper())
     run!(sim; days = SPINUP, verbose = false)
     m = sim.model
     melt, speed = zero(Array(m.melt)), zero(Array(m.melt))

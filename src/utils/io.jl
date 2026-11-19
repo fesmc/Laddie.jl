@@ -891,7 +891,7 @@ function _write_restart!(sim, t_days)
         future = _primal.(Array(var.future)),
     )
     # Save the current dt so an adaptive run resumes at the step it left off
-    # (the saved leapfrog levels are separated by this dt); FixedDt saves dt0.
+    # (the saved leapfrog levels are separated by this dt); FixedTimeStepper saves dt0.
     # The grid's active cells, crop and full-domain size let a finer run start
     # from this one (`init_from_restart!(...; refine)`).
     g = m.grid

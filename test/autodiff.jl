@@ -4,7 +4,7 @@
 # through different kernels: bottom drag (momentum), γ_T (melt) and the entrainment
 # coefficient.  The model is built at the element type of `x`, so `Dual` inputs
 # propagate through the grid, the state and the parameters alike.
-function ad_melt(x; tstep = FixedDt(), output = OutputConfig(), kinks = ExactKinks(),
+function ad_melt(x; tstep = FixedTimeStepper(), output = OutputConfig(), kinks = ExactKinks(),
                  schemes = (;), isomipcond = :warm, supercooling = 0.0)
     T = eltype(x)
     params = Params(; FT = T, C_d = x[1], melting = FixedGamTMelting(x[2]),
@@ -56,14 +56,14 @@ const AD_SCHEME_CASES = (
     "RelaxedFrazilIce" => (; schemes = (; frazil_ice = RelaxedFrazilIce()), supercooling = 0.05),
     "AdvectiveMomentumForm" => (; schemes = (; momentum_form = AdvectiveMomentumForm())),
     "AdvectiveTracerForm" => (; schemes = (; tracer_form = AdvectiveTracerForm())),
-    "PresentClosures" => (; schemes = (; closure_level = PresentClosures())),
-    "ResetToAmbient" => (; schemes = (; convection_scheme = ResetToAmbient()), supercooling = 0.05),
-    "RelaxToAmbient, convecting" => (; schemes = (; convection_scheme = RelaxToAmbient()), supercooling = 0.05,
-                                     reference = (; convection_scheme = ClampDensity())),
-    "HollandJenkinsConduction" =>
-        (; schemes = (; ice_conduction = HollandJenkinsConduction()), supercooling = 0.05),
-    "MeltOnlyConduction, refreezing" => (; schemes = (; ice_conduction = MeltOnlyConduction()), supercooling = 0.05,
-                                         reference = (; ice_conduction = NoConduction())),
+    "PresentClosureLevel" => (; schemes = (; closure_level = PresentClosureLevel())),
+    "ResetToAmbientConvection" => (; schemes = (; convection_scheme = ResetToAmbientConvection()), supercooling = 0.05),
+    "RelaxToAmbientConvection, convecting" => (; schemes = (; convection_scheme = RelaxToAmbientConvection()), supercooling = 0.05,
+                                     reference = (; convection_scheme = ClampDensityConvection())),
+    "HollandJenkinsIceConduction" =>
+        (; schemes = (; ice_conduction = HollandJenkinsIceConduction()), supercooling = 0.05),
+    "MeltOnlyIceConduction, refreezing" => (; schemes = (; ice_conduction = MeltOnlyIceConduction()), supercooling = 0.05,
+                                         reference = (; ice_conduction = NoIceConduction())),
 )
 
 @testset "ForwardDiff through $name matches central differences" for (name, case) in AD_SCHEME_CASES
@@ -97,7 +97,7 @@ end
 @testset "ForwardDiff through adaptive dt and file output" begin
     # The dt controller runs on primal values, so the derivative is taken at the dt
     # sequence the Float64 run would choose.
-    @test all(isfinite, ad_gradient(x -> ad_melt_loss(x; tstep = AdaptiveDt())))
+    @test all(isfinite, ad_gradient(x -> ad_melt_loss(x; tstep = AdaptiveTimeStepper())))
     # NetCDF output, restart files and the log get plain floats.
     tmp = mktempdir()
     output = OutputConfig(; name = "ad", resultdir = tmp, saveday = 1.0, restday = 1.0)

@@ -20,7 +20,7 @@ computed in one of two ways, `Simulation(model; cfl = ...)`:
 runs. It is measured with or without the [adaptive controller](time_stepping.md), and
 appears in the progress display as `dt [s] / CFL` and in each dt-change log line.
 
-Both diagnostics feed the same `cfl_target` of [`AdaptiveDt`](@ref). Since
+Both diagnostics feed the same `cfl_target` of [`AdaptiveTimeStepper`](@ref). Since
 `ConservativeCFL` reads higher, the same target gives a smaller, safer step with it than
 with `ExactCFL`.
 

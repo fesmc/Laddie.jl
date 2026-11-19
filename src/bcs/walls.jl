@@ -25,12 +25,12 @@ end
 """
 Abstract supertype for the momentum boundary condition at grounding-line walls
 (mask value `2`).  Pass a concrete instance as
-`BoundaryConditions(; grounding_line = ...)`: [`PartialSlipGL`](@ref) (the default,
-`PartialSlipGL(1.0)`, LADDIE v2's wall), [`NoSlipGL`](@ref) or [`FreeSlipGL`](@ref).
+`BoundaryConditions(; grounding_line = ...)`: [`PartialSlipAtGL`](@ref) (the default,
+`PartialSlipAtGL(1.0)`, LADDIE v2's wall), [`NoSlipAtGL`](@ref) or [`FreeSlipAtGL`](@ref).
 
-Walls bordering exposed rock are governed separately by [`AbstractLandBC`](@ref).
+Walls bordering exposed rock are governed separately by [`AbstractSlipAtLand`](@ref).
 """
-abstract type AbstractGroundingLineBC end
+abstract type AbstractSlipAtGL end
 
 """
 $(TYPEDEF)
@@ -44,11 +44,11 @@ independently by `BoundaryConditions.land`.
 This is the viscous wall of LADDIE v1 as published (`slip = 1` in its configs:
 v1 adds its factor to a stencil that already holds one unit of wall stress); see
 [`V1WallAdvection`](@ref) for its advective part.  It is stronger than LADDIE v2's
-"no slip", which is [`PartialSlipGL`](@ref)`(1.0)`.
+"no slip", which is [`PartialSlipAtGL`](@ref)`(1.0)`.
 
-Select via `BoundaryConditions(; grounding_line = NoSlipGL())`.
+Select via `BoundaryConditions(; grounding_line = NoSlipAtGL())`.
 """
-struct NoSlipGL <: AbstractGroundingLineBC end
+struct NoSlipAtGL <: AbstractSlipAtGL end
 
 """
 $(TYPEDEF)
@@ -56,9 +56,9 @@ $(TYPEDEF)
 Free-slip momentum boundary condition at the grounding line: slip factor `0` at
 walls bordering grounded ice, so the wall exerts no viscous stress on the flow.
 
-Select via `BoundaryConditions(; grounding_line = FreeSlipGL())`.
+Select via `BoundaryConditions(; grounding_line = FreeSlipAtGL())`.
 """
-struct FreeSlipGL <: AbstractGroundingLineBC end
+struct FreeSlipAtGL <: AbstractSlipAtGL end
 
 """
 $(TYPEDEF)
@@ -67,40 +67,40 @@ Partial-slip momentum boundary condition at the grounding line, with a slip
 `factor` between `0` (free slip) and `2` (no slip): the velocity behind the wall
 is taken as `(1 - factor)·u`.
 
-`PartialSlipGL(1.0)` is the default and LADDIE v2's wall: v2 treats a grounded
+`PartialSlipAtGL(1.0)` is the default and LADDIE v2's wall: v2 treats a grounded
 neighbour as an ordinary cell with zero velocity, one grid spacing away
 (`laddie_velocity.f90:259-267`), which v2 calls "no slip"
 ([Lambert et al. (2026)](@cite lambert_one-layer_2026)).
 
-Select via `BoundaryConditions(; grounding_line = PartialSlipGL(1.0))` (the default).
+Select via `BoundaryConditions(; grounding_line = PartialSlipAtGL(1.0))` (the default).
 
 # Fields
 $(TYPEDFIELDS)
 """
-struct PartialSlipGL{FT} <: AbstractGroundingLineBC
+struct PartialSlipAtGL{FT} <: AbstractSlipAtGL
     "slip factor, from `0` (free slip) to `2` (no slip)"
     factor::FT
-    PartialSlipGL(factor::Real) = (f = _check_slip(factor); new{typeof(f)}(f))
+    PartialSlipAtGL(factor::Real) = (f = _check_slip(factor); new{typeof(f)}(f))
 end
 
 # Slip factor applied at grounding-line faces (0 = free slip, 1 = v2, 2 = no slip).
-_gl_slip(::FreeSlipGL, FT) = zero(FT)
-_gl_slip(::NoSlipGL, FT) = FT(2)
-_gl_slip(bc::PartialSlipGL, FT) = FT(bc.factor)
+_gl_slip(::FreeSlipAtGL, FT) = zero(FT)
+_gl_slip(::NoSlipAtGL, FT) = FT(2)
+_gl_slip(bc::PartialSlipAtGL, FT) = FT(bc.factor)
 
 """
 Abstract supertype for the momentum boundary condition at land walls (mask value
 `1`: exposed bedrock, islands, and the outer border ring).  Pass a concrete
-instance as `BoundaryConditions(; land = ...)`: [`PartialSlipLand`](@ref) (the
-default, `PartialSlipLand(1.0)`, LADDIE v2's wall), [`NoSlipLand`](@ref) or
-[`FreeSlipLand`](@ref).
+instance as `BoundaryConditions(; land = ...)`: [`PartialSlipAtLand`](@ref) (the
+default, `PartialSlipAtLand(1.0)`, LADDIE v2's wall), [`NoSlipAtLand`](@ref) or
+[`FreeSlipAtLand`](@ref).
 
-The grounding line is governed separately by [`AbstractGroundingLineBC`](@ref); at a
+The grounding line is governed separately by [`AbstractSlipAtGL`](@ref); at a
 coastline corner whose stencil touches both grounded ice and exposed rock, the
 grounding-line condition takes precedence (the land wall indicators exclude faces
 already flagged as grounding line), so each wall face gets exactly one slip factor.
 """
-abstract type AbstractLandBC end
+abstract type AbstractSlipAtLand end
 
 """
 $(TYPEDEF)
@@ -109,11 +109,11 @@ No-slip momentum boundary condition at land walls: the tangential velocity
 vanishes at walls bordering exposed bedrock (mask value `1`), which includes
 islands and ice-free coastline inside the domain as well as the outer border
 ring.  Implemented as a slip factor of `2` on land faces.  See
-[`NoSlipGL`](@ref) for its relation to LADDIE v1 and v2.
+[`NoSlipAtGL`](@ref) for its relation to LADDIE v1 and v2.
 
-Select via `BoundaryConditions(; land = NoSlipLand())`.
+Select via `BoundaryConditions(; land = NoSlipAtLand())`.
 """
-struct NoSlipLand <: AbstractLandBC end
+struct NoSlipAtLand <: AbstractSlipAtLand end
 
 """
 $(TYPEDEF)
@@ -121,34 +121,34 @@ $(TYPEDEF)
 Free-slip momentum boundary condition at land walls: slip factor `0` at walls
 bordering exposed bedrock, so the wall exerts no viscous stress on the flow.
 
-Select via `BoundaryConditions(; land = FreeSlipLand())`.
+Select via `BoundaryConditions(; land = FreeSlipAtLand())`.
 """
-struct FreeSlipLand <: AbstractLandBC end
+struct FreeSlipAtLand <: AbstractSlipAtLand end
 
 """
 $(TYPEDEF)
 
 Partial-slip momentum boundary condition at land walls, with a slip `factor`
-between `0` (free slip) and `2` (no slip).  `PartialSlipLand(1.0)` is the default
+between `0` (free slip) and `2` (no slip).  `PartialSlipAtLand(1.0)` is the default
 and LADDIE v2's wall, where ice-free land cells, like grounded ones, hold zero
-velocity; see [`PartialSlipGL`](@ref).
+velocity; see [`PartialSlipAtGL`](@ref).
 
-Select via `BoundaryConditions(; land = PartialSlipLand(1.0))` (the default).
+Select via `BoundaryConditions(; land = PartialSlipAtLand(1.0))` (the default).
 
 # Fields
 $(TYPEDFIELDS)
 """
-struct PartialSlipLand{FT} <: AbstractLandBC
+struct PartialSlipAtLand{FT} <: AbstractSlipAtLand
     "slip factor, from `0` (free slip) to `2` (no slip)"
     factor::FT
-    PartialSlipLand(factor::Real) = (f = _check_slip(factor); new{typeof(f)}(f))
+    PartialSlipAtLand(factor::Real) = (f = _check_slip(factor); new{typeof(f)}(f))
 end
 
 # Slip factor applied at land faces.  Mirrors `_gl_slip`; kept as a separate
 # dispatch point so the two wall treatments can diverge later.
-_land_slip(::FreeSlipLand, FT) = zero(FT)
-_land_slip(::NoSlipLand, FT) = FT(2)
-_land_slip(bc::PartialSlipLand, FT) = FT(bc.factor)
+_land_slip(::FreeSlipAtLand, FT) = zero(FT)
+_land_slip(::NoSlipAtLand, FT) = FT(2)
+_land_slip(bc::PartialSlipAtLand, FT) = FT(bc.factor)
 
 # Per-face slip factors of a model.
 _wall_slips(m) =
@@ -179,7 +179,7 @@ instance as `BoundaryConditions(; wall_advection = ...)`:
 [`NoWallAdvection`](@ref) (the default, LADDIE v2), [`SlipScaledWallAdvection`](@ref)
 or [`V1WallAdvection`](@ref) (LADDIE v1).
 
-The slip factor of [`AbstractGroundingLineBC`](@ref) / [`AbstractLandBC`](@ref)
+The slip factor of [`AbstractSlipAtGL`](@ref) / [`AbstractSlipAtLand`](@ref)
 always sets the viscous wall stress; this choice decides which factor, if any,
 forms the momentum carried across a wall face by the upwind advection.
 """
@@ -203,12 +203,12 @@ $(TYPEDEF)
 Carry no momentum across walls: the upwind momentum advection sees a slip factor
 of `0` at grounding-line and land faces whatever the wall condition is, while
 the viscous wall stress keeps the factor of
-[`AbstractGroundingLineBC`](@ref) / [`AbstractLandBC`](@ref).
+[`AbstractSlipAtGL`](@ref) / [`AbstractSlipAtLand`](@ref).
 
 This is the default and what LADDIE v2 does: both of its momentum-advection
 schemes skip grounded neighbours outright (`laddie_velocity.f90`, "No flux
 across grounding line"), and the wall enters only through `compute_viscUV`.
-With the default [`PartialSlipGL`](@ref)`(1.0)` / [`PartialSlipLand`](@ref)`(1.0)`
+With the default [`PartialSlipAtGL`](@ref)`(1.0)` / [`PartialSlipAtLand`](@ref)`(1.0)`
 it reproduces v2's walls.
 
 Select via `BoundaryConditions(; wall_advection = NoWallAdvection())` (the default).
@@ -224,16 +224,16 @@ factor minus one, as a ghost velocity `(2 - slip)·u`.
 v1 uses one parameter, `slip`, for both terms, but adds it to a viscous stencil
 that already holds one unit of wall stress (`physics.py:lapU`), so its viscous
 wall is one step stronger than its advective one.  v1's published `slip = 1` is
-therefore [`NoSlipGL`](@ref) / [`NoSlipLand`](@ref) in the viscosity, with this
+therefore [`NoSlipAtGL`](@ref) / [`NoSlipAtLand`](@ref) in the viscosity, with this
 advection:
 
 ```jldoctest
-julia> BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
+julia> BoundaryConditions(; grounding_line = NoSlipAtGL(), land = NoSlipAtLand(),
                           wall_advection = V1WallAdvection())
-BoundaryConditions(open ocean = ZeroGradientInflow, grounding line = NoSlipGL, land = NoSlipLand, gaps = SinkGapsBC, wall advection = V1WallAdvection)
+BoundaryConditions(open ocean = ZeroGradientOpenOceanBC, grounding line = NoSlipAtGL, land = NoSlipAtLand, gaps = SinkGapsBC, wall advection = V1WallAdvection)
 ```
 
-A v1 `slip` below 1 maps to `PartialSlipGL(slip + 1)`; above 1 it has no
+A v1 `slip` below 1 maps to `PartialSlipAtGL(slip + 1)`; above 1 it has no
 counterpart here.
 
 Select via `BoundaryConditions(; wall_advection = V1WallAdvection())`.

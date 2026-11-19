@@ -52,7 +52,7 @@ Two consequences follow from building the fluxes this way:
     slip factor acts through the viscosity alone, again as in v2.
   * An inflow face at the ice front carries the cell's own thickness and
     velocity (zero gradient), matching the thickness equation's
-    [`ZeroGradientInflow`](@ref).
+    [`ZeroGradientOpenOceanBC`](@ref).
 
 First-order upwinding is dissipative: its implicit numerical viscosity is of
 order `|u|·Δ/2`, which at 1 km and 0.1 m s⁻¹ is ≈ 50 m² s⁻¹, far above a typical
@@ -201,8 +201,8 @@ $(TYPEDEF)
 Abstract supertype for the time level the closures see: the friction velocity `u★`
 (hence the melt and entrainment rates), the thickness in the entrainment rate, and
 the speed in the quadratic drag.  Pass a concrete instance as
-`Params(; closure_level = ...)`: [`PastClosures`](@ref) (the default) or
-[`PresentClosures`](@ref).
+`Params(; closure_level = ...)`: [`PastClosureLevel`](@ref) (the default) or
+[`PresentClosureLevel`](@ref).
 
 A closure that damps the state it is computed from (entrainment ∝ `u★³/H` dilutes
 `U` and thickens `H`; drag ∝ `|u|` slows `u`) is unstable in the leapfrog at the
@@ -218,7 +218,7 @@ $(TYPEDEF)
 
 Compute the closures from the present level (the default), as LADDIE v1 does.
 """
-struct PresentClosures <: AbstractClosureLevel end
+struct PresentClosureLevel <: AbstractClosureLevel end
 
 """
 $(TYPEDEF)
@@ -228,10 +228,10 @@ lagged, filtered `past` level.  First order in time for these terms; combined wi
 [`FluxMomentumForm`](@ref) it removes the step-to-step oscillation of thin, strongly
 entraining layers.
 
-Select via `Params(; closure_level = PastClosures())`.
+Select via `Params(; closure_level = PastClosureLevel())`.
 """
-struct PastClosures <: AbstractClosureLevel end
+struct PastClosureLevel <: AbstractClosureLevel end
 
 # The prognostic levels the closures read.
-_closure_level(v, ::PresentClosures) = v.present
-_closure_level(v, ::PastClosures) = v.past
+_closure_level(v, ::PresentClosureLevel) = v.present
+_closure_level(v, ::PastClosureLevel) = v.past

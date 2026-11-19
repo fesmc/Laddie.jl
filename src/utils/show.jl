@@ -142,9 +142,9 @@ Base.show(io::IO, b::BoundaryConditions) = print(
     "wall advection = $(nameof(typeof(b.wall_advection))))",
 )
 
-Base.show(io::IO, ts::AdaptiveDt) = print(
+Base.show(io::IO, ts::AdaptiveTimeStepper) = print(
     io,
-    "AdaptiveDt(cfl_target = $(ts.cfl_target), q = $(ts.q), ncheck = $(ts.ncheck), ",
+    "AdaptiveTimeStepper(cfl_target = $(ts.cfl_target), q = $(ts.q), ncheck = $(ts.ncheck), ",
     "dt ∈ [$(ts.dtmin), $(ts.dtmax)])",
 )
 

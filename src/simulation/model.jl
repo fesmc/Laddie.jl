@@ -471,7 +471,7 @@ mask    = build_laddie_mask(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
 z_draft = ice_base_depth(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
 grid    = Grid(mask, z_draft, 2000.0, 2000.0)
 model   = Model(grid; forcing = ISOMIPForcing(:warm),
-                boundary = BoundaryConditions(; land = FreeSlipLand()))
+                boundary = BoundaryConditions(; land = FreeSlipAtLand()))
 sim     = Simulation(model; dt = 210.0)
 run!(sim; days = 30)
 ```

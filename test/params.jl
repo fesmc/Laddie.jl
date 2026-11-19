@@ -6,7 +6,7 @@
     # merely *passing* a params object to build_isomip silently changes the
     # physics — which is exactly what happened with max_layer_thickness
     # (build_isomip: Topographic, Params(): Absolute(100)), quietly turning
-    # the AdaptiveDt accuracy test into an uncapped-vs-capped comparison.
+    # the AdaptiveTimeStepper accuracy test into an uncapped-vs-capped comparison.
     implicit = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm).model.params
     explicit = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                             params = Params(; FT)).model.params
@@ -23,10 +23,10 @@ end
     p = Params(; FT = Float32,
                entrainment  = GasparEntrainment(2.5),
                melting = FixedGamTMelting(0.00018),
-               convection_scheme = ResetToAmbient(0.005))
+               convection_scheme = ResetToAmbientConvection(0.005))
     @test p.entrainment  isa GasparEntrainment{Float32}
     @test p.melting isa FixedGamTMelting{Float32}
-    @test p.convection_scheme isa ResetToAmbient{Float32}
+    @test p.convection_scheme isa ResetToAmbientConvection{Float32}
     @test !hasfield(typeof(p), :open_bc) && !hasfield(typeof(p), :gaps_bc)  # BCs live elsewhere
     @test p.lateral_viscosity isa PrescribedLateralViscosity
 
@@ -40,8 +40,8 @@ end
     # time stepper the same way (integer fields untouched).
     m = build_isomip(CPU(); FT = Float32, nx = 20, ny = 10, isomipcond = :warm,
                      params = Params(; FT = Float32),
-                     tstep = AdaptiveDt(; cfl_target = 0.4))
-    @test m.tstep isa AdaptiveDt{Float32}
+                     tstep = AdaptiveTimeStepper(; cfl_target = 0.4))
+    @test m.tstep isa AdaptiveTimeStepper{Float32}
     @test m.tstep.ncheck isa Int                  # integer field not converted
     @test m.nu isa Float32 && m.clock.dt isa Float32
     run!(m; days = 0.2, verbose = false)

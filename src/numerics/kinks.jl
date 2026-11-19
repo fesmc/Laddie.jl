@@ -47,7 +47,7 @@ Where each ε acts:
 | `u` | upwind tracer and thickness fluxes, the centred momentum advection's `sign(u)`, the speed cap, `√` of the drag, speed, deformation and Holland's shear |
 | `uH` | donor of the momentum under [`UpstreamMomentumAdvection`](@ref) (sign of the face mass flux) |
 | `w` | split of the Gaspar rate into entrainment and detrainment, `max_detrainment`, the melt discriminant |
-| `drho` | `drho_floor` of Gaspar entrainment, the `ClampDensity` floor |
+| `drho` | `drho_floor` of Gaspar entrainment, the `ClampDensityConvection` floor |
 | `T` | conductive `c_i` at the freezing point, frazil supercooling, `T_min`/`T_max` |
 | `S` | `S_min`/`S_max` |
 | `log` | floor of the log-layer term of [`TurbulentGamTMelting`](@ref) |
@@ -60,8 +60,8 @@ a blend would bias every step by about ε/4: the outer `max(0, ⋅)` of the cap
 detrainment (zero wherever the cap does not bind), the clamp of `H` after the
 thickness step (a safety net behind `ent2` and the cap detrainment, which bring the
 stepped `H` exactly to its bounds) and the share of the flux-form tracer update that
-follows that clamp.  Nor are the convective switches of `ResetToAmbient` and
-`RelaxToAmbient`, the γ_T of [`PrescribedMelting`](@ref), the depth interpolation of
+follows that clamp.  Nor are the convective switches of `ResetToAmbientConvection` and
+`RelaxToAmbientConvection`, the γ_T of [`PrescribedMelting`](@ref), the depth interpolation of
 the forcing, or the time-step controller.
 
 Select via `Params(; kinks = SmoothKinks())`, or e.g. `SmoothKinks(; H = 0.5)`.

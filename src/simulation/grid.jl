@@ -5,25 +5,25 @@
 
 """
 Abstract supertype for ice-base slope (dzdx/dzdy) computation strategies.
-Pass a concrete instance as `Params(; ice_slope = ...)`: [`MaskedGradient`](@ref)
-(the default) or [`CentredGradient`](@ref).  The slope is computed once, when the
+Pass a concrete instance as `Params(; ice_slope = ...)`: [`MaskedIceSlope`](@ref)
+(the default) or [`CentredIceSlope`](@ref).  The slope is computed once, when the
 [`Model`](@ref) is built, and kept in its `Geometry`, not in the
 [`Grid`](@ref): it depends on which cells are active.
 """
-abstract type AbstractIceSlopeGradient end
+abstract type AbstractIceSlope end
 
 """
-    CentredGradient()
+    CentredIceSlope()
 
 v1-ported centred-difference gradient: `(zb[i+1] − zb[i−1]) / (2 dx)` applied
 uniformly over all cells with no mask awareness.  Matches the LADDIE v1
 v1.1 stencil exactly and should be used when comparing against the LADDIE v1
 code output.
 """
-struct CentredGradient <: AbstractIceSlopeGradient end
+struct CentredIceSlope <: AbstractIceSlope end
 
 """
-    MaskedGradient()
+    MaskedIceSlope()
 
 Mask-aware gradient (default): the ice-base slope at each shelf cell is
 computed using only shelf-cell neighbours, falling back to one-sided
@@ -31,13 +31,13 @@ differences at ice fronts / grounding lines, and zero when no shelf neighbour
 exists.  This avoids spurious slopes from the physically-incompatible `z_draft`
 values stored at ocean cells (`z_draft=0`) and grounded cells (`z_draft=bed`).
 """
-struct MaskedGradient <: AbstractIceSlopeGradient end
+struct MaskedIceSlope <: AbstractIceSlope end
 
-function _icebase_slope(::CentredGradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
+function _icebase_slope(::CentredIceSlope, tmask, z_draft_ft, dx_ft, dy_ft, FT)
     return gradient_x(z_draft_ft, dx_ft), gradient_y(z_draft_ft, dy_ft)
 end
 
-function _icebase_slope(::MaskedGradient, tmask, z_draft_ft, dx_ft, dy_ft, FT)
+function _icebase_slope(::MaskedIceSlope, tmask, z_draft_ft, dx_ft, dy_ft, FT)
     # Only read shelf-cell neighbours to avoid incorporating the
     # physically-incompatible z_draft values at ocean (z_draft=0) and grounded
     # (z_draft=bed) cells, which would produce O(0.2) spurious slopes.
@@ -172,7 +172,7 @@ function Geometry(
     dx,
     dy;
     FT = Float64,
-    ice_slope = MaskedGradient(),
+    ice_slope = MaskedIceSlope(),
 )
     dx_ft = FT(dx)
     dy_ft = FT(dy)
@@ -210,18 +210,18 @@ function Geometry(
     o = one(FT)
     # Wall-face indicators, one per face orientation (`_wall_faces`), from grounded
     # ice (mask == 2) only, so the momentum kernels can apply the grounding-line
-    # slip factor there (AbstractGroundingLineBC).
+    # slip factor there (AbstractSlipAtGL).
     gl = _wall_faces(FT.(mask .== 2), o)
     # Land-only wall indicators: the same construction from `lnd` (mask == 1), so
-    # AbstractLandBC can apply its own slip factor at walls bordering exposed
-    # bedrock/border, independent of AbstractGroundingLineBC.
+    # AbstractSlipAtLand can apply its own slip factor at walls bordering exposed
+    # bedrock/border, independent of AbstractSlipAtGL.
     #
     # The momentum kernels compose the two additively, as
     # `slip_gl*gl?? + slip_land*lnd??`, so the indicators must *partition* the wall
     # faces rather than overlap: a face whose two-cell stencil touches both
     # grounded ice and exposed rock (a coastline corner, ubiquitous in real
     # geometry) would otherwise receive both factors and end up at twice the
-    # extra wall drag under NoSlipGL + NoSlipLand.  Grounding line takes precedence there, so that
+    # extra wall drag under NoSlipAtGL + NoSlipAtLand.  Grounding line takes precedence there, so that
     # gl?? + lnd?? is exactly the wall-face indicator of the whole wall `grd`.
     lw = map((l, g) -> l .* (o .- g), _wall_faces(lnd, o), gl)
     # Ice-front cells: ocean cells with an active neighbour, and the count of

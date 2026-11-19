@@ -9,8 +9,8 @@ two kinds of wall are set independently, with
 
 | | free slip, ``s = 0`` | partial slip | no slip, ``s = 2`` |
 |---|---|---|---|
-| grounding line, [`AbstractGroundingLineBC`](@ref) | [`FreeSlipGL`](@ref) | [`PartialSlipGL`](@ref)`(s)`, default `s = 1` | [`NoSlipGL`](@ref) |
-| land, [`AbstractLandBC`](@ref) | [`FreeSlipLand`](@ref) | [`PartialSlipLand`](@ref)`(s)`, default `s = 1` | [`NoSlipLand`](@ref) |
+| grounding line, [`AbstractSlipAtGL`](@ref) | [`FreeSlipAtGL`](@ref) | [`PartialSlipAtGL`](@ref)`(s)`, default `s = 1` | [`NoSlipAtGL`](@ref) |
+| land, [`AbstractSlipAtLand`](@ref) | [`FreeSlipAtLand`](@ref) | [`PartialSlipAtLand`](@ref)`(s)`, default `s = 1` | [`NoSlipAtLand`](@ref) |
 
 ## What ``s`` means
 
@@ -133,7 +133,7 @@ advection the factor is used as labelled. Reproducing v1 therefore takes
 
 ```julia
 # LADDIE v1 (slip = 1): no slip in the viscosity, partial slip in the advection
-BoundaryConditions(; grounding_line = NoSlipGL(), land = NoSlipLand(),
+BoundaryConditions(; grounding_line = NoSlipAtGL(), land = NoSlipAtLand(),
                    wall_advection = V1WallAdvection())
 
 # LADDIE v2: the defaults
@@ -143,12 +143,12 @@ BoundaryConditions()
 ## API
 
 ```@docs
-AbstractGroundingLineBC
-NoSlipGL
-FreeSlipGL
-PartialSlipGL
-AbstractLandBC
-NoSlipLand
-FreeSlipLand
-PartialSlipLand
+AbstractSlipAtGL
+NoSlipAtGL
+FreeSlipAtGL
+PartialSlipAtGL
+AbstractSlipAtLand
+NoSlipAtLand
+FreeSlipAtLand
+PartialSlipAtLand
 ```

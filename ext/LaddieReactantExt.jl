@@ -290,7 +290,7 @@ end
 # One compiled pass-1 program per model type, size and controller settings.
 const SCHEDULE_PROGRAMS = Dict{Any,Any}()
 
-function Laddie.adaptive_schedule(model::Model, dt; days, stepper = Laddie.AdaptiveDt(),
+function Laddie.adaptive_schedule(model::Model, dt; days, stepper = Laddie.AdaptiveTimeStepper(),
                                   cfl = Laddie.ExactCFL(), nu = 0.8, maxsegments = 10_000)
     FT = model.FT
     ts = Laddie._promote_param(stepper, FT)

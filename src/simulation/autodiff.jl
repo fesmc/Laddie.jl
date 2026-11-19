@@ -84,7 +84,7 @@ struct DtSchedule{V,W,N}
 end
 
 """
-    adaptive_schedule(model, dt; days, stepper = AdaptiveDt(), cfl = ExactCFL(), nu = 0.8,
+    adaptive_schedule(model, dt; days, stepper = AdaptiveTimeStepper(), cfl = ExactCFL(), nu = 0.8,
                       maxsegments = 10_000) -> DtSchedule
 
 Run `model` (on a [`ReactantBackend`](@ref); requires `using Reactant, CUDA`) for `days`

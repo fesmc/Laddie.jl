@@ -7,7 +7,7 @@ using Printf
 #
 # In a slow (cold) cavity the CFL-limited controller grows dt, so the same
 # physical time is reached in fewer steps.  This reports the step count and
-# wall time for FixedDt vs AdaptiveDt on GPU/Float32 (CPU fallback).
+# wall time for FixedTimeStepper vs AdaptiveTimeStepper on GPU/Float32 (CPU fallback).
 #
 # Usage:
 #   julia --project=benchmark benchmark/adaptive_dt.jl
@@ -42,17 +42,17 @@ function timed_run(tstep)
 end
 
 # Warm up (compile all kernels, both stepper paths) on a tiny grid.
-for ts in (FixedDt(), AdaptiveDt())
+for ts in (FixedTimeStepper(), AdaptiveTimeStepper())
     mw = build_isomip(backend; FT, nx = 20, ny = 10, isomipcond = COND, tstep = ts)
     run!(mw; days = 0.05, verbose = false); sync()
 end
 
-f = timed_run(FixedDt())
-a = timed_run(AdaptiveDt())
+f = timed_run(FixedTimeStepper())
+a = timed_run(AdaptiveTimeStepper())
 
 @printf("\nAdaptive dt benchmark — %s, Float32, %s cavity, %d×%d (dx = %.0f m), %.1f days\n",
         label, COND, NX, NY, f.dx, DAYS)
 @printf("%-12s %10s %12s %14s\n", "stepper", "steps", "final dt", "wall time")
-@printf("%-12s %10d %11.1fs %13.3fs\n", "FixedDt",    f.steps, f.dt, f.wall)
-@printf("%-12s %10d %11.1fs %13.3fs\n", "AdaptiveDt", a.steps, a.dt, a.wall)
+@printf("%-12s %10d %11.1fs %13.3fs\n", "FixedTimeStepper",    f.steps, f.dt, f.wall)
+@printf("%-12s %10d %11.1fs %13.3fs\n", "AdaptiveTimeStepper", a.steps, a.dt, a.wall)
 @printf("→ %.2f× fewer steps, %.2f× wall-time speedup\n", f.steps / a.steps, f.wall / a.wall)

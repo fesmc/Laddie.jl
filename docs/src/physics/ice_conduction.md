@@ -18,13 +18,13 @@ the ice velocity is proportional to the melt rate. The other parameterisations a
 
 | parameterisation | heat conducted into the ice | when it is reasonable |
 |---|---|---|
-| [`HollandJenkinsConduction`](@ref) | ``\dot m\,c_i\,(T_b - T_i)``, melting and refreezing | melting; the [v1 and v2](../versions.md) behaviour |
-| [`MeltOnlyConduction`](@ref) (default) | the same for ``\dot m > 0``, zero otherwise | as above, and a refreezing base of marine ice near the freezing point |
-| [`NoConduction`](@ref) | none, ``L_\text{eff} = L`` | marine ice only; overestimates melt by ``c_i (T_s - T_f)/L`` (≈ 11 % for ``T_s = -20`` °C) |
-| [`LinearProfileConduction`](@ref) | ``k_i (T_f - T_s)/H_i``, independent of ``\dot m`` | thick, slow ice shelves in thermal steady state (e.g. Ross) |
+| [`HollandJenkinsIceConduction`](@ref) | ``\dot m\,c_i\,(T_b - T_i)``, melting and refreezing | melting; the [v1 and v2](../versions.md) behaviour |
+| [`MeltOnlyIceConduction`](@ref) (default) | the same for ``\dot m > 0``, zero otherwise | as above, and a refreezing base of marine ice near the freezing point |
+| [`NoIceConduction`](@ref) | none, ``L_\text{eff} = L`` | marine ice only; overestimates melt by ``c_i (T_s - T_f)/L`` (≈ 11 % for ``T_s = -20`` °C) |
+| [`LinearProfileIceConduction`](@ref) | ``k_i (T_f - T_s)/H_i``, independent of ``\dot m`` | thick, slow ice shelves in thermal steady state (e.g. Ross) |
 
-The switch of `MeltOnlyConduction` is the sign of ``T - T_f(S, z_b)``, which is the sign of
-``\dot m``, so the melt equations are solved once. `LinearProfileConduction` takes ``T_f``
+The switch of `MeltOnlyIceConduction` is the sign of ``T - T_f(S, z_b)``, which is the sign of
+``\dot m``, so the melt equations are solved once. `LinearProfileIceConduction` takes ``T_f``
 at the layer salinity so that the flux does not depend on ``\dot m`` and the equation
 stays quadratic, and the ice thickness from the draft by hydrostatic equilibrium,
 ``H_i = -z_b\,\rho_0/\rho_\text{ice}``. A thermal steady state between base and surface
@@ -48,8 +48,8 @@ equations at ``T - q/(c_p\gamma_T)`` in place of ``T``; see the
 
 ```@docs
 AbstractIceConduction
-HollandJenkinsConduction
-MeltOnlyConduction
-NoConduction
-LinearProfileConduction
+HollandJenkinsIceConduction
+MeltOnlyIceConduction
+NoIceConduction
+LinearProfileIceConduction
 ```

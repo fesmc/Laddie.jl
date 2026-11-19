@@ -17,12 +17,12 @@ end
     @test occursin("20×", replace(s, "10×20" => "20×10")) || occursin("interior", s)
     @test occursin("forcing", s) && occursin("params", s)
     @test !occursin("dt", s)   # the model knows nothing about time stepping
-    @test occursin("boundary: BoundaryConditions(open ocean = ZeroGradientInflow", s)
+    @test occursin("boundary: BoundaryConditions(open ocean = ZeroGradientOpenOceanBC", s)
     @test length(s) < 800   # not a field dump
 
     ss = plain(m)
     @test occursin("Simulation{Float64} on CPU", ss)
-    @test occursin("dt = 210.0 s", ss) && occursin("FixedDt()", ss)
+    @test occursin("dt = 210.0 s", ss) && occursin("FixedTimeStepper()", ss)
     @test occursin("Robert–Asselin", ss) && occursin("disabled", ss)
     @test length(ss) < 800
     @test occursin("Simulation{Float64} on CPU at day 0.0", sprint(show, m))

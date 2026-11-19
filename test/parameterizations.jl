@@ -31,7 +31,7 @@ end
         FT,
         melting = TurbulentGamTMelting(FT(13.8), FT(2432.0), FT(1.95e-6)),
         entrainment  = GasparEntrainment(FT(2.5)),
-        convection_scheme = ResetToAmbient(FT(0.005)),
+        convection_scheme = ResetToAmbientConvection(FT(0.005)),
     )
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
     @test all(isfinite, m.model.melt)
@@ -81,7 +81,7 @@ end
         FT,
         entrainment  = HollandEntrainment(FT(0.01775)),
         melting = FixedGamTMelting(FT(0.00018)),
-        convection_scheme = ResetToAmbient(FT(0.005)),
+        convection_scheme = ResetToAmbientConvection(FT(0.005)),
     )
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
     @test all(isfinite, m.model.melt)
@@ -98,8 +98,8 @@ end
     @test build_isomip(CPU(); nx=20, ny=10, isomipcond=:cold).model.entrainment isa
           GasparEntrainment
     mk(ep) = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm,
-        params = Params(; FT, ice_slope = CentredGradient(), entrainment = ep, melting = FixedGamTMelting(FT(0.00018)),
-                        convection_scheme = ResetToAmbient(FT(0.005))))
+        params = Params(; FT, ice_slope = CentredIceSlope(), entrainment = ep, melting = FixedGamTMelting(FT(0.00018)),
+                        convection_scheme = ResetToAmbientConvection(FT(0.005))))
     m1 = mk(GasparEntrainment(FT(2.5)))
     m2 = mk(GasparEntrainment(FT(1.25)))
     run!(m1; days=0.5, verbose=false)
@@ -137,7 +137,7 @@ end
     # NonlinearLateralViscosity.
     m_nl_ns = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                            params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(10.0))),
-                           boundary = BoundaryConditions(; grounding_line = FreeSlipGL()))
+                           boundary = BoundaryConditions(; grounding_line = FreeSlipAtGL()))
     run!(m_nl_ns; days = 1.0, verbose = false)
     @test all(isfinite, m_nl_ns.model.H.present) && all(isfinite, m_nl_ns.model.melt)
     @test m_nl_ns.model.V.present != m_nl.model.V.present
@@ -239,8 +239,8 @@ end
     @test all(H[act .& thin] .≈ 5) && all(H[act .& .!thin] .≈ 8)   # the floor only where 0.8·wc < 5 m
 end
 
-@testset "ClampDensity convection scheme: build and short run" begin
-    params = Params(; FT, convection_scheme = ClampDensity(FT(0.005)))
+@testset "ClampDensityConvection convection scheme: build and short run" begin
+    params = Params(; FT, convection_scheme = ClampDensityConvection(FT(0.005)))
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
     @test all(isfinite, m.model.melt)
     run!(m; days=0.5, verbose=false)
@@ -248,8 +248,8 @@ end
     @test all(isfinite, m.model.melt)
 end
 
-@testset "RelaxToAmbient convection scheme: build and short run" begin
-    params = Params(; FT, convection_scheme = RelaxToAmbient(FT(10000.0)))
+@testset "RelaxToAmbientConvection convection scheme: build and short run" begin
+    params = Params(; FT, convection_scheme = RelaxToAmbientConvection(FT(10000.0)))
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
     @test all(isfinite, m.model.melt)
     run!(m; days=0.5, verbose=false)
@@ -265,7 +265,7 @@ end
             (AdvectiveTracerForm(), FluxTracerForm())
         τ = FT(3600.0)
         params = Params(; FT, frazil_ice = RelaxedFrazilIce(τ),
-                        convection_scheme = ClampDensity(FT(0.005)), tracer_form)
+                        convection_scheme = ClampDensityConvection(FT(0.005)), tracer_form)
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
         run!(m; days = 0.2, verbose = false)
         mm = m.model
@@ -443,9 +443,9 @@ end
 
 @testset "Flux momentum form: dilution and sinks at the new level" begin
     @test Params().momentum_form isa FluxMomentumForm
-    @test Params().closure_level isa PastClosures
-    @test Params(; FT, momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosures()).closure_level isa
-          PresentClosures
+    @test Params().closure_level isa PastClosureLevel
+    @test Params(; FT, momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel()).closure_level isa
+          PresentClosureLevel
     upd(rhs, H_old, H_new, sink; U = 0.3, mask = 1.0, dt = 800.0) =
         Laddie._momentum_update(FluxMomentumForm(), U, U, rhs, NaN, H_old, H_new, sink, 0.0, mask, dt)
     # Entrainment of water at rest: U scaled by H⁻/H⁺, whatever the rate.
@@ -540,23 +540,23 @@ end
     # The default is the melt-only conduction; it and the Holland & Jenkins linearisation
     # of LADDIE v1/v2 warn of nothing, the others warn (once per session under the console
     # logger, through `maxlog`).
-    @test Params(; FT).ice_conduction === MeltOnlyConduction()
-    @test_logs MeltOnlyConduction()
-    @test_logs HollandJenkinsConduction()
-    @test_logs (:warn, r"experimental ice-conduction parameterisation") NoConduction()
-    @test_logs (:warn, r"LinearProfileConduction") LinearProfileConduction()
+    @test Params(; FT).ice_conduction === MeltOnlyIceConduction()
+    @test_logs MeltOnlyIceConduction()
+    @test_logs HollandJenkinsIceConduction()
+    @test_logs (:warn, r"experimental ice-conduction parameterisation") NoIceConduction()
+    @test_logs (:warn, r"LinearProfileIceConduction") LinearProfileIceConduction()
 
     none, meltonly, lin = quiet() do
-        NoConduction(), MeltOnlyConduction(), LinearProfileConduction(FT(2.1))
+        NoIceConduction(), MeltOnlyIceConduction(), LinearProfileIceConduction(FT(2.1))
     end
     @test lin.conductivity === FT(2.1)
-    @test quiet(() -> LinearProfileConduction().conductivity) === 2.1
-    @test sprint(show, lin) == "LinearProfileConduction(conductivity = 2.1 W/m/K)"
-    @test sprint(show, none) == "NoConduction()"
-    @test occursin("ice conduction = MeltOnlyConduction()",
+    @test quiet(() -> LinearProfileIceConduction().conductivity) === 2.1
+    @test sprint(show, lin) == "LinearProfileIceConduction(conductivity = 2.1 W/m/K)"
+    @test sprint(show, none) == "NoIceConduction()"
+    @test occursin("ice conduction = MeltOnlyIceConduction()",
                    sprint(show, MIME("text/plain"), Params(; FT)))
     # Promotion to the precision of the Params.
-    p32 = quiet(() -> Params(; FT = Float32, ice_conduction = LinearProfileConduction(2.1)))
+    p32 = quiet(() -> Params(; FT = Float32, ice_conduction = LinearProfileIceConduction(2.1)))
     @test p32.ice_conduction.conductivity === 2.1f0
 
     # The balance at the interface, for a melting and a supercooled (freezing) layer:
@@ -594,12 +594,12 @@ end
         return copy(m.melt)
     end
 
-    cases = ((HollandJenkinsConduction(), 1, 1, 0), (meltonly, 1, 0, 0),
+    cases = ((HollandJenkinsIceConduction(), 1, 1, 0), (meltonly, 1, 0, 0),
              (none, 0, 0, 0), (lin, 0, 0, FT(2.1)))
     melt = Dict(sc => [balance(c, f1, f2, k; supercooled = sc) for (c, f1, f2, k) in cases]
                 for sc in (false, true))
 
-    # Where melting, MeltOnly is the default closure; where freezing, it is NoConduction.
+    # Where melting, MeltOnly is the default closure; where freezing, it is NoIceConduction.
     @test melt[false][2] == melt[false][1]
     @test melt[true][2] == melt[true][3]
     # No conduction lets L_eff fall to L, so the melt is larger than with the colder-ice
@@ -670,7 +670,7 @@ end
     p32 = quiet(() -> Params(; FT = Float32, melting = TwoEquationMelting(0.01)))
     @test p32.melting === TwoEquationMelting{Float32}(0.01f0)
 
-    mk(; melting, conduction = HollandJenkinsConduction(), supercooled = false) = begin
+    mk(; melting, conduction = HollandJenkinsIceConduction(), supercooled = false) = begin
         sim = quiet() do
             build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                          params = Params(; FT, melting, ice_conduction = conduction))
@@ -685,9 +685,9 @@ end
 
     Γ = FT(0.0178)
     for (conduction, fmelt, ffreeze, k) in (
-        (HollandJenkinsConduction(), 1, 1, 0),
-        (quiet(() -> MeltOnlyConduction()), 1, 0, 0),
-        (quiet(() -> LinearProfileConduction(FT(2.1))), 0, 0, FT(2.1)),
+        (HollandJenkinsIceConduction(), 1, 1, 0),
+        (quiet(() -> MeltOnlyIceConduction()), 1, 0, 0),
+        (quiet(() -> LinearProfileIceConduction(FT(2.1))), 0, 0, FT(2.1)),
     ), supercooled in (false, true)
         m, Tf = mk(; melting = quiet(() -> TwoEquationMelting(Γ)), conduction, supercooled)
         ice = m.imask .> 0
@@ -705,7 +705,7 @@ end
         # Gap and open-ocean cells do not melt; their Tb leaves the exchange term at zero.
         @test all(iszero, m.melt[.!ice])
         @test all(isfinite, m.melt)
-        supercooled && conduction isa HollandJenkinsConduction && @test all(<(0), m.melt[ice])
+        supercooled && conduction isa HollandJenkinsIceConduction && @test all(<(0), m.melt[ice])
     end
 
     # With γS → ∞ the salt balance forces Sb → S and the three-equation scheme reduces to
@@ -726,7 +726,7 @@ end
     @test any(>(0), sim.model.melt)
 end
 
-@testset "AbstractEquationOfState: LinearEOS default, RoquetEOS contrast, convection" begin
+@testset "AbstractEOS: LinearEOS default, RoquetEOS contrast, convection" begin
     quiet(f) = Base.CoreLogging.with_logger(f, Base.CoreLogging.NullLogger())
     mk(; kw...) = quiet() do
         build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = Params(; FT, kw...))
@@ -788,9 +788,9 @@ end
     Laddie.update_density!(m3); Laddie.update_density!(m4)
     @test m3.drho == m4.drho
 
-    # ResetToAmbient resets to a contrast of exactly the threshold, whatever the EOS.
+    # ResetToAmbientConvection resets to a contrast of exactly the threshold, whatever the EOS.
     for e in (LinearEOS(), eos)
-        s = mk(equation_of_state = e, convection_scheme = ResetToAmbient(FT(0.005)))
+        s = mk(equation_of_state = e, convection_scheme = ResetToAmbientConvection(FT(0.005)))
         run!(s; days = 0.2, verbose = false)
         mm = s.model
         ice = mm.imask .> 0
@@ -805,7 +805,7 @@ end
     end
 
     # Every convection scheme and entrainment runs under RoquetEOS, and the melt differs from linear.
-    melts = map((ResetToAmbient(FT(0.005)), ClampDensity(FT(0.005)), RelaxToAmbient(FT(10000.0)))) do cs
+    melts = map((ResetToAmbientConvection(FT(0.005)), ClampDensityConvection(FT(0.005)), RelaxToAmbientConvection(FT(10000.0)))) do cs
         s = mk(equation_of_state = eos, convection_scheme = cs)
         run!(s; days = 0.5, verbose = false)
         @test all(isfinite, s.model.H.present) && all(isfinite, s.model.melt) && all(isfinite, s.model.drho)
@@ -814,7 +814,7 @@ end
     s_h = mk(equation_of_state = eos, entrainment = HollandEntrainment(FT(0.01775)))
     run!(s_h; days = 0.5, verbose = false)
     @test all(isfinite, s_h.model.H.present)
-    s_l = mk(convection_scheme = ResetToAmbient(FT(0.005)))
+    s_l = mk(convection_scheme = ResetToAmbientConvection(FT(0.005)))
     run!(s_l; days = 0.5, verbose = false)
     @test s_l.model.melt != melts[1]
 end
@@ -862,7 +862,7 @@ end
 
 @testset "SmoothKinks: exact at ε = 0, close to exact at the defaults" begin
     p = (; entrainment = GasparEntrainment(2.5), melting = TurbulentGamTMelting(),
-         convection_scheme = ClampDensity(0.005), frazil_ice = RelaxedFrazilIce(),
+         convection_scheme = ClampDensityConvection(0.005), frazil_ice = RelaxedFrazilIce(),
          max_layer_thickness = AbsoluteMaxLayerThickness(30.0), lateral_viscosity = NonlinearLateralViscosity(0.6),
          momentum_advection = UpstreamMomentumAdvection(), H_min = 2.0, v_cut = 0.3)
     zero_eps = SmoothKinks(; H = 0.0, u = 0.0, uH = 0.0, w = 0.0, drho = 0.0, T = 0.0, S = 0.0, log = 0.0)
@@ -889,7 +889,7 @@ function Laddie.update_melt!(m, s::UserConstantMelt)
     return nothing
 end
 
-struct UserNoConvection <: AbstractConvectionScheme end
+struct UserNoConvection <: AbstractConvection end
 Laddie.update_convection!(m, ::UserNoConvection) = (fill!(m.convection, 0); nothing)
 
 # A forcing's fields are forwarded by the model (`m.T_uniform`), so their names must not

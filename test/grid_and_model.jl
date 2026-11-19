@@ -140,7 +140,7 @@ end
     # the chain — a transposed stencil, gradient or spacing shows up here.
     nx_i, ny_i = 30, 12
     m = build_isomip(CPU(); FT, nx = nx_i, ny = ny_i, dx = 2000.0, dy = 1000.0,
-                     isomipcond = :warm)   # MaskedGradient: reads shelf neighbours only
+                     isomipcond = :warm)   # MaskedIceSlope: reads shelf neighbours only
     g = m.model
     @test size(g.tmask) == (nx_i + 2, ny_i + 2)
     @test (g.nx, g.ny) == (nx_i, ny_i)
@@ -148,9 +148,9 @@ end
     @test (g.dx, g.dy) == (FT(2000.0), FT(1000.0))
 
     # The draft varies along x only, so the mask-aware slope must land entirely in
-    # dzdx.  Swapped axes would put it in dzdy instead.  (CentredGradient would not do
+    # dzdx.  Swapped axes would put it in dzdy instead.  (CentredIceSlope would not do
     # for this check: it differences across the land wall in y and picks up the
-    # draft discontinuity there — the artefact MaskedGradient exists to avoid.)
+    # draft discontinuity there — the artefact MaskedIceSlope exists to avoid.)
     shelf = g.tmask .> 0
     @test all(iszero, g.dzdy[shelf])
     @test all(!iszero, g.dzdx[shelf])

@@ -80,11 +80,11 @@ export SimulationISOMIPv2, SimulationASEv2, SimulationMISOMIPv2, SimulationMISOM
 export AbstractEntrainment, HollandEntrainment, GasparEntrainment
 export AbstractMelting,
     FixedGamTMelting, TurbulentGamTMelting, UStarGamTMelting, TwoEquationMelting, PrescribedMelting
-export AbstractConvectionScheme, ClampDensity, ResetToAmbient, RelaxToAmbient
+export AbstractConvection, ClampDensityConvection, ResetToAmbientConvection, RelaxToAmbientConvection
 export AbstractFrazilIce, NoFrazilIce, RelaxedFrazilIce
-export AbstractEquationOfState, LinearEOS, RoquetEOS
-export AbstractIceConduction, HollandJenkinsConduction, MeltOnlyConduction, NoConduction,
-    LinearProfileConduction
+export AbstractEOS, LinearEOS, RoquetEOS
+export AbstractIceConduction, HollandJenkinsIceConduction, MeltOnlyIceConduction, NoIceConduction,
+    LinearProfileIceConduction
 export AbstractCoriolisParameter, CoriolisParameter0D, CoriolisParameter2D
 export AbstractKinks, ExactKinks, SmoothKinks
 export AbstractTracerBounds, NoTracerBounds, TracerBounds
@@ -101,22 +101,22 @@ export AbstractPreprocess,
     FillSmallGroundedPatchesPreprocess,
     MarkGapsPreprocess
 
-export AbstractOpenOceanBC, ZeroGradientInflow, NoInflow, OutflowOnly
-export AbstractGroundingLineBC, NoSlipGL, FreeSlipGL, PartialSlipGL
-export AbstractLandBC, NoSlipLand, FreeSlipLand, PartialSlipLand
+export AbstractOpenOceanBC, ZeroGradientOpenOceanBC, NoInflowOpenOceanBC, OutflowOnlyOpenOceanBC
+export AbstractSlipAtGL, NoSlipAtGL, FreeSlipAtGL, PartialSlipAtGL
+export AbstractSlipAtLand, NoSlipAtLand, FreeSlipAtLand, PartialSlipAtLand
 export AbstractGapsBC, SinkGapsBC, ConnectedGapsBC, LeakyGapsBC
 export AbstractWallAdvection, SlipScaledWallAdvection, NoWallAdvection, V1WallAdvection
 export AbstractLateralViscosity, PrescribedLateralViscosity, NonlinearLateralViscosity
 export AbstractMomentumAdvection, CentredMomentumAdvection, UpstreamMomentumAdvection
 export AbstractTracerForm, AdvectiveTracerForm, FluxTracerForm
 export AbstractMomentumForm, AdvectiveMomentumForm, FluxMomentumForm
-export AbstractClosureLevel, PresentClosures, PastClosures
+export AbstractClosureLevel, PresentClosureLevel, PastClosureLevel
 export AbstractLaplacianWeights, PresentLaplacianWeights, PastLaplacianWeights
-export AbstractFrontPressure, FullDepthGradient, TruncatedDepthGradient, ZeroGradientFront
-export AbstractIceSlopeGradient, CentredGradient, MaskedGradient
-export AbstractTimeStepper, FixedDt, AdaptiveDt
+export AbstractFrontPressure, FullDepthFrontPressure, TruncatedDepthFrontPressure, ZeroGradientFrontPressure
+export AbstractIceSlope, CentredIceSlope, MaskedIceSlope
+export AbstractTimeStepper, FixedTimeStepper, AdaptiveTimeStepper
 export AbstractCFL, ConservativeCFL, ExactCFL
-export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateEnd
+export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateSimulationEnd
 export AbstractOceanForcing, OceanForcing1D, OceanForcing2D, PerBasinOceanForcing1D, RampedOceanForcing,
     ISOMIPForcing
 export front_ocean_forcing, FrontBlend, front_sources, nearest_seed, regrid_ocean, fill_ocean!

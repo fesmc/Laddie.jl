@@ -21,8 +21,8 @@ the [tracer form](tracer_form.md):
 
 Separately, `Params(; closure_level = ...)` sets the time level the closures read:
 the friction velocity ``u_\star`` (hence melt and entrainment), the thickness in the
-entrainment rate and the drag speed ``|\mathbf{u}|``, either [`PresentClosures`](@ref)
-(the default) or [`PastClosures`](@ref).
+entrainment rate and the drag speed ``|\mathbf{u}|``, either [`PresentClosureLevel`](@ref)
+(the default) or [`PastClosureLevel`](@ref).
 
 ## Equations
 
@@ -70,7 +70,7 @@ U^{n+1} = \frac{\bar H^{\,n-1}\,U^{n-1} + 2\Delta t\,\big(R^{n} + o\,U^{n}\big)}
                {\bar H_\ast^{\,n+1} + 2\Delta t\,(s + o)}.
 ```
 Since ``R^n + o\,U^n`` holds only the inflow, ``U^{n+1}`` is a weighted mean of ``U^{n-1}``
-and the momentum coming in.  Under [`PastClosures`](@ref), ``s`` and the ``u_\star`` in
+and the momentum coming in.  Under [`PastClosureLevel`](@ref), ``s`` and the ``u_\star`` in
 ``\dot m`` and ``\dot e`` are evaluated at ``n-1``.
 
 The advective form takes ``\dot d`` at the tracer point ``(i, j)`` and does not average it
@@ -96,7 +96,7 @@ cell and its tangent grows without bound.
 The two switches remove the two parts of that rate.  Under [`FluxMomentumForm`](@ref) the
 dilution acts through ``\bar H^{+}``, the factor ``\bar H^{-}/\bar H^{+} \le 1``, and drag and
 detrainment through the denominator: unconditionally stable for a frozen rate.  Under
-[`PastClosures`](@ref) the dependence of the rates on the state, ``e(u_\star, H)`` and
+[`PastClosureLevel`](@ref) the dependence of the rates on the state, ``e(u_\star, H)`` and
 ``|\mathbf{u}|``, comes from the lagged level, as LADDIE v1 lags the diffusion and
 the convective relaxation.  For the scalar model ``y' = -\lambda y`` with the rate split as in
 ``e(U)\,U``, the stability limit moves from ``\lambda\Delta t = 0.57`` to ``1.15`` under the flux form
@@ -122,6 +122,6 @@ AbstractMomentumForm
 AdvectiveMomentumForm
 FluxMomentumForm
 AbstractClosureLevel
-PresentClosures
-PastClosures
+PresentClosureLevel
+PastClosureLevel
 ```

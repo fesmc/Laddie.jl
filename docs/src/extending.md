@@ -36,10 +36,10 @@ fields of the model they read and write.
 |---|---|---|---|
 | [`AbstractEntrainment`](@ref) | `Params(; entrainment)` | `_compute_entrainment!(m, scheme)` | `physics/entrainment.jl` |
 | [`AbstractMelting`](@ref) | `Params(; melting)` | `update_melt!(m, scheme)`, which also calls `update_ustar!(m)` | `physics/melting.jl` |
-| [`AbstractConvectionScheme`](@ref) | `Params(; convection_scheme)` | `update_convection!(m, scheme)`; `_update_conv2!` for a relaxation rate (`numerics/leapfrog.jl`) | `physics/convection.jl` |
+| [`AbstractConvection`](@ref) | `Params(; convection_scheme)` | `update_convection!(m, scheme)`; `_update_conv2!` for a relaxation rate (`numerics/leapfrog.jl`) | `physics/convection.jl` |
 | [`AbstractFrazilIce`](@ref) | `Params(; frazil_ice)` | `update_frazil!(m, scheme)` | `physics/frazil.jl` |
 | [`AbstractIceConduction`](@ref) | `Params(; ice_conduction)` | `_conduction_coefficients` | `physics/conduction.jl` |
-| [`AbstractEquationOfState`](@ref) | `Params(; equation_of_state)` | `_eos_coefficients` | `physics/eos.jl` |
+| [`AbstractEOS`](@ref) | `Params(; equation_of_state)` | `_eos_coefficients` | `physics/eos.jl` |
 | [`AbstractMaxLayerThickness`](@ref) | `Params(; max_layer_thickness)` | `_max_layer_thickness` | `physics/max_layer_thickness.jl` |
 | [`AbstractCoriolisParameter`](@ref) | `Params(; coriolis)` | `_coriolis_field` | `physics/coriolis.jl` |
 | [`AbstractTracerBounds`](@ref) | `Params(; tracer_bounds)` | `apply_tracer_bounds!(m, scheme, q, quantity)` | `numerics/tracer_bounds.jl` |
@@ -50,11 +50,11 @@ fields of the model they read and write.
 | [`AbstractMomentumForm`](@ref) | `Params(; momentum_form)` | `_momentum_update`, `_momentum_thickness_tendency`, `_momentum_flux_terms`, `_explicit_sink` | `numerics/leapfrog.jl` |
 | [`AbstractClosureLevel`](@ref) | `Params(; closure_level)` | `_closure_level` | `numerics/advection.jl` |
 | [`AbstractKinks`](@ref) | `Params(; kinks)` | `_kink_width` and the smooth switches (`_smax`, `_smin`, `_sclamp`, …) | `numerics/kinks.jl` |
-| [`AbstractIceSlopeGradient`](@ref) | `Params(; ice_slope)` | `_icebase_slope` | `simulation/grid.jl` |
+| [`AbstractIceSlope`](@ref) | `Params(; ice_slope)` | `_icebase_slope` | `simulation/grid.jl` |
 | [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `_front_pgf_weight` | `bcs/open_ocean.jl` |
 | [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `_inflow_weight`; `clip_front_inflow!` for a valve | `bcs/open_ocean.jl` |
-| [`AbstractGroundingLineBC`](@ref) | `BoundaryConditions(; grounding_line)` | `_gl_slip` | `bcs/walls.jl` |
-| [`AbstractLandBC`](@ref) | `BoundaryConditions(; land)` | `_land_slip` | `bcs/walls.jl` |
+| [`AbstractSlipAtGL`](@ref) | `BoundaryConditions(; grounding_line)` | `_gl_slip` | `bcs/walls.jl` |
+| [`AbstractSlipAtLand`](@ref) | `BoundaryConditions(; land)` | `_land_slip` | `bcs/walls.jl` |
 | [`AbstractWallAdvection`](@ref) | `BoundaryConditions(; wall_advection)` | `_advection_slips` | `bcs/walls.jl` |
 | [`AbstractGapsBC`](@ref) | `BoundaryConditions(; gaps)` | `_apply_gaps_bc` | `bcs/gaps.jl` |
 | [`AbstractOceanForcing`](@ref) | `CavityForcing(ocean, ice)` | `_update_ambient_fields!(m, forcing)`, writing `m.Ta` and `m.Sa` | `bcs/forcing.jl` |

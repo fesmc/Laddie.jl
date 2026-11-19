@@ -38,7 +38,7 @@ crystals form at the freezing point inside the water, and cooling the deposited
 ice to the shelf temperature is a matter for the ice, not the layer.
 
 The supercooling is read at the past leapfrog level, like the convective
-relaxation of [`RelaxToAmbient`](@ref), so the step is stable for
+relaxation of [`RelaxToAmbientConvection`](@ref), so the step is stable for
 `relaxation_time > dt` and does not overshoot ``T_f`` for `relaxation_time > 2dt`.
 
 The default `τ` = 1 h is an order-of-magnitude choice.  The literature has no

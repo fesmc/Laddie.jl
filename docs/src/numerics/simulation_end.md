@@ -7,7 +7,7 @@ criteria count from the start of the `run!` call, not of the simulation.
 
 - [`FixedSimulationEnd`](@ref), the default: run a fixed duration `t_end` (days, 30 by
   default).
-- [`SteadyStateEnd`](@ref): stop once the cavity reaches a quasi-steady state, or after
+- [`SteadyStateSimulationEnd`](@ref): stop once the cavity reaches a quasi-steady state, or after
   `t_end` days (365 by default), whichever comes first. The run is steady when the
   relative change in the mean melt rate over floating ice between two daily samples falls
   below `tol`,
@@ -19,7 +19,7 @@ criteria count from the start of the `run!` call, not of the simulation.
   leapfrog computational mode, and independent of the run length.
 
 ```julia
-run!(sim; until = SteadyStateEnd(tol = 1e-3, t_end = 365.0))
+run!(sim; until = SteadyStateSimulationEnd(tol = 1e-3, t_end = 365.0))
 ```
 
 ## API
@@ -27,5 +27,5 @@ run!(sim; until = SteadyStateEnd(tol = 1e-3, t_end = 365.0))
 ```@docs
 AbstractSimulationEnd
 FixedSimulationEnd
-SteadyStateEnd
+SteadyStateSimulationEnd
 ```

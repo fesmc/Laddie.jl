@@ -32,7 +32,7 @@ point inside the water, and cooling the deposited ice to the shelf temperature i
 for the ice, not the layer. Gap cells form no frazil; the ice they would form is sea ice.
 
 The supercooling is read at the past leapfrog level, like the convective relaxation of
-[`RelaxToAmbient`](@ref), so the step is stable for ``\tau > \Delta t`` and does not
+[`RelaxToAmbientConvection`](@ref), so the step is stable for ``\tau > \Delta t`` and does not
 overshoot ``T_f`` for ``\tau > 2\Delta t``.
 
 The default ``\tau`` = 1 h is an order-of-magnitude choice; the literature has no

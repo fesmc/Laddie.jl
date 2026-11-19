@@ -16,7 +16,7 @@
 Abstract supertype for the stopping criterion of `run!`.  Pass a concrete
 instance as `Simulation(model; stop = ...)` or `run!(sim; until = ...)`:
 [`FixedSimulationEnd`](@ref) (run a set
-duration) or [`SteadyStateEnd`](@ref) (stop once the solution settles).
+duration) or [`SteadyStateSimulationEnd`](@ref) (stop once the solution settles).
 """
 abstract type AbstractSimulationEnd end
 
@@ -60,34 +60,34 @@ simulated day (not every step), which is cheap, robust to the leapfrog
 computational mode, and independent of the run length.  `t_end` is a safety cap on
 the duration of the `run!` call.
 
-Select via `run!(sim; until = SteadyStateEnd(tol = 1e-3, t_end = 365.0))`.
+Select via `run!(sim; until = SteadyStateSimulationEnd(tol = 1e-3, t_end = 365.0))`.
 
 # Fields
 $(TYPEDFIELDS)
 """
-Base.@kwdef struct SteadyStateEnd{T} <: AbstractSimulationEnd
+Base.@kwdef struct SteadyStateSimulationEnd{T} <: AbstractSimulationEnd
     "relative change in the mean melt rate between daily samples below which the run stops (default `1e-3`)"
     tol::T = 1e-3
     "cap on the duration of the `run!` call (days, default `365`)"
     t_end::T = 365.0
-    SteadyStateEnd{T}(tol, t_end) where {T} = new{T}(tol, t_end)
+    SteadyStateSimulationEnd{T}(tol, t_end) where {T} = new{T}(tol, t_end)
 end
 
-SteadyStateEnd(tol, t_end) =
-    (p = promote(float(tol), float(t_end)); SteadyStateEnd{eltype(p)}(p...))
+SteadyStateSimulationEnd(tol, t_end) =
+    (p = promote(float(tol), float(t_end)); SteadyStateSimulationEnd{eltype(p)}(p...))
 
 # Hard time cap in seconds (both criteria carry one).
 _end_seconds(e::AbstractSimulationEnd, spd) = e.t_end * spd
 
 # Whether `run!` must sample the mean melt rate at each diagnostic check.
 _needs_melt_sample(::AbstractSimulationEnd) = false
-_needs_melt_sample(::SteadyStateEnd) = true
+_needs_melt_sample(::SteadyStateSimulationEnd) = true
 
 # Early-stop test from successive domain-mean melt samples (m yr⁻¹).
-# FixedSimulationEnd never stops early; SteadyStateEnd stops once the relative
+# FixedSimulationEnd never stops early; SteadyStateSimulationEnd stops once the relative
 # change drops below tol (the first sample, with no predecessor, never stops).
 _steady_reached(::AbstractSimulationEnd, mean_new, mean_prev) = false
-function _steady_reached(e::SteadyStateEnd, mean_new, mean_prev)
+function _steady_reached(e::SteadyStateSimulationEnd, mean_new, mean_prev)
     (isfinite(mean_prev) && mean_prev != 0) || return false
     return abs(mean_new - mean_prev) / abs(mean_prev) < e.tol
 end
@@ -106,7 +106,7 @@ mutable struct Clock{FT,T,I}
     time::T
     "time steps taken by this simulation (not restored from a restart)"
     iteration::I
-    "current time step (s); varies under [`AdaptiveDt`](@ref)"
+    "current time step (s); varies under [`AdaptiveTimeStepper`](@ref)"
     dt::FT
 end
 
@@ -171,7 +171,7 @@ struct Simulation{
     model::M
     "simulated time, iteration count and current `dt`"
     clock::CL
-    "how `dt` evolves: [`FixedDt`](@ref) or [`AdaptiveDt`](@ref)"
+    "how `dt` evolves: [`FixedTimeStepper`](@ref) or [`AdaptiveTimeStepper`](@ref)"
     tstep::TS
     "how the in-loop CFL number is computed: [`ExactCFL`](@ref) or [`ConservativeCFL`](@ref)"
     cfl::C
@@ -196,13 +196,13 @@ Wrap `model` in a simulation, initialise its leapfrog time levels, and (when
 `output.saveday > 0`) create the run directory and write the initial state.
 
 # Keywords
-- `dt`: initial time step in seconds (default 210).  Under [`FixedDt`](@ref) it
-  stays constant; under [`AdaptiveDt`](@ref) it is the starting point.
-- `tstep`: [`FixedDt`](@ref) (default) or [`AdaptiveDt`](@ref).
+- `dt`: initial time step in seconds (default 210).  Under [`FixedTimeStepper`](@ref) it
+  stays constant; under [`AdaptiveTimeStepper`](@ref) it is the starting point.
+- `tstep`: [`FixedTimeStepper`](@ref) (default) or [`AdaptiveTimeStepper`](@ref).
 - `cfl`: [`ExactCFL`](@ref) (default) or [`ConservativeCFL`](@ref).
 - `nu`: Robert–Asselin filter coefficient (default 0.8).
 - `stop`: default stopping criterion of [`run!`](@ref), a
-  [`FixedSimulationEnd`](@ref) (default, 30 days) or [`SteadyStateEnd`](@ref).
+  [`FixedSimulationEnd`](@ref) (default, 30 days) or [`SteadyStateSimulationEnd`](@ref).
 - `output`: an [`OutputConfig`](@ref); the default disables file I/O.
 - `restart`: path to a JLD2 restart file, or `nothing` (default) to start from
   the model's initial state.  Restores the prognostic fields, the clock time
@@ -215,14 +215,14 @@ scheme on `model`, so build one simulation per model.
 ```julia
 grid = Grid(mask, z_draft, dx, dy)
 model = Model(grid; forcing, params = Params())
-sim = Simulation(model; dt = 120.0, tstep = AdaptiveDt(), stop = FixedSimulationEnd(t_end = 90.0))
+sim = Simulation(model; dt = 120.0, tstep = AdaptiveTimeStepper(), stop = FixedSimulationEnd(t_end = 90.0))
 run!(sim)
 ```
 """
 function Simulation(
     model::Model;
     dt = 210.0,
-    tstep = FixedDt(),
+    tstep = FixedTimeStepper(),
     cfl = ExactCFL(),
     nu = 0.8,
     stop = FixedSimulationEnd(),

@@ -16,11 +16,11 @@ end
 # Time integration (Lambert et al. 2023)
 # ==================================================================
 
-# Only `RelaxToAmbient` relaxes through `conv2`; the other schemes leave it alone.
-_update_conv2!(::Any, ::AbstractConvectionScheme) = nothing
-function _update_conv2!(m, cs::RelaxToAmbient)
+# Only `RelaxToAmbientConvection` relaxes through `conv2`; the other schemes leave it alone.
+_update_conv2!(::Any, ::AbstractConvection) = nothing
+function _update_conv2!(m, cs::RelaxToAmbientConvection)
     # `imask`, not `tmask`: gap cells are never relaxed towards ambient.  See
-    # `update_convection!(m, ::RelaxToAmbient)`.
+    # `update_convection!(m, ::RelaxToAmbientConvection)`.
     launch!(
         _relax_conv2_kernel!,
         m.conv2,
@@ -234,11 +234,11 @@ _or_zero(::Nothing, FT) = zero(FT)
         # tmip is 2 at a fully-interior face (both neighbours active) and 1 at a
         # one-sided face (ice front, or a SinkGapsBC gap-sink edge), where the
         # masked neighbour thickness is a zero stand-in rather than a real one.
-        # pgf_w selects what happens there: 0 (FullDepthGradient, the LADDIE v1
+        # pgf_w selects what happens there: 0 (FullDepthFrontPressure, the LADDIE v1
         # behaviour) keeps the term and leaves this an exact multiply by
-        # 1.0; 1 (TruncatedDepthGradient) drops it, as LADDIE v2 does at
+        # 1.0; 1 (TruncatedDepthFrontPressure) drops it, as LADDIE v2 does at
         # mask_cf_b faces.  drho_w gates the density-gradient term the same
-        # way, 1 only under ZeroGradientFront.  See AbstractFrontPressure.
+        # way, 1 only under ZeroGradientFrontPressure.  See AbstractFrontPressure.
         pgf_gate = one(FT) + pgf_w * (tmip - FT(2))
         drho_gate = one(FT) + drho_w * (tmip - FT(2))
         H_next = H1[ip1, j] * tmask[ip1, j]
@@ -831,7 +831,7 @@ function apply_robert_asselin_filter!(m, nu)
     end
     # Refresh density and convection on the filtered level, as LADDIE v1
     # does.  The next `advance_leapfrog!` recomputes both on the rotated level, but
-    # this call is not redundant: under ResetToAmbient it resets the filtered T/S,
+    # this call is not redundant: under ResetToAmbientConvection it resets the filtered T/S,
     # which become `past`, and for every scheme it is the `drho` and `convection`
     # that the output, the diagnostics and the CFL number read.
     update_density!(m)

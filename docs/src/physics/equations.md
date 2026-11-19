@@ -127,11 +127,11 @@ is then a full one-sided gradient, as if ``H`` collapsed to zero across one grid
 LADDIE v1 and v2 disagree on what to do about this, so
 [`AbstractFrontPressure`](@ref) makes it a choice:
 
-- [`FullDepthGradient`](@ref) (**default**) keeps the term, reproducing LADDIE v1, which
+- [`FullDepthFrontPressure`](@ref) (**default**) keeps the term, reproducing LADDIE v1, which
   Laddie.jl is ported from and validated against.
-- [`TruncatedDepthGradient`](@ref) drops it, as the LADDIE v2 code does at calving-front faces. Measured on a warm ISOMIP+ run, the term is ~150× larger at the
+- [`TruncatedDepthFrontPressure`](@ref) drops it, as the LADDIE v2 code does at calving-front faces. Measured on a warm ISOMIP+ run, the term is ~150× larger at the
   ice front than in the interior under the default.
-- [`ZeroGradientFront`](@ref) drops it and the density-gradient term
+- [`ZeroGradientFrontPressure`](@ref) drops it and the density-gradient term
   ``\tfrac12 g\,\bar H^2\,(\delta\rho_{x-1}-\delta\rho)/\Delta x`` as well, whose
   neighbour ``\delta\rho`` is likewise masked to `0` there. This is the zero lateral
   gradient at the calving front stated in the [LADDIE v2 description paper](@cite lambert_one-layer_2026);
@@ -164,7 +164,7 @@ Kernel `_step_v_momentum_kernel!`, structurally identical to (2) with
 Kernel `_step_temperature_kernel!` (and `mat_*` variants for array-valued
 ``\gamma_T``/`conv2`). The implemented `rhs` adds two Laddie.jl terms beyond the
 paper: the convective relaxation ``-(T^{p}-T_a)\,\mathrm{conv2}`` (zero unless
-`convection_scheme = RelaxToAmbient`, see [Convective relaxation](@ref)), and the frazil
+`convection_scheme = RelaxToAmbientConvection`, see [Convective relaxation](@ref)), and the frazil
 term ``\dot f\,(L/c_p - T)`` (zero unless `frazil_ice = RelaxedFrazilIce`, see
 [Frazil ice](frazil_ice.md)):
 
@@ -204,7 +204,7 @@ g_a' = \frac{g\,\Delta\rho_a}{\rho_0}, \tag{6}
 
 `update_density!` / `_density_kernel!` computes the dimensionless
 ``\delta\rho = \beta(S_a-S) - \alpha(T_a-T)`` into `m.drho` (masked) for the default
-`equation_of_state = LinearEOS`. For any [`AbstractEquationOfState`](@ref) the contrast is
+`equation_of_state = LinearEOS`. For any [`AbstractEOS`](@ref) the contrast is
 ```math
 \delta\rho = \beta\,(S_a - S) - \bigl(a_0 + a_T\,\bar T + a_Z\,Z\bigr)(T_a - T),
 \qquad \bar T = \tfrac12(T_a + T),
@@ -247,11 +247,11 @@ The interface temperature is then
 ``T_b = (c_p\gamma_T\,T/L_\text{eff} - \dot m)/(c_p\gamma_T/L_\text{eff} + c_i\dot m/L_\text{eff})``.
 
 The ``c_i`` terms are the conduction into the ice of `ice_conduction =
-HollandJenkinsConduction`. With `ice_conduction` set to another
+HollandJenkinsIceConduction`. With `ice_conduction` set to another
 [`AbstractIceConduction`](@ref), the kernel replaces ``c_i`` per cell by
 ``c_{i,\text{eff}} = c_i\,w`` with ``w \in \{0, 1\}`` set by the sign of ``T - T_f(S, z_b)``
-(`MeltOnlyConduction`: 1 where melting, 0 otherwise; `NoConduction`, `LinearProfileConduction`: 0),
-and adds the fixed flux ``q = k_i(T_f - T_s)/(\rho_\text{fw} H_i)`` of `LinearProfileConduction`
+(`MeltOnlyIceConduction`: 1 where melting, 0 otherwise; `NoIceConduction`, `LinearProfileIceConduction`: 0),
+and adds the fixed flux ``q = k_i(T_f - T_s)/(\rho_\text{fw} H_i)`` of `LinearProfileIceConduction`
 to the heat balance (8), which amounts to evaluating the equations above at
 ``T - q/(c_p\gamma_T)`` in place of ``T``.
 
@@ -336,14 +336,14 @@ the LADDIE v1 verification stays valid.
 
 ### Convective relaxation
 
-For `convection_scheme = RelaxToAmbient`, unstable cells (``\delta\rho < 0``) relax T/S
+For `convection_scheme = RelaxToAmbientConvection`, unstable cells (``\delta\rho < 0``) relax T/S
 toward ambient over `convection_time` via the `conv2` field appearing in (4)–(5):
 
 ```math
 \mathrm{conv2} = \frac{[\delta\rho < 0]\,H}{\mathrm{convection_time}}.
 ```
 
-`ClampDensity` (clamp ``\delta\rho`` to a positive floor) and `ResetToAmbient`
+`ClampDensityConvection` (clamp ``\delta\rho`` to a positive floor) and `ResetToAmbientConvection`
 (reset unstable-cell T/S to ambient) set `conv2 = 0` and act directly on the
 fields instead.
 

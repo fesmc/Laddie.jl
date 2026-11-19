@@ -72,15 +72,15 @@ describe one family each:
 | [Momentum advection](momentum_advection.md) | [`AbstractMomentumAdvection`](@ref) | `Params(; momentum_advection)` | `CentredMomentumAdvection()` |
 | [Tracer form](tracer_form.md) | [`AbstractTracerForm`](@ref) | `Params(; tracer_form)` | `FluxTracerForm()` |
 | [Momentum form](momentum_form.md) | [`AbstractMomentumForm`](@ref) | `Params(; momentum_form)` | `FluxMomentumForm()` |
-| [Closure level](momentum_form.md) | [`AbstractClosureLevel`](@ref) | `Params(; closure_level)` | `PastClosures()` |
+| [Closure level](momentum_form.md) | [`AbstractClosureLevel`](@ref) | `Params(; closure_level)` | `PastClosureLevel()` |
 | [Laplacian weights](laplacian_weights.md) | [`AbstractLaplacianWeights`](@ref) | `Params(; laplacian_weights)` | `PresentLaplacianWeights()` |
 | [Kinks](kinks.md) | [`AbstractKinks`](@ref) | `Params(; kinks)` | `ExactKinks()` |
-| [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; tstep)` | `FixedDt()` |
+| [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; tstep)` | `FixedTimeStepper()` |
 | [CFL number](cfl.md) | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `ExactCFL()` |
 | [Simulation end](simulation_end.md) | [`AbstractSimulationEnd`](@ref) | `Simulation(model; stop)`, `run!(sim; until)` | `FixedSimulationEnd()` |
 | [Maximum layer thickness](max_layer_thickness.md) | [`AbstractMaxLayerThickness`](@ref) | `Params(; max_layer_thickness)` | `NoMaxLayerThickness()` |
 | [Tracer bounds](tracer_bounds.md) | [`AbstractTracerBounds`](@ref) | `Params(; tracer_bounds)` | `NoTracerBounds()` |
-| [Ice-base slope](ice_slope.md) | [`AbstractIceSlopeGradient`](@ref) | `Params(; ice_slope)` | `MaskedGradient()` |
+| [Ice-base slope](ice_slope.md) | [`AbstractIceSlope`](@ref) | `Params(; ice_slope)` | `MaskedIceSlope()` |
 | [Mask preprocessing](preprocessing.md) | [`AbstractPreprocess`](@ref) | `Grid(...; preprocess)` | none |
 | [Domain cropping](domain_cropping.md) | [`AbstractDomainCropping`](@ref) | `Grid(...; domain_cropping)` | `MinRectangleDomainCropping()` |
 

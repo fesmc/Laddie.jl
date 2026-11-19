@@ -11,7 +11,7 @@ Laddie.jl; the [table below](#Options-in-each-version) lists them, with the defa
 |---|---|---|---|
 | language | Python | Fortran, parallel | Julia, [KernelAbstractions](https://github.com/JuliaGPU/KernelAbstractions.jl): CPU threads and GPUs |
 | grid | structured Arakawa C-grid | unstructured triangular mesh, UFEMISM-integrated | structured C-grid, as v1 |
-| time stepping | leapfrog with Robert–Asselin filter | forward–backward Runge–Kutta (FB-RK3) | leapfrog with Robert–Asselin filter, as v1; fixed or adaptive step (`AdaptiveDt`) |
+| time stepping | leapfrog with Robert–Asselin filter | forward–backward Runge–Kutta (FB-RK3) | leapfrog with Robert–Asselin filter, as v1; fixed or adaptive step (`AdaptiveTimeStepper`) |
 | typical run time\* | 40 min | 5 min | 30 s |
 | automatic differentiation | no | no | yes |
 
@@ -23,9 +23,9 @@ Laddie.jl; the [table below](#Options-in-each-version) lists them, with the defa
 |---|---|---|---|
 | equation of state | `LinearEOS` | `LinearEOS` | `LinearEOS` |
 | melting | `TurbulentGamTMelting` | `TurbulentGamTMelting` or `UStarGamTMelting`, per run | `FixedGamTMelting` |
-| ice conduction | `HollandJenkinsConduction` | `HollandJenkinsConduction` | `MeltOnlyConduction`† |
+| ice conduction | `HollandJenkinsIceConduction` | `HollandJenkinsIceConduction` | `MeltOnlyIceConduction`† |
 | entrainment | `GasparEntrainment` | `GasparEntrainment` | `GasparEntrainment` |
-| convection | `ResetToAmbient` | `ClampDensity` | `RelaxToAmbient(3600)`† |
+| convection | `ResetToAmbientConvection` | `ClampDensityConvection` | `RelaxToAmbientConvection(3600)`† |
 | frazil ice | `NoFrazilIce` | `NoFrazilIce` | `NoFrazilIce` |
 | lateral viscosity | `PrescribedLateralViscosity` | `NonlinearLateralViscosity` | `PrescribedLateralViscosity` |
 | Coriolis parameter | `CoriolisParameter0D` | `CoriolisParameter0D` | `CoriolisParameter0D` |
@@ -33,15 +33,15 @@ Laddie.jl; the [table below](#Options-in-each-version) lists them, with the defa
 | momentum advection | `CentredMomentumAdvection` | `UpstreamMomentumAdvection` | `CentredMomentumAdvection` |
 | tracer form | `AdvectiveTracerForm` | `FluxTracerForm` | `FluxTracerForm` |
 | momentum form | `AdvectiveMomentumForm` | `FluxMomentumForm`\* | `FluxMomentumForm` |
-| closure level | `PresentClosures` | no counterpart (FB-RK3) | `PastClosures`† |
+| closure level | `PresentClosureLevel` | no counterpart (FB-RK3) | `PastClosureLevel`† |
 | Laplacian weights | `PastLaplacianWeights`\* | no counterpart | `PresentLaplacianWeights` |
-| wall slip | `NoSlipGL`, `NoSlipLand` | `PartialSlipGL(1)`, `PartialSlipLand(1)` | `PartialSlipGL(1)`, `PartialSlipLand(1)` |
+| wall slip | `NoSlipAtGL`, `NoSlipAtLand` | `PartialSlipAtGL(1)`, `PartialSlipAtLand(1)` | `PartialSlipAtGL(1)`, `PartialSlipAtLand(1)` |
 | wall momentum advection | `V1WallAdvection` | `NoWallAdvection` | `NoWallAdvection` |
-| open-ocean boundary | `ZeroGradientInflow` | `ZeroGradientInflow` | `ZeroGradientInflow` |
-| ice-front pressure gradient | `FullDepthGradient` | `TruncatedDepthGradient` | `FullDepthGradient` |
+| open-ocean boundary | `ZeroGradientOpenOceanBC` | `ZeroGradientOpenOceanBC` | `ZeroGradientOpenOceanBC` |
+| ice-front pressure gradient | `FullDepthFrontPressure` | `TruncatedDepthFrontPressure` | `FullDepthFrontPressure` |
 | maximum layer thickness | none that binds | `AbsoluteMaxLayerThickness` | `NoMaxLayerThickness` |
 | tracer bounds | none | none | `NoTracerBounds`\* |
-| ice-base slope (`ice_slope`) | `CentredGradient` | no counterpart (mesh) | `MaskedGradient` |
+| ice-base slope (`ice_slope`) | `CentredIceSlope` | no counterpart (mesh) | `MaskedIceSlope` |
 
 \* The aliases below do not follow the version here: `Params<Setup>v1` has
 `PresentLaplacianWeights`, `Params<Setup>v2` has `AdvectiveMomentumForm`, and both have

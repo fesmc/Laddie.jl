@@ -53,20 +53,20 @@ the forcing. The pages of this section describe one family each:
 
 | abstract type | selected with | default |
 |---------------|---------------|---------|
-| [`AbstractEquationOfState`](@ref) | `Params(; equation_of_state)` | `LinearEOS()` |
+| [`AbstractEOS`](@ref) | `Params(; equation_of_state)` | `LinearEOS()` |
 | [`AbstractMelting`](@ref) | `Params(; melting)` | `FixedGamTMelting(1.8e-4)` |
-| [`AbstractIceConduction`](@ref) | `Params(; ice_conduction)` | `MeltOnlyConduction()` |
+| [`AbstractIceConduction`](@ref) | `Params(; ice_conduction)` | `MeltOnlyIceConduction()` |
 | [`AbstractEntrainment`](@ref) | `Params(; entrainment)` | `GasparEntrainment(2.5)` |
-| [`AbstractConvectionScheme`](@ref) | `Params(; convection_scheme)` | `RelaxToAmbient(3600)` |
+| [`AbstractConvection`](@ref) | `Params(; convection_scheme)` | `RelaxToAmbientConvection(3600)` |
 | [`AbstractFrazilIce`](@ref) | `Params(; frazil_ice)` | `NoFrazilIce()` |
 | [`AbstractLateralViscosity`](@ref) | `Params(; lateral_viscosity)` | `PrescribedLateralViscosity()` |
 | [`AbstractCoriolisParameter`](@ref) | `Params(; coriolis)` | `CoriolisParameter0D()` |
 | [`AbstractOceanForcing`](@ref) | `Model(grid; forcing)` | — |
 | [`AbstractIceForcing`](@ref) | `Model(grid; forcing)` | `PrescribedIceForcing(-25)` |
-| [`AbstractGroundingLineBC`](@ref), [`AbstractLandBC`](@ref) | `BoundaryConditions(; grounding_line, land)` | `PartialSlipGL(1.0)`, `PartialSlipLand(1.0)` |
+| [`AbstractSlipAtGL`](@ref), [`AbstractSlipAtLand`](@ref) | `BoundaryConditions(; grounding_line, land)` | `PartialSlipAtGL(1.0)`, `PartialSlipAtLand(1.0)` |
 | [`AbstractWallAdvection`](@ref) | `BoundaryConditions(; wall_advection)` | `NoWallAdvection()` |
-| [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `ZeroGradientInflow()` |
-| [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `FullDepthGradient()` |
+| [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `ZeroGradientOpenOceanBC()` |
+| [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `FullDepthFrontPressure()` |
 | [`AbstractGapsBC`](@ref) | `BoundaryConditions(; gaps)` | `SinkGapsBC()` |
 
 Each default is the choice a plain run makes. The [LADDIE versions](../versions.md) page

@@ -5,7 +5,7 @@
 """
 Abstract supertype for the open-ocean boundary condition at the ice front.  Pass a
 concrete instance as `BoundaryConditions(; open_ocean = ...)`:
-[`ZeroGradientInflow`](@ref) (the default), [`NoInflow`](@ref) or [`OutflowOnly`](@ref).
+[`ZeroGradientOpenOceanBC`](@ref) (the default), [`NoInflowOpenOceanBC`](@ref) or [`OutflowOnlyOpenOceanBC`](@ref).
 """
 abstract type AbstractOpenOceanBC end
 
@@ -15,9 +15,9 @@ $(TYPEDEF)
 Open-boundary condition at the ice front: zero-gradient extrapolation of all
 fields, with inflow from the ambient ocean permitted.
 
-Select via `BoundaryConditions(; open_ocean = ZeroGradientInflow())` (the default).
+Select via `BoundaryConditions(; open_ocean = ZeroGradientOpenOceanBC())` (the default).
 """
-struct ZeroGradientInflow <: AbstractOpenOceanBC end
+struct ZeroGradientOpenOceanBC <: AbstractOpenOceanBC end
 
 """
 $(TYPEDEF)
@@ -25,13 +25,13 @@ $(TYPEDEF)
 Open-boundary condition at the ice front: no inflow of layer properties.  Where
 the flow enters the domain through an ice-front face, the thickness and tracer
 fluxes carry the (zero) value stored in the open-ocean cell instead of the
-zero-gradient extrapolation of [`ZeroGradientInflow`](@ref), so no volume, heat or
+zero-gradient extrapolation of [`ZeroGradientOpenOceanBC`](@ref), so no volume, heat or
 salt is advected in.  The velocities themselves are not clipped, and momentum
 advection is unaffected.
 
-Select via `BoundaryConditions(; open_ocean = NoInflow())`.
+Select via `BoundaryConditions(; open_ocean = NoInflowOpenOceanBC())`.
 """
-struct NoInflow <: AbstractOpenOceanBC end
+struct NoInflowOpenOceanBC <: AbstractOpenOceanBC end
 
 """
 $(TYPEDEF)
@@ -42,8 +42,8 @@ face-normal velocity at every ice-front face is clipped to point out of the cavi
 (`max(u_n, 0)` along the outward normal, `clip_front_inflow!`), so an inflow
 face acts as a wall that exerts no stress on the normal flow.
 
-Under [`ZeroGradientInflow`](@ref) an inflow face recirculates the front cell's own
-water, which thickens and cools the front row; under [`NoInflow`](@ref) the inward
+Under [`ZeroGradientOpenOceanBC`](@ref) an inflow face recirculates the front cell's own
+water, which thickens and cools the front row; under [`NoInflowOpenOceanBC`](@ref) the inward
 velocity is kept but carries nothing, so the front row thins.  Here the meltwater
 layer is fed only by entrainment and melt, never by water crossing the front.
 Ambient water that really enters a cavity does so below the plume.
@@ -52,7 +52,7 @@ The clip acts on the new level only.  The filtered present level, which advects
 the thickness and tracers, relaxes to outward-only within a few steps (an inward
 start, e.g. a restart from another condition, fades through the Robert–Asselin
 filter); during that transient the fluxes carry nothing in, as under
-[`NoInflow`](@ref).
+[`NoInflowOpenOceanBC`](@ref).
 
 The clip is the τ → 0 limit of a relaxation of the inward normal velocity.  It is
 an instantaneous adjustment rather than a relaxation because the sinks of
@@ -62,17 +62,17 @@ to act as a valve would be unstable.
 Gap edges under [`SinkGapsBC`](@ref) are one-sided faces too, so the valve acts
 there as well.  With [`SmoothKinks`](@ref) the clip is smooth (`:u` width).
 
-Select via `BoundaryConditions(; open_ocean = OutflowOnly())`.
+Select via `BoundaryConditions(; open_ocean = OutflowOnlyOpenOceanBC())`.
 """
-struct OutflowOnly <: AbstractOpenOceanBC end
+struct OutflowOnlyOpenOceanBC <: AbstractOpenOceanBC end
 
-_inflow_weight(::ZeroGradientInflow, FT) = one(FT)
-_inflow_weight(::NoInflow, FT) = zero(FT)
-# As NoInflow: covers the inward present velocities the valve has not yet cleared
+_inflow_weight(::ZeroGradientOpenOceanBC, FT) = one(FT)
+_inflow_weight(::NoInflowOpenOceanBC, FT) = zero(FT)
+# As NoInflowOpenOceanBC: covers the inward present velocities the valve has not yet cleared
 # (an inward start fading through the Robert–Asselin filter).
-_inflow_weight(::OutflowOnly, FT) = _inflow_weight(NoInflow(), FT)
+_inflow_weight(::OutflowOnlyOpenOceanBC, FT) = _inflow_weight(NoInflowOpenOceanBC(), FT)
 
-# The ice-front valve of OutflowOnly on a new face velocity `u`: `n` is the outward
+# The ice-front valve of OutflowOnlyOpenOceanBC on a new face velocity `u`: `n` is the outward
 # normal of a one-sided face (+1 when the ocean is on the + side, −1 when on the −
 # side) and 0 at every other face, which is left untouched.
 @inline _outward_only(kinks, u, n, ε) = ifelse(iszero(n), u, n * _smax0(kinks, n * u, ε))
@@ -93,13 +93,13 @@ end
 $(TYPEDSIGNATURES)
 
 Clip the new face-normal velocity at every ice-front face to point out of the cavity
-(`u_n ← max(u_n, 0)` along the outward normal), for [`OutflowOnly`](@ref); the other
+(`u_n ← max(u_n, 0)` along the outward normal), for [`OutflowOnlyOpenOceanBC`](@ref); the other
 open-ocean conditions leave the velocities untouched.  Runs after both momentum
 steps and before the speed cap of `clamp_velocities!`, which scales by a
 positive factor and so keeps the outward sign.
 """
 clip_front_inflow!(m, ::AbstractOpenOceanBC) = nothing
-function clip_front_inflow!(m, ::OutflowOnly)
+function clip_front_inflow!(m, ::OutflowOnlyOpenOceanBC)
     launch_interior!(_front_valve_kernel!, m.U.future, m.V.future, m.umask, m.vmask, m.tmask, m.params.kinks)
     return
 end
@@ -112,9 +112,9 @@ end
 Abstract supertype for the treatment of the layer-thickness- and density-gradient
 parts of the pressure-gradient force at one-sided faces — the ice front, and the
 edges of a gap demoted to ocean by [`SinkGapsBC`](@ref).  Pass a concrete instance
-as `Params(; front_pressure = ...)`: [`FullDepthGradient`](@ref) (LADDIE v1
-v1.x, the default), [`TruncatedDepthGradient`](@ref) (LADDIE v2) or
-[`ZeroGradientFront`](@ref) (the zero-lateral-gradient condition stated by
+as `Params(; front_pressure = ...)`: [`FullDepthFrontPressure`](@ref) (LADDIE v1
+v1.x, the default), [`TruncatedDepthFrontPressure`](@ref) (LADDIE v2) or
+[`ZeroGradientFrontPressure`](@ref) (the zero-lateral-gradient condition stated by
 [Lambert et al. 2026](@cite lambert_one-layer_2026)).
 
 The grounding line is unaffected either way — no momentum equation is solved there.
@@ -134,11 +134,11 @@ This is what LADDIE v1 does (`integrate.py`, `-g·ip_t(Ddrho)·(Dxm1 -
 D)/dx` with `Dxm1 = roll(D*tmask)`), so it is **the default** and the setting
 under which Laddie.jl reproduces the LADDIE v1 code.
 
-Select via `Params(; front_pressure = FullDepthGradient())` (the default).
+Select via `Params(; front_pressure = FullDepthFrontPressure())` (the default).
 
-See also [`TruncatedDepthGradient`](@ref).
+See also [`TruncatedDepthFrontPressure`](@ref).
 """
-struct FullDepthGradient <: AbstractFrontPressure end
+struct FullDepthFrontPressure <: AbstractFrontPressure end
 
 """
 $(TYPEDEF)
@@ -151,17 +151,17 @@ parts there.
 This is what the LADDIE v2 does at calving-front faces
 (`laddie_velocity.f90:118-126`, `IF (mask_cf_b .OR. mask_gl_b) ... assume
 dH/dx = 0`). It avoids treating a masked neighbour's stored `H = 0` as a real
-thickness: under [`FullDepthGradient`](@ref) that term is roughly 150× larger
+thickness: under [`FullDepthFrontPressure`](@ref) that term is roughly 150× larger
 at the ice front than in the interior on a warm ISOMIP+ run.
 
 Neither choice affects the grounding line, where the velocity masks are zero
 and no momentum equation is solved at all.
 
-Select via `Params(; front_pressure = TruncatedDepthGradient())`.
+Select via `Params(; front_pressure = TruncatedDepthFrontPressure())`.
 
-See also [`ZeroGradientFront`](@ref), which drops the density-gradient part as well.
+See also [`ZeroGradientFrontPressure`](@ref), which drops the density-gradient part as well.
 """
-struct TruncatedDepthGradient <: AbstractFrontPressure end
+struct TruncatedDepthFrontPressure <: AbstractFrontPressure end
 
 """
 $(TYPEDEF)
@@ -171,7 +171,7 @@ pressure-gradient force at one-sided faces — the ice front, and the edges of a
 demoted to ocean by [`SinkGapsBC`](@ref) — keeping only the ice-base-slope part
 there.
 
-Under [`TruncatedDepthGradient`](@ref) the density-gradient term is still
+Under [`TruncatedDepthFrontPressure`](@ref) the density-gradient term is still
 evaluated as `(δρ_neighbour - δρ)/Δ`, with the neighbour's stored `δρ`, which
 masking pins to `0`: a one-sided gradient, as if the layer were neutrally buoyant
 across one grid cell. This option makes the momentum equation consistent with the
@@ -180,9 +180,9 @@ lateral gradients are applied to all main variables (H, U, V, T, and S)" at the
 calving front. The v2 code comments the same intent (`laddie_velocity.f90:119`,
 "Assume dH/dx and ddrho/dx = 0") but keeps the `ddrho_amb_dx_b` term in its code.
 
-Select via `Params(; front_pressure = ZeroGradientFront())`.
+Select via `Params(; front_pressure = ZeroGradientFrontPressure())`.
 """
-struct ZeroGradientFront <: AbstractFrontPressure end
+struct ZeroGradientFrontPressure <: AbstractFrontPressure end
 
 # Weights `w` in the per-face gate `1 + w*(tmask_stag - 2)`, which is 1 on a
 # fully-interior face (tmask_stag == 2) either way, and at a one-sided face
@@ -190,8 +190,8 @@ struct ZeroGradientFront <: AbstractFrontPressure end
 # w = 0 multiplies the term by exactly 1.0, so the default is bit-identical to
 # LADDIE v1.  `_front_pgf_weight` gates the thickness-gradient term,
 # `_front_drho_weight` the density-gradient term.
-_front_pgf_weight(::FullDepthGradient, x) = zero(x)
-_front_pgf_weight(::TruncatedDepthGradient, x) = one(x)
-_front_pgf_weight(::ZeroGradientFront, x) = one(x)
+_front_pgf_weight(::FullDepthFrontPressure, x) = zero(x)
+_front_pgf_weight(::TruncatedDepthFrontPressure, x) = one(x)
+_front_pgf_weight(::ZeroGradientFrontPressure, x) = one(x)
 _front_drho_weight(::AbstractFrontPressure, x) = zero(x)
-_front_drho_weight(::ZeroGradientFront, x) = one(x)
+_front_drho_weight(::ZeroGradientFrontPressure, x) = one(x)

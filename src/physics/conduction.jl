@@ -10,12 +10,12 @@ with `q_cond` (per unit mass of water, like the other terms) the conduction
 into the ice, negative for a surface colder than the base.  Pass a concrete instance
 as `Params(; ice_conduction = ...)`:
 
- - [`MeltOnlyConduction`](@ref) (the default)
- - [`HollandJenkinsConduction`](@ref), the parameterisation of LADDIE v1 and v2
- - [`NoConduction`](@ref)
- - [`LinearProfileConduction`](@ref)
+ - [`MeltOnlyIceConduction`](@ref) (the default)
+ - [`HollandJenkinsIceConduction`](@ref), the parameterisation of LADDIE v1 and v2
+ - [`NoIceConduction`](@ref)
+ - [`LinearProfileIceConduction`](@ref)
 
-`NoConduction` and `LinearProfileConduction` are experimental and warn when constructed.  The ice
+`NoIceConduction` and `LinearProfileIceConduction` are experimental and warn when constructed.  The ice
 temperature ``T_i`` they use is the `T_ice_farfield` of the ice forcing
 ([`PrescribedIceForcing`](@ref)), which plays the role of the ice surface
 temperature ``T_s`` of the paper.
@@ -23,7 +23,7 @@ temperature ``T_s`` of the paper.
 abstract type AbstractIceConduction end
 
 _warn_experimental_conduction(name) =
-    _warn_experimental(name, "ice-conduction parameterisation", "MeltOnlyConduction()")
+    _warn_experimental(name, "ice-conduction parameterisation", "MeltOnlyIceConduction()")
 
 """
 $(TYPEDEF)
@@ -34,14 +34,14 @@ becomes `L_eff = L − c_i (T_i − T_b)`.  Applied for melting and refreezing
 alike.  The behaviour of LADDIE v1 and v2.
 
 It is Eq. (2C) of [Wiskandt & Jourdain (2025)](@cite wiskandt_brief_2025) without the cut-off at `ṁ = 0`, see
-[`MeltOnlyConduction`](@ref).
+[`MeltOnlyIceConduction`](@ref).
 """
-struct HollandJenkinsConduction <: AbstractIceConduction end
+struct HollandJenkinsIceConduction <: AbstractIceConduction end
 
 """
 $(TYPEDEF)
 
-The parameterisation of [`HollandJenkinsConduction`](@ref), but with no conduction into the ice
+The parameterisation of [`HollandJenkinsIceConduction`](@ref), but with no conduction into the ice
 where the layer is not melting it: `q_cond = ṁ c_i (T_b − T_i)` for
 `ṁ > 0`, zero otherwise ([Wiskandt & Jourdain 2025](@cite wiskandt_brief_2025), Eq. 2C with
 `max(ṁ, 0)`).  Their argument is that a refreezing ice base carries marine
@@ -51,9 +51,9 @@ The switch is the sign of the thermal forcing ``T - T_f(S, z_b)``, which has the
 of `ṁ` and needs no iteration of the melt equations.  Where it is not positive,
 the latent heat is the plain ``L``.
 
-Select via `Params(; ice_conduction = MeltOnlyConduction())` (the default).
+Select via `Params(; ice_conduction = MeltOnlyIceConduction())` (the default).
 """
-struct MeltOnlyConduction <: AbstractIceConduction end
+struct MeltOnlyIceConduction <: AbstractIceConduction end
 
 """
 $(TYPEDEF)
@@ -62,13 +62,13 @@ No conduction into the ice, `q_cond = 0` ([Wiskandt & Jourdain 2025](@cite wiska
 so `L_eff = L` and `T_ice_farfield` has no effect.  It is a good approximation only
 for a base of marine ice at the freezing point.  Overestimates the melt by
 ``c_i (T_s - T_f)/L``, about 11 % for ``T_s = -20`` °C, compared with
-[`MeltOnlyConduction`](@ref).
+[`MeltOnlyIceConduction`](@ref).
 
-Select via `Params(; ice_conduction = NoConduction())`; warns when constructed.
+Select via `Params(; ice_conduction = NoIceConduction())`; warns when constructed.
 """
-struct NoConduction <: AbstractIceConduction
-    function NoConduction()
-        _warn_experimental_conduction("NoConduction")
+struct NoIceConduction <: AbstractIceConduction
+    function NoIceConduction()
+        _warn_experimental_conduction("NoIceConduction")
         return new()
     end
 end
@@ -91,35 +91,35 @@ equilibrium, `H_i = −z_b ρ₀/ρ_ice` with `Params.rho0_seawater` and
 state between base and surface takes of order `(H_i/2)²/κ_i` (about 1000 years for
 400 m), which only the large, slow ice shelves reach.
 
-Select via `Params(; ice_conduction = LinearProfileConduction())`; warns when constructed.
+Select via `Params(; ice_conduction = LinearProfileIceConduction())`; warns when constructed.
 
 # Fields
 $(TYPEDFIELDS)
 """
-@kwdef struct LinearProfileConduction{FT} <: AbstractIceConduction
+@kwdef struct LinearProfileIceConduction{FT} <: AbstractIceConduction
     "thermal conductivity of ice `k_i = ρ_i c_i κ_i` (W m⁻¹ K⁻¹, default `2.1`; Jenkins et al. 2010)"
     conductivity::FT = 2.1
-    function LinearProfileConduction{FT}(conductivity) where {FT}
-        _warn_experimental_conduction("LinearProfileConduction")
+    function LinearProfileIceConduction{FT}(conductivity) where {FT}
+        _warn_experimental_conduction("LinearProfileIceConduction")
         return new{FT}(conductivity)
     end
 end
 
-LinearProfileConduction(conductivity::FT) where {FT} = LinearProfileConduction{FT}(conductivity)
+LinearProfileIceConduction(conductivity::FT) where {FT} = LinearProfileIceConduction{FT}(conductivity)
 
 # What the melt kernels need of a parameterisation, as three scalars so that no object has to
 # cross into a kernel: the factors on `c_i` where the thermal forcing T − T_f is
 # positive (melting) and where it is not, and the conductivity of the fixed flux.
-_conduction_coefficients(::HollandJenkinsConduction, FT) = (one(FT), one(FT), zero(FT))
-_conduction_coefficients(::MeltOnlyConduction, FT) = (one(FT), zero(FT), zero(FT))
-_conduction_coefficients(::NoConduction, FT) = (zero(FT), zero(FT), zero(FT))
-_conduction_coefficients(c::LinearProfileConduction, FT) = (zero(FT), zero(FT), c.conductivity)
+_conduction_coefficients(::HollandJenkinsIceConduction, FT) = (one(FT), one(FT), zero(FT))
+_conduction_coefficients(::MeltOnlyIceConduction, FT) = (one(FT), zero(FT), zero(FT))
+_conduction_coefficients(::NoIceConduction, FT) = (zero(FT), zero(FT), zero(FT))
+_conduction_coefficients(c::LinearProfileIceConduction, FT) = (zero(FT), zero(FT), c.conductivity)
 
-Base.show(io::IO, ::HollandJenkinsConduction) = print(io, "HollandJenkinsConduction()")
-Base.show(io::IO, ::MeltOnlyConduction) = print(io, "MeltOnlyConduction()")
-Base.show(io::IO, ::NoConduction) = print(io, "NoConduction()")
-Base.show(io::IO, c::LinearProfileConduction) =
-    print(io, "LinearProfileConduction(conductivity = $(c.conductivity) W/m/K)")
+Base.show(io::IO, ::HollandJenkinsIceConduction) = print(io, "HollandJenkinsIceConduction()")
+Base.show(io::IO, ::MeltOnlyIceConduction) = print(io, "MeltOnlyIceConduction()")
+Base.show(io::IO, ::NoIceConduction) = print(io, "NoIceConduction()")
+Base.show(io::IO, c::LinearProfileIceConduction) =
+    print(io, "LinearProfileIceConduction(conductivity = $(c.conductivity) W/m/K)")
 
 # ============================================================================
 # Conduction at one cell, for the melt kernels

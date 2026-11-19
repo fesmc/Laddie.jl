@@ -2,19 +2,19 @@
 
 @testset "Wall slip: factors, v2 default, free slip is stress-free" begin
     # NEMO convention: ghost (1 − s)·u, 0 = free slip, 1 = LADDIE v2, 2 = no slip.
-    @test Laddie._gl_slip(FreeSlipGL(), FT) === zero(FT)
-    @test Laddie._gl_slip(NoSlipGL(), FT) === FT(2)
-    @test Laddie._gl_slip(PartialSlipGL(0.7), FT) === FT(0.7)
-    @test Laddie._land_slip(FreeSlipLand(), FT) === zero(FT)
-    @test Laddie._land_slip(NoSlipLand(), FT) === FT(2)
-    @test Laddie._land_slip(PartialSlipLand(1), FT) === FT(1)
-    @test PartialSlipGL(1).factor isa AbstractFloat
-    @test_throws ArgumentError PartialSlipGL(2.5)
-    @test_throws ArgumentError PartialSlipLand(-0.1)
+    @test Laddie._gl_slip(FreeSlipAtGL(), FT) === zero(FT)
+    @test Laddie._gl_slip(NoSlipAtGL(), FT) === FT(2)
+    @test Laddie._gl_slip(PartialSlipAtGL(0.7), FT) === FT(0.7)
+    @test Laddie._land_slip(FreeSlipAtLand(), FT) === zero(FT)
+    @test Laddie._land_slip(NoSlipAtLand(), FT) === FT(2)
+    @test Laddie._land_slip(PartialSlipAtLand(1), FT) === FT(1)
+    @test PartialSlipAtGL(1).factor isa AbstractFloat
+    @test_throws ArgumentError PartialSlipAtGL(2.5)
+    @test_throws ArgumentError PartialSlipAtLand(-0.1)
     @test !hasfield(Params, :slip)                 # no global factor any more
 
     b = BoundaryConditions()
-    @test b.grounding_line == PartialSlipGL(1.0) && b.land == PartialSlipLand(1.0)
+    @test b.grounding_line == PartialSlipAtGL(1.0) && b.land == PartialSlipAtLand(1.0)
     @test b.wall_advection isa NoWallAdvection
 
     run1(boundary) = (s = build_isomip(CPU(); FT, nx = 20, ny = 10,
@@ -22,11 +22,11 @@
                       run!(s; days = 1.0, verbose = false); s.model)
     bc(gl, ln) = BoundaryConditions(; grounding_line = gl, land = ln)
     m_def  = run1(BoundaryConditions())
-    m_ns   = run1(bc(NoSlipGL(), NoSlipLand()))
-    m_free = run1(bc(FreeSlipGL(), FreeSlipLand()))
-    m_p0   = run1(bc(PartialSlipGL(0.0), PartialSlipLand(0.0)))
-    m_p2   = run1(bc(PartialSlipGL(2.0), PartialSlipLand(2.0)))
-    m_p1   = run1(bc(PartialSlipGL(1.0), PartialSlipLand(1.0)))
+    m_ns   = run1(bc(NoSlipAtGL(), NoSlipAtLand()))
+    m_free = run1(bc(FreeSlipAtGL(), FreeSlipAtLand()))
+    m_p0   = run1(bc(PartialSlipAtGL(0.0), PartialSlipAtLand(0.0)))
+    m_p2   = run1(bc(PartialSlipAtGL(2.0), PartialSlipAtLand(2.0)))
+    m_p1   = run1(bc(PartialSlipAtGL(1.0), PartialSlipAtLand(1.0)))
 
     # The default and the named conditions are exactly their partial-slip factors.
     @test m_p1.U.present == m_def.U.present && m_p1.melt == m_def.melt
@@ -54,8 +54,8 @@
     # grounding_line and land are independent switches: engaging one alone must
     # not reproduce engaging the other, and engaging both must differ from
     # either alone (no accidental aliasing between gl?? and lnd??).
-    m_gl = run1(bc(NoSlipGL(), FreeSlipLand()))
-    m_ln = run1(bc(FreeSlipGL(), NoSlipLand()))
+    m_gl = run1(bc(NoSlipAtGL(), FreeSlipAtLand()))
+    m_ln = run1(bc(FreeSlipAtGL(), NoSlipAtLand()))
     @test m_gl.V.present != m_ln.V.present
     @test m_gl.V.present != m_ns.V.present && m_ln.V.present != m_ns.V.present
     @test m_gl.V.present != m_free.V.present && m_ln.V.present != m_free.V.present
@@ -77,9 +77,9 @@ end
             sel = wall .& um .& circshift(um, (-1, 0)) .& circshift(um, (1, 0))
             copy(Laddie.laplace_U(m))[sel]
         end
-        l0 = lap(FreeSlipGL(), FreeSlipLand())
-        l1 = lap(PartialSlipGL(1.0), PartialSlipLand(1.0))
-        l2 = lap(NoSlipGL(), NoSlipLand())
+        l0 = lap(FreeSlipAtGL(), FreeSlipAtLand())
+        l1 = lap(PartialSlipAtGL(1.0), PartialSlipAtLand(1.0))
+        l2 = lap(NoSlipAtGL(), NoSlipAtLand())
         @test !isempty(l0) && all(l1 .< 0)
         @test all(abs.(l0) .<= 10eps(FT) .* abs.(l1))
         if lv isa PrescribedLateralViscosity     # linear in s
@@ -94,7 +94,7 @@ end
     # The momentum kernels compose the two wall conditions additively,
     # slip_gl*gl?? + slip_land*lnd??.  A face whose stencil touches BOTH
     # grounded ice and exposed rock would therefore collect both factors and
-    # land at slip 4 instead of 2 under NoSlipGL + NoSlipLand.  Grid must hand
+    # land at slip 4 instead of 2 under NoSlipAtGL + NoSlipAtLand.  Grid must hand
     # such faces to the grounding line alone.
     mk = zeros(Int, 12, 22)
     mk[1, :] .= 1;  mk[end, :] .= 1
@@ -261,7 +261,7 @@ end
     # -- Bucket 4: convection must never reset a gap cell ------------------
     # A gap samples ambient at the sea surface (z_draft = 0), which is the
     # coldest, freshest water in the column, so `drho < 0` there is close to
-    # unconditional.  Ungated, ResetToAmbient would overwrite the T/S anomaly
+    # unconditional.  Ungated, ResetToAmbientConvection would overwrite the T/S anomaly
     # the layer carries across the gap every single step, rebuilding the very
     # sink ConnectedGapsBC exists to remove.
     # Cool every active cell to drive the whole domain convectively unstable.
@@ -274,7 +274,7 @@ end
         return m, copy(m.model.T.present), copy(m.model.S.present)
     end
 
-    m_rst, T0, S0 = destabilize(ResetToAmbient(FT(0.005)))
+    m_rst, T0, S0 = destabilize(ResetToAmbientConvection(FT(0.005)))
     Laddie.update_convection!(m_rst.model)
     @test m_rst.model.T.present[gap_ix] == T0[gap_ix]      # gaps keep their heat ...
     @test m_rst.model.S.present[gap_ix] == S0[gap_ix]
@@ -282,17 +282,17 @@ end
     @test all(m_rst.model.T.present[shelf] .!= T0[shelf])  # ice-covered cells do reset
     @test all(m_rst.model.convection[shelf] .== 1)
 
-    # RelaxToAmbient is the same sink applied gradually, so conv2 is gated too.
-    m_rlx, _, _ = destabilize(RelaxToAmbient(FT(10000.0)))
+    # RelaxToAmbientConvection is the same sink applied gradually, so conv2 is gated too.
+    m_rlx, _, _ = destabilize(RelaxToAmbientConvection(FT(10000.0)))
     Laddie.update_convection!(m_rlx.model)
     Laddie.precompute_integration_terms!(m_rlx.model, m_rlx.clock.dt)
     @test all(m_rlx.model.conv2[gap_ix] .== 0)
     @test all(m_rlx.model.conv2[shelf] .> 0)
 
-    # ClampDensity is deliberately *not* gated: the buoyancy floor is the one
+    # ClampDensityConvection is deliberately *not* gated: the buoyancy floor is the one
     # convection treatment LADDIE v2 also has, and it applies over its whole
     # active domain, gaps included.
-    m_cld, _, _ = destabilize(ClampDensity(FT(0.005)))
+    m_cld, _, _ = destabilize(ClampDensityConvection(FT(0.005)))
     Laddie.update_convection!(m_cld.model)
     @test all(m_cld.model.drho[gap_ix] .≈ FT(0.005) / m_cld.model.rho0_seawater)
 
@@ -300,8 +300,8 @@ end
     # run — ungated the reset would keep firing there — yet the layer still
     # arrives warmer than the surface ambient it is crossing.
     m_cv = build(gappy_mask(), ConnectedGapsBC();
-                 params = Params(; FT, convection_scheme = ResetToAmbient(FT(0.005))))
-    @test getfield(m_cv.model, :params).convection_scheme isa ResetToAmbient
+                 params = Params(; FT, convection_scheme = ResetToAmbientConvection(FT(0.005))))
+    @test getfield(m_cv.model, :params).convection_scheme isa ResetToAmbientConvection
     run!(m_cv; days = 1.0, verbose = false)
     @test any(m_cv.model.drho[gap_ix] .< FT(0.005) / m_cv.model.rho0_seawater)
     @test all(m_cv.model.convection[gap_ix] .== 0)
@@ -497,14 +497,14 @@ end
     end
 end
 
-@testset "Front pressure: FullDepthGradient is default/v1, TruncatedDepthGradient drops the term" begin
+@testset "Front pressure: FullDepthFrontPressure is default/v1, TruncatedDepthFrontPressure drops the term" begin
     # The depth-gradient part of the PGF at a one-sided face (ice front, or a
     # SinkGapsBC gap-sink edge) differs between references: Python LADDIE v1.x
     # keeps the one-sided difference toward a masked-to-zero neighbour, LADDIE
     # v2 drops the term (mask_cf_b truncation).  See f90-diffs.md §4.
-    p_full = Params(; FT, front_pressure = FullDepthGradient())
-    p_trunc = Params(; FT, front_pressure = TruncatedDepthGradient())
-    @test Params(; FT).front_pressure isa FullDepthGradient   # v1 is the default
+    p_full = Params(; FT, front_pressure = FullDepthFrontPressure())
+    p_trunc = Params(; FT, front_pressure = TruncatedDepthFrontPressure())
+    @test Params(; FT).front_pressure isa FullDepthFrontPressure   # v1 is the default
 
     m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
     run!(m; days = 0.5, verbose = false)
@@ -562,10 +562,10 @@ end
     @test all(isfinite, m_gap.model.melt) && all(isfinite, m_full2.model.melt)
 end
 
-@testset "Front pressure: ZeroGradientFront also drops the density-gradient term" begin
-    # TruncatedDepthGradient keeps the density-gradient part of the PGF at a
+@testset "Front pressure: ZeroGradientFrontPressure also drops the density-gradient term" begin
+    # TruncatedDepthFrontPressure keeps the density-gradient part of the PGF at a
     # one-sided face, a difference toward the masked-to-zero δρ of the ocean
-    # cell.  ZeroGradientFront drops it too, so that no lateral gradient acts
+    # cell.  ZeroGradientFrontPressure drops it too, so that no lateral gradient acts
     # across the ice front (Lambert et al. 2026), and leaves the interior alone.
     # The ISOMIP channel has no one-sided face with a live velocity point, so
     # use the hand-made domain of the testset above: an ice front in y and a
@@ -583,8 +583,8 @@ end
     grid = Grid(mk, z_draft, FT(2000.0), FT(2000.0); domain_cropping = NoDomainCropping())
     run(front_pressure) = (m = Simulation(Model(grid; forcing, params = Params(; FT, front_pressure)));
                            run!(m; days = 0.5, verbose = false); m.model)
-    m_t = run(TruncatedDepthGradient())
-    m_z = run(ZeroGradientFront())
+    m_t = run(TruncatedDepthFrontPressure())
+    m_z = run(ZeroGradientFrontPressure())
     g = getfield(m_z, :geometry)
     ip, jp = Laddie.ip_count(g.tmask), Laddie.jp_count(g.tmask)
     front_u = (ip .== 1) .& (g.umask .== 1)
@@ -592,7 +592,7 @@ end
     @test count(front_u) > 0 && count(front_v) > 0   # the assertions below have teeth
 
     # Under the truncation the density term is live at one-sided faces; under
-    # ZeroGradientFront both front terms vanish there.
+    # ZeroGradientFrontPressure both front terms vanish there.
     @test any(!iszero, u_pressure_density(m_t)[front_u])
     @test any(!iszero, v_pressure_density(m_t)[front_v])
     @test all(iszero, u_pressure_density(m_z)[front_u])
@@ -609,11 +609,11 @@ end
     @test all(isfinite, m_z.melt)
 end
 
-@testset "Open ocean: OutflowOnly lets the layer leave through the front, never enter" begin
+@testset "Open ocean: OutflowOnlyOpenOceanBC lets the layer leave through the front, never enter" begin
     # The hand-made domain of the front-pressure testsets: an ice front in y and a
     # SinkGapsBC gap, whose edges are one-sided faces in both directions.  Under the
     # default the layer flows in through some of them (recirculating its own water);
-    # OutflowOnly clips every one-sided face velocity to point out of the cavity.
+    # OutflowOnlyOpenOceanBC clips every one-sided face velocity to point out of the cavity.
     mk = zeros(Int, 12, 22)
     mk[1, :] .= 1;  mk[end, :] .= 1
     mk[:, 1] .= 1;  mk[:, end] .= 1
@@ -652,12 +652,12 @@ end
         return m.model
     end
     # The default keeps flowing in.
-    @test any(<(0), outward(inflow_start(ZeroGradientInflow()), :future))
-    # OutflowOnly clips the newest level on every front face, with exact and with
+    @test any(<(0), outward(inflow_start(ZeroGradientOpenOceanBC()), :future))
+    # OutflowOnlyOpenOceanBC clips the newest level on every front face, with exact and with
     # smooth kinks (the smooth max is ≥ 0 too).  The filtered `present` still holds
     # a fading share of the imposed inflow: the Robert–Asselin filter mixes in `past`.
     for kinks in (ExactKinks(), SmoothKinks())
-        m_o = inflow_start(OutflowOnly(); kinks)
+        m_o = inflow_start(OutflowOnlyOpenOceanBC(); kinks)
         @test all(>=(0), outward(m_o, :future))
         @test all(isfinite, m_o.H.future) && all(isfinite, m_o.U.future) && all(isfinite, m_o.V.future)
     end
@@ -665,15 +665,15 @@ end
     # Started from rest, every level stays outward (the filter mixes nonnegative
     # values), outflow still happens, and the state differs from both other options.
     run(open_ocean) = (m = sim(open_ocean); run!(m; days = 0.5, verbose = false); m.model)
-    m_o = run(OutflowOnly())
+    m_o = run(OutflowOnlyOpenOceanBC())
     for level in (:past, :present, :future)
         @test all(>=(0), outward(m_o, level))
     end
     @test any(>(0), outward(m_o, :present))
     @test all(isfinite, m_o.melt) && all(isfinite, m_o.H.present)
-    @test m_o.H.present != run(ZeroGradientInflow()).H.present
-    @test m_o.H.present != run(NoInflow()).H.present
-    @test sprint(show, BoundaryConditions(; open_ocean = OutflowOnly())) |> contains("OutflowOnly")
+    @test m_o.H.present != run(ZeroGradientOpenOceanBC()).H.present
+    @test m_o.H.present != run(NoInflowOpenOceanBC()).H.present
+    @test sprint(show, BoundaryConditions(; open_ocean = OutflowOnlyOpenOceanBC())) |> contains("OutflowOnlyOpenOceanBC")
 end
 
 @testset "Wall advection: none (v2), slip-scaled, v1" begin
@@ -684,9 +684,9 @@ end
     mk(wa, gl, ln) = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
         boundary = BoundaryConditions(;
             grounding_line = gl, land = ln, wall_advection = wa)).model
-    m_ss = mk(SlipScaledWallAdvection(), NoSlipGL(), NoSlipLand())
-    m_v2 = mk(NoWallAdvection(), PartialSlipGL(1.0), PartialSlipLand(1.0))
-    m_v1 = mk(V1WallAdvection(), NoSlipGL(), NoSlipLand())
+    m_ss = mk(SlipScaledWallAdvection(), NoSlipAtGL(), NoSlipAtLand())
+    m_v2 = mk(NoWallAdvection(), PartialSlipAtGL(1.0), PartialSlipAtLand(1.0))
+    m_v1 = mk(V1WallAdvection(), NoSlipAtGL(), NoSlipAtLand())
 
     # The viscosity kernels add s − 1 on top of the stored zero.
     @test Laddie._viscosity_slips(m_ss) === (one(FT), one(FT))

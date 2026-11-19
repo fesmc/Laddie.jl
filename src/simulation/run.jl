@@ -184,7 +184,7 @@ Advance simulation `sim` until the criterion `until` is met.
 
 `until` is an [`AbstractSimulationEnd`](@ref) measured from the clock time at
 which `run!` is called: [`FixedSimulationEnd`](@ref) runs for a fixed duration,
-[`SteadyStateEnd`](@ref) stops early once the mean melt rate is quasi-steady.  It
+[`SteadyStateSimulationEnd`](@ref) stops early once the mean melt rate is quasi-steady.  It
 defaults to `sim.stop`; as a shorthand, `run!(sim; days = 30.0)` is equivalent to
 `run!(sim; until = FixedSimulationEnd(t_end = 30.0))`.
 
@@ -228,7 +228,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     total = _end_seconds(until, _primal(m.seconds_per_day))  # hard time cap (s) for this call
     io_on = sim.output.saveday > 0
     # Predictive adaptive dt: rescue a too-large dt before the first step
-    # (no-op for FixedDt). nt/checkint below then reflect the adjusted dt.
+    # (no-op for FixedTimeStepper). nt/checkint below then reflect the adjusted dt.
     _init_adaptive_dt!(sim, sim.tstep)
     nt = round(Int, total / clock.dt)
     cfl = _cfl_worstcase(sim)
@@ -253,7 +253,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     checkint = _check_interval(sim.tstep, nt, steps_per_day)
     r = RunProgress(0, 0.0, _float64(total), checkint, next_steady, NaN, io_on)
     # Time cap (round-half-up rule: round(total/dt) steps for fixed dt); a
-    # SteadyStateEnd may break out earlier once the mean melt rate is steady.
+    # SteadyStateSimulationEnd may break out earlier once the mean melt rate is steady.
     while r.elapsed + _primal(clock.dt) / 2 < r.total
         # Steps up to the next host event (1 on the KernelAbstractions backends;
         # a compiled batch under Reactant), with the output accumulation.
@@ -275,14 +275,14 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
         if sample || sync
             # Device reductions force a GPU sync, so they run only here: once per
             # simulated day for the steady-state sample, and at the check cadence
-            # (~5 %, or every `ncheck` steps under AdaptiveDt, and at least daily) for the blow-up check,
+            # (~5 %, or every `ncheck` steps under AdaptiveTimeStepper, and at least daily) for the blow-up check,
             # the CFL monitor, the controller and the progress diagnostics.  All of
             # them see the clean stepped state, before any dt re-bootstrap.
             d = _sync_diagnostics(sim.exec, sim)
             sample && _steady_sample!(sim, r, until, d.stats.mean_melt) && break
             if sync
                 _check_blowup(sim, d, r.step, nt)
-                # Adjust dt for the upcoming steps (no-op under FixedDt).
+                # Adjust dt for the upcoming steps (no-op under FixedTimeStepper).
                 _maybe_adapt_dt!(sim, sim.tstep, d.cfl)
                 verbose && (showvals = _progress_values(sim, d))
             end

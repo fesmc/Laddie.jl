@@ -5,28 +5,28 @@
     # functions in equation_terms.jl implement the same governing equations.
     # Reconstruct one leapfrog step from the term functions and require
     # the kernels to reproduce it, for both the scalar-coefficient
-    # (FixedGamTMelting/ResetToAmbient) and matrix-coefficient
-    # (TurbulentGamTMelting/RelaxToAmbient) kernel variants.
+    # (FixedGamTMelting/ResetToAmbientConvection) and matrix-coefficient
+    # (TurbulentGamTMelting/RelaxToAmbientConvection) kernel variants.
     configs = (
         Params(; FT),
         Params(; FT,
                melting = TurbulentGamTMelting(FT(13.8), FT(2432.0), FT(1.95e-6)),
-               convection_scheme = RelaxToAmbient(FT(10000.0)),
+               convection_scheme = RelaxToAmbientConvection(FT(10000.0)),
                entrainment  = HollandEntrainment(FT(0.01775))),
-        Params(; FT, front_pressure = ZeroGradientFront()),
+        Params(; FT, front_pressure = ZeroGradientFrontPressure()),
         Params(; FT, max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0))),
         Params(; FT, frazil_ice = RelaxedFrazilIce(FT(3600.0)),
-               convection_scheme = ClampDensity(FT(0.005))),
+               convection_scheme = ClampDensityConvection(FT(0.005))),
         Params(; FT, tracer_form = FluxTracerForm(),
                max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0))),
         Params(; FT, tracer_form = FluxTracerForm(), frazil_ice = RelaxedFrazilIce(FT(3600.0)),
-               convection_scheme = ClampDensity(FT(0.005))),
+               convection_scheme = ClampDensityConvection(FT(0.005))),
         Params(; FT, momentum_form = FluxMomentumForm(), max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0)),
-               frazil_ice = RelaxedFrazilIce(FT(3600.0)), convection_scheme = ClampDensity(FT(0.005))),
-        Params(; FT, closure_level = PastClosures(),
+               frazil_ice = RelaxedFrazilIce(FT(3600.0)), convection_scheme = ClampDensityConvection(FT(0.005))),
+        Params(; FT, closure_level = PastClosureLevel(),
                melting = TurbulentGamTMelting(FT(13.8), FT(2432.0), FT(1.95e-6)),
                entrainment  = HollandEntrainment(FT(0.01775))),
-        Params(; FT, momentum_form = FluxMomentumForm(), closure_level = PastClosures()),
+        Params(; FT, momentum_form = FluxMomentumForm(), closure_level = PastClosureLevel()),
         Params(; FT, momentum_form = FluxMomentumForm(), momentum_advection = UpstreamMomentumAdvection(),
                max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0))),
     )

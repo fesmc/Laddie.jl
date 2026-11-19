@@ -29,7 +29,7 @@ Convenience constructor for the idealised ISOMIP+ channel geometry
   `debug`) is forwarded to [`Simulation`](@ref).
 
 ```julia
-sim = build_isomip(; isomipcond = :cold, tstep = AdaptiveDt())
+sim = build_isomip(; isomipcond = :cold, tstep = AdaptiveTimeStepper())
 run!(sim; days = 30)
 sim.model.melt
 ```
@@ -141,17 +141,17 @@ _v1_params(; A_h, K_h, H_min, u_tide) = (
     seconds_per_year = 31_536_000.0,
     entrainment = GasparEntrainment(2.5),
     melting = TurbulentGamTMelting(),
-    convection_scheme = ResetToAmbient(0.005),
-    ice_conduction = HollandJenkinsConduction(),
+    convection_scheme = ResetToAmbientConvection(0.005),
+    ice_conduction = HollandJenkinsIceConduction(),
     equation_of_state = LinearEOS(),
     lateral_viscosity = PrescribedLateralViscosity(),
     momentum_advection = CentredMomentumAdvection(),
     tracer_form = AdvectiveTracerForm(),
     coriolis = CoriolisParameter0D(-1.37e-4),
-    ice_slope = CentredGradient(),
+    ice_slope = CentredIceSlope(),
     # Pinned, so that a change of the model-wide default does not move these runs.
     momentum_form = AdvectiveMomentumForm(),
-    closure_level = PresentClosures(),
+    closure_level = PresentClosureLevel(),
     tracer_bounds = TracerBounds(),
 )
 
@@ -159,9 +159,9 @@ _v1_params(; A_h, K_h, H_min, u_tide) = (
 # advection (v1 adds `slip` to a viscous stencil that already holds one unit of wall
 # stress; see `V1WallAdvection`).  Zero-gradient inflow at the ice front (`boundop = 1`).
 _v1_boundary() = BoundaryConditions(;
-    open_ocean = ZeroGradientInflow(),
-    grounding_line = NoSlipGL(),
-    land = NoSlipLand(),
+    open_ocean = ZeroGradientOpenOceanBC(),
+    grounding_line = NoSlipAtGL(),
+    land = NoSlipAtLand(),
     wall_advection = V1WallAdvection(),
 )
 
@@ -300,7 +300,7 @@ stored in `datadir/lambert-2023/data/CrossDots_0.5_tanh_Tdeep0.4_ztcl-500_050.nc
   thermocline at −500 m with scale 250 m, `drho0 = 0.01` (fitted to the file's
   ambient fields to 1e−4 °C); `T_ice_farfield = -25 °C`
 - `dt = 120` s, 50 days, Robert–Asselin `nu = 0.8`
-- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), the v1 ice-slope stencil [`CentredGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), the v1 ice-slope stencil [`CentredIceSlope`](@ref)
 
 `params` defaults to [`ParamsCrossonDotsonv1`](@ref); other keywords go to
 [`Simulation`](@ref) and override `dt`, `nu` and `stop`.
@@ -333,7 +333,7 @@ in `datadir/lambert-2023/data/FRIS_1.0_linear_S134.8_T1-2.3_720.nc`.
   34.5 to 34.8 psu at −2000 m (matches the file's ambient fields to round-off);
   `T_ice_farfield = -25 °C`
 - `dt = 240` s, 720 days, Robert–Asselin `nu = 0.8`
-- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredIceSlope`](@ref)
 
 `params` defaults to [`ParamsFRISv1`](@ref); other keywords go to [`Simulation`](@ref).
 
@@ -368,7 +368,7 @@ stored in `datadir/lambert-2023/data/PIG.nc`.
 - forcing: v1 'tanh' as Crosson–Dotson, but 1.0 °C at depth and the thermocline at
   −450 m; `T_ice_farfield = -25 °C`
 - `dt = 120` s, 30 days, Robert–Asselin `nu = 0.8`
-- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredIceSlope`](@ref)
 
 `params` defaults to [`ParamsPIGv1`](@ref); other keywords go to [`Simulation`](@ref).
 
@@ -423,7 +423,7 @@ the 1 km cells.  [`SimulationASEv1Theoretical`](@ref) is the consistent 1 km run
 - forcing: v1 'tanh', surface freezing point (S0 = 34) to 1.0 °C, thermocline at
   −450 m with scale 100 m, `drho0 = 0.01`; `T_ice_farfield = -25 °C`
 - `dt = 30` s, 20 days, Robert–Asselin `nu = 0.8`
-- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredGradient`](@ref)
+- v1 walls (its `slip = 1`: no slip in the viscosity, [`V1WallAdvection`](@ref)), [`CentredIceSlope`](@ref)
 
 `params` defaults to [`ParamsASEv1`](@ref); other keywords go to [`Simulation`](@ref).
 """
@@ -489,18 +489,18 @@ _v2_params(; C_d_top, melting, C_visc, K_h, H_min, H_init, v_cut, H_max, buoyanc
     seconds_per_year = 31_536_000.0,
     entrainment = GasparEntrainment(2.5),
     melting,
-    convection_scheme = ClampDensity(buoyancy_min),
-    ice_conduction = HollandJenkinsConduction(),
+    convection_scheme = ClampDensityConvection(buoyancy_min),
+    ice_conduction = HollandJenkinsIceConduction(),
     equation_of_state = LinearEOS(),
     max_layer_thickness = AbsoluteMaxLayerThickness(H_max),
     lateral_viscosity = NonlinearLateralViscosity(C_visc),
-    front_pressure = TruncatedDepthGradient(),
+    front_pressure = TruncatedDepthFrontPressure(),
     momentum_advection = UpstreamMomentumAdvection(),
     tracer_form = FluxTracerForm(),
     coriolis = CoriolisParameter0D(-1.37e-4),
     # Pinned, so that a change of the model-wide default does not move these runs.
     momentum_form = AdvectiveMomentumForm(),
-    closure_level = PresentClosures(),
+    closure_level = PresentClosureLevel(),
     tracer_bounds = TracerBounds(),
 )
 
@@ -508,8 +508,8 @@ _v2_params(; C_d_top, melting, C_visc, K_h, H_min, H_init, v_cut, H_max, buoyanc
 # across walls: the defaults, spelled out.
 _v2_boundary(; gaps = SinkGapsBC()) = BoundaryConditions(;
     gaps,
-    grounding_line = PartialSlipGL(1.0),
-    land = PartialSlipLand(1.0),
+    grounding_line = PartialSlipAtGL(1.0),
+    land = PartialSlipAtLand(1.0),
     wall_advection = NoWallAdvection(),
 )
 

@@ -1,25 +1,25 @@
 # Time integration: steppers, run!, CFL, adaptive dt, stopping criteria, the clock.
 
-@testset "Time stepper: FixedDt default/equivalence, AdaptiveDt threading" begin
-    # FixedDt is the default; an explicit FixedDt() must reproduce it
+@testset "Time stepper: FixedTimeStepper default/equivalence, AdaptiveTimeStepper threading" begin
+    # FixedTimeStepper is the default; an explicit FixedTimeStepper() must reproduce it
     # bit-for-bit so the Python verification stays valid for the default.
     m_def = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
-    @test m_def.tstep isa FixedDt
+    @test m_def.tstep isa FixedTimeStepper
     m_fix = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                         tstep = FixedDt())
+                         tstep = FixedTimeStepper())
     run!(m_def; days = 1.0, verbose = false)
     run!(m_fix; days = 1.0, verbose = false)
     @test m_fix.model.H.present == m_def.model.H.present
     @test m_fix.model.melt == m_def.model.melt
 
-    # AdaptiveDt is a Simulation option, not a Params one; its FT tracks the
+    # AdaptiveTimeStepper is a Simulation option, not a Params one; its FT tracks the
     # model's FT (default-constructed at Float64 here, promoted to Float32).
     s = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                     tstep = AdaptiveDt(; cfl_target = 0.4, ncheck = 10))
-    @test s.tstep isa AdaptiveDt{FT}
+                     tstep = AdaptiveTimeStepper(; cfl_target = 0.4, ncheck = 10))
+    @test s.tstep isa AdaptiveTimeStepper{FT}
     @test s.tstep.cfl_target ≈ FT(0.4) && s.tstep.ncheck == 10
     @test build_isomip(CPU(); FT = Float32, nx = 20, ny = 10,
-                       tstep = AdaptiveDt()).tstep isa AdaptiveDt{Float32}
+                       tstep = AdaptiveTimeStepper()).tstep isa AdaptiveTimeStepper{Float32}
     @test !hasfield(Params, :tstep) && !hasfield(Params, :dt0) && !hasfield(Params, :nu)
 
     # Run metadata records the active stepper for both default and adaptive.
@@ -27,13 +27,13 @@
     build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                  output = OutputConfig(; name = "tsfix", resultdir = tmp, saveday = 0.5))
     meta = TOML.parsefile(joinpath(tmp, "tsfix", "run_metadata.toml"))
-    @test meta["simulation"]["time_stepper"]["type"] == "FixedDt"
+    @test meta["simulation"]["time_stepper"]["type"] == "FixedTimeStepper"
 
     build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                 tstep = AdaptiveDt(; cfl_target = 0.4),
+                 tstep = AdaptiveTimeStepper(; cfl_target = 0.4),
                  output = OutputConfig(; name = "tsadp", resultdir = tmp, saveday = 0.5))
     meta2 = TOML.parsefile(joinpath(tmp, "tsadp", "run_metadata.toml"))
-    @test meta2["simulation"]["time_stepper"]["type"] == "AdaptiveDt"
+    @test meta2["simulation"]["time_stepper"]["type"] == "AdaptiveTimeStepper"
     @test meta2["simulation"]["time_stepper"]["cfl_target"] ≈ 0.4
 end
 
@@ -102,11 +102,11 @@ end
     @test cfl(0.5, 0.3, 100.0, 1e-3) isa Float64
 end
 
-@testset "AdaptiveDt controller: bounds, rescue, logging" begin
+@testset "AdaptiveTimeStepper controller: bounds, rescue, logging" begin
     # Predictive, asymmetric controller arithmetic.  Defaults: cfl_target =
     # 0.3, q = 1, max_growth = 1.1, grow_hyst = 0.8, dt ∈ [1, 1000].
     # The hysteresis band is [grow_hyst*target, target] = [0.24, 0.3].
-    ts = AdaptiveDt()
+    ts = AdaptiveTimeStepper()
     @test ts.cfl_target == 0.3
     @test Laddie._controller_dt(ts, 210.0, 1.0;  allow_grow = true)  ≈ 63.0         # above target → shrink to target (q=1)
     @test Laddie._controller_dt(ts, 210.0, 0.45; allow_grow = true)  ≈ 140.0        # above target → shrink
@@ -122,23 +122,23 @@ end
     # than left untouched — but it stays the same order of magnitude, unlike
     # a genuinely too-large dt0.
     msafe = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                         tstep = AdaptiveDt())
+                         tstep = AdaptiveTimeStepper())
     Laddie._init_adaptive_dt!(msafe, msafe.tstep)
     @test msafe.clock.dt <= 210.0
     @test msafe.clock.dt ≈ 210.0 rtol = 0.1
     mbig = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                        dt = 5000.0, tstep = AdaptiveDt())
+                        dt = 5000.0, tstep = AdaptiveTimeStepper())
     Laddie._init_adaptive_dt!(mbig, mbig.tstep)
     @test mbig.clock.dt < 5000.0
 
     # Warm run completes with dt staying in bounds.
     ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      tstep = AdaptiveDt())
+                      tstep = AdaptiveTimeStepper())
     run!(ma; days = 1.0, verbose = false)
     @test all(isfinite, ma.model.H.present) && all(isfinite, ma.model.melt)
     @test 1.0 <= ma.clock.dt <= 1000.0
 
-    # Stability rescue (headline): a dt0 that blows up under FixedDt is made
+    # Stability rescue (headline): a dt0 that blows up under FixedTimeStepper is made
     # to survive by the controller.
     #
     # Blow-up can no longer be detected with `isfinite`: the state clamps in
@@ -158,22 +158,22 @@ end
     catch
         false
     end
-    @test !survives(2.0; dt = 5000.0)                         # FixedDt blows up
-    @test  survives(2.0; dt = 5000.0, tstep = AdaptiveDt())   # AdaptiveDt rescues
+    @test !survives(2.0; dt = 5000.0)                         # FixedTimeStepper blows up
+    @test  survives(2.0; dt = 5000.0, tstep = AdaptiveTimeStepper())   # AdaptiveTimeStepper rescues
 
     # dt changes are logged to log.txt.
     tmp = mktempdir()
     ml = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      tstep = AdaptiveDt(),
+                      tstep = AdaptiveTimeStepper(),
                       output = OutputConfig(; name = "adlog", resultdir = tmp, saveday = 10.0))
     run!(ml; days = 1.0, verbose = false)
     @test occursin(r"dt .* → .* s \(CFL", read(joinpath(tmp, "adlog", "log.txt"), String))
 end
 
-@testset "AdaptiveDt: accuracy, step count, restart round-trip" begin
+@testset "AdaptiveTimeStepper: accuracy, step count, restart round-trip" begin
     # Accuracy: on 1-day warm ISOMIP+ the adaptive solution tracks the
     # fixed-dt one to within a couple of percent (measured ~1.3% mean, ~1.2%
-    # max).  CentredGradient is used here so tolerances reflect the calibrated
+    # max).  CentredIceSlope is used here so tolerances reflect the calibrated
     # dynamics.
     #
     # NOTE: both models must be built the same way.  This comparison read as a
@@ -183,9 +183,9 @@ end
     # against one capped at 100 m, not fixed-dt against adaptive-dt.  The
     # defaults are unified now and the guard test below keeps them that way.
     mf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      params = Params(; FT, ice_slope = CentredGradient()))
+                      params = Params(; FT, ice_slope = CentredIceSlope()))
     ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      params = Params(; FT, ice_slope = CentredGradient()), tstep = AdaptiveDt())
+                      params = Params(; FT, ice_slope = CentredIceSlope()), tstep = AdaptiveTimeStepper())
     run!(mf; days = 1.0, verbose = false)
     run!(ma; days = 1.0, verbose = false)
     mxf, mnf, _ = meltstats(mf)
@@ -203,7 +203,7 @@ end
     # 1 day is reached in measurably fewer steps (measured 266 vs 411).
     cf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :cold)
     ca = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :cold,
-                      tstep = AdaptiveDt())
+                      tstep = AdaptiveTimeStepper())
     run!(cf; days = 1.0, verbose = false)
     run!(ca; days = 1.0, verbose = false)
     @test ca.clock.iteration < 0.9 * cf.clock.iteration
@@ -213,12 +213,12 @@ end
     # adaptive run resumes at exactly the step it left off.
     tmp = mktempdir()
     m1 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      tstep = AdaptiveDt(),
+                      tstep = AdaptiveTimeStepper(),
                       output = OutputConfig(; name = "ar1", resultdir = tmp,
                                             saveday = 0.5, restday = 0.5))
     run!(m1; days = 1.0, verbose = false)
     m2 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      tstep = AdaptiveDt(),
+                      tstep = AdaptiveTimeStepper(),
                       output = OutputConfig(; name = "ar2", resultdir = tmp, saveday = 0.5),
                       restart = joinpath(tmp, "ar1", "restart_latest.jld2"))
     @test m2.clock.dt ≈ m1.clock.dt
@@ -227,11 +227,11 @@ end
     @test all(isfinite, m2.model.H.present) && all(isfinite, m2.model.melt)
 end
 
-@testset "Simulation end: FixedSimulationEnd / SteadyStateEnd" begin
+@testset "Simulation end: FixedSimulationEnd / SteadyStateSimulationEnd" begin
     # Steady-state criterion: relative change in mean melt below tol.
-    @test  Laddie._steady_reached(SteadyStateEnd(tol = 0.01), 100.0, 100.05)  # 5e-4 < 1e-2
-    @test !Laddie._steady_reached(SteadyStateEnd(tol = 0.01), 100.0, 90.0)    # 0.11
-    @test !Laddie._steady_reached(SteadyStateEnd(tol = 0.01), 100.0, NaN)     # no predecessor
+    @test  Laddie._steady_reached(SteadyStateSimulationEnd(tol = 0.01), 100.0, 100.05)  # 5e-4 < 1e-2
+    @test !Laddie._steady_reached(SteadyStateSimulationEnd(tol = 0.01), 100.0, 90.0)    # 0.11
+    @test !Laddie._steady_reached(SteadyStateSimulationEnd(tol = 0.01), 100.0, NaN)     # no predecessor
     @test !Laddie._steady_reached(FixedSimulationEnd(), 100.0, 100.0)         # fixed never early-stops
 
     # `days` is shorthand for FixedSimulationEnd — bit-identical, same steps.
@@ -245,16 +245,16 @@ end
     # Passing both `days` and `until` is ambiguous.
     @test_throws ArgumentError run!(a; days = 1.0, until = FixedSimulationEnd())
 
-    # SteadyStateEnd stops early once the day-over-day mean-melt change drops
+    # SteadyStateSimulationEnd stops early once the day-over-day mean-melt change drops
     # below tol; a (near-)zero tol never triggers and runs to the t_end cap.
     cap = 20.0
     ms = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
-    run!(ms; until = SteadyStateEnd(tol = 0.3, t_end = cap), verbose = false)
+    run!(ms; until = SteadyStateSimulationEnd(tol = 0.3, t_end = cap), verbose = false)
     @test ms.clock.time < 0.5 * cap * 86400              # stopped well before the cap
     @test all(isfinite, ms.model.H.present) && all(isfinite, ms.model.melt)
 
     mc = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
-    run!(mc; until = SteadyStateEnd(tol = 1e-12, t_end = cap), verbose = false)
+    run!(mc; until = SteadyStateSimulationEnd(tol = 1e-12, t_end = cap), verbose = false)
     @test mc.clock.time > 0.9 * cap * 86400              # ran essentially to the cap
     @test ms.clock.iteration < mc.clock.iteration        # early stop took fewer steps
 
@@ -269,7 +269,7 @@ end
 
 @testset "Simulation: clock persists across run! calls" begin
     # Two calls are the same integration as one call covering both: the clock,
-    # the iteration count and (under FixedDt) the state all continue.  Each call
+    # the iteration count and (under FixedTimeStepper) the state all continue.  Each call
     # rounds its own duration to whole steps, so the durations here are exact
     # multiples of dt (0.5 d at 210 s would be 206 + 206 steps against 411).
     one = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
@@ -322,10 +322,10 @@ end
 
 @testset "Blow-up check cadence and fields" begin
     # At least once per simulated day, however long the run.
-    @test Laddie._check_interval(FixedDt(), 100_000, 400) == 400
-    @test Laddie._check_interval(FixedDt(), 1_000, 400) == 50
-    @test Laddie._check_interval(AdaptiveDt(; ncheck = 1000), 100_000, 400) == 400
-    @test Laddie._check_interval(AdaptiveDt(), 100_000, 400) == 20
+    @test Laddie._check_interval(FixedTimeStepper(), 100_000, 400) == 400
+    @test Laddie._check_interval(FixedTimeStepper(), 1_000, 400) == 50
+    @test Laddie._check_interval(AdaptiveTimeStepper(; ncheck = 1000), 100_000, 400) == 400
+    @test Laddie._check_interval(AdaptiveTimeStepper(), 100_000, 400) == 20
 
     # A non-finite tracer counts as a blow-up, not only H, U and V.
     for name in (:T, :S)

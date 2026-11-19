@@ -33,7 +33,7 @@ const V2_PARAMS = (ParamsISOMIPv2, ParamsAISv2, ParamsASEv2, ParamsPIGv2, Params
         @test p.lateral_viscosity isa NonlinearLateralViscosity
         @test p.A_h == p.lateral_viscosity.C_visc
         @test p.tracer_form isa FluxTracerForm
-        @test p.convection_scheme isa ClampDensity
+        @test p.convection_scheme isa ClampDensityConvection
         @test p.drho_floor ≈ p.convection_scheme.d_rho_min / p.rho0_seawater
         @test (p.rho0_seawater, p.L, p.max_detrainment) == (1027.0, 3.335e5, 1e-3)
     end
@@ -48,7 +48,7 @@ end
 # have, so each parameter set runs on the same small ISOMIP cavity instead: 200 steps of
 # 210 s, mean melt (m/yr) as recorded on 2026-11-17.  A deliberate change of an alias
 # updates its value here and says so.  2026-11-18: the v1 aliases select v1's ice-slope
-# stencil `CentredGradient` themselves; on this cavity it sees z_draft = 0 at the grounded
+# stencil `CentredIceSlope` themselves; on this cavity it sees z_draft = 0 at the grounded
 # cells (slope 0.18 in the 40 grounding-line and wall cells), so v1 melt rises from ~3.7
 # to ~42 m/yr.
 const REPRODUCTION_MEAN_MELT = (

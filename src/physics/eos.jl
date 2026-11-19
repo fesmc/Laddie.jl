@@ -19,7 +19,7 @@ with ``Z`` the depth of the layer mid-point (positive downward), so that the the
 (thermobaricity).  The parameterisations differ only in the four coefficients, which are scalars
 computed where the kernels are launched.
 """
-abstract type AbstractEquationOfState end
+abstract type AbstractEOS end
 
 """
 $(TYPEDEF)
@@ -27,7 +27,7 @@ $(TYPEDEF)
 Linear equation of state, `δρ = β (S_a − S) − α (T_a − T)`, with the
 constants `Params.alpha` and `Params.beta`.  The default, and the behaviour of LADDIE v1 and v2.
 """
-struct LinearEOS <: AbstractEquationOfState end
+struct LinearEOS <: AbstractEOS end
 
 """
 $(TYPEDEF)
@@ -68,7 +68,7 @@ Params(; equation_of_state = RoquetEOS())
 # Fields
 $(TYPEDFIELDS)
 """
-@kwdef struct RoquetEOS{FT} <: AbstractEquationOfState
+@kwdef struct RoquetEOS{FT} <: AbstractEOS
     "sensitivity of the thermal expansion to temperature ``C_b`` (kg m⁻³ K⁻², default `0.011`); non-negative"
     Cb::FT = 0.011
     "temperature at which the surface thermal expansion vanishes `Θ₀` (°C, default `-4.5`)"

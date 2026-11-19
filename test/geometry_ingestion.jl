@@ -75,7 +75,7 @@ end
 
     # The island is a land wall, not a grounding line: grd?? indicators
     # fire around it while the gl?? ones (mask == 2 only) stay off — and the
-    # land-only lnd?? ones (AbstractLandBC) fire there instead, mirroring how
+    # land-only lnd?? ones (AbstractSlipAtLand) fire there instead, mirroring how
     # gl?? does for grounded ice.
     g = getfield(m, :geometry)
     @test wall_faces(g).grdEv[5, 9] > 0 || wall_faces(g).grdWv[5, 12] > 0 || wall_faces(g).grdNu[7, 10] > 0 || wall_faces(g).grdSu[4, 10] > 0

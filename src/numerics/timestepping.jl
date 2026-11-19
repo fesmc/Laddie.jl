@@ -6,8 +6,8 @@
 # ============================================================================
 """
 Abstract supertype for the time-step control of a [`Simulation`](@ref).  Pass a
-concrete instance as `Simulation(model; tstep = ...)`: [`FixedDt`](@ref) (the
-default) or [`AdaptiveDt`](@ref).
+concrete instance as `Simulation(model; tstep = ...)`: [`FixedTimeStepper`](@ref) (the
+default) or [`AdaptiveTimeStepper`](@ref).
 """
 abstract type AbstractTimeStepper end
 
@@ -18,9 +18,9 @@ Constant time step (the default): `dt` stays at the value the `Simulation` was
 constructed with for the whole run.  Reproduces LADDIE v1.x behaviour exactly,
 so the default integration is bit-for-bit unchanged.
 
-Select via `Simulation(model; tstep = FixedDt())` (the default).
+Select via `Simulation(model; tstep = FixedTimeStepper())` (the default).
 """
-struct FixedDt <: AbstractTimeStepper end
+struct FixedTimeStepper <: AbstractTimeStepper end
 
 """
 $(TYPEDEF)
@@ -50,13 +50,13 @@ at most 5 % of the steps of the `run!` call.  So do not sample a field in many s
 every step, which inflated a 10-day mean melt rate by 41 % on a 1 km geometry.  Use
 one longer call with time-averaged output instead.
 
-Select via `Simulation(model; tstep = AdaptiveDt())`; override fields as needed, e.g.
-`AdaptiveDt(; cfl_target = 0.4, ncheck = 10)`.
+Select via `Simulation(model; tstep = AdaptiveTimeStepper())`; override fields as needed, e.g.
+`AdaptiveTimeStepper(; cfl_target = 0.4, ncheck = 10)`.
 
 # Fields
 $(TYPEDFIELDS)
 """
-@kwdef struct AdaptiveDt{FT,I} <: AbstractTimeStepper
+@kwdef struct AdaptiveTimeStepper{FT,I} <: AbstractTimeStepper
     "CFL setpoint the controller aims for (default `0.3`)"
     cfl_target::FT = 0.3
     "response exponent: `1` is CFL-exact, `< 1` damps, `> 1` overshoots (default `1.0`)"
@@ -71,13 +71,13 @@ $(TYPEDFIELDS)
     dtmin::FT = 1.0
     "upper clamp on dt (s, default `1000.0`)"
     dtmax::FT = 1000.0
-    AdaptiveDt{FT,I}(args...) where {FT,I} = new{FT,I}(args...)
+    AdaptiveTimeStepper{FT,I}(args...) where {FT,I} = new{FT,I}(args...)
 end
 
-# The float fields are promoted to one type, so `AdaptiveDt(; dtmax = 1000)` works.
-function AdaptiveDt(cfl_target, q, max_growth, grow_hyst, ncheck, dtmin, dtmax)
+# The float fields are promoted to one type, so `AdaptiveTimeStepper(; dtmax = 1000)` works.
+function AdaptiveTimeStepper(cfl_target, q, max_growth, grow_hyst, ncheck, dtmin, dtmax)
     f = promote(map(float, (cfl_target, q, max_growth, grow_hyst, dtmin, dtmax))...)
-    return AdaptiveDt{eltype(f),typeof(ncheck)}(f[1:4]..., ncheck, f[5:6]...)
+    return AdaptiveTimeStepper{eltype(f),typeof(ncheck)}(f[1:4]..., ncheck, f[5:6]...)
 end
 
 # (Float-type promotion of the stepper to the model's FT is handled generically by
@@ -90,7 +90,7 @@ end
 # t = 0) can never inflate dt0.  Branch-free and computed in the type of `dt`, so
 # that the Reactant extension runs the same rule on traced numbers; `run!` calls it
 # in Float64.
-function _controller_dt(ts::AdaptiveDt, dt, cfl; allow_grow::Bool)
+function _controller_dt(ts::AdaptiveTimeStepper, dt, cfl; allow_grow::Bool)
     FT = typeof(dt)
     c(x) = FT(_primal(x))
     target = c(ts.cfl_target)
@@ -104,7 +104,7 @@ end
 
 # Apply a controller decision: when dt actually changes, set it, re-bootstrap
 # the leapfrog at the new dt, and log the change.  Returns whether dt changed.
-function _apply_dt!(sim, ts::AdaptiveDt, cfl; allow_grow::Bool)
+function _apply_dt!(sim, ts::AdaptiveTimeStepper, cfl; allow_grow::Bool)
     dt_old = sim.clock.dt
     dt_new = sim.model.FT(_controller_dt(ts, _float64(dt_old), cfl; allow_grow))
     dt_new == dt_old && return false
@@ -114,29 +114,29 @@ function _apply_dt!(sim, ts::AdaptiveDt, cfl; allow_grow::Bool)
     return true
 end
 
-# Cadence of the shared blow-up/CFL/controller sync point.  FixedDt checks every
-# ~5 % of the run.  AdaptiveDt checks at least every
+# Cadence of the shared blow-up/CFL/controller sync point.  FixedTimeStepper checks every
+# ~5 % of the run.  AdaptiveTimeStepper checks at least every
 # `ncheck` steps, and more often on short runs so a too-large dt0 is caught
 # before it can blow up.  Both check at least once per simulated day, so that the
 # blow-up check does not thin out on long runs.
 _check_interval(::AbstractTimeStepper, nt, steps_per_day) = min(max(1, nt ÷ 20), steps_per_day)
-_check_interval(ts::AdaptiveDt, nt, steps_per_day) =
+_check_interval(ts::AdaptiveTimeStepper, nt, steps_per_day) =
     min(clamp(ts.ncheck, 1, max(1, nt ÷ 20)), steps_per_day)
 
 # In-loop hook called at the check cadence from `run!`, with the CFL already
-# measured at the shared sync point.  FixedDt is a pure no-op (the default
-# integration is unchanged).  AdaptiveDt adjusts dt predictively for the
+# measured at the shared sync point.  FixedTimeStepper is a pure no-op (the default
+# integration is unchanged).  AdaptiveTimeStepper adjusts dt predictively for the
 # upcoming steps — it never rejects a step, so there is no rollback.
-_maybe_adapt_dt!(sim, ::FixedDt, cfl) = nothing
-_maybe_adapt_dt!(sim, ts::AdaptiveDt, cfl) =
+_maybe_adapt_dt!(sim, ::FixedTimeStepper, cfl) = nothing
+_maybe_adapt_dt!(sim, ts::AdaptiveTimeStepper, cfl) =
     (_apply_dt!(sim, ts, cfl; allow_grow = true); nothing)
 
 # Pre-loop hook: rescue a too-large dt0 before the first step (shrink-only).
 # Uses the worst-case CFL (advection at the velocity cap), because at t = 0 the
 # flow is ~stationary and the actual CFL underestimates what the spinning-up
 # flow will reach.
-_init_adaptive_dt!(sim, ::FixedDt) = nothing
-function _init_adaptive_dt!(sim, ts::AdaptiveDt)
+_init_adaptive_dt!(sim, ::FixedTimeStepper) = nothing
+function _init_adaptive_dt!(sim, ts::AdaptiveTimeStepper)
     _apply_dt!(sim, ts, _cfl_worstcase(sim); allow_grow = false)
     return
 end
@@ -147,7 +147,7 @@ end
 # ============================================================================
 """
 Abstract supertype for how the in-loop CFL number is computed (for the progress
-display and for [`AdaptiveDt`](@ref)).  Pass a concrete instance as
+display and for [`AdaptiveTimeStepper`](@ref)).  Pass a concrete instance as
 `Simulation(model; cfl = ...)`: [`ExactCFL`](@ref) (the default) or
 [`ConservativeCFL`](@ref).
 """

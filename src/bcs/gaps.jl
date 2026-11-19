@@ -83,7 +83,7 @@ layer, its salt beyond `ice_salinity` stays (brine rejection).
 
 **Convection.**  Where the layer is denser than the water beneath it (δρ < 0), its T
 and S relax towards that water's on `convection_time` (s, default `10⁴`), as under
-[`RelaxToAmbient`](@ref), and its thickness relaxes towards `H_min` at the same rate:
+[`RelaxToAmbientConvection`](@ref), and its thickness relaxes towards `H_min` at the same rate:
 the convected water leaves the layer.  This acts in every gap cell, whatever the cover
 and whatever the model's `convection_scheme`, which leaves gap cells alone.
 
@@ -173,7 +173,7 @@ end
 #
 # Then convection: where the layer is denser than the water beneath it (δρ < 0), T
 # and S relax towards that water (Ta, Sa) on `convection_time`, as under
-# `RelaxToAmbient`, and H relaxes towards H_min at the same rate: the convected water
+# `RelaxToAmbientConvection`, and H relaxes towards H_min at the same rate: the convected water
 # leaves the layer.  Every gap cell convects, whatever its cover.
 # Without leaky gaps `gap_heat` is a scalar and this is skipped.
 _gap_surface!(m, ::Number, dt) = nothing

@@ -32,15 +32,15 @@ either makes long runs prone to divergence.
 
 The step size is controlled by `Simulation(model; tstep = ...)`:
 
-- [`FixedDt`](@ref), the default: the step stays at the `dt` the `Simulation` was
+- [`FixedTimeStepper`](@ref), the default: the step stays at the `dt` the `Simulation` was
   built with, as in LADDIE v1.
-- [`AdaptiveDt`](@ref): a CFL controller sets the step.
+- [`AdaptiveTimeStepper`](@ref): a CFL controller sets the step.
 
 ### Adaptive time stepping
 
 The controller compares the **diagnosed CFL** ``C``, a measurement of the current state
 defined on the [CFL number](cfl.md) page, with a **target CFL**
-(`AdaptiveDt(; cfl_target)`, default 0.3), the setpoint it steers ``C`` towards. ``C`` is
+(`AdaptiveTimeStepper(; cfl_target)`, default 0.3), the setpoint it steers ``C`` towards. ``C`` is
 linear in ``\Delta t``, so at each check it rescales the step by
 ``(C_\text{target}/C)^q``:
 
@@ -83,6 +83,6 @@ worst-case CFL (see [CFL number](cfl.md)), which can only shrink the step.
 
 ```@docs
 AbstractTimeStepper
-FixedDt
-AdaptiveDt
+FixedTimeStepper
+AdaptiveTimeStepper
 ```

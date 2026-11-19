@@ -81,7 +81,7 @@ plume and 25 % for a warm one at 500 m).
 ## API
 
 ```@docs
-AbstractEquationOfState
+AbstractEOS
 LinearEOS
 RoquetEOS
 ```

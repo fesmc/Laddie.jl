@@ -74,8 +74,8 @@ end
 # upwind split of each face velocity and the masked neighbour values are formed
 # here rather than pre-computed, so the kernel reads only the fields themselves.
 # At an open-ocean face the upwind value is the zero-gradient extrapolation of the
-# cell itself when `inflow = 1` (ZeroGradientInflow), and the stored — masked,
-# hence zero — neighbour value when `inflow = 0` (NoInflow).
+# cell itself when `inflow = 1` (ZeroGradientOpenOceanBC), and the stored — masked,
+# hence zero — neighbour value when `inflow = 0` (NoInflowOpenOceanBC).
 @kernel function _upwind_advection_T_kernel!(
     out,
     @Const(var),

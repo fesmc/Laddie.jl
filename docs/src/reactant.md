@@ -19,7 +19,7 @@ run!(rsim; days = 30)
 - **CUDA.jl is needed even on the CPU target.** Reactant compiles the kernels through it.
 - **`run!` works as on the other backends.** It steps in compiled batches up to the next
   host event: the check cadence, an output or log time, a steady-state sample or the
-  end of the run. Output, log diagnostics, restarts and `AdaptiveDt` behave as usual.
+  end of the run. Output, log diagnostics, restarts and `AdaptiveTimeStepper` behave as usual.
   A change of `dt` does not trigger a recompile, because `dt` is an input of the
   compiled programs.
 - **The first `run!` compiles.** It builds four programs: the step batch, the
@@ -239,7 +239,7 @@ is differentiated in two passes instead, with the gradient of the run *at the dt
 sequence it took* (the ForwardDiff path does the same implicitly):
 
 1. [`adaptive_schedule`](@ref) runs the model with the controller of
-   [`AdaptiveDt`](@ref) in a compiled loop (native kernels, no differentiation) and
+   [`AdaptiveTimeStepper`](@ref) in a compiled loop (native kernels, no differentiation) and
    returns the dt schedule as segments of constant dt.
 2. `integrate!(model, sched)` inside [`reactant_compile`](@ref) replays the schedule,
    re-bootstrapping the leapfrog at each change of dt, and can be differentiated in

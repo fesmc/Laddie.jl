@@ -7,8 +7,9 @@ and runs on CPUs and GPUs through [KernelAbstractions](https://github.com/JuliaG
 It ships a [Reactant.jl](https://github.com/EnzymeAD/Reactant.jl) extension so that the time loop can be compiled with XLA to
 accelerate GPU runs. This also unlocks automatic differentiation with Enzyme, both forward and reverse mode. Laddie.jl additionally includes a ForwardDiff.jl extension as reference to validate the Enzyme extension.
 
-The physics is that of LADDIE v2 on the grid of LADDIE v1; see [LADDIE versions](versions.md) for
-how the two differ and which choice each option makes.
+The physics is close to that of LADDIE v2, on the grid of LADDIE v1, and includes additions that
+proved important for capturing the right sensitivity of the model. See [LADDIE versions](versions.md)
+for how v1 and v2 differ and which choice each option makes.
 
 ## The model at a glance
 

@@ -181,7 +181,7 @@ params = Params(; FT,
     drho_floor = 0.005 / rho0,
     lateral_viscosity = NonlinearLateralViscosity(10.0),
     front_pressure = TruncatedDepthFrontPressure(),
-    convection_scheme = ClampDensityConvection(0.005),
+    convection = ClampDensityConvection(0.005),
     coriolis = CoriolisParameter0D(-1.37e-4),
     A_h = 10.0,                         # the wall term of v2's viscosity
     C_d = 2.5e-3, C_d_top = 2.5e-3,

@@ -31,7 +31,7 @@ end
         FT,
         melting = TurbulentGamTMelting(FT(13.8), FT(2432.0), FT(1.95e-6)),
         entrainment  = GasparEntrainment(FT(2.5)),
-        convection_scheme = ResetToAmbientConvection(FT(0.005)),
+        convection = ResetToAmbientConvection(FT(0.005)),
     )
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
     @test all(isfinite, m.model.melt)
@@ -81,7 +81,7 @@ end
         FT,
         entrainment  = HollandEntrainment(FT(0.01775)),
         melting = FixedGamTMelting(FT(0.00018)),
-        convection_scheme = ResetToAmbientConvection(FT(0.005)),
+        convection = ResetToAmbientConvection(FT(0.005)),
     )
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
     @test all(isfinite, m.model.melt)
@@ -99,7 +99,7 @@ end
           GasparEntrainment
     mk(ep) = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm,
         params = Params(; FT, ice_slope = CentredIceSlope(), entrainment = ep, melting = FixedGamTMelting(FT(0.00018)),
-                        convection_scheme = ResetToAmbientConvection(FT(0.005))))
+                        convection = ResetToAmbientConvection(FT(0.005))))
     m1 = mk(GasparEntrainment(FT(2.5)))
     m2 = mk(GasparEntrainment(FT(1.25)))
     run!(m1; days=0.5, verbose=false)
@@ -240,7 +240,7 @@ end
 end
 
 @testset "ClampDensityConvection convection scheme: build and short run" begin
-    params = Params(; FT, convection_scheme = ClampDensityConvection(FT(0.005)))
+    params = Params(; FT, convection = ClampDensityConvection(FT(0.005)))
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
     @test all(isfinite, m.model.melt)
     run!(m; days=0.5, verbose=false)
@@ -249,7 +249,7 @@ end
 end
 
 @testset "RelaxToAmbientConvection convection scheme: build and short run" begin
-    params = Params(; FT, convection_scheme = RelaxToAmbientConvection(FT(10000.0)))
+    params = Params(; FT, convection = RelaxToAmbientConvection(FT(10000.0)))
     m = build_isomip(CPU(); FT, nx=20, ny=10, isomipcond=:warm, params)
     @test all(isfinite, m.model.melt)
     run!(m; days=0.5, verbose=false)
@@ -265,7 +265,7 @@ end
             (AdvectiveTracerForm(), FluxTracerForm())
         τ = FT(3600.0)
         params = Params(; FT, frazil_ice = RelaxedFrazilIce(τ),
-                        convection_scheme = ClampDensityConvection(FT(0.005)), tracer_form)
+                        convection = ClampDensityConvection(FT(0.005)), tracer_form)
         m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params)
         run!(m; days = 0.2, verbose = false)
         mm = m.model
@@ -790,15 +790,15 @@ end
 
     # ResetToAmbientConvection resets to a contrast of exactly the threshold, whatever the EOS.
     for e in (LinearEOS(), eos)
-        s = mk(equation_of_state = e, convection_scheme = ResetToAmbientConvection(FT(0.005)))
+        s = mk(equation_of_state = e, convection = ResetToAmbientConvection(FT(0.005)))
         run!(s; days = 0.2, verbose = false)
         mm = s.model
         ice = mm.imask .> 0
         mm.S.present .= ifelse.(ice, mm.Sa .+ 0.5, mm.S.present)     # saltier than ambient: unstable
         Laddie.update_density!(mm)
         @test all(<(0), mm.drho[ice])
-        Laddie.update_convection!(mm, mm.convection_scheme)
-        @test all(mm.convection[ice] .== 1)
+        Laddie.update_convection!(mm, mm.convection)
+        @test all(mm.convective_instability[ice] .== 1)
         @test mm.drho[ice] ≈ fill(FT(0.005) / mm.rho0_seawater, count(ice)) rtol = 1e-9
         Laddie.update_density!(mm)
         @test mm.drho[ice] ≈ fill(FT(0.005) / mm.rho0_seawater, count(ice)) rtol = 1e-9
@@ -806,7 +806,7 @@ end
 
     # Every convection scheme and entrainment runs under RoquetEOS, and the melt differs from linear.
     melts = map((ResetToAmbientConvection(FT(0.005)), ClampDensityConvection(FT(0.005)), RelaxToAmbientConvection(FT(10000.0)))) do cs
-        s = mk(equation_of_state = eos, convection_scheme = cs)
+        s = mk(equation_of_state = eos, convection = cs)
         run!(s; days = 0.5, verbose = false)
         @test all(isfinite, s.model.H.present) && all(isfinite, s.model.melt) && all(isfinite, s.model.drho)
         return copy(s.model.melt)
@@ -814,7 +814,7 @@ end
     s_h = mk(equation_of_state = eos, entrainment = HollandEntrainment(FT(0.01775)))
     run!(s_h; days = 0.5, verbose = false)
     @test all(isfinite, s_h.model.H.present)
-    s_l = mk(convection_scheme = ResetToAmbientConvection(FT(0.005)))
+    s_l = mk(convection = ResetToAmbientConvection(FT(0.005)))
     run!(s_l; days = 0.5, verbose = false)
     @test s_l.model.melt != melts[1]
 end
@@ -862,7 +862,7 @@ end
 
 @testset "SmoothKinks: exact at ε = 0, close to exact at the defaults" begin
     p = (; entrainment = GasparEntrainment(2.5), melting = TurbulentGamTMelting(),
-         convection_scheme = ClampDensityConvection(0.005), frazil_ice = RelaxedFrazilIce(),
+         convection = ClampDensityConvection(0.005), frazil_ice = RelaxedFrazilIce(),
          max_layer_thickness = AbsoluteMaxLayerThickness(30.0), lateral_viscosity = NonlinearLateralViscosity(0.6),
          momentum_advection = UpstreamMomentumAdvection(), H_min = 2.0, v_cut = 0.3)
     zero_eps = SmoothKinks(; H = 0.0, u = 0.0, uH = 0.0, w = 0.0, drho = 0.0, T = 0.0, S = 0.0, log = 0.0)
@@ -890,7 +890,7 @@ function Laddie.update_melt!(m, s::UserConstantMelt)
 end
 
 struct UserNoConvection <: AbstractConvection end
-Laddie.update_convection!(m, ::UserNoConvection) = (fill!(m.convection, 0); nothing)
+Laddie.update_convection!(m, ::UserNoConvection) = (fill!(m.convective_instability, 0); nothing)
 
 # A forcing's fields are forwarded by the model (`m.T_uniform`), so their names must not
 # be those of other model fields (`T` would clash with the state).
@@ -904,7 +904,7 @@ Laddie._update_ambient_fields!(m, o::UserUniformOcean) = (m.Ta .= o.T_uniform; m
     rate = 10 / 31_557_600                        # 10 m/yr
     sim = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm,
                        params = Params(; melting = UserConstantMelt(rate),
-                                       convection_scheme = UserNoConvection()))
+                                       convection = UserNoConvection()))
     run!(sim; days = 0.2, verbose = false)
     m = sim.model
     @test m.gamT isa Matrix{Float64}              # an unknown melt scheme gets fields

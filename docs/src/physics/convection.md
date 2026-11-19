@@ -3,7 +3,7 @@
 A depth-averaged model has no vertical structure to overturn. Where the layer becomes denser
 than the ambient water beneath it, ``\delta\rho < 0``, it is convectively unstable and
 would in reality mix away; the model has to say what happens instead. The treatment is
-selected with `Params(; convection_scheme = ...)`:
+selected with `Params(; convection = ...)`:
 
 | scheme | action | where |
 |---|---|---|
@@ -16,7 +16,7 @@ by `Params.rho0_seawater` to compare with the reduced contrast ``\delta\rho``: t
 0.005 kg m⁻³ is ``\delta\rho \approx 4.9\times10^{-6}``, the buoyancy floor of [LADDIE v2](../versions.md).
 `ClampDensityConvection` and `ResetToAmbientConvection` act wherever ``\delta\rho`` is below that threshold,
 so on marginally stable cells as well as unstable ones. Only the unstable cells,
-``\delta\rho < 0``, are flagged in `model.convection`. The salinity offset of the reset
+``\delta\rho < 0``, are flagged in `model.convective_instability`. The salinity offset of the reset
 makes the contrast exactly the threshold under any [equation of state](equation_of_state.md),
 because ``T = T_a`` removes the thermal term.
 

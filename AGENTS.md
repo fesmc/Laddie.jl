@@ -137,12 +137,12 @@ Simulation
 │   ├── state :: State                  # prognostics H, U, V, T, S — each a Var{LX,LY} on the
 │   │                                   # Arakawa C-grid with leapfrog levels past/present/future
 │   ├── cache :: Cache                  # diagnostics and work arrays (melt, Tb, Ta, Sa, drho, ustar,
-│   │                                   # entr, detr, convection, adv, lap, Hq, diag, …)
+│   │                                   # entr, detr, convective_instability, adv, lap, Hq, diag, …)
 │   ├── params :: Params                # physical constants (g, C_d, A_h, K_h, ρ, L, c_p, …) and
 │   │                                   # one slot per exchangeable scheme:
 │   │   ├── entrainment                 #   AbstractEntrainment
 │   │   ├── melting                     #   AbstractMelting
-│   │   ├── convection_scheme           #   AbstractConvection
+│   │   ├── convection                  #   AbstractConvection
 │   │   ├── frazil_ice                  #   AbstractFrazilIce
 │   │   ├── ice_conduction              #   AbstractIceConduction
 │   │   ├── equation_of_state           #   AbstractEOS

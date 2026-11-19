@@ -2,7 +2,7 @@
 Abstract supertype for the treatment of convective instability: cells where the
 layer is denser than the ambient water beneath it, i.e. where the reduced density
 contrast `δρ` falls below zero.  Pass a concrete instance as
-`Params(; convection_scheme = ...)`: [`RelaxToAmbientConvection`](@ref) (the default),
+`Params(; convection = ...)`: [`RelaxToAmbientConvection`](@ref) (the default),
 [`ResetToAmbientConvection`](@ref) or [`ClampDensityConvection`](@ref).
 
 The layer is unstable where `δρ = (ρ_a − ρ)/ρ₀ < 0`. No LADDIE paper describes a convection
@@ -21,7 +21,7 @@ minimum positive value, `d_rho_min / Params.rho0_seawater`, so the plume remains
 than ambient.  T and S are left unchanged.  This is the buoyancy floor of LADDIE v2,
 `max(drho_amb, buoyancy_min/rho_sw)` with `buoyancy_min = 5e-3`.
 
-Select via `Params(; convection_scheme = ClampDensityConvection(0.005))`.
+Select via `Params(; convection = ClampDensityConvection(0.005))`.
 
 # Fields
 $(TYPEDFIELDS)
@@ -38,7 +38,7 @@ Handle convective instability by instantly resetting T and S to their ambient va
 wherever the contrast falls below `d_rho_min / Params.rho0_seawater`, with S lowered by
 `d_rho_min / (rho0_seawater * beta)` so that the reset cell has exactly that contrast.
 
-Select via `Params(; convection_scheme = ResetToAmbientConvection(0.005))`.
+Select via `Params(; convection = ResetToAmbientConvection(0.005))`.
 
 # Fields
 $(TYPEDFIELDS)
@@ -57,7 +57,7 @@ time step via the `conv2` term).  The default: a continuous relaxation rather th
 instantaneous reset of [`ResetToAmbientConvection`](@ref).  One hour is the order of the time an
 unstable layer takes to overturn, and gave good pan-Antarctic runs.
 
-Select via `Params(; convection_scheme = RelaxToAmbientConvection(3600.0))` (the default).
+Select via `Params(; convection = RelaxToAmbientConvection(3600.0))` (the default).
 
 # Fields
 $(TYPEDFIELDS)
@@ -83,20 +83,20 @@ domain, gaps included.
 """
 function update_convection!(m, cs::ClampDensityConvection)
     thr = cs.d_rho_min / m.rho0_seawater
-    launch!(_clamp_density_kernel!, m.convection, m.drho, thr, m.params.kinks)
+    launch!(_clamp_density_kernel!, m.convective_instability, m.drho, thr, m.params.kinks)
     return nothing
 end
 
 # The convection schemes are pointwise, and run as kernels rather than broadcasts so
 # that they are threaded on the CPU: they run twice per step (see
 # `apply_robert_asselin_filter!`).  Each reads the `drho` of the current T/S.
-@kernel function _clamp_density_kernel!(convection, drho, thr, kinks)
+@kernel function _clamp_density_kernel!(convective_instability, drho, thr, kinks)
     thr = _val(thr)
     i, j = @index(Global, NTuple)
     FT = typeof(thr)
     @inbounds begin
         d = drho[i, j]
-        convection[i, j] = ifelse(d < 0, one(FT), zero(FT))
+        convective_instability[i, j] = ifelse(d < 0, one(FT), zero(FT))
         drho[i, j] = _smax(kinks, d, thr, _kink_width(kinks, :drho))
     end
 end
@@ -119,7 +119,7 @@ function update_convection!(m, cs::ResetToAmbientConvection)
     S_adj = cs.d_rho_min / (m.rho0_seawater * eos.beta)
     launch!(
         _reset_to_ambient_kernel!,
-        m.convection,
+        m.convective_instability,
         m.T.present,
         m.S.present,
         m.drho,
@@ -139,7 +139,7 @@ end
 # Reset T/S of unstable ice-covered cells to ambient, and refresh `drho` there with
 # the expression of `_density_kernel!` (elsewhere T/S are unchanged, so is `drho`).
 @kernel function _reset_to_ambient_kernel!(
-    convection,
+    convective_instability,
     T,
     S,
     drho,
@@ -159,7 +159,7 @@ end
     @inbounds begin
         d = drho[i, j]
         ice = imask[i, j] > 0
-        convection[i, j] = ifelse((d < 0) & ice, one(FT), zero(FT))
+        convective_instability[i, j] = ifelse((d < 0) & ice, one(FT), zero(FT))
         reset = (d < thr) & ice
         T_new = ifelse(reset, Ta[i, j], T[i, j])
         S_new = ifelse(reset, Sa[i, j] - S_adj, S[i, j])
@@ -182,14 +182,14 @@ Restricted to ice-covered cells (`imask`) for the same reason as
 version of the same sink.
 """
 function update_convection!(m, ::RelaxToAmbientConvection)
-    launch!(_flag_unstable_ice_kernel!, m.convection, m.drho, m.imask)
+    launch!(_flag_unstable_ice_kernel!, m.convective_instability, m.drho, m.imask)
 end
 
-@kernel function _flag_unstable_ice_kernel!(convection, @Const(drho), @Const(imask))
+@kernel function _flag_unstable_ice_kernel!(convective_instability, @Const(drho), @Const(imask))
     i, j = @index(Global, NTuple)
-    FT = eltype(convection)
-    @inbounds convection[i, j] =
+    FT = eltype(convective_instability)
+    @inbounds convective_instability[i, j] =
         ifelse((drho[i, j] < 0) & (imask[i, j] > 0), one(FT), zero(FT))
 end
 
-update_convection!(m) = update_convection!(m, m.convection_scheme)
+update_convection!(m) = update_convection!(m, m.convection)

@@ -79,7 +79,7 @@ params = Params(; FT,
     coriolis = CoriolisParameter0D(-1.37e-4),
     entrainment = GasparEntrainment(2.5),
     melting = TurbulentGamTMelting(13.8, 2432.0, 1.95e-6),
-    convection_scheme = ClampDensityConvection(0.005),
+    convection = ClampDensityConvection(0.005),
     tracer_form = AdvectiveTracerForm(),  # the reference steps T and S, not H·T and H·S
     ice_slope = CentredIceSlope(),        # the reference's slope stencil
     ## Laddie's defaults differ from what the published run used:

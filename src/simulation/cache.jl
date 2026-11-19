@@ -47,7 +47,7 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,Frz,PM,Gap}
     "detrainment of layer water that keeps `H` under `max_layer_thickness` after the thickness step (m s⁻¹)"
     detr_cap::A
     "convective-instability indicator: `1` where `drho < 0` was corrected"
-    convection::A
+    convective_instability::A
     "upwind advection term of the thickness equation (m s⁻¹)"
     convH::A
     "thickness tendency of the current step (m s⁻¹)"

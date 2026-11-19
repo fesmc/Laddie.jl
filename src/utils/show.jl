@@ -91,7 +91,7 @@ _schemes(p::Params) = join(
         nameof(typeof(x)) for x in (
             p.entrainment,
             p.melting,
-            p.convection_scheme,
+            p.convection,
             p.lateral_viscosity,
             p.front_pressure,
         )
@@ -110,7 +110,7 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     end
     println(io, "  entrainment    = ", p.entrainment)
     println(io, "  melt           = ", p.melting)
-    println(io, "  convection     = ", p.convection_scheme)
+    println(io, "  convection     = ", p.convection)
     println(io, "  frazil ice     = ", p.frazil_ice)
     println(io, "  ice conduction = ", p.ice_conduction)
     println(io, "  eq. of state   = ", p.equation_of_state)

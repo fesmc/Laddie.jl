@@ -36,7 +36,7 @@ fields of the model they read and write.
 |---|---|---|---|
 | [`AbstractEntrainment`](@ref) | `Params(; entrainment)` | `_compute_entrainment!(m, scheme)` | `physics/entrainment.jl` |
 | [`AbstractMelting`](@ref) | `Params(; melting)` | `update_melt!(m, scheme)`, which also calls `update_ustar!(m)` | `physics/melting.jl` |
-| [`AbstractConvection`](@ref) | `Params(; convection_scheme)` | `update_convection!(m, scheme)`; `_update_conv2!` for a relaxation rate (`numerics/leapfrog.jl`) | `physics/convection.jl` |
+| [`AbstractConvection`](@ref) | `Params(; convection)` | `update_convection!(m, scheme)`; `_update_conv2!` for a relaxation rate (`numerics/leapfrog.jl`) | `physics/convection.jl` |
 | [`AbstractFrazilIce`](@ref) | `Params(; frazil_ice)` | `update_frazil!(m, scheme)` | `physics/frazil.jl` |
 | [`AbstractIceConduction`](@ref) | `Params(; ice_conduction)` | `_conduction_coefficients` | `physics/conduction.jl` |
 | [`AbstractEOS`](@ref) | `Params(; equation_of_state)` | `_eos_coefficients` | `physics/eos.jl` |

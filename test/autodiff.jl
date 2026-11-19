@@ -57,9 +57,9 @@ const AD_SCHEME_CASES = (
     "AdvectiveMomentumForm" => (; schemes = (; momentum_form = AdvectiveMomentumForm())),
     "AdvectiveTracerForm" => (; schemes = (; tracer_form = AdvectiveTracerForm())),
     "PresentClosureLevel" => (; schemes = (; closure_level = PresentClosureLevel())),
-    "ResetToAmbientConvection" => (; schemes = (; convection_scheme = ResetToAmbientConvection()), supercooling = 0.05),
-    "RelaxToAmbientConvection, convecting" => (; schemes = (; convection_scheme = RelaxToAmbientConvection()), supercooling = 0.05,
-                                     reference = (; convection_scheme = ClampDensityConvection())),
+    "ResetToAmbientConvection" => (; schemes = (; convection = ResetToAmbientConvection()), supercooling = 0.05),
+    "RelaxToAmbientConvection, convecting" => (; schemes = (; convection = RelaxToAmbientConvection()), supercooling = 0.05,
+                                     reference = (; convection = ClampDensityConvection())),
     "HollandJenkinsIceConduction" =>
         (; schemes = (; ice_conduction = HollandJenkinsIceConduction()), supercooling = 0.05),
     "MeltOnlyIceConduction, refreezing" => (; schemes = (; ice_conduction = MeltOnlyIceConduction()), supercooling = 0.05,

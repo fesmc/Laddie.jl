@@ -30,7 +30,7 @@ end
     @test st.max_melt == maximum(m.melt[ice] .- m.frazil[ice]) * m.seconds_per_year
 end
 
-@testset "I/O: optional ustar/drho/convection fields and real coordinates" begin
+@testset "I/O: optional ustar/drho/convective_instability fields and real coordinates" begin
     tmp = mktempdir()
     mk = zeros(Int, 22, 12)
     mk[[1, end], :] .= 1; mk[:, [1, end]] .= 1
@@ -39,7 +39,7 @@ end
     xs = -1.5e6 .+ 2000.0 .* (0:21)
     grid = Grid(mk, zd; x = xs, y = 3.0e5 .- 2000.0 .* (0:11),
                 domain_cropping = NoDomainCropping())
-    fields = (:Ut, :Vt, :H, :T, :S, :melt, :mask, :z_draft, :ustar, :drho, :convection,
+    fields = (:Ut, :Vt, :H, :T, :S, :melt, :mask, :z_draft, :ustar, :drho, :convective_instability,
               :supercooling)
     # Float64 maps: the supercooling identity below holds to Float64 rounding.
     output = OutputConfig(; name = "extra", resultdir = tmp, saveday = 0.25, fields,
@@ -53,13 +53,13 @@ end
         @test ds["y"][1] == 3.0e5 - 2000.0
         m = sim.model
         wet = m.tmask[2:end-1, 2:end-1] .> 0
-        for v in ("ustar", "drho", "convection")
+        for v in ("ustar", "drho", "convective_instability")
             a = ds[v][:, :, end]
             @test all(isfinite, a[wet])
             @test all(ismissing, a[.!wet])   # the NaN fill value outside the active cells
         end
         @test maximum(ds["ustar"][:, :, end][wet]) > 0
-        @test all(0 .<= ds["convection"][:, :, end][wet] .<= 1)
+        @test all(0 .<= ds["convective_instability"][:, :, end][wet] .<= 1)
         # T − Tf(S, z_b) is linear in T and S, so its time mean is that of the means.
         T, S = ds["T"][:, :, end], ds["S"][:, :, end]
         Tf = m.l1 .* S .+ m.l2 .+ m.l3 .* m.z_draft[2:end-1, 2:end-1]

@@ -267,7 +267,7 @@ end
     # Cool every active cell to drive the whole domain convectively unstable.
     function destabilize(scheme)
         m = build(gappy_mask(), ConnectedGapsBC();
-                  params = Params(; FT, convection_scheme = scheme))
+                  params = Params(; FT, convection = scheme))
         m.model.T.present[m.model.tmask .> 0] .-= 5
         Laddie.update_density!(m.model)
         @test all(m.model.drho[gap_ix] .< 0) && all(m.model.drho[shelf] .< 0)
@@ -278,9 +278,9 @@ end
     Laddie.update_convection!(m_rst.model)
     @test m_rst.model.T.present[gap_ix] == T0[gap_ix]      # gaps keep their heat ...
     @test m_rst.model.S.present[gap_ix] == S0[gap_ix]
-    @test all(m_rst.model.convection[gap_ix] .== 0)        # ... and are never flagged
+    @test all(m_rst.model.convective_instability[gap_ix] .== 0)        # ... and are never flagged
     @test all(m_rst.model.T.present[shelf] .!= T0[shelf])  # ice-covered cells do reset
-    @test all(m_rst.model.convection[shelf] .== 1)
+    @test all(m_rst.model.convective_instability[shelf] .== 1)
 
     # RelaxToAmbientConvection is the same sink applied gradually, so conv2 is gated too.
     m_rlx, _, _ = destabilize(RelaxToAmbientConvection(FT(10000.0)))
@@ -300,11 +300,11 @@ end
     # run — ungated the reset would keep firing there — yet the layer still
     # arrives warmer than the surface ambient it is crossing.
     m_cv = build(gappy_mask(), ConnectedGapsBC();
-                 params = Params(; FT, convection_scheme = ResetToAmbientConvection(FT(0.005))))
-    @test getfield(m_cv.model, :params).convection_scheme isa ResetToAmbientConvection
+                 params = Params(; FT, convection = ResetToAmbientConvection(FT(0.005))))
+    @test getfield(m_cv.model, :params).convection isa ResetToAmbientConvection
     run!(m_cv; days = 1.0, verbose = false)
     @test any(m_cv.model.drho[gap_ix] .< FT(0.005) / m_cv.model.rho0_seawater)
-    @test all(m_cv.model.convection[gap_ix] .== 0)
+    @test all(m_cv.model.convective_instability[gap_ix] .== 0)
     @test all(m_cv.model.T.present[gap_ix] .> m_cv.model.Ta[gap_ix])
 
     # -- Connected differs from sink, and stays physical -------------------

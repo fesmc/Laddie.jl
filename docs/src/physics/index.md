@@ -57,7 +57,7 @@ the forcing. The pages of this section describe one family each:
 | [`AbstractMelting`](@ref) | `Params(; melting)` | `FixedGamTMelting(1.8e-4)` |
 | [`AbstractIceConduction`](@ref) | `Params(; ice_conduction)` | `MeltOnlyIceConduction()` |
 | [`AbstractEntrainment`](@ref) | `Params(; entrainment)` | `GasparEntrainment(2.5)` |
-| [`AbstractConvection`](@ref) | `Params(; convection_scheme)` | `RelaxToAmbientConvection(3600)` |
+| [`AbstractConvection`](@ref) | `Params(; convection)` | `RelaxToAmbientConvection(3600)` |
 | [`AbstractFrazilIce`](@ref) | `Params(; frazil_ice)` | `NoFrazilIce()` |
 | [`AbstractLateralViscosity`](@ref) | `Params(; lateral_viscosity)` | `PrescribedLateralViscosity()` |
 | [`AbstractCoriolisParameter`](@ref) | `Params(; coriolis)` | `CoriolisParameter0D()` |

@@ -19,7 +19,7 @@
         v1_walls = BoundaryConditions(; grounding_line = NoSlipAtGL(), land = NoSlipAtLand(),
                                       wall_advection = V1WallAdvection())
         v1_params = Params(; tracer_form = AdvectiveTracerForm(), ice_slope = CentredIceSlope(),
-                            convection_scheme = ResetToAmbientConvection(0.005),
+                            convection = ResetToAmbientConvection(0.005),
                             ice_conduction = HollandJenkinsIceConduction(),
                             momentum_form = AdvectiveMomentumForm(),
                             closure_level = PresentClosureLevel(), tracer_bounds = TracerBounds())

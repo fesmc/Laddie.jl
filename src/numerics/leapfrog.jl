@@ -80,7 +80,7 @@ function precompute_integration_terms!(m, dt)
         m.drho,
         dt,
     )
-    _update_conv2!(m, m.convection_scheme)
+    _update_conv2!(m, m.convection)
     return
 end
 
@@ -832,7 +832,7 @@ function apply_robert_asselin_filter!(m, nu)
     # Refresh density and convection on the filtered level, as LADDIE v1
     # does.  The next `advance_leapfrog!` recomputes both on the rotated level, but
     # this call is not redundant: under ResetToAmbientConvection it resets the filtered T/S,
-    # which become `past`, and for every scheme it is the `drho` and `convection`
+    # which become `past`, and for every scheme it is the `drho` and `convective_instability`
     # that the output, the diagnostics and the CFL number read.
     update_density!(m)
     update_convection!(m)

@@ -164,7 +164,7 @@ Kernel `_step_v_momentum_kernel!`, structurally identical to (2) with
 Kernel `_step_temperature_kernel!` (and `mat_*` variants for array-valued
 ``\gamma_T``/`conv2`). The implemented `rhs` adds two Laddie.jl terms beyond the
 paper: the convective relaxation ``-(T^{p}-T_a)\,\mathrm{conv2}`` (zero unless
-`convection_scheme = RelaxToAmbientConvection`, see [Convective relaxation](@ref)), and the frazil
+`convection = RelaxToAmbientConvection`, see [Convective relaxation](@ref)), and the frazil
 term ``\dot f\,(L/c_p - T)`` (zero unless `frazil_ice = RelaxedFrazilIce`, see
 [Frazil ice](frazil_ice.md)):
 
@@ -336,7 +336,7 @@ the LADDIE v1 verification stays valid.
 
 ### Convective relaxation
 
-For `convection_scheme = RelaxToAmbientConvection`, unstable cells (``\delta\rho < 0``) relax T/S
+For `convection = RelaxToAmbientConvection`, unstable cells (``\delta\rho < 0``) relax T/S
 toward ambient over `convection_time` via the `conv2` field appearing in (4)–(5):
 
 ```math

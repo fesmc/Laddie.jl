@@ -23,10 +23,10 @@ end
     p = Params(; FT = Float32,
                entrainment  = GasparEntrainment(2.5),
                melting = FixedGamTMelting(0.00018),
-               convection_scheme = ResetToAmbientConvection(0.005))
+               convection = ResetToAmbientConvection(0.005))
     @test p.entrainment  isa GasparEntrainment{Float32}
     @test p.melting isa FixedGamTMelting{Float32}
-    @test p.convection_scheme isa ResetToAmbientConvection{Float32}
+    @test p.convection isa ResetToAmbientConvection{Float32}
     @test !hasfield(typeof(p), :open_bc) && !hasfield(typeof(p), :gaps_bc)  # BCs live elsewhere
     @test p.lateral_viscosity isa PrescribedLateralViscosity
 

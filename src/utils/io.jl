@@ -55,7 +55,7 @@ calls writes on the same cadence as one advanced by a single call.
 | `:gammaT` | turbulent heat-exchange velocity | m s⁻¹ |
 | `:ustar` | friction velocity at the ice base | m s⁻¹ |
 | `:drho` | reduced density contrast with the ambient water | – |
-| `:convection` | fraction of time a cell was convectively unstable | – |
+| `:convective_instability` | fraction of time a cell was convectively unstable | – |
 | `:supercooling` | ``T - T_f(S, z_b)``, the layer temperature above its freezing point at the ice base (negative where supercooled) | °C |
 
 The maps are written as `float_type` (`Float32` by default, `Float64` on request), with
@@ -251,7 +251,11 @@ const _OUTPUT_FIELDS = (
         "reduced density contrast with ambient, (rho_a - rho)/rho_0",
         m -> m.drho,
     ),
-    convection = _outfield("1", "fraction of time convectively unstable", m -> m.convection),
+    convective_instability = _outfield(
+        "1",
+        "fraction of time convectively unstable",
+        m -> m.convective_instability,
+    ),
     supercooling = _outfield(
         "degC",
         "layer temperature above the freezing point at the ice base, T - Tf(S, z_draft)",

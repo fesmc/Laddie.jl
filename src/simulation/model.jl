@@ -506,7 +506,7 @@ function Model(
     cache = Cache(
         FT,
         typeof(params.melting),
-        typeof(params.convection_scheme),
+        typeof(params.convection),
         typeof(params.frazil_ice),
         nx_total,
         ny_total,

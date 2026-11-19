@@ -98,7 +98,7 @@ struct Params{
     "melt scheme, an [`AbstractMelting`](@ref) (default `FixedGamTMelting(1.8e-4)`)"
     melting::MP
     "convective-instability treatment, an [`AbstractConvection`](@ref) (default `RelaxToAmbientConvection(3600)`)"
-    convection_scheme::CS
+    convection::CS
     "frazil-ice formation in a supercooled layer, an [`AbstractFrazilIce`](@ref) (default none)"
     frazil_ice::FZ
     "heat conduction into the ice at the interface, an [`AbstractIceConduction`](@ref) (default `MeltOnlyIceConduction()`)"
@@ -178,7 +178,7 @@ _param_defaults() = (
     seconds_per_year = 365.25 * 24 * 3600,
     entrainment = GasparEntrainment(2.5),
     melting = FixedGamTMelting(0.00018),
-    convection_scheme = RelaxToAmbientConvection(3600.0),
+    convection = RelaxToAmbientConvection(3600.0),
     frazil_ice = NoFrazilIce(),
     ice_conduction = MeltOnlyIceConduction(),
     equation_of_state = LinearEOS(),

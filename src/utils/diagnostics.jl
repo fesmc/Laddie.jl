@@ -144,7 +144,7 @@ function printdiags(sim)
 
     @. d = ifelse(m.tmask > 0, m.drho, 100.0)
     d_drho = 1000.0 * minimum(d)
-    @. d = m.convection * (m.tmask > 0)
+    @. d = m.convective_instability * (m.tmask > 0)
     d_conv = sum(d)
 
     line = @sprintf(

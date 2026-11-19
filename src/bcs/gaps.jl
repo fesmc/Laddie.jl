@@ -85,7 +85,7 @@ layer, its salt beyond `ice_salinity` stays (brine rejection).
 and S relax towards that water's on `convection_time` (s, default `10⁴`), as under
 [`RelaxToAmbientConvection`](@ref), and its thickness relaxes towards `H_min` at the same rate:
 the convected water leaves the layer.  This acts in every gap cell, whatever the cover
-and whatever the model's `convection_scheme`, which leaves gap cells alone.
+and whatever the model's `convection`, which leaves gap cells alone.
 
 The two ends:
 

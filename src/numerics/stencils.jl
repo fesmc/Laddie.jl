@@ -660,6 +660,25 @@ end
     end
 end
 
+# The direction-specific parts of the U and V launchers, by the C-grid location of the
+# component: its partner, its mask and its partner's, the ice-base slope, Coriolis and
+# spacing along it, its walls (`_u_walls`), the axis it lies along, its public operators
+# and its kernels.
+_uv(m, ::Var{Face,Center}) = (;
+    partner = m.V, mask = m.umask, partner_mask = m.vmask, slope = m.dzdx, f = m.fu, d = m.dx, walls = _u_walls,
+    axis = 1, laplace = laplace_U, advect = momentum_advection_U,
+    centred = _upwind_advection_U_kernel!, upstream = _upstream_advection_U_kernel!, prescribed = _laplace_U_kernel!,
+    nonlinear = _nonlinear_laplace_U_kernel!, half = _v_half_kernel!, collocate = _other_x_kernel!,
+    H_on = _H_on_u_kernel!, step = _step_u_momentum_kernel!,
+)
+_uv(m, ::Var{Center,Face}) = (;
+    partner = m.U, mask = m.vmask, partner_mask = m.umask, slope = m.dzdy, f = m.fv, d = m.dy, walls = _v_walls,
+    axis = 2, laplace = laplace_V, advect = momentum_advection_V,
+    centred = _upwind_advection_V_kernel!, upstream = _upstream_advection_V_kernel!, prescribed = _laplace_V_kernel!,
+    nonlinear = _nonlinear_laplace_V_kernel!, half = _u_half_kernel!, collocate = _other_y_kernel!,
+    H_on = _H_on_v_kernel!, step = _step_v_momentum_kernel!,
+)
+
 # Dispatch on `Params.momentum_advection`; the centred path is v1.x's.  `outflow`, an
 # array or `nothing`, receives the upstream scheme's outflow rate (`momentum_outflow`).
 momentum_advection_U(m, outflow = nothing) = advect_U(m, m.momentum_advection, outflow)
@@ -674,28 +693,6 @@ rate at which the point's own velocity leaves its control volume (see [`momentum
 """
 function advect_U end
 
-function advect_U(m, ::UpstreamMomentumAdvection, outflow)
-    nx, ny = size(m.U.present)
-    launch_interior!(
-        _upstream_advection_U_kernel!,
-        m.adv,
-        outflow,
-        m.H.present,
-        m.U.present,
-        m.V.present,
-        m.tmask,
-        m.ocn,
-        m.umask,
-        m.vmask,
-        m.dx,
-        m.dy,
-        nx,
-        ny,
-        m.params.kinks,
-    )
-    return m.adv
-end
-
 """
     advect_V(m, scheme, outflow)
 
@@ -703,65 +700,25 @@ As [`advect_U`](@ref), for the V equation.
 """
 function advect_V end
 
-function advect_V(m, ::UpstreamMomentumAdvection, outflow)
-    nx, ny = size(m.V.present)
-    launch_interior!(
-        _upstream_advection_V_kernel!,
-        m.adv,
-        outflow,
-        m.H.present,
-        m.U.present,
-        m.V.present,
-        m.tmask,
-        m.ocn,
-        m.umask,
-        m.vmask,
-        m.dx,
-        m.dy,
-        nx,
-        ny,
-        m.params.kinks,
-    )
+# The built-in schemes share one launcher for U and V (`_uv`).
+advect_U(m, s::Union{UpstreamMomentumAdvection,CentredMomentumAdvection}, outflow) = _advect!(m, s, m.U, outflow)
+advect_V(m, s::Union{UpstreamMomentumAdvection,CentredMomentumAdvection}, outflow) = _advect!(m, s, m.V, outflow)
+
+function _advect!(m, ::UpstreamMomentumAdvection, q, outflow)
+    nx, ny = size(q.present)
+    launch_interior!(_uv(m, q).upstream, m.adv, outflow, m.H.present, m.U.present, m.V.present, m.tmask, m.ocn,
+                     m.umask, m.vmask, m.dx, m.dy, nx, ny, m.params.kinks)
     return m.adv
 end
 
 # Centred advection has no outflow taken at the new level: `momentum_outflow` is zero.
-function advect_U(m, ::CentredMomentumAdvection, _)
-    launch_interior!(
-        _upwind_advection_U_kernel!,
-        m.adv,
-        m.H.present,
-        m.tmask,
-        m.ocn,
-        m.V.present,
-        m.vmask,
-        m.U.present,
-        m.umask,
-        _u_walls(m, advection_slips(m))...,
-        m.dx,
-        m.dy,
-        m.params.kinks,
-    )
+function _advect!(m, ::CentredMomentumAdvection, q, _)
+    c = _uv(m, q)
+    launch_interior!(c.centred, m.adv, m.H.present, m.tmask, m.ocn, m.V.present, m.vmask, m.U.present, m.umask,
+                     c.walls(m, advection_slips(m))..., m.dx, m.dy, m.params.kinks)
     return m.adv
 end
-function advect_V(m, ::CentredMomentumAdvection, _)
-    launch_interior!(
-        _upwind_advection_V_kernel!,
-        m.adv,
-        m.H.present,
-        m.tmask,
-        m.ocn,
-        m.V.present,
-        m.vmask,
-        m.U.present,
-        m.umask,
-        _v_walls(m, advection_slips(m))...,
-        m.dx,
-        m.dy,
-        m.params.kinks,
-    )
-    return m.adv
-end
+
 function laplace_T(out, m, var)
     launch_interior!(
         _lapT_kernel!,
@@ -794,99 +751,38 @@ function laplace_V end
 
 laplace_V(m) = laplace_V(m, m.lateral_viscosity)
 
-# PrescribedLateralViscosity: the plain Laplacian kernel, with the global A_h
-# folded into its output.
-function laplace_U(m, ::PrescribedLateralViscosity)
-    launch_interior!(
-        _laplace_U_kernel!,
-        m.lap,
-        m.U.past,
-        laplacian_thickness(m),
-        m.tmask,
-        m.ocn,
-        _u_walls(m, _viscosity_slips(m))...,
-        m.A_h,
-        m.dx^2,
-        m.dy^2,
-    )
-    return m.lap
-end
-function laplace_V(m, ::PrescribedLateralViscosity)
-    launch_interior!(
-        _laplace_V_kernel!,
-        m.lap,
-        m.V.past,
-        laplacian_thickness(m),
-        m.tmask,
-        m.ocn,
-        _v_walls(m, _viscosity_slips(m))...,
-        m.A_h,
-        m.dx^2,
-        m.dy^2,
-    )
+laplace_U(m, v::Union{PrescribedLateralViscosity,NonlinearLateralViscosity}) = _laplace!(m, v, m.U)
+laplace_V(m, v::Union{PrescribedLateralViscosity,NonlinearLateralViscosity}) = _laplace!(m, v, m.V)
+
+# PrescribedLateralViscosity: the plain Laplacian kernel, with the global A_h folded
+# into its output.
+function _laplace!(m, ::PrescribedLateralViscosity, q)
+    c = _uv(m, q)
+    launch_interior!(c.prescribed, m.lap, q.past, laplacian_thickness(m), m.tmask, m.ocn,
+                     c.walls(m, _viscosity_slips(m))..., m.A_h, m.dx^2, m.dy^2)
     return m.lap
 end
 
-# NonlinearLateralViscosity: the shear-scaled coefficient is per-face, so it must
-# be applied inside the kernel rather than as a post-hoc scalar multiply, at the
-# wall faces too (see _nonlinear_laplace_U_kernel!).
+# NonlinearLateralViscosity: the shear-scaled coefficient is per-face, so it must be
+# applied inside the kernel rather than as a post-hoc scalar multiply, at the wall faces
+# too (see _nonlinear_laplace_U_kernel!).
 #
-# The kernel reads the cross-velocity collocated onto the U points (`Hq`) and H on
-# the U points (`adv`), filled here in three passes over the grid.  `adv` is free
-# because `step_u_momentum!` forms this term before the advection one; `Hq` is only
-# used by the tracer steps.
-function laplace_U(m, lv::NonlinearLateralViscosity)
-    nx, ny = size(m.V.past)
+# The kernel reads the partner velocity collocated onto the points of `q` (`Hq`) and H
+# on those points (`adv`), filled here in three passes over the grid: the partner
+# averaged across `q`'s axis into `adv`, then along it into `Hq` (the 4-point average
+# the drag term uses for the speed), then H.  `adv` is free because the momentum step
+# forms this term before the advection one; `Hq` is only used by the tracer steps.
+function _laplace!(m, lv::NonlinearLateralViscosity, q)
+    c = _uv(m, q)
+    n_along, n_across = size(q.past, c.axis), size(q.past, 3 - c.axis)
     H0 = laplacian_thickness(m)
     other, Hface = m.Hq, m.adv
-    # V collocated onto the U points, so the kernel can form |Δu| across a face:
-    # the same 4-point average the drag term uses for the speed magnitude, formed
-    # in two halves (y into `adv`, then x into `Hq`).
-    launch!(_v_half_kernel!, m.adv, m.V.past, ny)
-    launch!(_other_x_kernel!, other, m.adv, nx)
-    launch!(_H_on_u_kernel!, Hface, H0, m.tmask, nx)
-    launch_interior!(
-        _nonlinear_laplace_U_kernel!,
-        m.lap,
-        m.U.past,
-        other,
-        Hface,
-        H0,
-        m.tmask,
-        m.ocn,
-        _u_walls(m, _viscosity_slips(m))...,
-        lv.C_visc * m.dx / 100,
-        lv.C_visc * m.dy / 100,
-        m.dx^2,
-        m.dy^2,
-        m.params.kinks,
-    )
-    return m.lap
-end
-function laplace_V(m, lv::NonlinearLateralViscosity)
-    nx, ny = size(m.U.past)
-    H0 = laplacian_thickness(m)
-    other, Hface = m.Hq, m.adv
-    # U collocated onto the V points (x half, then y); mirrors laplace_U above.
-    launch!(_u_half_kernel!, m.adv, m.U.past, nx)
-    launch!(_other_y_kernel!, other, m.adv, ny)
-    launch!(_H_on_v_kernel!, Hface, H0, m.tmask, ny)
-    launch_interior!(
-        _nonlinear_laplace_V_kernel!,
-        m.lap,
-        m.V.past,
-        other,
-        Hface,
-        H0,
-        m.tmask,
-        m.ocn,
-        _v_walls(m, _viscosity_slips(m))...,
-        lv.C_visc * m.dx / 100,
-        lv.C_visc * m.dy / 100,
-        m.dx^2,
-        m.dy^2,
-        m.params.kinks,
-    )
+    launch!(c.half, m.adv, c.partner.past, n_across)
+    launch!(c.collocate, other, m.adv, n_along)
+    launch!(c.H_on, Hface, H0, m.tmask, n_along)
+    launch_interior!(c.nonlinear, m.lap, q.past, other, Hface, H0, m.tmask, m.ocn,
+                     c.walls(m, _viscosity_slips(m))..., lv.C_visc * m.dx / 100, lv.C_visc * m.dy / 100,
+                     m.dx^2, m.dy^2, m.params.kinks)
     return m.lap
 end
 

@@ -607,150 +607,52 @@ function step_thickness!(m, dt)
     )
     return
 end
-function step_u_momentum!(m, dt)
+step_u_momentum!(m, dt) = _step_momentum!(m, m.U, dt)
+step_v_momentum!(m, dt) = _step_momentum!(m, m.V, dt)
+
+# The momentum step of the component `q`, U or V (`_uv`).
+function _step_momentum!(m, q, dt)
+    c = _uv(m, q)
     # Laplacian first: NonlinearLateralViscosity uses `adv` as scratch.
-    laplace_U(m)
+    c.laplace(m)
     outflow = momentum_outflow(m)
-    momentum_advection_U(m, outflow)
-    launch_interior!(
-        _step_u_momentum_kernel!,
-        m.U.future,
-        m.U.past,
-        m.U.present,
-        m.dHdt,
-        m.Hdrho,
-        m.H.present,
-        m.drho,
-        m.dzdx,
-        m.V.present,
-        m.detr,
-        m.detr_cap,
-        m.adv,
-        m.lap,
-        m.tmask,
-        m.umask,
-        m.vmask,
-        m.fu,
-        closure_field(m.U, m.params.closure_level),
-        closure_field(m.V, m.params.closure_level),
-        m.H.past,
-        m.H.future,
-        m.convH,
-        m.melt,
-        m.nentr,
-        _or_zero(outflow, m.FT),
-        m.frazil,
-        m.gap_drag,
-        m.g,
-        m.C_d,
-        front_pgf_weight(m.front_pressure, m.g),
-        front_drho_weight(m.front_pressure, m.g),
-        m.dx,
-        dt,
-        m.params.kinks,
-        m.params.momentum_form,
-    )
+    c.advect(m, outflow)
+    level = m.params.closure_level
+    launch_interior!(c.step, q.future, q.past, q.present, m.dHdt, m.Hdrho, m.H.present, m.drho, c.slope,
+                     c.partner.present, m.detr, m.detr_cap, m.adv, m.lap, m.tmask, c.mask, c.partner_mask, c.f,
+                     closure_field(q, level), closure_field(c.partner, level), m.H.past, m.H.future, m.convH,
+                     m.melt, m.nentr, _or_zero(outflow, m.FT), m.frazil, m.gap_drag, m.g, m.C_d,
+                     front_pgf_weight(m.front_pressure, m.g), front_drho_weight(m.front_pressure, m.g), c.d, dt,
+                     m.params.kinks, m.params.momentum_form)
     return
 end
-function step_v_momentum!(m, dt)
-    # Laplacian first, as in step_u_momentum!.
-    laplace_V(m)
-    outflow = momentum_outflow(m)
-    momentum_advection_V(m, outflow)
-    launch_interior!(
-        _step_v_momentum_kernel!,
-        m.V.future,
-        m.V.past,
-        m.V.present,
-        m.dHdt,
-        m.Hdrho,
-        m.H.present,
-        m.drho,
-        m.dzdy,
-        m.U.present,
-        m.detr,
-        m.detr_cap,
-        m.adv,
-        m.lap,
-        m.tmask,
-        m.vmask,
-        m.umask,
-        m.fv,
-        closure_field(m.V, m.params.closure_level),
-        closure_field(m.U, m.params.closure_level),
-        m.H.past,
-        m.H.future,
-        m.convH,
-        m.melt,
-        m.nentr,
-        _or_zero(outflow, m.FT),
-        m.frazil,
-        m.gap_drag,
-        m.g,
-        m.C_d,
-        front_pgf_weight(m.front_pressure, m.g),
-        front_drho_weight(m.front_pressure, m.g),
-        m.dy,
-        dt,
-        m.params.kinks,
-        m.params.momentum_form,
-    )
+
+# The transport terms of a tracer `q`: the advection of its content H·q into `adv`, the
+# Laplacian of its past level into `lap`, and the outflow rate into `Hq`.
+function _tracer_transport!(m, q)
+    launch!(_product_kernel!, m.Hq, m.H.present, q.present)
+    upwind_advection_T(m.adv, m, m.Hq)
+    laplace_T(m.lap, m, q.past)
+    outflow_rate!(m, m.params.tracer_form)
     return
 end
+
 function step_temperature!(m, dt)
-    launch!(_product_kernel!, m.Hq, m.H.present, m.T.present)
-    upwind_advection_T(m.adv, m, m.Hq)
-    laplace_T(m.lap, m, m.T.past)
-    outflow_rate!(m, m.params.tracer_form)
-    args = (
-        m.T.future,
-        m.T.past,
-        m.T.present,
-        m.dHdt,
-        m.adv,
-        m.nentr,
-        m.detr_cap,
-        m.Ta,
-        m.melt,
-        m.Tb,
-        m.lap,
-        m.H.present,
-        m.H.past,
-        m.H.future,
-        m.convH,
-        m.Hq,
-        m.tmask,
-        m.params.tracer_form,
-    )
+    _tracer_transport!(m, m.T)
+    H, T = m.H, m.T
     gamT = first(_exchange_velocities(m))
-    launch!(_step_temperature_kernel!, args..., gamT, m.K_h, m.conv2, m.frazil, m.L, m.c_p, dt)
+    launch!(_step_temperature_kernel!, T.future, T.past, T.present, m.dHdt, m.adv, m.nentr, m.detr_cap, m.Ta,
+            m.melt, m.Tb, m.lap, H.present, H.past, H.future, m.convH, m.Hq, m.tmask, m.params.tracer_form,
+            gamT, m.K_h, m.conv2, m.frazil, m.L, m.c_p, dt)
     return
 end
+
 function step_salinity!(m, dt)
-    launch!(_product_kernel!, m.Hq, m.H.present, m.S.present)
-    upwind_advection_T(m.adv, m, m.Hq)
-    laplace_T(m.lap, m, m.S.past)
-    outflow_rate!(m, m.params.tracer_form)
-    args = (
-        m.S.future,
-        m.S.past,
-        m.S.present,
-        m.dHdt,
-        m.adv,
-        m.nentr,
-        m.detr_cap,
-        m.Sa,
-        m.lap,
-        m.H.present,
-        m.H.past,
-        m.H.future,
-        m.convH,
-        m.melt,
-        m.Hq,
-        m.tmask,
-        m.params.tracer_form,
-    )
-    launch!(_step_salinity_kernel!, args..., m.K_h, m.conv2, m.frazil, dt)
+    _tracer_transport!(m, m.S)
+    H, S = m.H, m.S
+    launch!(_step_salinity_kernel!, S.future, S.past, S.present, m.dHdt, m.adv, m.nentr, m.detr_cap, m.Sa,
+            m.lap, H.present, H.past, H.future, m.convH, m.melt, m.Hq, m.tmask, m.params.tracer_form,
+            m.K_h, m.conv2, m.frazil, dt)
     return
 end
 

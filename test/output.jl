@@ -176,20 +176,12 @@ end
     @test meta2["run"]["t_start_days"] ≈ 1.0 atol = 0.01
     @test meta2["simulation"]["restart"] == restartfile
 
-    # A restart loads into a model of another precision, and a file from before
-    # the D → H rename (thickness stored as "D") still loads.
+    # A restart loads into a model of another precision.
     m_ref = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, restart = restartfile)
     m32 = build_isomip(CPU(); FT = Float32, nx = 20, ny = 10, isomipcond = :warm,
                        restart = restartfile)
     @test eltype(m32.model.H.present) == Float32
     @test m32.model.T.present ≈ Float32.(m_ref.model.T.present)
-    legacy = joinpath(tmpdir, "legacy_D.jld2")
-    JLD2.jldopen(restartfile, "r") do f
-        JLD2.jldsave(legacy; t_days = f["t_days"], dt = f["dt"], D = f["H"],
-                            U = f["U"], V = f["V"], T = f["T"], S = f["S"])
-    end
-    m_legacy = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, restart = legacy)
-    @test m_legacy.model.H.present == m_ref.model.H.present
 
     # Typed Model: unknown properties now error instead of landing in a Dict
     @test_throws ErrorException m.model.no_such_field
@@ -235,16 +227,6 @@ end
     @test checked > 0.9 * count(tm_f)
     run!(fine; days = 0.2, verbose = false)
     @test all(isfinite, fine.model.H.present) && all(isfinite, fine.model.melt)
-
-    # A file without the grid (written before it was stored) needs `coarse_grid`.
-    legacy = joinpath(tmp, "legacy.jld2")
-    JLD2.jldopen(file, "r") do f
-        JLD2.jldsave(legacy; t_days = f["t_days"], dt = f["dt"], H = f["H"],
-                            U = f["U"], V = f["V"], T = f["T"], S = f["S"])
-    end
-    @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), legacy; refine = 2)
-    f2 = Laddie.init_from_restart!(fine_sim(), legacy; refine = 2, coarse_grid = gc)
-    @test f2.model.H.past == Laddie.init_from_restart!(fine_sim(), file; refine = 2).model.H.past
 
     # Mismatches are caught: a plain restart onto the finer grid, and a factor that
     # does not refine the coarse domain.

@@ -1,8 +1,7 @@
 
 # Arakawa C-grid location vocabulary: a prognostic's staggering position is
-# carried in its type as (LX, LY), e.g. U is Var{Face, Center}.  No method
-# currently dispatches on these — they document the staggering and keep the
-# door open for location-dispatched operators.
+# carried in its type as (LX, LY), e.g. U is Var{Face, Center}.  The momentum
+# launchers tell U from V by it (`_uv`).
 abstract type AbstractLoc end
 struct Center <: AbstractLoc end
 struct Face <: AbstractLoc end

@@ -883,28 +883,27 @@ function saverestart!(sim)
 end
 
 """
-    init_from_restart!(sim, path; refine = 1, coarse_grid = nothing)
+    init_from_restart!(sim, path; refine = 1)
 
 Load the leapfrog levels of H, U, V, T, S from the JLD2 restart at `path`, onto the model's
 backend and precision, and set the clock to the restart time. On the same grid and `dt` the
 run continues to the last bit; [`FixedTimeStepper`](@ref) keeps its own `dt` and restarts the
-leapfrog if the file's differs. `refine = f > 1` loads the restart of a run `f` times coarser
-(`coarse_grid` for files that do not store it). [`Simulation`](@ref) calls it for its
+leapfrog if the file's differs. `refine = f > 1` loads the restart of a run `f` times coarser.
+[`Simulation`](@ref) calls it for its
 `restart` keyword. Details on the [Output and restarts](@ref) page.
 """
-function init_from_restart!(sim, path::AbstractString; refine::Integer = 1, coarse_grid = nothing)
+function init_from_restart!(sim, path::AbstractString; refine::Integer = 1)
     refine ≥ 1 || throw(ArgumentError("refine must be a positive integer, got $refine"))
     m = sim.model
     sim.io.restartfile = path
     exact = jldopen(path, "r") do f
         sim.clock.time = f["t_days"] * _float64(m.seconds_per_day)
-        file_dt = haskey(f, "dt") ? f["dt"] / refine : nothing
+        file_dt = f["dt"] / refine
         exact = refine == 1 ? _restart_dt!(sim, sim.time_stepper, file_dt) : _refined_dt!(sim, file_dt)
-        refine == 1 && haskey(f, "tmask") && _check_restart_tmask(m, f["tmask"], path)
-        fine = refine == 1 ? (name, a, dst) -> a : _refiner(m, f, refine, coarse_grid)
+        refine == 1 && _check_restart_tmask(m, f["tmask"], path)
+        fine = refine == 1 ? (name, a, dst) -> a : _refiner(m, f, refine)
         for (name, var) in pairs(_prognostics(m))
-            # Restarts from before the layer thickness was renamed D → H store it as "D".
-            data = f[name == :H && !haskey(f, "H") ? "D" : String(name)]
+            data = f[String(name)]
             # The file holds plain CPU arrays: convert each level to the model's
             # element type (FT, or a `Dual` with zero derivatives), then copy it to
             # the model's device.  A broadcast from a CPU array into a device array
@@ -931,14 +930,12 @@ function init_from_restart!(sim, path::AbstractString; refine::Integer = 1, coar
 end
 
 # The dt a restart continues with, by time stepper: true when the three levels of the
-# file are a leapfrog step of that dt (`file_dt` is `nothing` for files without one).
+# file are a leapfrog step of that dt.
 function _restart_dt!(sim, ::AdaptiveTimeStepper, file_dt)
-    file_dt === nothing && return false
     sim.clock.dt = sim.model.FT(file_dt)
     return true
 end
 function _restart_dt!(sim, ::AbstractTimeStepper, file_dt)
-    file_dt === nothing && return false
     same = sim.clock.dt == sim.model.FT(file_dt)
     if !same
         note = @sprintf(
@@ -955,7 +952,7 @@ end
 # A refined restart takes the coarse run's dt divided by the refinement, whatever the
 # stepper, and always restarts the leapfrog.
 function _refined_dt!(sim, file_dt)
-    file_dt === nothing || (sim.clock.dt = sim.model.FT(file_dt))
+    sim.clock.dt = sim.model.FT(file_dt)
     return false
 end
 
@@ -985,29 +982,11 @@ function _check_restart_tmask(m, tmask, path)
     return
 end
 
-# The coarse run's grid as the restart file stores it, or as `coarse_grid` gives it
-# for files written before it was stored: its active cells (cropped), crop ranges,
-# full-domain size and spacing (`nothing` when unknown).
-function _coarse_layout(f, coarse_grid)
-    if haskey(f, "tmask")
-        (r, c) = f["crop"]
-        return (; tmask = f["tmask"], crop = (r[1]:r[2], c[1]:c[2]), input_size = f["input_size"], dx = f["dx"])
-    end
-    coarse_grid === nothing && throw(
-        ArgumentError(
-            "this restart file does not store its grid (written before refinement was " *
-            "supported); pass the coarse run's Grid as `coarse_grid`",
-        ),
-    )
-    g = coarse_grid
-    tmask = (g.mask .== 3) .| (g.mask .== 4)   # active cells: shelf and gaps
-    return (; tmask, crop = g.crop, input_size = Tuple(g.input_size), dx = _float64(g.dx))
-end
-
 # A function `(name, coarse level, model level) -> fine level` that refines a
 # coarse restart onto the model's grid, `f` times finer (`init_from_restart!`).
-function _refiner(m, file, f, coarse_grid)
-    co = _coarse_layout(file, coarse_grid)
+function _refiner(m, file, f)
+    (r, c) = file["crop"]
+    co = (; tmask = file["tmask"], crop = (r[1]:r[2], c[1]:c[2]), input_size = file["input_size"], dx = file["dx"])
     g = m.grid
     # The fine domain may hold up to f − 1 more cells at the far end of each axis: a
     # grid coarsened by whole blocks drops the source grid's remainder (BedMachine's
@@ -1019,7 +998,7 @@ function _refiner(m, file, f, coarse_grid)
             "$(co.input_size) (border ring kept) is $fine_size, up to $(f - 1) more",
         ),
     )
-    co.dx === nothing || isapprox(co.dx, f * _float64(g.dx); rtol = 1e-6) || throw(
+    isapprox(co.dx, f * _float64(g.dx); rtol = 1e-6) || throw(
         ArgumentError("the restart's dx is $(co.dx) m, not $(f)× the model's $(_float64(g.dx)) m"),
     )
     # Coarse cropped index of the coarse cell holding each fine cell of the model's

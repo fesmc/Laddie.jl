@@ -1,29 +1,24 @@
-# Properties resolved before the field-forwarding chain in getproperty.
-const _RESERVED_PROPS =
-    (:grid, :geometry, :state, :cache, :params, :boundary, :forcing, :FT, :ny, :nx)
+# The parts of a Model whose fields `m.<name>` reaches, in lookup order.  `CavityForcing`
+# is a container, not a namespace: its `ocean` and `ice` members are searched, not the
+# wrapper (`m.ocean` is not a property).
+_parts(grid, geometry, state, cache, params, forcing) =
+    (grid, geometry, state, cache, params, getfield(forcing, :ocean), getfield(forcing, :ice))
+_parts(m) = _parts(getfield(m, :grid), getfield(m, :geometry), getfield(m, :state), getfield(m, :cache),
+                   getfield(m, :params), getfield(m, :forcing))
 
-# The flat forwarding layer resolves `m.field` by searching the sub-structs in
-# a fixed order, so a field name appearing in two of them would be silently
-# shadowed by whichever comes first.  Reject such configurations outright —
-# this matters mostly for user-defined forcing types.  The `CavityForcing` wrapper
-# itself is transparent: forwarding descends into its `ocean` and `ice` members, so
-# those are what have to be collision-free, not the wrapper.  Called from the inner
-# constructor so no construction path can bypass it.
-function _check_property_collisions(grid, geometry, state, cache, params, forcing)
+# Properties answered before the forwarding: the fields of `Model` and these.
+const _DERIVED_PROPS = (:FT, :nx, :ny)
+
+# The forwarding takes the first part that holds a name, so a name in two parts would be
+# shadowed silently.  Such configurations, mostly from user forcing types, are rejected
+# here, in the inner constructor, so that no construction path bypasses the check.
+function _check_property_collisions(parts...)
     seen = Dict{Symbol,String}()
-    for (label, x) in (
-        ("Grid", grid),
-        ("Geometry", geometry),
-        ("State", state),
-        ("Cache", cache),
-        ("Params", params),
-        (string(nameof(typeof(forcing.ocean))), forcing.ocean),
-        (string(nameof(typeof(forcing.ice))), forcing.ice),
-    )
+    for x in _parts(parts...)
+        label = string(nameof(typeof(x)))
         for fn in fieldnames(typeof(x))
-            fn in _RESERVED_PROPS && error(
-                "field `$fn` of $label collides with the reserved Model property `$fn`",
-            )
+            (fn in fieldnames(Model) || fn in _DERIVED_PROPS) &&
+                error("field `$fn` of $label collides with the reserved Model property `$fn`")
             haskey(seen, fn) && error(
                 "Model property forwarding is ambiguous: field `$fn` exists in both $(seen[fn]) and $label",
             )
@@ -60,15 +55,7 @@ with [`to_backend`](@ref). Fields of its parts are read directly on `m`:
 # Fields
 $(TYPEDFIELDS)
 """
-mutable struct Model{
-    G<:Grid,
-    GE<:Geometry,
-    S<:State,
-    C<:Cache,
-    P<:Params,
-    B<:BoundaryConditions,
-    F<:CavityForcing,
-}
+mutable struct Model{G<:Grid,GE<:Geometry,S<:State,C<:Cache,P<:Params,B<:BoundaryConditions,F<:CavityForcing}
     "the [`Grid`](@ref): cell layout, mask, ice draft, bed and coordinates"
     grid::G
     "masks, wall indicators, ice-base slope and Coriolis field derived from the grid"
@@ -84,97 +71,33 @@ mutable struct Model{
     "ocean and ice forcing ([`CavityForcing`](@ref))"
     forcing::F
 
-    function Model{G,GE,S,C,P,B,F}(
-        grid,
-        geometry,
-        state,
-        cache,
-        params,
-        boundary,
-        forcing,
-    ) where {
-        G<:Grid,
-        GE<:Geometry,
-        S<:State,
-        C<:Cache,
-        P<:Params,
-        B<:BoundaryConditions,
-        F<:CavityForcing,
-    }
+    function Model{G,GE,S,C,P,B,F}(grid, geometry, state, cache, params, boundary, forcing) where {G,GE,S,C,P,B,F}
         _check_property_collisions(grid, geometry, state, cache, params, forcing)
         return new{G,GE,S,C,P,B,F}(grid, geometry, state, cache, params, boundary, forcing)
     end
 end
 
-Model(
-    grid::G,
-    geometry::GE,
-    state::S,
-    cache::C,
-    params::P,
-    boundary::B,
-    forcing::F,
-) where {G,GE,S,C,P,B,F} =
+Model(grid::G, geometry::GE, state::S, cache::C, params::P, boundary::B, forcing::F) where {G,GE,S,C,P,B,F} =
     Model{G,GE,S,C,P,B,F}(grid, geometry, state, cache, params, boundary, forcing)
 
+# `m.k` from the first part that holds `k`.  Recursive over the parts, so that with a
+# constant `k` the lookup folds to one field access.
+@inline _forward(k, x, rest...) = hasfield(typeof(x), k) ? getfield(x, k) : _forward(k, rest...)
+@inline _forward(k) = error("Model has no property `$k`")
+
 function Base.getproperty(m::Model, k::Symbol)
-    # Direct struct fields — fast path
-    k === :grid && return getfield(m, :grid)
-    k === :geometry && return getfield(m, :geometry)
-    k === :state && return getfield(m, :state)
-    k === :cache && return getfield(m, :cache)
-    k === :params && return getfield(m, :params)
-    k === :boundary && return getfield(m, :boundary)
-    k === :forcing && return getfield(m, :forcing)
+    hasfield(typeof(m), k) && return getfield(m, k)
     k === :FT && return _float_type(getfield(m, :params))
-    # Interior dimensions derived from grid (total minus 2 border cells)
-    k === :ny && return getfield(m, :grid).Ny - 2
+    # Interior dimensions: the grid's minus the border ring.
     k === :nx && return getfield(m, :grid).Nx - 2
-    # Grid: cell layout, raw mask, draft, bed, coordinates
-    g = getfield(m, :grid)
-    hasfield(typeof(g), k) && return getfield(g, k)
-    # Geometry: resolved mask, derived masks, wall indicators, slope, Coriolis
-    gm = getfield(m, :geometry)
-    hasfield(typeof(gm), k) && return getfield(gm, k)
-    # State: prognostic Var objects
-    s = getfield(m, :state)
-    hasfield(typeof(s), k) && return getfield(s, k)
-    # Cache: mutable scratch / diagnostic arrays
-    c = getfield(m, :cache)
-    hasfield(typeof(c), k) && return getfield(c, k)
-    # Params: physical constants + parameterization objects
-    p = getfield(m, :params)
-    hasfield(typeof(p), k) && return getfield(p, k)
-    # Forcing: ambient T/S profiles on the uniform z-grid, then the ice state.
-    # `CavityForcing` is a container, not a namespace — `m.ocean` / `m.ice` are not
-    # forwarded, only the members' own fields.
-    f = getfield(m, :forcing)
-    fo = getfield(f, :ocean)
-    hasfield(typeof(fo), k) && return getfield(fo, k)
-    fi = getfield(f, :ice)
-    hasfield(typeof(fi), k) && return getfield(fi, k)
-    error("Model has no property `$k`")
+    k === :ny && return getfield(m, :grid).Ny - 2
+    return _forward(k, _parts(m)...)
 end
 
 # Everything `getproperty` answers to, in its lookup order, so that REPL completion
 # shows the forwarded names too.
-function Base.propertynames(m::Model, ::Bool = false)
-    names(x) = fieldnames(typeof(x))
-    f = getfield(m, :forcing)
-    return (
-        fieldnames(Model)...,
-        :FT,
-        :nx,
-        :ny,
-        names(getfield(m, :grid))...,
-        names(getfield(m, :geometry))...,
-        names(getfield(m, :state))...,
-        names(getfield(m, :cache))...,
-        names(getfield(m, :params))...,
-        names(getfield(f, :ocean))...,
-        names(getfield(f, :ice))...,
-    )
-end
+Base.propertynames(m::Model, ::Bool = false) =
+    (fieldnames(Model)..., _DERIVED_PROPS..., (fn for x in _parts(m) for fn in fieldnames(typeof(x)))...)
 
 function Base.setproperty!(m::Model, k::Symbol, v)
     # Cache is mutable — all physics scratch arrays live here

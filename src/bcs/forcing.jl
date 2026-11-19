@@ -428,127 +428,63 @@ _as_cavity_forcing(f) = throw(
 # Ambient T/S at the layer base: `update_ambient_fields!` and its kernels
 # ============================================================================
 
-@kernel function _ambient_interp_kernel!(
-    Ta,
-    Sa,
-    @Const(z_draft),
-    @Const(H),
-    @Const(Tz),
-    @Const(Sz),
-    z0,
-    dz,
-    nz,
-)
-    z0, dz = _val(z0), _val(dz)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = typeof(z0)
-        depth_idx = (z_draft[i, j] - H[i, j] - z0) / dz
-        # Guard against non-finite or out-of-range depth_idx before the integer
-        # conversion: trunc(Int, x) throws InexactError on CPU and is UB on GPU
-        # when x overflows Int64 (~9.2e18).  Clamp to [0, nz-1] in float first
-        # so trunc always receives a representable value.
-        depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
-        depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
-        # unsafe_trunc: the value is in range after the clamp, and the checked
-        # `trunc` leaves an InexactError branch (a trap) that Reactant cannot raise.
-        # The weight subtracts `floor` (= trunc, depth_idx ≥ 0), not the index
-        # converted back: Enzyme on raised kernels (Reactant 0.2.286) passes the
-        # derivative through the int round trip, so `depth_idx - FT(idx_lo)` gets
-        # a zero tangent.
-        lo = floor(_primal(depth_idx))
-        idx_lo = unsafe_trunc(Int, lo)
-        idx_hi = clamp(idx_lo + 1, 0, nz - 1)
-        weight = depth_idx - lo
-        Ta[i, j] = weight * _level(Tz, i, j, idx_hi + 1) + (one(FT) - weight) * _level(Tz, i, j, idx_lo + 1)
-        Sa[i, j] = weight * _level(Sz, i, j, idx_hi + 1) + (one(FT) - weight) * _level(Sz, i, j, idx_lo + 1)
-    end
+# The profile levels around the layer base z_draft − H of cell (i, j): the 1-based
+# indices `lo`, `hi` and the weight of `hi`.  The depth index is made finite and clamped
+# to [0, nz − 1] in float first, so that `unsafe_trunc` always receives a representable
+# value: the checked `trunc` leaves an InexactError branch (a trap) that Reactant cannot
+# raise.  The weight subtracts `floor`, not the index converted back: Enzyme on raised
+# kernels (Reactant 0.2.286) passes the derivative through the int round trip, so
+# `depth_idx - FT(idx_lo)` gets a zero tangent.
+@inline function _depth_levels(z_draft, H, z0, dz, nz, i, j)
+    FT = typeof(z0)
+    depth_idx = @inbounds (z_draft[i, j] - H[i, j] - z0) / dz
+    depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
+    depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
+    lo = floor(_primal(depth_idx))
+    idx_lo = unsafe_trunc(Int, lo)
+    idx_hi = clamp(idx_lo + 1, 0, nz - 1)
+    return idx_lo + 1, idx_hi + 1, depth_idx - lo
 end
 
 # Level `k` of the ambient profile seen by cell (i, j): the one profile of an
-# `OceanForcing1D`, or the cell's own column of an `OceanForcing2D`.
-@inline _level(P::AbstractVector, i, j, k) = @inbounds P[k]
-@inline _level(P::AbstractArray{<:Any,3}, i, j, k) = @inbounds P[i, j, k]
+# `OceanForcing1D`, the cell's own column of an `OceanForcing2D`, or the row of the
+# cell's basin in the `(n_basins, nz)` table of a `PerBasinOceanForcing1D`.
+@inline _profile_level(P::AbstractVector, ::Nothing, i, j, k) = @inbounds P[k]
+@inline _profile_level(P::AbstractArray{<:Any,3}, ::Nothing, i, j, k) = @inbounds P[i, j, k]
+@inline _profile_level(P::AbstractMatrix, basin::AbstractMatrix, i, j, k) = @inbounds P[basin[i, j], k]
 
-# The ambient sampling of a `PerBasinOceanForcing1D`: as `_ambient_interp_kernel!`,
-# reading the profile of the cell's basin, row `basin[i, j]` of the `(n_basins, nz)`
-# tables. A kernel of its own, so the shared one (and its Reactant/Enzyme
-# workarounds) stays as it is; the depth index is computed the same way.
-@kernel function _ambient_interp_basin_kernel!(
-    Ta,
-    Sa,
-    @Const(z_draft),
-    @Const(H),
-    @Const(Tz),
-    @Const(Sz),
-    @Const(basin),
-    z0,
-    dz,
-    nz,
-)
+# The profile `P` at the layer base, between levels `lo` and `hi` (weight `a` of `hi`).
+@inline _sample(P, basin, i, j, lo, hi, a, FT) =
+    a * _profile_level(P, basin, i, j, hi) + (one(FT) - a) * _profile_level(P, basin, i, j, lo)
+
+@kernel function _ambient_interp_kernel!(Ta, Sa, @Const(z_draft), @Const(H), @Const(Tz), @Const(Sz), basin, z0, dz, nz)
     z0, dz = _val(z0), _val(dz)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(z0)
-        depth_idx = (z_draft[i, j] - H[i, j] - z0) / dz
-        depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
-        depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
-        lo = floor(_primal(depth_idx))
-        idx_lo = unsafe_trunc(Int, lo)
-        idx_hi = clamp(idx_lo + 1, 0, nz - 1)
-        weight = depth_idx - lo
-        b = basin[i, j]
-        Ta[i, j] = weight * Tz[b, idx_hi+1] + (one(FT) - weight) * Tz[b, idx_lo+1]
-        Sa[i, j] = weight * Sz[b, idx_hi+1] + (one(FT) - weight) * Sz[b, idx_lo+1]
+        lo, hi, a = _depth_levels(z_draft, H, z0, dz, nz, i, j)
+        Ta[i, j] = _sample(Tz, basin, i, j, lo, hi, a, FT)
+        Sa[i, j] = _sample(Sz, basin, i, j, lo, hi, a, FT)
     end
 end
 
-
-# The ambient sampling of a `RampedOceanForcing`: as `_ambient_interp_kernel!`, from the
-# two profile tables blended with the weight `w` of the second. A kernel of its own, so
-# the shared ones (and their Reactant/Enzyme workarounds) stay as they are. `basin` is
-# the basin map of a `PerBasinOceanForcing1D` pair and `nothing` otherwise.
+# The ambient sampling of a `RampedOceanForcing`: the two profile tables blended with
+# the weight `w` of the second, exact at w = 0 and w = 1.
 @kernel function _ambient_interp_ramp_kernel!(
-    Ta,
-    Sa,
-    @Const(z_draft),
-    @Const(H),
-    @Const(Tz0),
-    @Const(Sz0),
-    @Const(Tz1),
-    @Const(Sz1),
-    basin,
-    w,
-    z0,
-    dz,
-    nz,
+    Ta, Sa, @Const(z_draft), @Const(H), @Const(Tz0), @Const(Sz0), @Const(Tz1), @Const(Sz1), basin, w, z0, dz, nz,
 )
     z0, dz, w = _val(z0), _val(dz), _val(w)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        FT = typeof(z0)
-        depth_idx = (z_draft[i, j] - H[i, j] - z0) / dz
-        depth_idx = ifelse(isfinite(depth_idx), depth_idx, zero(FT))
-        depth_idx = clamp(depth_idx, zero(FT), FT(nz - 1))
-        lo = floor(_primal(depth_idx))
-        idx_lo = unsafe_trunc(Int, lo)
-        idx_hi = clamp(idx_lo + 1, 0, nz - 1)
-        weight = depth_idx - lo
-        Ta[i, j] = _ramped_sample(Tz0, Tz1, w, basin, i, j, idx_lo + 1, idx_hi + 1, weight)
-        Sa[i, j] = _ramped_sample(Sz0, Sz1, w, basin, i, j, idx_lo + 1, idx_hi + 1, weight)
+        FT = typeof(w)
+        lo, hi, a = _depth_levels(z_draft, H, z0, dz, nz, i, j)
+        Ta[i, j] = (one(FT) - w) * _sample(Tz0, basin, i, j, lo, hi, a, FT) + w * _sample(Tz1, basin, i, j, lo, hi, a, FT)
+        Sa[i, j] = (one(FT) - w) * _sample(Sz0, basin, i, j, lo, hi, a, FT) + w * _sample(Sz1, basin, i, j, lo, hi, a, FT)
     end
 end
 
-# Level `k` of the profile of cell (i, j), with the basin map of a per-basin table.
-@inline _profile_level(P, ::Nothing, i, j, k) = _level(P, i, j, k)
-@inline _profile_level(P::AbstractMatrix, basin::AbstractMatrix, i, j, k) = @inbounds P[basin[i, j], k]
-# The ramped value between levels `lo` and `hi` (depth weight `a`) of tables `P0`, `P1`.
-@inline function _ramped_sample(P0, P1, w, basin, i, j, lo, hi, a)
-    FT = typeof(w)
-    v0 = a * _profile_level(P0, basin, i, j, hi) + (one(FT) - a) * _profile_level(P0, basin, i, j, lo)
-    v1 = a * _profile_level(P1, basin, i, j, hi) + (one(FT) - a) * _profile_level(P1, basin, i, j, lo)
-    return (one(FT) - w) * v0 + w * v1   # exact at w = 0 and w = 1
-end
+_basin(o::PerBasinOceanForcing1D) = o.basin
+_basin(::AbstractOceanForcing) = nothing
 
 """
 $(TYPEDSIGNATURES)
@@ -561,55 +497,12 @@ update_ambient_fields!(m) = update_ambient_fields!(m, m.forcing.ocean)
 
 function update_ambient_fields!(m, o::RampedOceanForcing)
     from, to = o.from, o.to
-    launch!(
-        _ambient_interp_ramp_kernel!,
-        m.Ta,
-        m.Sa,
-        m.z_draft,
-        m.H.present,
-        from.Tz,
-        from.Sz,
-        to.Tz,
-        to.Sz,
-        from isa PerBasinOceanForcing1D ? from.basin : nothing,
-        o.weight[],
-        from.z0,
-        from.dz,
-        length(from.z),
-    )
+    launch!(_ambient_interp_ramp_kernel!, m.Ta, m.Sa, m.z_draft, m.H.present, from.Tz, from.Sz, to.Tz, to.Sz,
+            _basin(from), o.weight[], from.z0, from.dz, length(from.z))
     return
 end
 
-function update_ambient_fields!(m, ::PerBasinOceanForcing1D)
-    launch!(
-        _ambient_interp_basin_kernel!,
-        m.Ta,
-        m.Sa,
-        m.z_draft,
-        m.H.present,
-        m.Tz,
-        m.Sz,
-        m.basin,
-        m.z0,
-        m.dz,
-        length(m.z),
-    )
-    return
-end
-
-function update_ambient_fields!(m, ::AbstractOceanForcing)
-    nz = length(m.z)
-    launch!(
-        _ambient_interp_kernel!,
-        m.Ta,
-        m.Sa,
-        m.z_draft,
-        m.H.present,
-        m.Tz,
-        m.Sz,
-        m.z0,
-        m.dz,
-        nz,
-    )
+function update_ambient_fields!(m, o::AbstractOceanForcing)
+    launch!(_ambient_interp_kernel!, m.Ta, m.Sa, m.z_draft, m.H.present, o.Tz, o.Sz, _basin(o), o.z0, o.dz, length(o.z))
     return
 end

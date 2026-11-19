@@ -108,5 +108,4 @@ stores the active cells must match the model's.
 - fine cells whose coarse cell was not active (a finer shelf reaches further) keep their
   state, so refine onto a simulation started from rest;
 - `dt` is the restart's divided by `f`, and the leapfrog restarts with a forward step;
-- the two runs may crop their domains differently. The coarse grid is read from the file;
-  older files need the coarse run's [`Grid`](@ref) as `coarse_grid`.
+- the two runs may crop their domains differently; the coarse grid is read from the file.

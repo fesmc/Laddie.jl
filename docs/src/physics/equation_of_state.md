@@ -61,7 +61,7 @@ with ``\bar\Theta = \tfrac12(\Theta_a+\Theta)``, so
 
 Dividing by ``\rho_0`` (`Params.rho0_seawater`) gives the dimensionless form, with
 ``\beta = b_0/\rho_0``, ``a_0 = -C_b\Theta_0/\rho_0``, ``a_T = C_b/\rho_0`` and ``a_Z = T_h/\rho_0``,
-which is the coefficient set `_eos_coefficients` uses for `RoquetEOS`.
+which is the coefficient set `eos_coefficients` uses for `RoquetEOS`.
 
 The thermal expansion is then ``\alpha = \bigl[C_b(\bar\Theta - \Theta_0) + T_h Z\bigr]/\rho_0``,
 or ``0.029`` kg m⁻³ K⁻¹ at the surface freezing point (about ``-1.9`` °C), ``0.041`` at 500 m, and

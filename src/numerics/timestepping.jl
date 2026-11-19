@@ -1,12 +1,12 @@
 
 # ============================================================================
 # Time steppers — control how `dt` evolves during a run.  Held by the
-# `Simulation` (`Simulation(model; tstep = ...)`); the runtime step lives in its
+# `Simulation` (`Simulation(model; time_stepper = ...)`); the runtime step lives in its
 # `Clock` as `sim.clock.dt`.
 # ============================================================================
 """
 Abstract supertype for the time-step control of a [`Simulation`](@ref).  Pass a
-concrete instance as `Simulation(model; tstep = ...)`: [`FixedTimeStepper`](@ref) (the
+concrete instance as `Simulation(model; time_stepper = ...)`: [`FixedTimeStepper`](@ref) (the
 default) or [`AdaptiveTimeStepper`](@ref).
 """
 abstract type AbstractTimeStepper end
@@ -18,7 +18,7 @@ Constant time step (the default): `dt` stays at the value the `Simulation` was
 constructed with for the whole run.  Reproduces LADDIE v1.x behaviour exactly,
 so the default integration is bit-for-bit unchanged.
 
-Select via `Simulation(model; tstep = FixedTimeStepper())` (the default).
+Select via `Simulation(model; time_stepper = FixedTimeStepper())` (the default).
 """
 struct FixedTimeStepper <: AbstractTimeStepper end
 
@@ -50,7 +50,7 @@ at most 5 % of the steps of the `run!` call.  So do not sample a field in many s
 every step, which inflated a 10-day mean melt rate by 41 % on a 1 km geometry.  Use
 one longer call with time-averaged output instead.
 
-Select via `Simulation(model; tstep = AdaptiveTimeStepper())`; override fields as needed, e.g.
+Select via `Simulation(model; time_stepper = AdaptiveTimeStepper())`; override fields as needed, e.g.
 `AdaptiveTimeStepper(; cfl_target = 0.4, ncheck = 10)`.
 
 # Fields
@@ -127,16 +127,16 @@ _check_interval(ts::AdaptiveTimeStepper, nt, steps_per_day) =
 # measured at the shared sync point.  FixedTimeStepper is a pure no-op (the default
 # integration is unchanged).  AdaptiveTimeStepper adjusts dt predictively for the
 # upcoming steps — it never rejects a step, so there is no rollback.
-_maybe_adapt_dt!(sim, ::FixedTimeStepper, cfl) = nothing
-_maybe_adapt_dt!(sim, ts::AdaptiveTimeStepper, cfl) =
+adapt_dt!(sim, ::FixedTimeStepper, cfl) = nothing
+adapt_dt!(sim, ts::AdaptiveTimeStepper, cfl) =
     (_apply_dt!(sim, ts, cfl; allow_grow = true); nothing)
 
 # Pre-loop hook: rescue a too-large dt0 before the first step (shrink-only).
 # Uses the worst-case CFL (advection at the velocity cap), because at t = 0 the
 # flow is ~stationary and the actual CFL underestimates what the spinning-up
 # flow will reach.
-_init_adaptive_dt!(sim, ::FixedTimeStepper) = nothing
-function _init_adaptive_dt!(sim, ts::AdaptiveTimeStepper)
+init_adaptive_dt!(sim, ::FixedTimeStepper) = nothing
+function init_adaptive_dt!(sim, ts::AdaptiveTimeStepper)
     _apply_dt!(sim, ts, _cfl_worstcase(sim); allow_grow = false)
     return
 end
@@ -207,8 +207,8 @@ end
 # selects ConservativeCFL or ExactCFL.  The device reductions and the host formula
 # that combines them are separate functions, so that the Reactant extension can
 # compile the reductions and still combine them the same way.
-_cfl_number(sim, reductions = _cfl_reductions(sim.model, sim.cfl)) =
-    _float64(sim.clock.dt) * _cfl_rate(sim.model, sim.cfl, reductions)
+_cfl_number(sim, reductions = cfl_reductions(sim.model, sim.cfl)) =
+    _float64(sim.clock.dt) * cfl_rate(sim.model, sim.cfl, reductions)
 
 # Largest δρ·H over the active domain, for the gravity-wave speed.
 function _max_Hdrho(m)
@@ -218,7 +218,7 @@ end
 
 # Conservative: global max of |U|, |V|, and c taken independently, then combined.
 # Overestimates the true CFL but cheap (three scalar reductions).
-function _cfl_reductions(m, ::ConservativeCFL)
+function cfl_reductions(m, ::ConservativeCFL)
     d = m.diag
     @. d = abs(m.U.present) * m.umask
     umax = maximum(d)
@@ -227,17 +227,17 @@ function _cfl_reductions(m, ::ConservativeCFL)
     c = sqrt(m.g * max(zero(m.FT), _max_Hdrho(m)))
     return (umax, vmax, c)
 end
-_cfl_rate(m, ::ConservativeCFL, (umax, vmax, c)) =
+cfl_rate(m, ::ConservativeCFL, (umax, vmax, c)) =
     (_float64(umax) + _float64(c)) / _float64(m.dx) +
     (_float64(vmax) + _float64(c)) / _float64(m.dy)
 
 # Exact: per-cell CFL using T-point-interpolated velocities; maximum over active
 # cells.  Tighter than ConservativeCFL at the cost of one kernel pass.
-function _cfl_reductions(m, ::ExactCFL)
+function cfl_reductions(m, ::ExactCFL)
     _launch_tpoint_diag!(_cfl_rate_kernel!, m)
     return (maximum(m.diag),)
 end
-_cfl_rate(m, ::ExactCFL, (rate,)) = _float64(rate)
+cfl_rate(m, ::ExactCFL, (rate,)) = _float64(rate)
 
 # Worst-case CFL: the advective term uses the velocity cap `v_cut` instead of the
 # actual speed.  At startup the flow is ~stationary, so the actual CFL is tiny

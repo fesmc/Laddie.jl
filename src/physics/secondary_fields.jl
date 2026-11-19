@@ -23,8 +23,8 @@ function update_ustar!(m)
     launch_interior!(
         _ustar_kernel!,
         m.ustar,
-        _closure_level(m.U, m.params.closure_level),
-        _closure_level(m.V, m.params.closure_level),
+        closure_field(m.U, m.params.closure_level),
+        closure_field(m.V, m.params.closure_level),
         m.tmask,
         m.C_d_top,
         m.u_tide,

@@ -32,7 +32,7 @@ end
 end
 
 @testset "Partial/free slip (GPU): matches CPU" begin
-    bgpu = BoundaryConditions(; grounding_line = PartialSlipAtGL(0.5), land = FreeSlipAtLand())
+    bgpu = BoundaryConditions(; grounding_line_slip = PartialSlipAtGL(0.5), land_slip = FreeSlipAtLand())
     m_c = build_isomip(CPU();       nx = 20, ny = 10, isomipcond = :warm, boundary = bgpu)
     m_g = build_isomip(gpu_backend; nx = 20, ny = 10, isomipcond = :warm, boundary = bgpu)
     run!(m_c; days = 0.5, verbose = false)
@@ -57,7 +57,7 @@ end
     # The CFL reductions, worst-case startup rescue, and re-bootstrap
     # must all be GPU-safe; assert a clean completion in bounds.
     m_g = build_isomip(gpu_backend; nx = 20, ny = 10, isomipcond = :warm,
-                       tstep = AdaptiveTimeStepper())
+                       time_stepper = AdaptiveTimeStepper())
     run!(m_g; days = 1.0, verbose = false)
     @test all(isfinite, Array(m_g.model.H.present)) && all(isfinite, Array(m_g.model.melt))
     @test 1.0 <= m_g.clock.dt <= 1000.0

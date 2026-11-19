@@ -5,7 +5,7 @@ the outer border ring) are zero-flux walls. The condition on the tangential mome
 at each wall is one **slip factor** ``s`` on the faces it bounds, with the convention of
 NEMO (`rn_shlat`): the velocity behind the wall is taken as a ghost ``(1 - s)\,u``. The
 two kinds of wall are set independently, with
-`BoundaryConditions(; grounding_line = ..., land = ...)`:
+`BoundaryConditions(; grounding_line_slip = ..., land_slip = ...)`:
 
 | | free slip, ``s = 0`` | partial slip | no slip, ``s = 2`` |
 |---|---|---|---|
@@ -133,7 +133,7 @@ advection the factor is used as labelled. Reproducing v1 therefore takes
 
 ```julia
 # LADDIE v1 (slip = 1): no slip in the viscosity, partial slip in the advection
-BoundaryConditions(; grounding_line = NoSlipAtGL(), land = NoSlipAtLand(),
+BoundaryConditions(; grounding_line_slip = NoSlipAtGL(), land_slip = NoSlipAtLand(),
                    wall_advection = V1WallAdvection())
 
 # LADDIE v2: the defaults

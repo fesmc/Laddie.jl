@@ -4,9 +4,9 @@
     # FixedTimeStepper is the default; an explicit FixedTimeStepper() must reproduce it
     # bit-for-bit so the Python verification stays valid for the default.
     m_def = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
-    @test m_def.tstep isa FixedTimeStepper
+    @test m_def.time_stepper isa FixedTimeStepper
     m_fix = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                         tstep = FixedTimeStepper())
+                         time_stepper = FixedTimeStepper())
     run!(m_def; days = 1.0, verbose = false)
     run!(m_fix; days = 1.0, verbose = false)
     @test m_fix.model.H.present == m_def.model.H.present
@@ -15,12 +15,12 @@
     # AdaptiveTimeStepper is a Simulation option, not a Params one; its FT tracks the
     # model's FT (default-constructed at Float64 here, promoted to Float32).
     s = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                     tstep = AdaptiveTimeStepper(; cfl_target = 0.4, ncheck = 10))
-    @test s.tstep isa AdaptiveTimeStepper{FT}
-    @test s.tstep.cfl_target ≈ FT(0.4) && s.tstep.ncheck == 10
+                     time_stepper = AdaptiveTimeStepper(; cfl_target = 0.4, ncheck = 10))
+    @test s.time_stepper isa AdaptiveTimeStepper{FT}
+    @test s.time_stepper.cfl_target ≈ FT(0.4) && s.time_stepper.ncheck == 10
     @test build_isomip(CPU(); FT = Float32, nx = 20, ny = 10,
-                       tstep = AdaptiveTimeStepper()).tstep isa AdaptiveTimeStepper{Float32}
-    @test !hasfield(Params, :tstep) && !hasfield(Params, :dt0) && !hasfield(Params, :nu)
+                       time_stepper = AdaptiveTimeStepper()).time_stepper isa AdaptiveTimeStepper{Float32}
+    @test !hasfield(Params, :time_stepper) && !hasfield(Params, :dt0) && !hasfield(Params, :nu)
 
     # Run metadata records the active stepper for both default and adaptive.
     tmp = mktempdir()
@@ -30,7 +30,7 @@
     @test meta["simulation"]["time_stepper"]["type"] == "FixedTimeStepper"
 
     build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                 tstep = AdaptiveTimeStepper(; cfl_target = 0.4),
+                 time_stepper = AdaptiveTimeStepper(; cfl_target = 0.4),
                  output = OutputConfig(; name = "tsadp", resultdir = tmp, saveday = 0.5))
     meta2 = TOML.parsefile(joinpath(tmp, "tsadp", "run_metadata.toml"))
     @test meta2["simulation"]["time_stepper"]["type"] == "AdaptiveTimeStepper"
@@ -122,18 +122,18 @@ end
     # than left untouched — but it stays the same order of magnitude, unlike
     # a genuinely too-large dt0.
     msafe = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                         tstep = AdaptiveTimeStepper())
-    Laddie._init_adaptive_dt!(msafe, msafe.tstep)
+                         time_stepper = AdaptiveTimeStepper())
+    Laddie.init_adaptive_dt!(msafe, msafe.time_stepper)
     @test msafe.clock.dt <= 210.0
     @test msafe.clock.dt ≈ 210.0 rtol = 0.1
     mbig = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                        dt = 5000.0, tstep = AdaptiveTimeStepper())
-    Laddie._init_adaptive_dt!(mbig, mbig.tstep)
+                        dt = 5000.0, time_stepper = AdaptiveTimeStepper())
+    Laddie.init_adaptive_dt!(mbig, mbig.time_stepper)
     @test mbig.clock.dt < 5000.0
 
     # Warm run completes with dt staying in bounds.
     ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      tstep = AdaptiveTimeStepper())
+                      time_stepper = AdaptiveTimeStepper())
     run!(ma; days = 1.0, verbose = false)
     @test all(isfinite, ma.model.H.present) && all(isfinite, ma.model.melt)
     @test 1.0 <= ma.clock.dt <= 1000.0
@@ -159,12 +159,12 @@ end
         false
     end
     @test !survives(2.0; dt = 5000.0)                         # FixedTimeStepper blows up
-    @test  survives(2.0; dt = 5000.0, tstep = AdaptiveTimeStepper())   # AdaptiveTimeStepper rescues
+    @test  survives(2.0; dt = 5000.0, time_stepper = AdaptiveTimeStepper())   # AdaptiveTimeStepper rescues
 
     # dt changes are logged to log.txt.
     tmp = mktempdir()
     ml = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      tstep = AdaptiveTimeStepper(),
+                      time_stepper = AdaptiveTimeStepper(),
                       output = OutputConfig(; name = "adlog", resultdir = tmp, saveday = 10.0))
     run!(ml; days = 1.0, verbose = false)
     @test occursin(r"dt .* → .* s \(CFL", read(joinpath(tmp, "adlog", "log.txt"), String))
@@ -185,7 +185,7 @@ end
     mf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                       params = Params(; FT, ice_slope = CentredIceSlope()))
     ma = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      params = Params(; FT, ice_slope = CentredIceSlope()), tstep = AdaptiveTimeStepper())
+                      params = Params(; FT, ice_slope = CentredIceSlope()), time_stepper = AdaptiveTimeStepper())
     run!(mf; days = 1.0, verbose = false)
     run!(ma; days = 1.0, verbose = false)
     mxf, mnf, _ = meltstats(mf)
@@ -203,7 +203,7 @@ end
     # 1 day is reached in measurably fewer steps (measured 266 vs 411).
     cf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :cold)
     ca = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :cold,
-                      tstep = AdaptiveTimeStepper())
+                      time_stepper = AdaptiveTimeStepper())
     run!(cf; days = 1.0, verbose = false)
     run!(ca; days = 1.0, verbose = false)
     @test ca.clock.iteration < 0.9 * cf.clock.iteration
@@ -213,12 +213,12 @@ end
     # adaptive run resumes at exactly the step it left off.
     tmp = mktempdir()
     m1 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      tstep = AdaptiveTimeStepper(),
+                      time_stepper = AdaptiveTimeStepper(),
                       output = OutputConfig(; name = "ar1", resultdir = tmp,
                                             saveday = 0.5, restday = 0.5))
     run!(m1; days = 1.0, verbose = false)
     m2 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
-                      tstep = AdaptiveTimeStepper(),
+                      time_stepper = AdaptiveTimeStepper(),
                       output = OutputConfig(; name = "ar2", resultdir = tmp, saveday = 0.5),
                       restart = joinpath(tmp, "ar1", "restart_latest.jld2"))
     @test m2.clock.dt ≈ m1.clock.dt
@@ -229,10 +229,10 @@ end
 
 @testset "Simulation end: FixedSimulationEnd / SteadyStateSimulationEnd" begin
     # Steady-state criterion: relative change in mean melt below tol.
-    @test  Laddie._steady_reached(SteadyStateSimulationEnd(tol = 0.01), 100.0, 100.05)  # 5e-4 < 1e-2
-    @test !Laddie._steady_reached(SteadyStateSimulationEnd(tol = 0.01), 100.0, 90.0)    # 0.11
-    @test !Laddie._steady_reached(SteadyStateSimulationEnd(tol = 0.01), 100.0, NaN)     # no predecessor
-    @test !Laddie._steady_reached(FixedSimulationEnd(), 100.0, 100.0)         # fixed never early-stops
+    @test  Laddie.steady_reached(SteadyStateSimulationEnd(tol = 0.01), 100.0, 100.05)  # 5e-4 < 1e-2
+    @test !Laddie.steady_reached(SteadyStateSimulationEnd(tol = 0.01), 100.0, 90.0)    # 0.11
+    @test !Laddie.steady_reached(SteadyStateSimulationEnd(tol = 0.01), 100.0, NaN)     # no predecessor
+    @test !Laddie.steady_reached(FixedSimulationEnd(), 100.0, 100.0)         # fixed never early-stops
 
     # `days` is shorthand for FixedSimulationEnd — bit-identical, same steps.
     a = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)

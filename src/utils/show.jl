@@ -137,8 +137,8 @@ _gaps_label(g::LeakyGapsBC) =
 Base.show(io::IO, b::BoundaryConditions) = print(
     io,
     "BoundaryConditions(open ocean = $(nameof(typeof(b.open_ocean))), ",
-    "grounding line = $(nameof(typeof(b.grounding_line))), ",
-    "land = $(nameof(typeof(b.land))), gaps = $(_gaps_label(b.gaps)), ",
+    "grounding line = $(nameof(typeof(b.grounding_line_slip))), ",
+    "land = $(nameof(typeof(b.land_slip))), gaps = $(_gaps_label(b.gaps)), ",
     "wall advection = $(nameof(typeof(b.wall_advection))))",
 )
 
@@ -208,7 +208,7 @@ function Base.show(io::IO, ::MIME"text/plain", sim::Simulation)
     println(
         io,
         "  stepper: ",
-        sim.tstep,
+        sim.time_stepper,
         ", ",
         sim.cfl,
         ", Robert–Asselin ν = ",

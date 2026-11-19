@@ -94,9 +94,9 @@ _f_from_lat(lat, FT) = FT(2 * EARTH_ROTATION_RATE * sind(Float64(lat)))
 # Expand a Coriolis choice into a full-domain field on T-points.  Runs on the
 # grid's input size, so a 2D latitude is validated against the mask the caller
 # passed to `Grid` and then cropped with it.
-_coriolis_field(cp::CoriolisParameter0D, sz, FT) = fill(FT(cp.f), sz)
+coriolis_field(cp::CoriolisParameter0D, sz, FT) = fill(FT(cp.f), sz)
 
-function _coriolis_field(cp::CoriolisParameter2D, sz, FT)
+function coriolis_field(cp::CoriolisParameter2D, sz, FT)
     lat = cp.lat
     if lat isa AbstractMatrix
         size(lat) == sz || throw(

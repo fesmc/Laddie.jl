@@ -123,4 +123,16 @@ export front_ocean_forcing, FrontBlend, front_sources, nearest_seed, regrid_ocea
 export AbstractIceForcing, PrescribedIceForcing
 export CavityForcing
 
+# Extension interface: the methods a scheme of each family implements (docs/src/extending.md).
+export compute_entrainment!, update_melt!, update_ustar!, update_convection!, update_convective_relaxation!,
+    update_frazil!, conduction_coefficients, eos_coefficients, cap_layer_thickness, coriolis_field
+export apply_tracer_bounds!, laplace_U, laplace_V, laplacian_thickness, advect_U, advect_V, momentum_outflow
+export tracer_update, thickness_tendency, outflow_rate!, momentum_update, momentum_thickness_tendency,
+    momentum_flux_terms, explicit_sink, closure_field
+export kink_width, smooth_max, smooth_min, smooth_clamp, icebase_slope
+export front_pgf_weight, front_drho_weight, inflow_weight, clip_front_inflow!, slip_factor, advection_slips,
+    gaps_mask, update_ambient_fields!
+export init_adaptive_dt!, adapt_dt!, cfl_rate, cfl_reductions, end_seconds, needs_melt_sample, steady_reached
+export preprocess!, crop_ranges
+
 end # module Laddie

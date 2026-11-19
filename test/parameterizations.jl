@@ -133,11 +133,11 @@ end
     @test m_nl.model.V.present != m_def.model.V.present
 
     # The wall slip factor reaches the shear-scaled wall faces too, so switching
-    # grounding_line away from the default must change the solution under
+    # grounding_line_slip away from the default must change the solution under
     # NonlinearLateralViscosity.
     m_nl_ns = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                            params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(10.0))),
-                           boundary = BoundaryConditions(; grounding_line = FreeSlipAtGL()))
+                           boundary = BoundaryConditions(; grounding_line_slip = FreeSlipAtGL()))
     run!(m_nl_ns; days = 1.0, verbose = false)
     @test all(isfinite, m_nl_ns.model.H.present) && all(isfinite, m_nl_ns.model.melt)
     @test m_nl_ns.model.V.present != m_nl.model.V.present
@@ -413,7 +413,7 @@ end
 
 @testset "Flux tracer form: the clamp moves water with its tracer" begin
     upd(H_future, H_star; q_past = 2.0, H_past = 4.0, rhs = 0.5, qa = 7.0, tmask = 1.0, dt = 2.0) =
-        Laddie._tracer_update(FluxTracerForm(), q_past, q_past, rhs, 0.0, NaN, H_past, H_future, H_star, qa, tmask, dt)
+        Laddie.tracer_update(FluxTracerForm(), q_past, q_past, rhs, 0.0, NaN, H_past, H_future, H_star, qa, tmask, dt)
     content = 4.0 * 2.0 + 0.5 * 2.0                     # H⁻q⁻ + rhs·dt = 9
     @test upd(6.0, 6.0) ≈ content / 6                   # unclamped: content / H⁺
     @test upd(3.0, 6.0) ≈ content / 6                   # cut at the cap: q unchanged
@@ -431,13 +431,13 @@ end
     # incoming water, weighted by their volumes.
     sink, dt, q = 50.0, 1.0, 34.0
     rhs = sink * 0.0 - sink * q                           # inflow at q = 0, outflow at q
-    upd(; kw...) = Laddie._tracer_update(FluxTracerForm(), q, q, rhs, sink, NaN, 1.0, 1.0, 1.0,
+    upd(; kw...) = Laddie.tracer_update(FluxTracerForm(), q, q, rhs, sink, NaN, 1.0, 1.0, 1.0,
                                          34.5, 1.0, dt; kw...)
     @test upd() ≈ q / (1 + sink * dt)                     # 1 m of old water, 50 m of fresh
     @test 0 <= upd() <= q
     @test (1.0 * q + rhs * dt) / 1.0 < 0                  # what the explicit update gives
     # With no outflow the update is the explicit one.
-    @test Laddie._tracer_update(FluxTracerForm(), 2.0, 3.0, 0.5, 0.0, NaN, 4.0, 4.5, 4.5, 7.0, 1.0, 2.0) ≈
+    @test Laddie.tracer_update(FluxTracerForm(), 2.0, 3.0, 0.5, 0.0, NaN, 4.0, 4.5, 4.5, 7.0, 1.0, 2.0) ≈
           (4.0 * 2.0 + 0.5 * 2.0) / 4.5
 end
 
@@ -447,7 +447,7 @@ end
     @test Params(; FT, momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel()).closure_level isa
           PresentClosureLevel
     upd(rhs, H_old, H_new, sink; U = 0.3, mask = 1.0, dt = 800.0) =
-        Laddie._momentum_update(FluxMomentumForm(), U, U, rhs, NaN, H_old, H_new, sink, 0.0, mask, dt)
+        Laddie.momentum_update(FluxMomentumForm(), U, U, rhs, NaN, H_old, H_new, sink, 0.0, mask, dt)
     # Entrainment of water at rest: U scaled by H⁻/H⁺, whatever the rate.
     @test upd(0.0, 2.0, 2.0 + 1e-2 * 800, 0.0) ≈ 0.3 * 2 / 10
     # Water leaving at U (detrainment, cap, frazil): U unchanged.
@@ -460,12 +460,12 @@ end
     @test 0.3 - s * 800 / H * 0.3 < 0
     # Masked faces keep U⁻; the advective form is the explicit update.
     @test upd(1.0, 1.0, 1.0, 0.0; mask = 0.0) == 0.3
-    @test Laddie._momentum_update(AdvectiveMomentumForm(), 0.3, NaN, 0.5, 2.0, NaN, NaN, NaN, NaN, 1.0, 4.0) ≈
+    @test Laddie.momentum_update(AdvectiveMomentumForm(), 0.3, NaN, 0.5, 2.0, NaN, NaN, NaN, NaN, 1.0, 4.0) ≈
           0.3 + 0.5 / 2 * 4
     # A 1 m face flushed 50 times over per step by water at rest (inflow = outflow,
     # H unchanged): U⁺ is the volume-weighted mean, where explicit it changes sign.
     o, dt = 50.0, 1.0
-    @test Laddie._momentum_update(FluxMomentumForm(), 0.3, 0.3, -o * 0.3, NaN, 1.0, 1.0, 0.0, o, 1.0, dt) ≈
+    @test Laddie.momentum_update(FluxMomentumForm(), 0.3, 0.3, -o * 0.3, NaN, 1.0, 1.0, 0.0, o, 1.0, dt) ≈
           0.3 / (1 + o * dt)
     @test 0.3 + (-o * 0.3) * dt < 0
 end
@@ -747,9 +747,9 @@ end
 
     # The coefficients: the linear ones are the Params constants, with no T or Z dependence.
     m_lin = mk().model
-    @test Laddie._eos_coefficients(m_lin) === (; beta = m_lin.beta, a0 = m_lin.alpha, aT = zero(FT), aZ = zero(FT))
+    @test Laddie.eos_coefficients(m_lin) === (; beta = m_lin.beta, a0 = m_lin.alpha, aT = zero(FT), aZ = zero(FT))
     m_rq = mk(equation_of_state = eos).model
-    c = Laddie._eos_coefficients(m_rq)
+    c = Laddie.eos_coefficients(m_rq)
     ρ0 = m_rq.rho0_seawater
     @test c.beta ≈ 0.77 / ρ0 && c.aT ≈ 0.011 / ρ0 && c.aZ ≈ 2.5e-5 / ρ0 && c.a0 ≈ 0.011 * 4.5 / ρ0
 
@@ -765,7 +765,7 @@ end
     @test Laddie._drho(34.5, 34.5, -1.5, -1.5, 400.0, c) == 0
     # The reference contrasts of the planning notes (warm plume against a warm ambient, at 500 m).
     @test Laddie._drho(34.7, 34.4, 0.5, -1.0, 500.0, c) ≈ 1.38e-4 rtol = 5e-3
-    @test Laddie._drho(34.7, 34.4, 0.5, -1.0, 500.0, Laddie._eos_coefficients(m_lin)) ≈ 1.79e-4 rtol = 5e-3
+    @test Laddie._drho(34.7, 34.4, 0.5, -1.0, 500.0, Laddie.eos_coefficients(m_lin)) ≈ 1.79e-4 rtol = 5e-3
 
     # `update_density!` evaluates Roquet's polynomial at the layer mid-depth: independent check.
     ρp(T, S, Z) = (-0.011 / 2 * (T + 4.5)^2 - 2.5e-5 * Z * T + 0.77 * S) / ρ0
@@ -832,13 +832,13 @@ end
         @test d(smax0, x - 1e-9) ≈ d(smax0, x + 1e-9) atol = 1e-7
     end
     # max/min/clamp follow it, and stay exact next to a much larger operand.
-    @test Laddie._smax(k, 2.0, 0.5, ε) === 2.0 && Laddie._smin(k, 2.0, 0.5, ε) === 0.5
-    @test Laddie._smin(k, 0.5, 0.5, ε) ≈ 0.5 - ε / 4
-    @test Laddie._smin(SmoothKinks(; w = 1f-8), 1f6, 3f-5, 1f-8) === 3f-5
-    @test Laddie._sclamp(k, 7.0, -1.0, 1.0, ε) === 1.0
+    @test Laddie.smooth_max(k, 2.0, 0.5, ε) === 2.0 && Laddie.smooth_min(k, 2.0, 0.5, ε) === 0.5
+    @test Laddie.smooth_min(k, 0.5, 0.5, ε) ≈ 0.5 - ε / 4
+    @test Laddie.smooth_min(SmoothKinks(; w = 1f-8), 1f6, 3f-5, 1f-8) === 3f-5
+    @test Laddie.smooth_clamp(k, 7.0, -1.0, 1.0, ε) === 1.0
     # An infinite bound (a bed of -Inf) neither leaks into the value nor the derivative.
-    @test Laddie._smin(k, 3.0, Inf, ε) === 3.0
-    @test d(h -> Laddie._smin(k, h, Inf, ε), 3.0) === 1.0
+    @test Laddie.smooth_min(k, 3.0, Inf, ε) === 3.0
+    @test d(h -> Laddie.smooth_min(k, h, Inf, ε), 3.0) === 1.0
     # The upwind split is conservative, and a zero flux (a wall) carries nothing.
     for u in (-0.3, -0.05, 0.0, 0.02, 0.4)
         @test smax0(u) + Laddie._sneg(k, u, ε) ≈ u atol = 1e-15
@@ -857,7 +857,7 @@ end
     @test abs(d(sw, ε)) < 1e-12
     # An ε of zero is the exact operation, bit for bit.
     k0 = SmoothKinks(; H = 0.0)
-    @test Laddie._smax(k0, 0.3, 0.7, 0.0) === 0.7 && Laddie._ssqrt(k0, 0.3, 0.0) === sqrt(0.3)
+    @test Laddie.smooth_max(k0, 0.3, 0.7, 0.0) === 0.7 && Laddie._ssqrt(k0, 0.3, 0.0) === sqrt(0.3)
 end
 
 @testset "SmoothKinks: exact at ε = 0, close to exact at the defaults" begin
@@ -898,7 +898,7 @@ struct UserUniformOcean <: AbstractOceanForcing
     T_uniform::Float64   # °C
     S_uniform::Float64   # psu
 end
-Laddie._update_ambient_fields!(m, o::UserUniformOcean) = (m.Ta .= o.T_uniform; m.Sa .= o.S_uniform; nothing)
+Laddie.update_ambient_fields!(m, o::UserUniformOcean) = (m.Ta .= o.T_uniform; m.Sa .= o.S_uniform; nothing)
 
 @testset "User-defined schemes and forcings run" begin
     rate = 10 / 31_557_600                        # 10 m/yr

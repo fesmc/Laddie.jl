@@ -110,7 +110,7 @@ end
         var_s = var[i, jm1] * (inflow * tmask[i, jm1] + keep) + inflow * v * ocn[i, jm1]
         var_e = var[ip1, j] * (inflow * tmask[ip1, j] + keep) + inflow * v * ocn[ip1, j]
         var_w = var[im1, j] * (inflow * tmask[im1, j] + keep) + inflow * v * ocn[im1, j]
-        eu = _kink_width(kinks, :u)
+        eu = kink_width(kinks, :u)
         flux_N = -(_smax0(kinks, v_n, eu) * v + _sneg(kinks, v_n, eu) * var_n) / dy * vmask[i, j]
         flux_S = (_smax0(kinks, v_s, eu) * var_s + _sneg(kinks, v_s, eu) * v) / dy * vmask[i, jm1]
         flux_E = -(_smax0(kinks, u_e, eu) * v + _sneg(kinks, u_e, eu) * var_e) / dx * umask[i, j]
@@ -173,7 +173,7 @@ end
         H_E = He + ocn_e * H0
         H_W = H0 + ocn[i, j] * He
         u = U[i, j]
-        absu = _sabs(kinks, u, _kink_width(kinks, :u))   # sign(u)·u
+        absu = _sabs(kinks, u, kink_width(kinks, :u))   # sign(u)·u
         wallN = _slip(slip_gl, slip_land, glN, lndN, i, j)
         wallS = _slip(slip_gl, slip_land, glS, lndS, i, j)
         flux_N = -H_N * Vip * (Ujp - wallN * u) / dy
@@ -237,7 +237,7 @@ end
         H_N = Hn + ocn_n * H0
         H_S = H0 + ocn[i, j] * Hn
         v = V[i, j]
-        absv = _sabs(kinks, v, _kink_width(kinks, :u))   # sign(v)·v
+        absv = _sabs(kinks, v, kink_width(kinks, :u))   # sign(v)·v
         flux_N = -H_N * Vjp * (Vjp - (v - absv) * ocn_n) / dy
         flux_S = H_S * Vjm * (Vjm - absv * ocn[i, j]) / dy
         wallE = _slip(slip_gl, slip_land, glE, lndE, i, j)
@@ -390,7 +390,7 @@ end
         jpH = _safe_div(HU + Hface[i, jp1], tmask[i, j] + tmask[i, jp1])
         jmH = _safe_div(HU + Hface[i, jm1], tmask[i, j] + tmask[i, jm1])
         ov = other[i, j]
-        eu = _kink_width(kinks, :u)
+        eu = kink_width(kinks, :u)
         # Differences to the neighbours; across a wall, to the ghost (1 − s)·u.
         dN = var[i, jp1] - v - _slip(slip_gl, slip_land, glN, lndN, i, j) * v
         dS = var[i, jm1] - v - _slip(slip_gl, slip_land, glS, lndS, i, j) * v
@@ -446,7 +446,7 @@ end
         ipH = _safe_div(HV + Hface[ip1, j], tmask[i, j] + tmask[ip1, j])
         imH = _safe_div(HV + Hface[im1, j], tmask[i, j] + tmask[im1, j])
         ov = other[i, j]
-        eu = _kink_width(kinks, :u)
+        eu = kink_width(kinks, :u)
         # Differences to the neighbours; across a wall, to the ghost (1 − s)·v.
         dN = var[i, jp1] - v
         dS = var[i, jm1] - v
@@ -476,7 +476,7 @@ function upwind_advection_T(out, m, var)
         m.ocn,
         m.umask,
         m.vmask,
-        _inflow_weight(m.boundary.open_ocean, m.FT),
+        inflow_weight(m.boundary.open_ocean, m.FT),
         m.dx,
         m.dy,
         m.params.kinks,
@@ -509,7 +509,7 @@ end
             U[i, j],
             H[i, j] * tmask[i, j] + H[ip1, j] * ocn[i, j],
             H[ip1, j] * tmask[ip1, j] + H[i, j] * ocn[ip1, j],
-            _kink_width(kinks, :u),
+            kink_width(kinks, :u),
         )
         return umask[i, j] * Hd
     end
@@ -524,7 +524,7 @@ end
             V[i, j],
             H[i, j] * tmask[i, j] + H[i, jp1] * ocn[i, j],
             H[i, jp1] * tmask[i, jp1] + H[i, j] * ocn[i, jp1],
-            _kink_width(kinks, :u),
+            kink_width(kinks, :u),
         )
         return vmask[i, j] * Hd
     end
@@ -537,7 +537,7 @@ end
 
 # The rate (m s⁻¹) at which the control volume's own velocity leaves through its faces:
 # the mass fluxes of the terms of `_upstream_advection_U_kernel!` whose donor is the
-# point itself.  Only `FluxMomentumForm` reads it (`_momentum_update`), and only then
+# point itself.  Only `FluxMomentumForm` reads it (`momentum_update`), and only then
 # is `outflow` an array.
 @inline _store_outflow!(::Nothing, i, j, kinks, MxE, MxW, MyN, MyS, dx, dy, ε) = nothing
 @inline function _store_outflow!(outflow, i, j, kinks, MxE, MxW, MyN, MyS, dx, dy, ε)
@@ -594,7 +594,7 @@ end
                 _face_mass_y(V, H, tmask, ocn, vmask, i, jm1, Ny, kinks) +
                 _face_mass_y(V, H, tmask, ocn, vmask, ip1, jm1, Ny, kinks)
             )
-        eM = _kink_width(kinks, :uH)
+        eM = kink_width(kinks, :uH)
         FE = _supwind(kinks, MxE, u, _donor(u, U[ip1, j], umask[ip1, j]), eM)
         FW = _supwind(kinks, MxW, _donor(u, U[im1, j], umask[im1, j]), u, eM)
         FN = _supwind(kinks, MyN, u, _donor(u, U[i, jp1], umask[i, jp1]), eM)
@@ -650,7 +650,7 @@ end
                 _face_mass_x(U, H, tmask, ocn, umask, im1, j, Nx, kinks) +
                 _face_mass_x(U, H, tmask, ocn, umask, im1, jp1, Nx, kinks)
             )
-        eM = _kink_width(kinks, :uH)
+        eM = kink_width(kinks, :uH)
         FE = _supwind(kinks, MxE, v, _donor(v, V[ip1, j], vmask[ip1, j]), eM)
         FW = _supwind(kinks, MxW, _donor(v, V[im1, j], vmask[im1, j]), v, eM)
         FN = _supwind(kinks, MyN, v, _donor(v, V[i, jp1], vmask[i, jp1]), eM)
@@ -661,11 +661,11 @@ end
 end
 
 # Dispatch on `Params.momentum_advection`; the centred path is v1.x's.  `outflow`, an
-# array or `nothing`, receives the upstream scheme's outflow rate (`_momentum_outflow`).
-momentum_advection_U(m, outflow = nothing) = _advect_U(m, m.momentum_advection, outflow)
-momentum_advection_V(m, outflow = nothing) = _advect_V(m, m.momentum_advection, outflow)
+# array or `nothing`, receives the upstream scheme's outflow rate (`momentum_outflow`).
+momentum_advection_U(m, outflow = nothing) = advect_U(m, m.momentum_advection, outflow)
+momentum_advection_V(m, outflow = nothing) = advect_V(m, m.momentum_advection, outflow)
 
-function _advect_U(m, ::UpstreamMomentumAdvection, outflow)
+function advect_U(m, ::UpstreamMomentumAdvection, outflow)
     nx, ny = size(m.U.present)
     launch_interior!(
         _upstream_advection_U_kernel!,
@@ -687,7 +687,7 @@ function _advect_U(m, ::UpstreamMomentumAdvection, outflow)
     return m.adv
 end
 
-function _advect_V(m, ::UpstreamMomentumAdvection, outflow)
+function advect_V(m, ::UpstreamMomentumAdvection, outflow)
     nx, ny = size(m.V.present)
     launch_interior!(
         _upstream_advection_V_kernel!,
@@ -709,8 +709,8 @@ function _advect_V(m, ::UpstreamMomentumAdvection, outflow)
     return m.adv
 end
 
-# Centred advection has no outflow taken at the new level: `_momentum_outflow` is zero.
-function _advect_U(m, ::CentredMomentumAdvection, _)
+# Centred advection has no outflow taken at the new level: `momentum_outflow` is zero.
+function advect_U(m, ::CentredMomentumAdvection, _)
     launch_interior!(
         _upwind_advection_U_kernel!,
         m.adv,
@@ -721,14 +721,14 @@ function _advect_U(m, ::CentredMomentumAdvection, _)
         m.vmask,
         m.U.present,
         m.umask,
-        _u_walls(m, _advection_slips(m))...,
+        _u_walls(m, advection_slips(m))...,
         m.dx,
         m.dy,
         m.params.kinks,
     )
     return m.adv
 end
-function _advect_V(m, ::CentredMomentumAdvection, _)
+function advect_V(m, ::CentredMomentumAdvection, _)
     launch_interior!(
         _upwind_advection_V_kernel!,
         m.adv,
@@ -739,7 +739,7 @@ function _advect_V(m, ::CentredMomentumAdvection, _)
         m.vmask,
         m.U.present,
         m.umask,
-        _v_walls(m, _advection_slips(m))...,
+        _v_walls(m, advection_slips(m))...,
         m.dx,
         m.dy,
         m.params.kinks,

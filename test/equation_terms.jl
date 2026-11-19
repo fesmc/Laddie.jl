@@ -34,7 +34,7 @@
 #   γT      turbulent heat transfer coefficient [m s⁻¹]
 # ============================================================================
 using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, jp_count, ip_t, jp_t,
-    im_u, jm_v, _safe_sqrt, _front_pgf_weight, _front_drho_weight, momentum_advection_U, momentum_advection_V,
+    im_u, jm_v, _safe_sqrt, front_pgf_weight, front_drho_weight, momentum_advection_U, momentum_advection_V,
     laplace_U, laplace_V, laplace_T, upwind_advection_T
 
 # -- U-momentum terms (Eq. 2) -----------------------------------------------
@@ -47,11 +47,11 @@ using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, 
 # face; at a one-sided face (ice front, SinkGapsBC gap-sink edge) 1 under
 # FullDepthFrontPressure and 0 under TruncatedDepthFrontPressure.  See AbstractFrontPressure.
 @inline _pgf_gate(m, tmask_stag) =
-    one(m.FT) .+ _front_pgf_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
+    one(m.FT) .+ front_pgf_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
 # The same gate on the density-gradient PGF term: 0 at a one-sided face only
 # under ZeroGradientFrontPressure.
 @inline _drho_gate(m, tmask_stag) =
-    one(m.FT) .+ _front_drho_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
+    one(m.FT) .+ front_drho_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
 
 # g·H̄·ρ̄·∂H/∂x  (pressure gradient from plume-thickness depth)
 @inline u_pressure_depth(m) =

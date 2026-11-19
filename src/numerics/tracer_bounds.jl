@@ -86,5 +86,5 @@ end
     q_min, q_max = _val(q_min), _val(q_max)
     i, j = @index(Global, NTuple)
     @inbounds q[i, j] =
-        ifelse(tmask[i, j] > 0, _sclamp(kinks, q[i, j], q_min, q_max, _kink_width(kinks, quantity)), q[i, j])
+        ifelse(tmask[i, j] > 0, smooth_clamp(kinks, q[i, j], q_min, q_max, kink_width(kinks, quantity)), q[i, j])
 end

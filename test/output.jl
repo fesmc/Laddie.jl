@@ -96,9 +96,9 @@ end
     @test meta["params"]["melting"]["gamTfix"] ≈ 0.00018
     @test meta["params"]["momentum_advection"]["type"] == "CentredMomentumAdvection"
     @test meta["boundary"]["wall_advection"]["type"] == "NoWallAdvection"
-    @test meta["boundary"]["grounding_line"]["type"] == "PartialSlipAtGL"
+    @test meta["boundary"]["grounding_line_slip"]["type"] == "PartialSlipAtGL"
     @test meta["boundary"]["gaps"]["type"] == "SinkGapsBC"
-    @test !haskey(meta["params"], "grounding_line")
+    @test !haskey(meta["params"], "grounding_line_slip")
     # The forcing entry is split ocean/ice, and records the profile ranges, so that
     # a warm run is distinguishable from a cold one in the metadata.
     @test meta["forcing"]["ocean"]["type"] == "OceanForcing1D"

@@ -33,11 +33,11 @@ values stored at ocean cells (`z_draft=0`) and grounded cells (`z_draft=bed`).
 """
 struct MaskedIceSlope <: AbstractIceSlope end
 
-function _icebase_slope(::CentredIceSlope, tmask, z_draft_ft, dx_ft, dy_ft, FT)
+function icebase_slope(::CentredIceSlope, tmask, z_draft_ft, dx_ft, dy_ft, FT)
     return gradient_x(z_draft_ft, dx_ft), gradient_y(z_draft_ft, dy_ft)
 end
 
-function _icebase_slope(::MaskedIceSlope, tmask, z_draft_ft, dx_ft, dy_ft, FT)
+function icebase_slope(::MaskedIceSlope, tmask, z_draft_ft, dx_ft, dy_ft, FT)
     # Only read shelf-cell neighbours to avoid incorporating the
     # physically-incompatible z_draft values at ocean (z_draft=0) and grounded
     # (z_draft=bed) cells, which would produce O(0.2) spurious slopes.
@@ -199,7 +199,7 @@ function Geometry(
     lnd = FT.(mask .== 1)
     ocn = FT.(mask .== 0)
 
-    dzdx, dzdy = _icebase_slope(ice_slope, tmask, z_draft_ft, dx_ft, dy_ft, FT)
+    dzdx, dzdy = icebase_slope(ice_slope, tmask, z_draft_ft, dx_ft, dy_ft, FT)
 
     tmaskym1 = ym1(tmask)
     tmaskyp1 = yp1(tmask)
@@ -402,7 +402,7 @@ function _grid(
     for p in preprocess
         preprocess!(mask, p)
     end
-    r, c = _crop_ranges(mask, domain_cropping)
+    r, c = crop_ranges(mask, domain_cropping)
     mask = mask[r, c]
     _validate_grid_mask(mask)
     nx_total, ny_total = size(mask)

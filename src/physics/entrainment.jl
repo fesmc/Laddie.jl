@@ -69,7 +69,7 @@ $(TYPEDSIGNATURES)
 Holland–Jenkins shear entrainment (see [`HollandEntrainment`](@ref)), an
 alternative to the buoyancy-flux form of [Lambert et al. (2023, Eq. 14)](@cite lambert_modelling_2023).
 """
-function _compute_entrainment!(m, ep::HollandEntrainment)
+function compute_entrainment!(m, ep::HollandEntrainment)
     coeff = ep.cl * m.K_h / m.A_h^2
     drho_coeff = m.g * m.K_h / m.A_h
     level = m.params.closure_level
@@ -77,10 +77,10 @@ function _compute_entrainment!(m, ep::HollandEntrainment)
         _holland_entrainment_kernel!,
         m.entr,
         m.detr,
-        _closure_level(m.U, level),
-        _closure_level(m.V, level),
+        closure_field(m.U, level),
+        closure_field(m.V, level),
         m.drho,
-        _closure_level(m.H, level),
+        closure_field(m.H, level),
         m.tmask,
         coeff,
         drho_coeff,
@@ -96,7 +96,7 @@ $(TYPEDSIGNATURES)
 `e = 2μ u⋆³ / (g H δρ)` minus a melt detrainment correction
 ([Lambert et al. 2023](@cite lambert_modelling_2023), Eq. 14; see `docs/src/physics/equations.md`).
 """
-function _compute_entrainment!(m, ep::GasparEntrainment)
+function compute_entrainment!(m, ep::GasparEntrainment)
     launch!(
         _buoyancy_entrainment_kernel!,
         m.entr,
@@ -106,14 +106,14 @@ function _compute_entrainment!(m, ep::GasparEntrainment)
         m.Tb,
         m.z_draft,
         m.ustar,
-        _closure_level(m.H, m.params.closure_level),
+        closure_field(m.H, m.params.closure_level),
         m.drho,
         m.melt,
         m.tmask,
         (ep.mu + ep.mu) / m.g,
         m.max_detrainment,
         m.drho_floor,
-        _eos_coefficients(m),
+        eos_coefficients(m),
         m.l1,
         m.l2,
         m.l3,
@@ -137,7 +137,7 @@ T, S and velocity, so it thins the layer without changing its tracers or momentu
 (see the step kernels in `leapfrog.jl`); it is zero wherever the cap does not bind.
 """
 function update_entrainment!(m, dt)
-    _compute_entrainment!(m, m.entrainment)
+    compute_entrainment!(m, m.entrainment)
     upwind_advection_T(m.convH, m, m.H.present)
     FT = m.FT
     launch!(
@@ -184,7 +184,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(H_min)
-        eH = _kink_width(kinks, :H)
+        eH = kink_width(kinks, :H)
         # Frazil formation removes layer water like a sink, so the floor tops it up.
         ent2[i, j] =
             _smax0(
@@ -198,9 +198,9 @@ end
         # wins where the cap is below H_min, as in `_clamp_thickness_kernel!`.
         # Masked cells may sit under a bed of -Inf, hence the `ifelse`.
         H_star = H_past[i, j] + (convH[i, j] + melt[i, j] - _at(frazil, i, j) + nentr[i, j]) * dt2
-        H_top = _smax(
+        H_top = smooth_max(
             kinks,
-            _max_layer_thickness(max_layer_thickness, kinks, H_star, z_draft[i, j], z_bed[i, j], one(FT)),
+            cap_layer_thickness(max_layer_thickness, kinks, H_star, z_draft[i, j], z_bed[i, j], one(FT)),
             H_min,
             eH,
         )
@@ -241,16 +241,16 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(prefactor)
-        drho_pos = _smax(kinks, drho_floor, drho[i, j], _kink_width(kinks, :drho))
+        drho_pos = smooth_max(kinks, drho_floor, drho[i, j], kink_width(kinks, :drho))
         sb = _freezing_salinity(Tb[i, j], z_draft[i, j], l1, l2, l3)
         db_ij = _drho(S[i, j], sb, T[i, j], Tb[i, j], -z_draft[i, j], eos) * tmask[i, j]
         us3 = ustar[i, j]^3
         e_ij =
             prefactor * _safe_div(us3, H[i, j] * drho_pos) -
             db_ij / drho_pos * melt[i, j] * tmask[i, j]
-        ew = _kink_width(kinks, :w)
+        ew = kink_width(kinks, :w)
         entr[i, j] = _smax0(kinks, e_ij, ew)
-        detr[i, j] = _smin(kinks, max_detrainment, _smax0(kinks, -e_ij, ew), ew)
+        detr[i, j] = smooth_min(kinks, max_detrainment, _smax0(kinks, -e_ij, ew), ew)
     end
 end
 
@@ -278,7 +278,7 @@ end
         u_im = (U[i, j] + U[im1, j]) * half
         v_jm = (V[i, j] + V[i, jm1]) * half
         speed_sq = u_im * u_im + v_jm * v_jm - drho_coeff * drho[i, j] * H[i, j]
-        entr[i, j] = coeff * _ssqrt(kinks, speed_sq, _kink_width(kinks, :u)) * tmask[i, j]
+        entr[i, j] = coeff * _ssqrt(kinks, speed_sq, kink_width(kinks, :u)) * tmask[i, j]
         detr[i, j] = zero(FT)
     end
 end

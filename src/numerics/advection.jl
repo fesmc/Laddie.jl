@@ -233,5 +233,5 @@ Select via `Params(; closure_level = PastClosureLevel())`.
 struct PastClosureLevel <: AbstractClosureLevel end
 
 # The prognostic levels the closures read.
-_closure_level(v, ::PresentClosureLevel) = v.present
-_closure_level(v, ::PastClosureLevel) = v.past
+closure_field(v, ::PresentClosureLevel) = v.present
+closure_field(v, ::PastClosureLevel) = v.past

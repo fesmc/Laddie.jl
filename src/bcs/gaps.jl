@@ -147,9 +147,9 @@ LeakyGapsBC(; melange_cover = 0.9, surface_heat_loss = 0.0, ice_salinity = 5.0, 
 # to open ocean, so every mask derivation sees exactly the v1.x geometry;
 # ConnectedGapsBC keeps them.  Marking gaps in the first place is
 # `MarkGapsPreprocess`'s job.
-_apply_gaps_bc(mask, ::SinkGapsBC) = ifelse.(mask .== 4, 0, mask)
-_apply_gaps_bc(mask, ::ConnectedGapsBC) = mask
-_apply_gaps_bc(mask, ::LeakyGapsBC) = mask
+gaps_mask(mask, ::SinkGapsBC) = ifelse.(mask .== 4, 0, mask)
+gaps_mask(mask, ::ConnectedGapsBC) = mask
+gaps_mask(mask, ::LeakyGapsBC) = mask
 
 # The per-cell fields of `LeakyGapsBC`, fixed at build: the drag factor (α in gaps, 1
 # elsewhere) and the open-water heat loss ((1 − α) Q in gaps, 0 elsewhere).
@@ -199,7 +199,7 @@ function _gap_surface!(m, ::AbstractArray, dt)
         m.l3,
         gaps.ice_salinity,
         gaps.convection_time,
-        _eos_coefficients(m),
+        eos_coefficients(m),
         dt,
     )
     return

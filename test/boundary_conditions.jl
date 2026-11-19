@@ -2,25 +2,25 @@
 
 @testset "Wall slip: factors, v2 default, free slip is stress-free" begin
     # NEMO convention: ghost (1 − s)·u, 0 = free slip, 1 = LADDIE v2, 2 = no slip.
-    @test Laddie._gl_slip(FreeSlipAtGL(), FT) === zero(FT)
-    @test Laddie._gl_slip(NoSlipAtGL(), FT) === FT(2)
-    @test Laddie._gl_slip(PartialSlipAtGL(0.7), FT) === FT(0.7)
-    @test Laddie._land_slip(FreeSlipAtLand(), FT) === zero(FT)
-    @test Laddie._land_slip(NoSlipAtLand(), FT) === FT(2)
-    @test Laddie._land_slip(PartialSlipAtLand(1), FT) === FT(1)
+    @test Laddie.slip_factor(FreeSlipAtGL(), FT) === zero(FT)
+    @test Laddie.slip_factor(NoSlipAtGL(), FT) === FT(2)
+    @test Laddie.slip_factor(PartialSlipAtGL(0.7), FT) === FT(0.7)
+    @test Laddie.slip_factor(FreeSlipAtLand(), FT) === zero(FT)
+    @test Laddie.slip_factor(NoSlipAtLand(), FT) === FT(2)
+    @test Laddie.slip_factor(PartialSlipAtLand(1), FT) === FT(1)
     @test PartialSlipAtGL(1).factor isa AbstractFloat
     @test_throws ArgumentError PartialSlipAtGL(2.5)
     @test_throws ArgumentError PartialSlipAtLand(-0.1)
     @test !hasfield(Params, :slip)                 # no global factor any more
 
     b = BoundaryConditions()
-    @test b.grounding_line == PartialSlipAtGL(1.0) && b.land == PartialSlipAtLand(1.0)
+    @test b.grounding_line_slip == PartialSlipAtGL(1.0) && b.land_slip == PartialSlipAtLand(1.0)
     @test b.wall_advection isa NoWallAdvection
 
     run1(boundary) = (s = build_isomip(CPU(); FT, nx = 20, ny = 10,
                                        isomipcond = :warm, boundary);
                       run!(s; days = 1.0, verbose = false); s.model)
-    bc(gl, ln) = BoundaryConditions(; grounding_line = gl, land = ln)
+    bc(gl, ln) = BoundaryConditions(; grounding_line_slip = gl, land_slip = ln)
     m_def  = run1(BoundaryConditions())
     m_ns   = run1(bc(NoSlipAtGL(), NoSlipAtLand()))
     m_free = run1(bc(FreeSlipAtGL(), FreeSlipAtLand()))
@@ -51,7 +51,7 @@
     @test all(g.lndNu .<= wall_faces(g).grdNu) && all(g.lndSu .<= wall_faces(g).grdSu)
     @test sum(g.lndNu) + sum(g.lndSu) > 0
 
-    # grounding_line and land are independent switches: engaging one alone must
+    # grounding_line_slip and land are independent switches: engaging one alone must
     # not reproduce engaging the other, and engaging both must differ from
     # either alone (no accidental aliasing between gl?? and lnd??).
     m_gl = run1(bc(NoSlipAtGL(), FreeSlipAtLand()))
@@ -69,7 +69,7 @@ end
         lap(gl, ln) = begin
             m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                              params = Params(; FT, lateral_viscosity = lv),
-                             boundary = BoundaryConditions(; grounding_line = gl, land = ln)).model
+                             boundary = BoundaryConditions(; grounding_line_slip = gl, land_slip = ln)).model
             m.U.past .= FT(0.1) .* m.umask
             m.V.past .= 0
             um = m.umask .> 0
@@ -687,7 +687,7 @@ end
     # its wall lives in `compute_viscUV` alone.
     mk(wa, gl, ln) = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
         boundary = BoundaryConditions(;
-            grounding_line = gl, land = ln, wall_advection = wa)).model
+            grounding_line_slip = gl, land_slip = ln, wall_advection = wa)).model
     m_ss = mk(SlipScaledWallAdvection(), NoSlipAtGL(), NoSlipAtLand())
     m_v2 = mk(NoWallAdvection(), PartialSlipAtGL(1.0), PartialSlipAtLand(1.0))
     m_v1 = mk(V1WallAdvection(), NoSlipAtGL(), NoSlipAtLand())
@@ -695,9 +695,9 @@ end
     # The viscosity kernels add s − 1 on top of the stored zero.
     @test Laddie._viscosity_slips(m_ss) === (one(FT), one(FT))
     @test Laddie._viscosity_slips(m_v2) === (zero(FT), zero(FT))
-    @test Laddie._advection_slips(m_ss) === Laddie._wall_slips(m_ss) === (FT(2), FT(2))
+    @test Laddie.advection_slips(m_ss) === Laddie._wall_slips(m_ss) === (FT(2), FT(2))
     # Zeroed in the advection, untouched in the viscosity.
-    @test Laddie._advection_slips(m_v2) === (zero(FT), zero(FT))
+    @test Laddie.advection_slips(m_v2) === (zero(FT), zero(FT))
     # v1: its slip = 1 is no slip in the viscosity and 1 in the advection.
-    @test Laddie._advection_slips(m_v1) === (one(FT), one(FT))
+    @test Laddie.advection_slips(m_v1) === (one(FT), one(FT))
 end

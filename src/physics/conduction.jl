@@ -110,10 +110,10 @@ LinearProfileIceConduction(conductivity::FT) where {FT} = LinearProfileIceConduc
 # What the melt kernels need of a parameterisation, as three scalars so that no object has to
 # cross into a kernel: the factors on `c_i` where the thermal forcing T − T_f is
 # positive (melting) and where it is not, and the conductivity of the fixed flux.
-_conduction_coefficients(::HollandJenkinsIceConduction, FT) = (one(FT), one(FT), zero(FT))
-_conduction_coefficients(::MeltOnlyIceConduction, FT) = (one(FT), zero(FT), zero(FT))
-_conduction_coefficients(::NoIceConduction, FT) = (zero(FT), zero(FT), zero(FT))
-_conduction_coefficients(c::LinearProfileIceConduction, FT) = (zero(FT), zero(FT), c.conductivity)
+conduction_coefficients(::HollandJenkinsIceConduction, FT) = (one(FT), one(FT), zero(FT))
+conduction_coefficients(::MeltOnlyIceConduction, FT) = (one(FT), zero(FT), zero(FT))
+conduction_coefficients(::NoIceConduction, FT) = (zero(FT), zero(FT), zero(FT))
+conduction_coefficients(c::LinearProfileIceConduction, FT) = (zero(FT), zero(FT), c.conductivity)
 
 Base.show(io::IO, ::HollandJenkinsIceConduction) = print(io, "HollandJenkinsIceConduction()")
 Base.show(io::IO, ::MeltOnlyIceConduction) = print(io, "MeltOnlyIceConduction()")
@@ -134,7 +134,7 @@ Base.show(io::IO, c::LinearProfileIceConduction) =
 # the freezing point is blended over ε_T under `SmoothKinks`.
 @inline function _ice_conduction(conduction, c_i, T, Tf, Ts, z_draft)
     k = conduction.kinks
-    ci_eff = c_i * _sswitch(k, T - Tf, conduction.ci_melt, conduction.ci_freeze, _kink_width(k, :T))
+    ci_eff = c_i * _sswitch(k, T - Tf, conduction.ci_melt, conduction.ci_freeze, kink_width(k, :T))
     Hi = -z_draft * conduction.thick_ratio
     q = _safe_div(conduction.k_ice * (Tf - Ts), Hi * conduction.rho_fw)
     return ci_eff, q
@@ -143,7 +143,7 @@ end
 # The scalars `_ice_conduction` reads, for the kernel launches, and the kink treatment,
 # which the melt kernels take from here.
 function _conduction_args(m)
-    ci_melt, ci_freeze, k_ice = _conduction_coefficients(m.params.ice_conduction, m.FT)
+    ci_melt, ci_freeze, k_ice = conduction_coefficients(m.params.ice_conduction, m.FT)
     return (; ci_melt, ci_freeze, k_ice, thick_ratio = m.rho0_seawater / m.rho_ice, rho_fw = m.rho_freshwater,
             kinks = m.params.kinks)
 end

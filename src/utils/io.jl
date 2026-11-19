@@ -378,7 +378,7 @@ function _write_run_metadata(sim)
     sim_d = Dict{String,Any}(
         "dt0" => _float64(sim.clock.dt),
         "nu" => _float64(sim.nu),
-        "time_stepper" => _scalar_fields(sim.tstep),
+        "time_stepper" => _scalar_fields(sim.time_stepper),
         "cfl" => _scalar_fields(sim.cfl),
         "stop" => _scalar_fields(sim.stop),
         "restart" => sim.io.restartfile,

@@ -40,9 +40,9 @@ end
     # time stepper the same way (integer fields untouched).
     m = build_isomip(CPU(); FT = Float32, nx = 20, ny = 10, isomipcond = :warm,
                      params = Params(; FT = Float32),
-                     tstep = AdaptiveTimeStepper(; cfl_target = 0.4))
-    @test m.tstep isa AdaptiveTimeStepper{Float32}
-    @test m.tstep.ncheck isa Int                  # integer field not converted
+                     time_stepper = AdaptiveTimeStepper(; cfl_target = 0.4))
+    @test m.time_stepper isa AdaptiveTimeStepper{Float32}
+    @test m.time_stepper.ncheck isa Int                  # integer field not converted
     @test m.nu isa Float32 && m.clock.dt isa Float32
     run!(m; days = 0.2, verbose = false)
     @test all(isfinite, m.model.melt) && eltype(m.model.melt) == Float32

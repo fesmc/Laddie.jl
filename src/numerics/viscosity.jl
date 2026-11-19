@@ -24,8 +24,8 @@ flux at every interior face is `Params.A_h * ΔU / dy` (or `ΔV / dx`), i.e. a
 plain Laplacian with a single global coefficient, matching LADDIE v1.
 
 The grounding-line/land wall stress scales with `Params.A_h` too; its strength
-relative to an interior face is the wall slip factor (`BoundaryConditions.grounding_line`
-/ `.land`).
+relative to an interior face is the wall slip factor (`BoundaryConditions.grounding_line_slip`
+/ `.land_slip`).
 
 Select via `Params(; lateral_viscosity = PrescribedLateralViscosity())` (the default).
 """
@@ -60,7 +60,7 @@ directly comparable to the reference's config value. It is *not* comparable to
 
 Wall faces carry the same shear-scaled coefficient, with the neighbour replaced by
 the ghost velocity `(1 - s)·u` of the wall slip factor `s`
-(`BoundaryConditions.grounding_line` / `.land`). With the default `s = 1` the ghost
+(`BoundaryConditions.grounding_line_slip` / `.land_slip`). With the default `s = 1` the ghost
 is zero, as in the reference, which treats grounded and land neighbours as
 ordinary cells with zero velocity (`laddie_velocity.f90:259-267`). Only at the
 border of its mesh does the reference apply the bare `C%laddie_viscosity` as a

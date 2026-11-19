@@ -158,10 +158,10 @@ Simulation
 │   │   ├── coriolis                    #   AbstractCoriolisParameter
 │   │   ├── ice_slope                   #   MaskedIceSlope (default) / CentredIceSlope
 │   │   └── kinks                       #   AbstractKinks (ExactKinks / SmoothKinks)
-│   ├── boundary :: BoundaryConditions  # open_ocean, grounding_line, land, gaps, wall_advection
+│   ├── boundary :: BoundaryConditions  # open_ocean, grounding_line_slip, land_slip, gaps, wall_advection
 │   └── forcing :: CavityForcing        # ocean (ambient T/S profiles), ice (ice-base temperature)
 ├── clock :: Clock                      # time, iteration, dt
-├── tstep                               # time stepper (FixedTimeStepper / AdaptiveTimeStepper)
+├── time_stepper                               # time stepper (FixedTimeStepper / AdaptiveTimeStepper)
 ├── cfl                                 # CFL check
 ├── stop                                # simulation end criterion
 ├── output :: OutputConfig              # saveday, diagday, restday, tsday, resultdir, fields

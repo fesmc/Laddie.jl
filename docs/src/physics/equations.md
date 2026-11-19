@@ -209,7 +209,7 @@ g_a' = \frac{g\,\Delta\rho_a}{\rho_0}, \tag{6}
 \delta\rho = \beta\,(S_a - S) - \bigl(a_0 + a_T\,\bar T + a_Z\,Z\bigr)(T_a - T),
 \qquad \bar T = \tfrac12(T_a + T),
 ```
-with the scalars from `_eos_coefficients`: ``(\beta, \alpha, 0, 0)`` for `LinearEOS`, and for `RoquetEOS`
+with the scalars from `eos_coefficients`: ``(\beta, \alpha, 0, 0)`` for `LinearEOS`, and for `RoquetEOS`
 ``(b_0, -C_b\Theta_0, C_b, T_h)/\rho_0``. ``Z`` is the depth of the layer mid-point,
 ``-z_b + H/2``, in the density and the convective reset, and the ice-base depth ``-z_b`` for the interface
 term of the buoyancy-flux entrainment (14). The default reproduces the linear contrast to the last bit.
@@ -372,13 +372,13 @@ toward ``T_f`` at the rate ``1/\tau``. The salt stays in the layer, see (5).
 | (3) | ``V``-momentum | `_step_v_momentum_kernel!`; terms: `v_*` fns (`test/equation_terms.jl`) |
 | (4) | heat | `_step_temperature_kernel!` + `mat_*` variants |
 | (5) | salt | `_step_salinity_kernel!` + `mat_*` variant |
-| (6)/(7) | reduced gravity / EOS | `update_density!`, `_density_kernel!`, `_drho`, `_eos_coefficients` |
+| (6)/(7) | reduced gravity / EOS | `update_density!`, `_density_kernel!`, `_drho`, `eos_coefficients` |
 | (8)–(10) | three-eq melt + liquidus | `_three_eq_melt_kernel!` |
-| — | conduction into the ice | `_ice_conduction`, `_conduction_coefficients` |
+| — | conduction into the ice | `_ice_conduction`, `conduction_coefficients` |
 | — | two-equation melt (`TwoEquationMelting`) | `_two_eq_melt_kernel!`, `_ustar_gamT_kernel!` |
 | (11)/(12) | ``\gamma_T,\gamma_S`` | `_compute_turbulent_transfer_coefficients!` |
 | (13) | ``u_\star`` | `_ustar_kernel!` |
 | (14) | entrainment | `GasparEntrainment` → `_buoyancy_entrainment_kernel!` (default); Holland → `_holland_entrainment_kernel!` |
 | — | min-thickness / net ``\dot e`` | `update_entrainment!` |
-| — | convective relaxation | `update_convection!`, `_update_conv2!` |
+| — | convective relaxation | `update_convection!`, `update_convective_relaxation!` |
 | — | frazil ice | `update_frazil!`, `_frazil_kernel!` |

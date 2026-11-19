@@ -75,7 +75,7 @@ describe one family each:
 | [Closure level](momentum_form.md) | [`AbstractClosureLevel`](@ref) | `Params(; closure_level)` | `PastClosureLevel()` |
 | [Laplacian weights](laplacian_weights.md) | [`AbstractLaplacianWeights`](@ref) | `Params(; laplacian_weights)` | `PresentLaplacianWeights()` |
 | [Kinks](kinks.md) | [`AbstractKinks`](@ref) | `Params(; kinks)` | `ExactKinks()` |
-| [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; tstep)` | `FixedTimeStepper()` |
+| [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; time_stepper)` | `FixedTimeStepper()` |
 | [CFL number](cfl.md) | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `ExactCFL()` |
 | [Simulation end](simulation_end.md) | [`AbstractSimulationEnd`](@ref) | `Simulation(model; stop)`, `run!(sim; until)` | `FixedSimulationEnd()` |
 | [Maximum layer thickness](max_layer_thickness.md) | [`AbstractMaxLayerThickness`](@ref) | `Params(; max_layer_thickness)` | `NoMaxLayerThickness()` |

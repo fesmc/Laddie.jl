@@ -96,9 +96,9 @@ _rebuild(::Type{<:RoquetEOS}, Cb, Theta0, Th, b0) =
 # take them, a NamedTuple of scalars (which `_val` unwraps) built where a kernel is
 # launched.  For `LinearEOS` the thermal expansion is `a0 = alpha` with `aT = aZ = 0`,
 # so that the contrast is that of the constant coefficients to the last bit.
-_eos_coefficients(m) = _eos_coefficients(m, m.params.equation_of_state)
-_eos_coefficients(m, ::LinearEOS) = (; beta = m.beta, a0 = m.alpha, aT = zero(m.FT), aZ = zero(m.FT))
-function _eos_coefficients(m, eos::RoquetEOS)
+eos_coefficients(m) = eos_coefficients(m, m.params.equation_of_state)
+eos_coefficients(m, ::LinearEOS) = (; beta = m.beta, a0 = m.alpha, aT = zero(m.FT), aZ = zero(m.FT))
+function eos_coefficients(m, eos::RoquetEOS)
     rho0 = m.rho0_seawater
     return (; beta = eos.b0 / rho0, a0 = -eos.Cb * eos.Theta0 / rho0, aT = eos.Cb / rho0, aZ = eos.Th / rho0)
 end
@@ -116,7 +116,7 @@ Base.show(io::IO, e::RoquetEOS) =
 
 # Buoyancy contrast (ρ_a − ρ)/ρ₀ of water (S, T) against (Sa, Ta) at depth `Z` (positive
 # downward), δρ = β ΔS − (a0 + aT T̄ + aZ Z) ΔT, with the coefficients `c` of
-# `_eos_coefficients`.  For the linear equation of state aT = aZ = 0 and a0 = α, which
+# `eos_coefficients`.  For the linear equation of state aT = aZ = 0 and a0 = α, which
 # leaves `β ΔS − α ΔT` to the last bit.
 @inline _drho(Sa, S, Ta, T, Z, c) = c.beta * (Sa - S) - (c.a0 + c.aT * (Ta + T) / 2 + c.aZ * Z) * (Ta - T)
 
@@ -158,5 +158,5 @@ update_density!(m) = launch!(
     m.tmask,
     m.z_draft,
     m.H.present,
-    _eos_coefficients(m),
+    eos_coefficients(m),
 )

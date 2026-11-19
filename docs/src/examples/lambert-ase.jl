@@ -111,7 +111,7 @@ params = Params(; FT,
     tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsIceConduction(),
 )
 boundary = BoundaryConditions(;
-    grounding_line = PartialSlipAtGL(1.0), land = PartialSlipAtLand(1.0),
+    grounding_line_slip = PartialSlipAtGL(1.0), land_slip = PartialSlipAtLand(1.0),
     open_ocean = ZeroGradientOpenOceanBC(), wall_advection = NoWallAdvection(),
 )
 
@@ -126,7 +126,7 @@ boundary = BoundaryConditions(;
 # end up with different results. At 0.3 the two backends agree to four digits.
 
 model = Model(grid; forcing, params, boundary)
-sim = Simulation(model; dt = 30.0, nu = 0.8, tstep = AdaptiveTimeStepper(cfl_target = 0.3),
+sim = Simulation(model; dt = 30.0, nu = 0.8, time_stepper = AdaptiveTimeStepper(cfl_target = 0.3),
                  output = OutputConfig(; name = "ASE", saveday = 1.0, restday = 20.0,
                                        resultdir = joinpath(pkgdir(Laddie), "docs", "output")))
 run!(sim; days = 20)

@@ -245,13 +245,13 @@ Laddie.integrate!(model, dt, n::Reactant.TracedRNumber; nu = 0.8,
 # Adaptive dt, differentiable: record the schedule, then replay it
 # ============================================================================
 
-# CFL rate (s⁻¹) on traced fields: `Laddie._cfl_rate` without the host conversions.
-function _cfl_rate(m, ::Laddie.ExactCFL)
+# CFL rate (s⁻¹) on traced fields: `Laddie.cfl_rate` without the host conversions.
+function cfl_rate(m, ::Laddie.ExactCFL)
     Laddie._launch_tpoint_diag!(Laddie._cfl_rate_kernel!, m)
     return maximum(m.diag)
 end
-function _cfl_rate(m, cfl::Laddie.ConservativeCFL)
-    umax, vmax, c = Laddie._cfl_reductions(m, cfl)
+function cfl_rate(m, cfl::Laddie.ConservativeCFL)
+    umax, vmax, c = Laddie.cfl_reductions(m, cfl)
     return (umax + c) / m.dx + (vmax + c) / m.dy
 end
 
@@ -276,7 +276,7 @@ function _schedule!(model, dt0, tend, ts, cfl, nu, cap)
         t = t + dt
         k = k + 1
         seg_n = seg_n .+ ifelse.(idx .== j, one(FT), zero(FT))
-        dtn = Laddie._controller_dt(ts, dt, dt * _cfl_rate(model, cfl); allow_grow = true)
+        dtn = Laddie._controller_dt(ts, dt, dt * cfl_rate(model, cfl); allow_grow = true)
         dtn = ifelse(rem(k, FT(ts.ncheck)) == 0, dtn, dt)
         changed = dtn != dt
         _rebootstrap_if!(model, changed, dtn)

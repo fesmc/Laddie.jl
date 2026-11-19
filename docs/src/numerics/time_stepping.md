@@ -30,7 +30,7 @@ either makes long runs prone to divergence.
 
 ## Step-size control
 
-The step size is controlled by `Simulation(model; tstep = ...)`:
+The step size is controlled by `Simulation(model; time_stepper = ...)`:
 
 - [`FixedTimeStepper`](@ref), the default: the step stays at the `dt` the `Simulation` was
   built with, as in LADDIE v1.

@@ -113,15 +113,15 @@ end
 # `_net_entrainment_kernel!`, and the clamp in `_clamp_thickness_kernel!` before the
 # H_min floor.  No upper bound: the floor and the domain mask are all there is.
 # `kinks` smooths the min/max over ε_H (see `AbstractKinks`).
-@inline _max_layer_thickness(::NoMaxLayerThickness, kinks, H, z_draft, z_bed, tmask) = H
-@inline _max_layer_thickness(::TopographicMaxLayerThickness, kinks, H, z_draft, z_bed, tmask) =
-    _smin(kinks, H, z_draft - z_bed, _kink_width(kinks, :H)) * tmask
-@inline _max_layer_thickness(c::AbsoluteMaxLayerThickness, kinks, H, z_draft, z_bed, tmask) =
-    _smin(kinks, H, _val(c.H_max), _kink_width(kinks, :H)) * tmask
-@inline function _max_layer_thickness(c::RelativeMaxLayerThickness, kinks, H, z_draft, z_bed, tmask)
-    eH = _kink_width(kinks, :H)
-    cap = _smax(kinks, _val(c.f_H_max) * (z_draft - z_bed), _val(c.H_floor), eH)
-    return _smin(kinks, H, cap, eH) * tmask
+@inline cap_layer_thickness(::NoMaxLayerThickness, kinks, H, z_draft, z_bed, tmask) = H
+@inline cap_layer_thickness(::TopographicMaxLayerThickness, kinks, H, z_draft, z_bed, tmask) =
+    smooth_min(kinks, H, z_draft - z_bed, kink_width(kinks, :H)) * tmask
+@inline cap_layer_thickness(c::AbsoluteMaxLayerThickness, kinks, H, z_draft, z_bed, tmask) =
+    smooth_min(kinks, H, _val(c.H_max), kink_width(kinks, :H)) * tmask
+@inline function cap_layer_thickness(c::RelativeMaxLayerThickness, kinks, H, z_draft, z_bed, tmask)
+    eH = kink_width(kinks, :H)
+    cap = smooth_max(kinks, _val(c.f_H_max) * (z_draft - z_bed), _val(c.H_floor), eH)
+    return smooth_min(kinks, H, cap, eH) * tmask
 end
 
 # The caps reach `_net_entrainment_kernel!` and `_clamp_thickness_kernel!` whole, so their field has to be adapted

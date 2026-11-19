@@ -4,13 +4,13 @@
 # through different kernels: bottom drag (momentum), γ_T (melt) and the entrainment
 # coefficient.  The model is built at the element type of `x`, so `Dual` inputs
 # propagate through the grid, the state and the parameters alike.
-function ad_melt(x; tstep = FixedTimeStepper(), output = OutputConfig(), kinks = ExactKinks(),
+function ad_melt(x; time_stepper = FixedTimeStepper(), output = OutputConfig(), kinks = ExactKinks(),
                  schemes = (;), isomipcond = :warm, supercooling = 0.0)
     T = eltype(x)
     params = Params(; FT = T, C_d = x[1], melting = FixedGamTMelting(x[2]),
                     entrainment = GasparEntrainment(x[3]), kinks, schemes...)
     sim = build_isomip(CPU(); FT = T, nx = 20, ny = 10, isomipcond, params,
-                       tstep, output)
+                       time_stepper, output)
     iszero(supercooling) || supercool!(sim.model, T(supercooling))
     run!(sim; days = 2.0, verbose = false)
     return sim.model.melt
@@ -97,7 +97,7 @@ end
 @testset "ForwardDiff through adaptive dt and file output" begin
     # The dt controller runs on primal values, so the derivative is taken at the dt
     # sequence the Float64 run would choose.
-    @test all(isfinite, ad_gradient(x -> ad_melt_loss(x; tstep = AdaptiveTimeStepper())))
+    @test all(isfinite, ad_gradient(x -> ad_melt_loss(x; time_stepper = AdaptiveTimeStepper())))
     # NetCDF output, restart files and the log get plain floats.
     tmp = mktempdir()
     output = OutputConfig(; name = "ad", resultdir = tmp, saveday = 1.0, restday = 1.0)

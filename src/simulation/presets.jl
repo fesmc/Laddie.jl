@@ -25,11 +25,11 @@ Convenience constructor for the idealised ISOMIP+ channel geometry
 - `params`: `Params` object (default `Params(; FT)`, the ISOMIP+-canonical values).
 - `domain_cropping`, `preprocess`: forwarded to `Grid`.
 - `boundary`: forwarded to `Model`.
-- any other keyword (`dt`, `tstep`, `cfl`, `nu`, `stop`, `output`, `restart`,
+- any other keyword (`dt`, `time_stepper`, `cfl`, `nu`, `stop`, `output`, `restart`,
   `debug`) is forwarded to [`Simulation`](@ref).
 
 ```julia
-sim = build_isomip(; isomipcond = :cold, tstep = AdaptiveTimeStepper())
+sim = build_isomip(; isomipcond = :cold, time_stepper = AdaptiveTimeStepper())
 run!(sim; days = 30)
 sim.model.melt
 ```
@@ -161,8 +161,8 @@ _v1_params(; A_h, K_h, H_min, u_tide) = (
 # stress; see `V1WallAdvection`).  Zero-gradient inflow at the ice front (`boundop = 1`).
 _v1_boundary() = BoundaryConditions(;
     open_ocean = ZeroGradientOpenOceanBC(),
-    grounding_line = NoSlipAtGL(),
-    land = NoSlipAtLand(),
+    grounding_line_slip = NoSlipAtGL(),
+    land_slip = NoSlipAtLand(),
     wall_advection = V1WallAdvection(),
 )
 
@@ -510,8 +510,8 @@ _v2_params(; C_d_top, melting, C_visc, K_h, H_min, H_init, v_cut, H_max, buoyanc
 _v2_boundary(; gaps = SinkGapsBC()) = BoundaryConditions(;
     gaps,
     open_ocean = ZeroGradientOpenOceanBC(),
-    grounding_line = PartialSlipAtGL(1.0),
-    land = PartialSlipAtLand(1.0),
+    grounding_line_slip = PartialSlipAtGL(1.0),
+    land_slip = PartialSlipAtLand(1.0),
     wall_advection = NoWallAdvection(),
 )
 

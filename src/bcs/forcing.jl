@@ -610,9 +610,9 @@ Vertically interpolate the ambient T/S profiles to the depth of each grid cell's
 plume base (z_draft − H), writing results into `m.Ta` and `m.Sa`. This sampling has
 no numbered equation in [Lambert et al. (2023)](@cite lambert_modelling_2023); see `docs/src/physics/equations.md`.
 """
-update_ambient_fields!(m) = _update_ambient_fields!(m, m.forcing.ocean)
+update_ambient_fields!(m) = update_ambient_fields!(m, m.forcing.ocean)
 
-function _update_ambient_fields!(m, o::RampedOceanForcing)
+function update_ambient_fields!(m, o::RampedOceanForcing)
     from, to = o.from, o.to
     launch!(
         _ambient_interp_ramp_kernel!,
@@ -633,7 +633,7 @@ function _update_ambient_fields!(m, o::RampedOceanForcing)
     return
 end
 
-function _update_ambient_fields!(m, ::PerBasinOceanForcing1D)
+function update_ambient_fields!(m, ::PerBasinOceanForcing1D)
     launch!(
         _ambient_interp_basin_kernel!,
         m.Ta,
@@ -650,7 +650,7 @@ function _update_ambient_fields!(m, ::PerBasinOceanForcing1D)
     return
 end
 
-function _update_ambient_fields!(m, ::AbstractOceanForcing)
+function update_ambient_fields!(m, ::AbstractOceanForcing)
     nz = length(m.z)
     launch!(
         _ambient_interp_kernel!,

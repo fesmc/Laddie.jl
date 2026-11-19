@@ -97,7 +97,7 @@ end
     @inbounds begin
         d = drho[i, j]
         convective_instability[i, j] = ifelse(d < 0, one(FT), zero(FT))
-        drho[i, j] = _smax(kinks, d, thr, _kink_width(kinks, :drho))
+        drho[i, j] = smooth_max(kinks, d, thr, kink_width(kinks, :drho))
     end
 end
 
@@ -115,7 +115,7 @@ v2 has no reset scheme to copy here, so this is a Laddie.jl-only decision.
 """
 function update_convection!(m, cs::ResetToAmbientConvection)
     thr = cs.d_rho_min / m.rho0_seawater
-    eos = _eos_coefficients(m)
+    eos = eos_coefficients(m)
     S_adj = cs.d_rho_min / (m.rho0_seawater * eos.beta)
     launch!(
         _reset_to_ambient_kernel!,

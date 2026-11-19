@@ -31,8 +31,8 @@ const NX, NY = 320, 160
 const COND = :cold        # slow flow → controller grows dt → biggest win
 const DAYS = 2.0
 
-function timed_run(tstep)
-    sim = build_isomip(backend; FT, nx = NX, ny = NY, isomipcond = COND, tstep)
+function timed_run(time_stepper)
+    sim = build_isomip(backend; FT, nx = NX, ny = NY, isomipcond = COND, time_stepper)
     t = @elapsed begin
         run!(sim; days = DAYS, verbose = false)
         sync()
@@ -43,7 +43,7 @@ end
 
 # Warm up (compile all kernels, both stepper paths) on a tiny grid.
 for ts in (FixedTimeStepper(), AdaptiveTimeStepper())
-    mw = build_isomip(backend; FT, nx = 20, ny = 10, isomipcond = COND, tstep = ts)
+    mw = build_isomip(backend; FT, nx = 20, ny = 10, isomipcond = COND, time_stepper = ts)
     run!(mw; days = 0.05, verbose = false); sync()
 end
 

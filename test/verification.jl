@@ -16,7 +16,7 @@
     # Python steps the tracers in advective form, not the flux-form default.
     py_restart = joinpath(@__DIR__, "..", "docs", "assets", "restart_000001.nc")
     if isfile(py_restart)
-        v1_walls = BoundaryConditions(; grounding_line = NoSlipAtGL(), land = NoSlipAtLand(),
+        v1_walls = BoundaryConditions(; grounding_line_slip = NoSlipAtGL(), land_slip = NoSlipAtLand(),
                                       wall_advection = V1WallAdvection())
         v1_params = Params(; tracer_form = AdvectiveTracerForm(), ice_slope = CentredIceSlope(),
                             convection = ResetToAmbientConvection(0.005),

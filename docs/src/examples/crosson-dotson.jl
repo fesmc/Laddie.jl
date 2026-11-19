@@ -87,7 +87,7 @@ params = Params(; FT,
     tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsIceConduction(),
 )
 ## The reference's slip = 1 on every wall: no slip in the viscosity, v1's advective ghost.
-boundary = BoundaryConditions(; grounding_line = NoSlipAtGL(), land = NoSlipAtLand(),
+boundary = BoundaryConditions(; grounding_line_slip = NoSlipAtGL(), land_slip = NoSlipAtLand(),
                               wall_advection = V1WallAdvection())
 model = Model(grid; forcing, params, boundary)
 sim = Simulation(model; dt = 120.0, nu = 0.8)

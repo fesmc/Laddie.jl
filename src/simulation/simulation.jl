@@ -77,17 +77,17 @@ SteadyStateSimulationEnd(tol, t_end) =
     (p = promote(float(tol), float(t_end)); SteadyStateSimulationEnd{eltype(p)}(p...))
 
 # Hard time cap in seconds (both criteria carry one).
-_end_seconds(e::AbstractSimulationEnd, spd) = e.t_end * spd
+end_seconds(e::AbstractSimulationEnd, spd) = e.t_end * spd
 
 # Whether `run!` must sample the mean melt rate at each diagnostic check.
-_needs_melt_sample(::AbstractSimulationEnd) = false
-_needs_melt_sample(::SteadyStateSimulationEnd) = true
+needs_melt_sample(::AbstractSimulationEnd) = false
+needs_melt_sample(::SteadyStateSimulationEnd) = true
 
 # Early-stop test from successive domain-mean melt samples (m yr⁻¹).
 # FixedSimulationEnd never stops early; SteadyStateSimulationEnd stops once the relative
 # change drops below tol (the first sample, with no predecessor, never stops).
-_steady_reached(::AbstractSimulationEnd, mean_new, mean_prev) = false
-function _steady_reached(e::SteadyStateSimulationEnd, mean_new, mean_prev)
+steady_reached(::AbstractSimulationEnd, mean_new, mean_prev) = false
+function steady_reached(e::SteadyStateSimulationEnd, mean_new, mean_prev)
     (isfinite(mean_prev) && mean_prev != 0) || return false
     return abs(mean_new - mean_prev) / abs(mean_prev) < e.tol
 end
@@ -172,7 +172,7 @@ struct Simulation{
     "simulated time, iteration count and current `dt`"
     clock::CL
     "how `dt` evolves: [`FixedTimeStepper`](@ref) or [`AdaptiveTimeStepper`](@ref)"
-    tstep::TS
+    time_stepper::TS
     "how the in-loop CFL number is computed: [`ExactCFL`](@ref) or [`ConservativeCFL`](@ref)"
     cfl::C
     "Robert–Asselin filter coefficient"
@@ -198,7 +198,7 @@ Wrap `model` in a simulation, initialise its leapfrog time levels, and (when
 # Keywords
 - `dt`: initial time step in seconds (default 210).  Under [`FixedTimeStepper`](@ref) it
   stays constant; under [`AdaptiveTimeStepper`](@ref) it is the starting point.
-- `tstep`: [`FixedTimeStepper`](@ref) (default) or [`AdaptiveTimeStepper`](@ref).
+- `time_stepper`: [`FixedTimeStepper`](@ref) (default) or [`AdaptiveTimeStepper`](@ref).
 - `cfl`: [`ExactCFL`](@ref) (default) or [`ConservativeCFL`](@ref).
 - `nu`: Robert–Asselin filter coefficient (default 0.8).
 - `stop`: default stopping criterion of [`run!`](@ref), a
@@ -215,14 +215,14 @@ scheme on `model`, so build one simulation per model.
 ```julia
 grid = Grid(mask, z_draft, dx, dy)
 model = Model(grid; forcing, params = Params())
-sim = Simulation(model; dt = 120.0, tstep = AdaptiveTimeStepper(), stop = FixedSimulationEnd(t_end = 90.0))
+sim = Simulation(model; dt = 120.0, time_stepper = AdaptiveTimeStepper(), stop = FixedSimulationEnd(t_end = 90.0))
 run!(sim)
 ```
 """
 function Simulation(
     model::Model;
     dt = 210.0,
-    tstep = FixedTimeStepper(),
+    time_stepper = FixedTimeStepper(),
     cfl = ExactCFL(),
     nu = 0.8,
     stop = FixedSimulationEnd(),
@@ -236,7 +236,7 @@ function Simulation(
     sim = Simulation(
         model,
         Clock(0.0, 0, FT(dt)),
-        _promote_param(tstep, FT),
+        _promote_param(time_stepper, FT),
         cfl,
         FT(nu),
         stop,
@@ -281,7 +281,7 @@ function to_backend(sim::Simulation, backend)
     return Simulation(
         to_backend(sim.model, backend),
         Clock(c.time, c.iteration, c.dt),
-        sim.tstep,
+        sim.time_stepper,
         sim.cfl,
         sim.nu,
         sim.stop,

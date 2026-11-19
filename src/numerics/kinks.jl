@@ -95,9 +95,9 @@ Adapt.@adapt_structure SmoothKinks
 
 # The half-width ε of one group, read inside a kernel.  `false` under ExactKinks,
 # whose helpers ignore it; it still survives the arithmetic of a call site (ε/dt).
-@inline _kink_width(::ExactKinks, ::Symbol) = false
-@inline _kink_width(k::SmoothKinks, s::Symbol) = _val(getfield(k, s))
-@inline _kink_width(k, ::Val{s}) where {s} = _kink_width(k, s)
+@inline kink_width(::ExactKinks, ::Symbol) = false
+@inline kink_width(k::SmoothKinks, s::Symbol) = _val(getfield(k, s))
+@inline kink_width(k, ::Val{s}) where {s} = kink_width(k, s)
 
 # The smooth helpers.  Each smooth form is the exact one plus a correction that
 # vanishes outside the band, computed from -|a - b| rather than from a - b: a blend
@@ -117,12 +117,12 @@ end
 # min(x, 0), the downwind half of an upwind split.
 @inline _sneg(::ExactKinks, x, ε) = min(x, zero(x))
 @inline _sneg(k::SmoothKinks, x, ε) = min(x, zero(x)) - _smax0(k, -abs(x), ε)
-@inline _smax(::ExactKinks, a, b, ε) = max(a, b)
-@inline _smax(k::SmoothKinks, a, b, ε) = max(a, b) + _smax0(k, -abs(a - b), ε)
-@inline _smin(::ExactKinks, a, b, ε) = min(a, b)
-@inline _smin(k::SmoothKinks, a, b, ε) = min(a, b) - _smax0(k, -abs(a - b), ε)
-@inline _sclamp(::ExactKinks, x, lo, hi, ε) = clamp(x, lo, hi)
-@inline _sclamp(k::SmoothKinks, x, lo, hi, ε) = _smin(k, _smax(k, x, lo, ε), hi, ε)
+@inline smooth_max(::ExactKinks, a, b, ε) = max(a, b)
+@inline smooth_max(k::SmoothKinks, a, b, ε) = max(a, b) + _smax0(k, -abs(a - b), ε)
+@inline smooth_min(::ExactKinks, a, b, ε) = min(a, b)
+@inline smooth_min(k::SmoothKinks, a, b, ε) = min(a, b) - _smax0(k, -abs(a - b), ε)
+@inline smooth_clamp(::ExactKinks, x, lo, hi, ε) = clamp(x, lo, hi)
+@inline smooth_clamp(k::SmoothKinks, x, lo, hi, ε) = smooth_min(k, smooth_max(k, x, lo, ε), hi, ε)
 # |x| as sign(x)·x, the form of the centred momentum advection.
 @inline _sabs(::ExactKinks, x, ε) = sign(x) * x
 @inline _sabs(k::SmoothKinks, x, ε) = abs(x) + 2 * _smax0(k, -abs(x), ε)

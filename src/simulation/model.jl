@@ -56,7 +56,7 @@ Fields are accessed directly on `m` through a flat forwarding layer:
 | `m.tmask`, `m.umask`, `m.resolved_mask`, `m.dzdx`, … | `Geometry` | `m.tmask .> 0` |
 | `m.C_d`, `m.A_h`, `m.H_min`, … | `Params` | `m.C_d` |
 | `m.f`, `m.fu`, `m.fv` | `Geometry` | Coriolis at T-, u- and v-points |
-| `m.boundary` | `BoundaryConditions` | `m.boundary.land` (not flattened) |
+| `m.boundary` | `BoundaryConditions` | `m.boundary.land_slip` (not flattened) |
 | `m.Tz`, `m.Sz`, `m.z` | Forcing (ocean) | ambient profile arrays |
 | `m.T_ice_farfield` | Forcing (ice) | ice temperature above the basal boundary layer (see `PrescribedIceForcing`) |
 
@@ -438,8 +438,8 @@ ice-base slope (`params.ice_slope`) and the Coriolis field (`params.coriolis`).
 
 Land (`1`) and grounded ice (`2`) are both walls to the plume and are unioned into
 `grd`, but they stay distinct throughout: only `2` is a grounding line (`gl`, and
-the `boundary.grounding_line` slip condition), while `1` is rock (`lnd`, and
-`boundary.land`).  Both default to LADDIE v2's wall (slip factor 1) and can be set
+the `boundary.grounding_line_slip` slip condition), while `1` is rock (`lnd`, and
+`boundary.land_slip`).  Both default to LADDIE v2's wall (slip factor 1) and can be set
 independently.
 
 # Keywords
@@ -471,7 +471,7 @@ mask    = build_laddie_mask(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
 z_draft = ice_base_depth(bed, thickness; rho_ice=917.0, rho_sw=1028.0)
 grid    = Grid(mask, z_draft, 2000.0, 2000.0)
 model   = Model(grid; forcing = ISOMIPForcing(:warm),
-                boundary = BoundaryConditions(; land = FreeSlipAtLand()))
+                boundary = BoundaryConditions(; land_slip = FreeSlipAtLand()))
 sim     = Simulation(model; dt = 210.0)
 run!(sim; days = 30)
 ```
@@ -493,8 +493,8 @@ function Model(
     # with the grid's own ranges.  Materialising the ice temperature once keeps the
     # melt kernel to a single indexed path instead of a scalar and a field variant.
     ice = _crop_ice_forcing(_expand_ice_forcing(forcing.ice, grid.input_size, FT), r, c)
-    f_t = _coriolis_field(params.coriolis, grid.input_size, FT)[r, c]
-    mask = _apply_gaps_bc(grid.mask, boundary.gaps)
+    f_t = coriolis_field(params.coriolis, grid.input_size, FT)[r, c]
+    mask = gaps_mask(grid.mask, boundary.gaps)
     _validate_model_inputs(mask, forcing, params, FT)
     # The ice forcing is grid-shaped from here on, so `m.T_ice_farfield` lines up with
     # `m.z_draft` and the melt kernel can index it directly; so are per-cell ambient

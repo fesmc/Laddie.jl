@@ -72,11 +72,11 @@ Select via `BoundaryConditions(; open_ocean = OutflowOnlyOpenOceanBC())` (the de
 """
 struct OutflowOnlyOpenOceanBC <: AbstractOpenOceanBC end
 
-_inflow_weight(::ZeroGradientOpenOceanBC, FT) = one(FT)
-_inflow_weight(::NoInflowOpenOceanBC, FT) = zero(FT)
+inflow_weight(::ZeroGradientOpenOceanBC, FT) = one(FT)
+inflow_weight(::NoInflowOpenOceanBC, FT) = zero(FT)
 # As NoInflowOpenOceanBC: covers the inward present velocities the valve has not yet cleared
 # (an inward start fading through the Robert–Asselin filter).
-_inflow_weight(::OutflowOnlyOpenOceanBC, FT) = _inflow_weight(NoInflowOpenOceanBC(), FT)
+inflow_weight(::OutflowOnlyOpenOceanBC, FT) = inflow_weight(NoInflowOpenOceanBC(), FT)
 
 # The ice-front valve of OutflowOnlyOpenOceanBC on a new face velocity `u`: `n` is the outward
 # normal of a one-sided face (+1 when the ocean is on the + side, −1 when on the −
@@ -86,7 +86,7 @@ _inflow_weight(::OutflowOnlyOpenOceanBC, FT) = _inflow_weight(NoInflowOpenOceanB
 @kernel function _front_valve_kernel!(U, V, @Const(umask), @Const(vmask), @Const(tmask), kinks)
     i0, j0 = @index(Global, NTuple)
     i, j = i0 + 1, j0 + 1   # interior launch (`launch_interior!`)
-    ε = _kink_width(kinks, :u)
+    ε = kink_width(kinks, :u)
     @inbounds begin
         n_u = umask[i, j] * (tmask[i, j] - tmask[i + 1, j])
         n_v = vmask[i, j] * (tmask[i, j] - tmask[i, j + 1])
@@ -195,10 +195,10 @@ struct ZeroGradientFrontPressure <: AbstractFrontPressure end
 # fully-interior face (tmask_stag == 2) either way, and at a one-sided face
 # (tmask_stag == 1) is 1 for w = 0 (term kept) / 0 for w = 1 (term dropped).
 # w = 0 multiplies the term by exactly 1.0, so FullDepthFrontPressure is bit-identical
-# to LADDIE v1.  `_front_pgf_weight` gates the thickness-gradient term,
-# `_front_drho_weight` the density-gradient term.
-_front_pgf_weight(::FullDepthFrontPressure, x) = zero(x)
-_front_pgf_weight(::TruncatedDepthFrontPressure, x) = one(x)
-_front_pgf_weight(::ZeroGradientFrontPressure, x) = one(x)
-_front_drho_weight(::AbstractFrontPressure, x) = zero(x)
-_front_drho_weight(::ZeroGradientFrontPressure, x) = one(x)
+# to LADDIE v1.  `front_pgf_weight` gates the thickness-gradient term,
+# `front_drho_weight` the density-gradient term.
+front_pgf_weight(::FullDepthFrontPressure, x) = zero(x)
+front_pgf_weight(::TruncatedDepthFrontPressure, x) = one(x)
+front_pgf_weight(::ZeroGradientFrontPressure, x) = one(x)
+front_drho_weight(::AbstractFrontPressure, x) = zero(x)
+front_drho_weight(::ZeroGradientFrontPressure, x) = one(x)

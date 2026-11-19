@@ -7,7 +7,7 @@ Each of these is a family of types under one abstract supertype, as the
 
 | abstract type | selected with | default |
 |---------------|---------------|---------|
-| [`AbstractSlipAtGL`](@ref), [`AbstractSlipAtLand`](@ref) | `BoundaryConditions(; grounding_line, land)` | `PartialSlipAtGL(1.0)`, `PartialSlipAtLand(1.0)` |
+| [`AbstractSlipAtGL`](@ref), [`AbstractSlipAtLand`](@ref) | `BoundaryConditions(; grounding_line_slip, land_slip)` | `PartialSlipAtGL(1.0)`, `PartialSlipAtLand(1.0)` |
 | [`AbstractWallAdvection`](@ref) | `BoundaryConditions(; wall_advection)` | `NoWallAdvection()` |
 | [`AbstractOpenOceanBC`](@ref) | `BoundaryConditions(; open_ocean)` | `OutflowOnlyOpenOceanBC()` |
 | [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `ZeroGradientFrontPressure()` |

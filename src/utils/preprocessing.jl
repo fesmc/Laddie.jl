@@ -548,9 +548,9 @@ end
 # Index ranges of the kept sub-rectangle.  Returned rather than applied so every
 # full-domain input — mask, draft, bed, and a 2D ice temperature — is sliced
 # with one identical pair of ranges.
-_crop_ranges(mask, ::NoDomainCropping) = axes(mask, 1), axes(mask, 2)
+crop_ranges(mask, ::NoDomainCropping) = axes(mask, 1), axes(mask, 2)
 
-function _crop_ranges(mask, cropping::MinRectangleDomainCropping)
+function crop_ranges(mask, cropping::MinRectangleDomainCropping)
     margin = cropping.margin
     margin >= 2 || throw(
         ArgumentError(

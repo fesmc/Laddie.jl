@@ -321,7 +321,7 @@ const _GAMMA_T_OVER_S = 35
             gS * (one(FT) + cp_over_Leff * ci_over_cp * (Tf_depth + l1 * S[i, j]))
         quad_c = cp_over_Leff * gT * gS * (Tf_depth - T_bal + l1 * S[i, j])
         disc = quad_b * quad_b - FT(4) * quad_c
-        melt_rate = (-quad_b + _ssqrt(conduction.kinks, disc, _kink_width(conduction.kinks, :w))) / FT(2)
+        melt_rate = (-quad_b + _ssqrt(conduction.kinks, disc, kink_width(conduction.kinks, :w))) / FT(2)
         # Only ice-covered cells melt.  Gap cells (in tmask, not in imask) are ice-free,
         # so they add no meltwater volume and no buoyancy — and their Tb is set to T,
         # which makes the ice-ocean heat exchange -gamT*(T - Tb) in the temperature
@@ -361,7 +361,7 @@ end
     FT = typeof(nu0)
     @inbounds begin
         us = ustar[i, j]
-        logterm = FT(2.12) * _smax0(kinks, log(us * H[i, j] / nu0 + FT(1e-12)), _kink_width(kinks, :log))
+        logterm = FT(2.12) * _smax0(kinks, log(us * H[i, j] / nu0 + FT(1e-12)), kink_width(kinks, :log))
         active = tmask[i, j] > 0
         gamT[i, j] = ifelse(active, us / (logterm + PrCorr), zero(FT))
         gamS[i, j] = ifelse(active, us / (logterm + ScCorr), zero(FT))

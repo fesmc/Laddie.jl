@@ -91,7 +91,7 @@ println("mean melt $(round(mean_melt; digits = 2)) m/yr, max melt $(round(max_me
 # differ from v1 (convection, conduction, momentum form, closure level, tracer bounds); the
 # two end states are compared cell by cell.
 
-v1_walls = BoundaryConditions(; grounding_line = NoSlipAtGL(), land = NoSlipAtLand(),
+v1_walls = BoundaryConditions(; grounding_line_slip = NoSlipAtGL(), land_slip = NoSlipAtLand(),
                               wall_advection = V1WallAdvection())
 sim_py = build_isomip(; isomipcond = :warm, boundary = v1_walls,
                       params = Params(; tracer_form = AdvectiveTracerForm(), ice_slope = CentredIceSlope(),
@@ -145,7 +145,7 @@ fig
 ndays = 30
 spinup = Dict(
     "fixed dt" => build_isomip(; isomipcond = :warm, nx = 80, ny = 20),
-    "adaptive dt" => build_isomip(; isomipcond = :warm, nx = 80, ny = 20, tstep = AdaptiveTimeStepper()),
+    "adaptive dt" => build_isomip(; isomipcond = :warm, nx = 80, ny = 20, time_stepper = AdaptiveTimeStepper()),
 )
 series = Dict(k => zeros(ndays, 3) for k in keys(spinup))   # mean melt, max melt, max H
 for (k, sim) in spinup, d in 1:ndays

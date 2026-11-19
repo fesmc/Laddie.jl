@@ -80,22 +80,22 @@ end
 # (the kernel of RelativeMaxLayerThickness at fraction 1).
 const SCHEME_SCENARIOS = [
     "mixing" => () -> build_isomip(CPU(); KW...,
-        cfl = ConservativeCFL(), tstep = AdaptiveTimeStepper(),
+        cfl = ConservativeCFL(), time_stepper = AdaptiveTimeStepper(),
         params = Params(; ice_slope = CentredIceSlope(), melting = TurbulentGamTMelting(), entrainment = GasparEntrainment(),
                         convection = RelaxToAmbientConvection(),
                         max_layer_thickness = AbsoluteMaxLayerThickness(50.0),
                         lateral_viscosity = NonlinearLateralViscosity(),
                         front_pressure = TruncatedDepthFrontPressure(),
                         momentum_advection = UpstreamMomentumAdvection()),
-        boundary = BoundaryConditions(; open_ocean = NoInflowOpenOceanBC(), grounding_line = FreeSlipAtGL(),
-                                      land = PartialSlipAtLand(1.0))),
+        boundary = BoundaryConditions(; open_ocean = NoInflowOpenOceanBC(), grounding_line_slip = FreeSlipAtGL(),
+                                      land_slip = PartialSlipAtLand(1.0))),
     "rotation" => () -> build_isomip(CPU(); KW...,
         params = Params(; melting = UStarGamTMelting(), entrainment = HollandEntrainment(),
                         convection = ClampDensityConvection(),
                         laplacian_weights = PastLaplacianWeights(),
                         coriolis = CoriolisParameter2D([-75.0 + 0.2j for _ = 1:42, j = 1:22])),
-        boundary = BoundaryConditions(; open_ocean = OutflowOnlyOpenOceanBC(), grounding_line = PartialSlipAtGL(1.0),
-                                      land = FreeSlipAtLand(), wall_advection = NoWallAdvection())),
+        boundary = BoundaryConditions(; open_ocean = OutflowOnlyOpenOceanBC(), grounding_line_slip = PartialSlipAtGL(1.0),
+                                      land_slip = FreeSlipAtLand(), wall_advection = NoWallAdvection())),
     "prescribed" => () -> build_isomip(CPU(); KW...,
         params = Params(; melting = PrescribedMelting([i < 25 ? 2.0 : 8.0 for i = 1:42, _ = 1:22]))),
     "two-equation melt + linear profile" => () -> build_isomip(CPU(); KW...,
@@ -111,9 +111,9 @@ const SCHEME_SCENARIOS = [
 
 @testset "Reactant extension" begin
     @testset "run! matches the CPU ($(GPU ? "GPU" : "CPU") target)" begin
-        for FT in (Float64, Float32), tstep in (FixedTimeStepper(), AdaptiveTimeStepper())
-            ref = build_isomip(CPU(); KW..., FT, tstep)
-            rsim = to_backend(build_isomip(CPU(); KW..., FT, tstep), ReactantBackend())
+        for FT in (Float64, Float32), time_stepper in (FixedTimeStepper(), AdaptiveTimeStepper())
+            ref = build_isomip(CPU(); KW..., FT, time_stepper)
+            rsim = to_backend(build_isomip(CPU(); KW..., FT, time_stepper), ReactantBackend())
             for s in (ref, rsim)
                 run!(s; days = 0.5, verbose = false)
                 run!(s; days = 0.5, verbose = false)   # reuses the compiled programs

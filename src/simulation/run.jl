@@ -72,7 +72,7 @@ _diagnostics(m, cfl) = (
     Hdrho = _max_Hdrho(m),
     stats = meltstats(m),
     Hmax = _max_active_H(m),
-    cfl = _cfl_reductions(m, cfl),
+    cfl = cfl_reductions(m, cfl),
 )
 
 # The sync-point diagnostics of `sim` as host numbers, with the CFL reductions
@@ -151,7 +151,7 @@ end
 # Steady-state early stop: compare the mean melt rate with the previous daily sample
 # and schedule the next one.  Returns whether the run should stop.
 function _steady_sample!(sim, r, until, mean_melt)
-    if _steady_reached(until, mean_melt, r.prev_mean)
+    if steady_reached(until, mean_melt, r.prev_mean)
         _print2log(
             sim,
             "$(round(_t_days(sim), digits = 3)) days: steady state reached " *
@@ -225,11 +225,11 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     until =
         until !== nothing ? until :
         days !== nothing ? FixedSimulationEnd(t_end = _float64(days)) : sim.stop
-    total = _end_seconds(until, _primal(m.seconds_per_day))  # hard time cap (s) for this call
+    total = end_seconds(until, _primal(m.seconds_per_day))  # hard time cap (s) for this call
     io_on = sim.output.saveday > 0
     # Predictive adaptive dt: rescue a too-large dt before the first step
     # (no-op for FixedTimeStepper). nt/checkint below then reflect the adjusted dt.
-    _init_adaptive_dt!(sim, sim.tstep)
+    init_adaptive_dt!(sim, sim.time_stepper)
     nt = round(Int, total / clock.dt)
     cfl = _cfl_worstcase(sim)
     cfl > 1.0 && @warn "Worst-case CFL (advection at v_cut + gravity wave) is " *
@@ -248,9 +248,9 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
     # Steady-state sampling compares the mean melt rate on a fixed daily cadence
     # (independent of run length, so `tol` means the same thing for any cap), and is
     # disabled (next_steady = Inf) unless the criterion needs it.
-    next_steady = _needs_melt_sample(until) ? _float64(m.seconds_per_day) : Inf
+    next_steady = needs_melt_sample(until) ? _float64(m.seconds_per_day) : Inf
     steps_per_day = max(1, round(Int, _primal(m.seconds_per_day) / clock.dt))
-    checkint = _check_interval(sim.tstep, nt, steps_per_day)
+    checkint = _check_interval(sim.time_stepper, nt, steps_per_day)
     r = RunProgress(0, 0.0, _float64(total), checkint, next_steady, NaN, io_on)
     # Time cap (round-half-up rule: round(total/dt) steps for fixed dt); a
     # SteadyStateSimulationEnd may break out earlier once the mean melt rate is steady.
@@ -283,7 +283,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
             if sync
                 _check_blowup(sim, d, r.step, nt)
                 # Adjust dt for the upcoming steps (no-op under FixedTimeStepper).
-                _maybe_adapt_dt!(sim, sim.tstep, d.cfl)
+                adapt_dt!(sim, sim.time_stepper, d.cfl)
                 verbose && (showvals = _progress_values(sim, d))
             end
         end

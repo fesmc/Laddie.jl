@@ -115,7 +115,7 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = typeof(c_p)
-        supercooling = _smax0(kinks, l1 * S[i, j] + l2 + l3 * z_draft[i, j] - T[i, j], _kink_width(kinks, :T))
+        supercooling = _smax0(kinks, l1 * S[i, j] + l2 + l3 * z_draft[i, j] - T[i, j], kink_width(kinks, :T))
         frazil[i, j] = imask[i, j] * c_p / L * H[i, j] * supercooling / relaxation_time
     end
 end

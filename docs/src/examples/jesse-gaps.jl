@@ -215,7 +215,7 @@ function run_snapshot(s, gaps)
                 domain_cropping = MinRectangleDomainCropping(margin = round(Int, 6e3 / dx)))
     model = Model(grid; forcing, params,
                   boundary = BoundaryConditions(; gaps, wall_advection = NoWallAdvection()))
-    sim = Simulation(model; dt = 100.0, tstep = AdaptiveTimeStepper())
+    sim = Simulation(model; dt = 100.0, time_stepper = AdaptiveTimeStepper())
     run!(sim; days = SPINUP, verbose = false)
     m = sim.model
     melt, speed = zero(Array(m.melt)), zero(Array(m.melt))

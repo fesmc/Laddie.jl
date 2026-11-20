@@ -112,7 +112,7 @@ export AbstractTracerForm, AdvectiveTracerForm, FluxTracerForm
 export AbstractMomentumForm, AdvectiveMomentumForm, FluxMomentumForm
 export AbstractClosureLevel, PresentClosureLevel, PastClosureLevel
 export AbstractLaplacianWeights, PresentLaplacianWeights, PastLaplacianWeights
-export AbstractFrontPressure, FullDepthFrontPressure, TruncatedDepthFrontPressure, ZeroGradientFrontPressure
+export AbstractFrontPressure, ZeroGradientFrontPressure, ZeroExteriorFrontPressure, V1FrontPressure
 export AbstractIceSlope, CentredIceSlope, MaskedIceSlope
 export AbstractTimeStepper, FixedTimeStepper, AdaptiveTimeStepper
 export AbstractCFL, ConservativeCFL, ExactCFL

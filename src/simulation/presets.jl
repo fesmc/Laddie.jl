@@ -138,7 +138,7 @@ _v1_params(; A_h, K_h, H_min, u_tide) = (
     momentum_form = AdvectiveMomentumForm(),
     closure_level = PresentClosureLevel(),
     tracer_bounds = TracerBounds(),
-    front_pressure = FullDepthFrontPressure(),
+    front_pressure = V1FrontPressure(),
 )
 
 # v1's `slip = 1` on every wall: no slip in the viscosity, a zero ghost in the
@@ -405,7 +405,7 @@ _v2_params(; C_d_top, melting, C_visc, K_h, H_min, H_init, v_cut, H_max, buoyanc
     equation_of_state = LinearEOS(; alpha = 3.733e-5, beta = 7.843e-4),
     max_layer_thickness = AbsoluteMaxLayerThickness(H_max),
     lateral_viscosity = NonlinearLateralViscosity(C_visc),
-    front_pressure = TruncatedDepthFrontPressure(),
+    front_pressure = ZeroExteriorFrontPressure(),
     momentum_advection = UpstreamMomentumAdvection(),
     tracer_form = FluxTracerForm(),
     coriolis = CoriolisParameter0D(-1.37e-4),

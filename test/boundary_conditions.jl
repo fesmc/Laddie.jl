@@ -497,19 +497,19 @@ end
     end
 end
 
-@testset "Front pressure: FullDepthFrontPressure is v1, TruncatedDepthFrontPressure drops the term" begin
+@testset "Front pressure: V1FrontPressure is v1, ZeroExteriorFrontPressure drops the term" begin
     # The depth-gradient part of the PGF at a one-sided face (ice front, or a
     # SinkGapsBC gap-sink edge) differs between references: Python LADDIE v1.x
     # keeps the one-sided difference toward a masked-to-zero neighbour, LADDIE
     # v2 drops the term (mask_cf_b truncation).  See f90-diffs.md §4.
-    p_full = Params(; FT, front_pressure = FullDepthFrontPressure())
-    p_trunc = Params(; FT, front_pressure = TruncatedDepthFrontPressure())
+    p_full = Params(; FT, front_pressure = V1FrontPressure())
+    p_trunc = Params(; FT, front_pressure = ZeroExteriorFrontPressure())
     @test Params(; FT).front_pressure isa ZeroGradientFrontPressure   # the default
 
     m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p_full)
     run!(m; days = 0.5, verbose = false)
     g = getfield(m.model, :geometry)
-    # Under FullDepthFrontPressure the interior term is live and the gate is exactly 1.0,
+    # Under V1FrontPressure the interior term is live and the gate is exactly 1.0,
     # so nothing is altered anywhere.
     up = u_pressure_depth(m.model)
     @test any(!iszero, up[Laddie.ip_count(g.tmask).==2])
@@ -563,7 +563,7 @@ end
 end
 
 @testset "Front pressure: ZeroGradientFrontPressure also drops the density-gradient term" begin
-    # TruncatedDepthFrontPressure keeps the density-gradient part of the PGF at a
+    # ZeroExteriorFrontPressure keeps the density-gradient part of the PGF at a
     # one-sided face, a difference toward the masked-to-zero δρ of the ocean
     # cell.  ZeroGradientFrontPressure drops it too, so that no lateral gradient acts
     # across the ice front (Lambert et al. 2026), and leaves the interior alone.
@@ -583,7 +583,7 @@ end
     grid = Grid(mk, z_draft, FT(2000.0), FT(2000.0); domain_cropping = NoDomainCropping())
     run(front_pressure) = (m = Simulation(Model(grid; forcing, params = Params(; FT, front_pressure)));
                            run!(m; days = 0.5, verbose = false); m.model)
-    m_t = run(TruncatedDepthFrontPressure())
+    m_t = run(ZeroExteriorFrontPressure())
     m_z = run(ZeroGradientFrontPressure())
     g = getfield(m_z, :geometry)
     ip, jp = Laddie.ip_count(g.tmask), Laddie.jp_count(g.tmask)
@@ -607,6 +607,24 @@ end
     # And the choice integrates to a different state.
     @test m_z.U.present != m_t.U.present
     @test all(isfinite, m_z.melt)
+
+    # The thickness and density terms are the split of ∇P, P = ½ g δρ H² the layer's reduced
+    # pressure.  At a one-sided face ZeroExteriorFrontPressure is the one-sided difference of P
+    # against P = 0 in the masked neighbour, and V1FrontPressure 3× that: its face averages
+    # collapse to the front cell's values.
+    m_v = run(V1FrontPressure())
+    # Hdrho is cached before the Robert–Asselin filter changes H and δρ; inside a step the
+    # kernel reads them at one level, so refresh the cache to that of H.present.
+    m_v.Hdrho .= m_v.H.present .* m_v.drho
+    P(m) = (m.g / 2) .* m.drho .* m.H.present .^ 2 .* m.tmask
+    u_split(m) = u_pressure_depth(m) .+ u_pressure_density(m)
+    v_split(m) = v_pressure_depth(m) .+ v_pressure_density(m)
+    dPdx(m) = (Laddie.xm1(P(m)) .- P(m)) ./ m.dx
+    dPdy(m) = (Laddie.ym1(P(m)) .- P(m)) ./ m.dy
+    @test u_split(m_t)[front_u] ≈ dPdx(m_t)[front_u]
+    @test v_split(m_t)[front_v] ≈ dPdy(m_t)[front_v]
+    @test u_split(m_v)[front_u] ≈ 3 .* dPdx(m_v)[front_u]
+    @test v_split(m_v)[front_v] ≈ 3 .* dPdy(m_v)[front_v]
 end
 
 @testset "Open ocean: OutflowOnlyOpenOceanBC lets the layer leave through the front, never enter" begin
@@ -614,7 +632,7 @@ end
     # SinkGapsBC gap, whose edges are one-sided faces in both directions.  Under
     # zero-gradient inflow the layer flows in through some of them (recirculating its own
     # water); OutflowOnlyOpenOceanBC clips every one-sided face velocity to point out of the
-    # cavity.  The draft is flat, so only FullDepthFrontPressure drives a flow through the
+    # cavity.  The draft is flat, so only V1FrontPressure drives a flow through the
     # front from rest; under the default ZeroGradientFrontPressure the front faces stay at
     # rest and the three open-ocean conditions coincide.
     mk = zeros(Int, 12, 22)
@@ -629,7 +647,7 @@ end
     forcing = ISOMIPForcing(:warm; FT)
     grid = Grid(mk, z_draft, FT(2000.0), FT(2000.0); domain_cropping = NoDomainCropping())
     sim(open_ocean; kinks = ExactKinks()) =
-        Simulation(Model(grid; forcing, params = Params(; FT, kinks, front_pressure = FullDepthFrontPressure()),
+        Simulation(Model(grid; forcing, params = Params(; FT, kinks, front_pressure = V1FrontPressure()),
                          boundary = BoundaryConditions(; open_ocean)))
     g = getfield(Model(grid; forcing), :geometry)
     # The sign of the outward normal of each face (+1 when the ocean is on the + side,

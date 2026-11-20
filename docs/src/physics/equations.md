@@ -121,23 +121,14 @@ Laddie.jl addition (see [Entrainment](entrainment.md)). The front-pressure choic
 described on [its own page](../bcs/front_pressure.md).
 
 At a **one-sided face** — the ice front, or a `SinkGapsBC` gap-sink edge — the neighbour
-needed for ``H_{x-1}`` is not part of the active domain, and masking pins its stored
-thickness to `0`. The depth-gradient term ``g\,\overline{H\delta\rho}\,(H_{x-1}-H)/\Delta x``
-is then a full one-sided gradient, as if ``H`` collapsed to zero across one grid cell.
-LADDIE v1 and v2 disagree on what to do about this, so
-[`AbstractFrontPressure`](@ref) makes it a choice:
-
-- [`FullDepthFrontPressure`](@ref) keeps the term, reproducing LADDIE v1, which
-  Laddie.jl is ported from and validated against.
-- [`TruncatedDepthFrontPressure`](@ref) drops it, as the LADDIE v2 code does at calving-front faces. Measured on a warm ISOMIP+ run, the term is ~150× larger at the
-  ice front than in the interior under `FullDepthFrontPressure`.
-- [`ZeroGradientFrontPressure`](@ref) drops it and the density-gradient term
-  ``\tfrac12 g\,\bar H^2\,(\delta\rho_{x-1}-\delta\rho)/\Delta x`` as well, whose
-  neighbour ``\delta\rho`` is likewise masked to `0` there. This is the zero lateral
-  gradient at the calving front stated in the [LADDIE v2 description paper](@cite lambert_one-layer_2026);
-  the v2 code keeps the density term.
-
-Neither affects the grounding line, where no momentum equation is solved.
+needed for ``H_{x-1}`` and ``\delta\rho_{x-1}`` is not part of the active domain. The thickness-
+and density-gradient terms are the split of ``-\nabla P``, ``P = \tfrac12 g\,\delta\rho\,H^2``,
+and [`AbstractFrontPressure`](@ref) sets the condition on ``P`` beyond the face:
+``\partial P/\partial n = 0`` ([`ZeroGradientFrontPressure`](@ref), the default),
+``P = 0`` one cell out ([`ZeroExteriorFrontPressure`](@ref), the LADDIE v2 code) or that
+condition counted 3× ([`V1FrontPressure`](@ref), LADDIE v1). See
+[Ice-front pressure gradient](../bcs/front_pressure.md). None affects the grounding line,
+where no momentum equation is solved.
 
 ### (3) ``V``-momentum
 

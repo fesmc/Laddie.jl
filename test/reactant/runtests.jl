@@ -85,7 +85,7 @@ const SCHEME_SCENARIOS = [
                         convection = RelaxToAmbientConvection(),
                         max_layer_thickness = AbsoluteMaxLayerThickness(50.0),
                         lateral_viscosity = NonlinearLateralViscosity(),
-                        front_pressure = TruncatedDepthFrontPressure(),
+                        front_pressure = ZeroExteriorFrontPressure(),
                         momentum_advection = UpstreamMomentumAdvection()),
         boundary = BoundaryConditions(; open_ocean = NoInflowOpenOceanBC(), grounding_line_slip = FreeSlipAtGL(),
                                       land_slip = PartialSlipAtLand(1.0))),

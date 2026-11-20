@@ -100,51 +100,58 @@ end
 #############################
 
 """
-Abstract supertype for the layer-thickness- and density-gradient parts of the
-pressure-gradient force at one-sided faces (the ice front, and gap edges under
-[`SinkGapsBC`](@ref)). Pass a concrete instance as `Params(; front_pressure = ...)`:
-[`ZeroGradientFrontPressure`](@ref) (the default), [`FullDepthFrontPressure`](@ref) (LADDIE v1)
-or [`TruncatedDepthFrontPressure`](@ref) (LADDIE v2).
+Abstract supertype for the condition on the layer's reduced pressure `P = ½ g δρ H²` beyond
+one-sided faces (the ice front, and gap edges under [`SinkGapsBC`](@ref)), which sets the
+layer-thickness- and density-gradient parts of the pressure-gradient force there. Pass a
+concrete instance as `Params(; front_pressure = ...)`: [`ZeroGradientFrontPressure`](@ref)
+(the default), [`ZeroExteriorFrontPressure`](@ref) (LADDIE v2 code) or
+[`V1FrontPressure`](@ref) (LADDIE v1).
 """
 abstract type AbstractFrontPressure end
 
 """
 $(TYPEDEF)
 
-Keep the layer-thickness-gradient part of the pressure-gradient force at one-sided faces
-(the ice front, and gap edges under [`SinkGapsBC`](@ref)), evaluated as `(H_neighbour - H)/Δ`
-with the neighbour's masked `H = 0`: a full one-sided gradient. LADDIE v1's choice, pinned in
-the v1 reproduction aliases.
+Zero normal gradient of `P = ½ g δρ H²` at one-sided faces (the ice front, and gap edges
+under [`SinkGapsBC`](@ref)): drop both the layer-thickness- and density-gradient parts of the
+pressure-gradient force there, keeping the ice-base-slope part. The zero lateral gradient
+at the calving front of [Lambert et al. (2026)](@cite lambert_one-layer_2026).
 
-Select via `Params(; front_pressure = FullDepthFrontPressure())`.
-"""
-struct FullDepthFrontPressure <: AbstractFrontPressure end
-
-"""
-$(TYPEDEF)
-
-Drop the layer-thickness-gradient part of the pressure-gradient force at one-sided faces
-(the ice front, and gap edges under [`SinkGapsBC`](@ref)), keeping the ice-base-slope and
-density-gradient parts. LADDIE v2's code at calving-front faces.
-
-Select via `Params(; front_pressure = TruncatedDepthFrontPressure())`.
-"""
-struct TruncatedDepthFrontPressure <: AbstractFrontPressure end
-
-"""
-$(TYPEDEF)
-
-Drop both the layer-thickness-gradient and the density-gradient parts of the
-pressure-gradient force at one-sided faces (the ice front, and gap edges under
-[`SinkGapsBC`](@ref)), keeping only the ice-base-slope part: the zero lateral gradient at the
-calving front stated by [Lambert et al. (2026)](@cite lambert_one-layer_2026).
-
-The default, with [`OutflowOnlyOpenOceanBC`](@ref); the options are compared on the
-[Ice-front pressure gradient](@ref) page.
+Choose it for runs at Δx below the Rossby radius, over which the outflow's buoyancy decays
+beyond the front ([Ice-front pressure gradient](@ref)).
 
 Select via `Params(; front_pressure = ZeroGradientFrontPressure())` (the default).
 """
 struct ZeroGradientFrontPressure <: AbstractFrontPressure end
+
+"""
+$(TYPEDEF)
+
+`P = ½ g δρ H² = 0` one cell beyond one-sided faces (the ice front, and gap edges under
+[`SinkGapsBC`](@ref)): the outward tendency of `HU` is `½ g δρ H²/Δx`. Drops the
+layer-thickness-gradient part of the pressure-gradient force there and keeps the density
+part against the masked `δρ = 0`, as the LADDIE v2 code does at calving-front faces.
+
+Choose it to reproduce LADDIE v2.
+
+Select via `Params(; front_pressure = ZeroExteriorFrontPressure())`.
+"""
+struct ZeroExteriorFrontPressure <: AbstractFrontPressure end
+
+"""
+$(TYPEDEF)
+
+LADDIE v1's one-sided faces (the ice front, and gap edges under [`SinkGapsBC`](@ref)): keep
+both the layer-thickness- and density-gradient parts of the pressure-gradient force against
+the masked neighbour's `H = δρ = 0`. Their face averages collapse to the front cell's values,
+so the outward tendency of `HU` is `3/2 g δρ H²/Δx`, 3× that of
+[`ZeroExteriorFrontPressure`](@ref).
+
+Choose it to reproduce LADDIE v1; pinned in the v1 reproduction aliases.
+
+Select via `Params(; front_pressure = V1FrontPressure())`.
+"""
+struct V1FrontPressure <: AbstractFrontPressure end
 
 """
     front_pgf_weight(scheme, x)
@@ -157,12 +164,12 @@ function front_pgf_weight end
 # Weights `w` in the per-face gate `1 + w*(tmask_stag - 2)`, which is 1 on a
 # fully-interior face (tmask_stag == 2) either way, and at a one-sided face
 # (tmask_stag == 1) is 1 for w = 0 (term kept) / 0 for w = 1 (term dropped).
-# w = 0 multiplies the term by exactly 1.0, so FullDepthFrontPressure is bit-identical
+# w = 0 multiplies the term by exactly 1.0, so V1FrontPressure is bit-identical
 # to LADDIE v1.  `front_pgf_weight` gates the thickness-gradient term,
 # `front_drho_weight` the density-gradient term.
-front_pgf_weight(::FullDepthFrontPressure, x) = zero(x)
-front_pgf_weight(::TruncatedDepthFrontPressure, x) = one(x)
 front_pgf_weight(::ZeroGradientFrontPressure, x) = one(x)
+front_pgf_weight(::ZeroExteriorFrontPressure, x) = one(x)
+front_pgf_weight(::V1FrontPressure, x) = zero(x)
 
 """
     front_drho_weight(scheme, x)

@@ -99,7 +99,7 @@ sim_py = build_isomip(; isomipcond = :warm, boundary = v1_walls,
                                       ice_conduction = HollandJenkinsIceConduction(),
                                       momentum_form = AdvectiveMomentumForm(),
                                       closure_level = PresentClosureLevel(), tracer_bounds = TracerBounds(),
-                                      front_pressure = FullDepthFrontPressure()))
+                                      front_pressure = V1FrontPressure()))
 run!(sim_py; days = 1.0, verbose = false)
 mj = sim_py.model
 

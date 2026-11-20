@@ -38,7 +38,7 @@ Laddie.jl; the [table below](#Options-in-each-version) lists them, with the defa
 | wall slip | `NoSlipAtGL`, `NoSlipAtLand` | `PartialSlipAtGL(1)`, `PartialSlipAtLand(1)` | `PartialSlipAtGL(1)`, `PartialSlipAtLand(1)` |
 | wall momentum advection | `V1WallAdvection` | `NoWallAdvection` | `NoWallAdvection` |
 | open-ocean boundary | `ZeroGradientOpenOceanBC` | `ZeroGradientOpenOceanBC` | `OutflowOnlyOpenOceanBC`† |
-| ice-front pressure gradient | `FullDepthFrontPressure` | `TruncatedDepthFrontPressure` | `ZeroGradientFrontPressure`† |
+| ice-front pressure gradient | `V1FrontPressure` | `ZeroExteriorFrontPressure` | `ZeroGradientFrontPressure`† |
 | maximum layer thickness | none that binds | `AbsoluteMaxLayerThickness` | `NoMaxLayerThickness` |
 | tracer bounds | none | none | `NoTracerBounds`\* |
 | ice-base slope (`ice_slope`) | `CentredIceSlope` | no counterpart (mesh) | `MaskedIceSlope` |
@@ -46,7 +46,7 @@ Laddie.jl; the [table below](#Options-in-each-version) lists them, with the defa
 \* The aliases below do not follow the version here: `Params<Setup>v1` has
 `PresentLaplacianWeights`, `Params<Setup>v2` has `AdvectiveMomentumForm`, and both have
 `TracerBounds()`, as Laddie.jl had them when the aliases were made; the v1 aliases also pin
-`FullDepthFrontPressure` and the v2 setups zero-gradient inflow at the ice front. Select the option of the
+`V1FrontPressure` and the v2 setups zero-gradient inflow at the ice front. Select the option of the
 version explicitly to use it.
 
 † Neither version's choice: the default is the setup of tuned pan-Antarctic runs. Relaxing an

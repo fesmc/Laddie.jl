@@ -24,7 +24,7 @@
                             ice_conduction = HollandJenkinsIceConduction(),
                             momentum_form = AdvectiveMomentumForm(),
                             closure_level = PresentClosureLevel(), tracer_bounds = TracerBounds(),
-                            front_pressure = FullDepthFrontPressure())
+                            front_pressure = V1FrontPressure())
         m = build_isomip(; isomipcond = :warm, boundary = v1_walls,
                          params = v1_params)
         run!(m; days = 1.0, verbose = false)

@@ -45,7 +45,7 @@ using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, 
 @inline u_advection(m) = copy(momentum_advection_U(m))
 # Per-face weight on the depth-gradient PGF term: always 1 on a fully-interior
 # face; at a one-sided face (ice front, SinkGapsBC gap-sink edge) 1 under
-# FullDepthFrontPressure and 0 under TruncatedDepthFrontPressure.  See AbstractFrontPressure.
+# V1FrontPressure and 0 under ZeroExteriorFrontPressure.  See AbstractFrontPressure.
 @inline _pgf_gate(m, tmask_stag) =
     one(m.FT) .+ front_pgf_weight(m.front_pressure, m.g) .* (tmask_stag .- 2)
 # The same gate on the density-gradient PGF term: 0 at a one-sided face only

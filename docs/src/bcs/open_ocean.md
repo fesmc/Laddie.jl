@@ -16,17 +16,18 @@ the open ocean. Layer properties leave freely; what enters is set by
   inward start fades from the filtered level. Under the other two, an
   inflow face either recirculates the front cell's own water (thickening and cooling the
   front row) or keeps an inward velocity that carries nothing (thinning it). Under the valve
-  the layer is fed only by entrainment and melt; ambient water that really enters a cavity
-  does so below the plume.
+  the layer is fed only by entrainment and melt. Ambient water enters a cavity mostly below
+  the plume; where it enters at the ice base, the layer sees its temperature and salinity
+  through entrainment, but not its momentum.
 
 The valve is the default, with [`ZeroGradientFrontPressure`](@ref). On a warm ISOMIP+ cavity
-at 4 km over 20 days, against zero-gradient inflow with [`FullDepthFrontPressure`](@ref):
+at 4 km over 20 days, against zero-gradient inflow with [`V1FrontPressure`](@ref):
 
 | front pressure + open ocean | mean melt (m/yr) | total (Gt/yr) | max speed (m/s) | front/interior melt | H front (m) |
 |---|---|---|---|---|---|
-| `FullDepthFrontPressure` + `ZeroGradientOpenOceanBC` (former default) | 1.59 | 56.41 | 0.538 | 1.87 | 6.3 |
+| `V1FrontPressure` + `ZeroGradientOpenOceanBC` (former default) | 1.59 | 56.41 | 0.538 | 1.87 | 6.3 |
 | `ZeroGradientFrontPressure` + `OutflowOnlyOpenOceanBC` (default) | 1.58 | 56.21 | 0.340 | 0.93 | 11.1 |
-| `TruncatedDepthFrontPressure` + `OutflowOnlyOpenOceanBC` | 1.59 | 56.32 | 0.429 | 1.27 | 8.4 |
+| `ZeroExteriorFrontPressure` + `OutflowOnlyOpenOceanBC` | 1.59 | 56.32 | 0.429 | 1.27 | 8.4 |
 
 The front row is the last ice cell of each row, the interior three cells upstream.
 

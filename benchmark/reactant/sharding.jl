@@ -54,17 +54,16 @@ println("D.present shards: ", unique(rmodel.D.present.sharding.device_to_array_s
 
 # FUNC: what to compile, the whole step (default) or one term, to narrow a problem down.
 const FUNC = get(ENV, "FUNC", "step")
-const NU = 0.8f0
 const FUNCS = Dict(
     "advU" => m -> Laddie.momentum_advection_U(m),
     "advV" => m -> Laddie.momentum_advection_V(m),
     "lapU" => m -> Laddie.laplace_U(m, m.lateral_viscosity),
     "lapV" => m -> Laddie.laplace_V(m, m.lateral_viscosity),
 )
-step!(m, dt) = (FUNC == "step" ? Laddie._step_model!(m, dt, NU) :
+step!(m, dt) = (FUNC == "step" ? Laddie._step_model!(m, dt) :
                 FUNCS[FUNC](m); nothing)
 nsteps!(m, dt, n) = (@trace track_numbers = false for _ = 1:n
-    Laddie._step_model!(m, dt, NU)
+    Laddie._step_model!(m, dt)
 end; nothing)
 
 dt = ConcreteRNumber(Float32(Laddie._primal(sim.clock.dt)))
@@ -98,7 +97,7 @@ n = 50
 f = Reactant.compile(nsteps!, (rmodel, dt, ConcreteRNumber(n)); raise = true)
 f(rmodel, dt, ConcreteRNumber(n))
 kam = sim.model
-Laddie.integrate!(kam, Laddie._primal(sim.clock.dt), n; nu = NU)
+Laddie.integrate!(kam, Laddie._primal(sim.clock.dt), n)
 err = maximum(fieldnames(Laddie.State)) do v
     a, b = Array(getfield(rmodel.state, v).present), getfield(kam.state, v).present
     maximum(abs, a .- b) / max(maximum(abs, b), eps(Float32))

@@ -22,8 +22,9 @@ gradient-based work; see [Kinks](kinks.md).
 
 ## Time integration
 
-The prognostic variables advance with a leapfrog scheme and a Robert–Asselin filter, at
-a constant step or one set by a CFL controller; see [Time stepping](time_stepping.md).
+The prognostic variables advance with a leapfrog scheme and a Robert–Asselin filter
+([`LeapfrogIntegrator`](@ref)), at a constant step or one set by a CFL controller; see
+[Time stepping](time_stepping.md).
 
 ## Domain, boundaries, and masks
 
@@ -75,6 +76,7 @@ describe one family each:
 | [Closure level](momentum_form.md) | [`AbstractClosureLevel`](@ref) | `Params(; closure_level)` | `PastClosureLevel()` |
 | [Laplacian weights](laplacian_weights.md) | [`AbstractLaplacianWeights`](@ref) | `Params(; laplacian_weights)` | `PresentLaplacianWeights()` |
 | [Kinks](kinks.md) | [`AbstractKinks`](@ref) | `Params(; kinks)` | `ExactKinks()` |
+| [Time integration](time_stepping.md) | [`AbstractIntegrator`](@ref) | `Params(; integrator)` | `LeapfrogIntegrator()` |
 | [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; time_stepper)` | `FixedTimeStepper()` |
 | [CFL number](cfl.md) | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `ExactCFL()` |
 | [Simulation end](simulation_end.md) | [`AbstractSimulationEnd`](@ref) | `Simulation(model; stop)`, `run!(sim; until)` | `FixedSimulationEnd()` |

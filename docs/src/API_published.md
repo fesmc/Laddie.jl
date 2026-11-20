@@ -5,13 +5,13 @@ Aliases for the runs of earlier LADDIE versions: `Params<Setup>v1|v2` returns th
 `Simulation<Setup>v1|v2(backend = CPU(); FT, datadir, params, simulation_kwargs...)` builds
 the whole run from the geometry it left behind under `datadir` (default `papers/` in the
 package root, not part of the repository). `params` defaults to the run's `Params` alias, and
-any other keyword goes to [`Simulation`](@ref), overriding the setup's `dt`, `nu` and `stop`.
+any other keyword goes to [`Simulation`](@ref), overriding the setup's `dt` and `stop`.
 
 Where a paper and the code that produced its results disagree, the values follow the code
 (the run's own configuration file), and the [differences](@ref "Where the papers differ") are
 listed below. LADDIE v2 runs on an unstructured mesh with forward–backward Runge–Kutta time
 stepping, and Laddie.jl on a C-grid with leapfrog, so the v2 aliases match v2's parameters,
-not its numerics.
+not its numerics. Every alias pins `integrator = LeapfrogIntegrator(; nu = 0.8)`.
 
 | Setup | Paper | Parameters | Simulation |
 |-------|-------|------------|------------|
@@ -67,8 +67,8 @@ of MISOMIP+.
 ## Simulations
 
 All files are under `datadir`. The v1 runs use v1's walls (its `slip = 1`: no slip in the
-viscosity, [`V1WallAdvection`](@ref)), zero-gradient inflow at the ice front, Robert–Asselin
-`nu = 0.8` and `T_ice_farfield = -25 °C`. The v2 runs use v2's walls (slip factor 1, no
+viscosity, [`V1WallAdvection`](@ref)), zero-gradient inflow at the ice front and
+`T_ice_farfield = -25 °C`. The v2 runs use v2's walls (slip factor 1, no
 momentum across walls), zero-gradient inflow and UPSY's default ice temperature, 270 K
 (−3.15 °C); their shelf is the ice that floats in v2's output remapped from its mesh to a
 regular grid.

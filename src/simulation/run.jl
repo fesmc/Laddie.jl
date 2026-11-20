@@ -19,16 +19,17 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Advance `sim` by one leapfrog time step: `advance_leapfrog!` → `leapfrog_step!`
-(2×dt, which ends each momentum step with `clamp_velocities!`) →
-`apply_robert_asselin_filter!`, then move the clock forward by `dt`.
+Advance `sim` by one time step of its `Params.integrator` ([`AbstractIntegrator`](@ref)), then
+move the clock forward by `dt`. Under [`LeapfrogIntegrator`](@ref): `advance_leapfrog!` →
+`leapfrog_step!` (2×dt, which ends each momentum step with `clamp_velocities!`) →
+`apply_robert_asselin_filter!`.
 No I/O, no CFL control, no blow-up check — those belong to [`run!`](@ref).
 
 Returns `sim`.
 """
 function time_step!(sim::Simulation)
     _set_forcing_time!(sim)
-    _step_model!(sim.model, sim.clock.dt, sim.nu; _nan_check(sim)...)
+    _step_model!(sim.model, sim.clock.dt; _nan_check(sim)...)
     _tick!(sim.clock)
     return sim
 end

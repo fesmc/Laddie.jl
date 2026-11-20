@@ -125,7 +125,8 @@ function Base.show(io::IO, ::MIME"text/plain", p::Params{FT}) where {FT}
     println(io, "  closure level  = ", p.closure_level)
     println(io, "  coriolis       = ", p.coriolis)
     println(io, "  ice slope      = ", p.ice_slope)
-    print(io, "  kinks          = ", p.kinks)
+    println(io, "  kinks          = ", p.kinks)
+    print(io, "  integrator     = ", p.integrator)
     return nothing
 end
 
@@ -211,8 +212,8 @@ function Base.show(io::IO, ::MIME"text/plain", sim::Simulation)
         sim.time_stepper,
         ", ",
         sim.cfl,
-        ", Robert–Asselin ν = ",
-        _primal(sim.nu),
+        ", ",
+        sim.model.params.integrator,
     )
     println(io, "  stop:    ", sim.stop)
     print(io, "  output:  ", sim.output)

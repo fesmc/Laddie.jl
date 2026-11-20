@@ -168,7 +168,8 @@ Simulation
 │   │   ├── closure_level
 │   │   ├── coriolis                    #   AbstractCoriolisParameter
 │   │   ├── ice_slope                   #   MaskedIceSlope (default) / CentredIceSlope
-│   │   └── kinks                       #   AbstractKinks (ExactKinks / SmoothKinks)
+│   │   ├── kinks                       #   AbstractKinks (ExactKinks / SmoothKinks)
+│   │   └── integrator                  #   AbstractIntegrator (LeapfrogIntegrator(nu))
 │   ├── boundary :: BoundaryConditions  # open_ocean, grounding_line_slip, land_slip, gaps, wall_advection
 │   └── forcing :: CavityForcing        # ocean (ambient T/S profiles), ice (ice-base temperature)
 ├── clock :: Clock                      # time, iteration, dt
@@ -214,10 +215,11 @@ to `Grid` or `build_isomip`, or move an existing model with `to_backend`.
 
 `run!` loops over `time_step!` (`src/simulation/run.jl`) and handles I/O, adaptive dt and blow-up checks between
 batches. `time_step!` sets the forcing time, calls `_step_model!` (`src/numerics/leapfrog.jl`) and ticks the clock.
-`integrate!(model, dt, n)` calls `_step_model!` directly, without a `Simulation`, for AD.
+`integrate!(model, dt, n)` calls `_step_model!` directly, without a `Simulation`, for AD. `_step_model!`,
+`_bootstrap!` and `_rebootstrap!` dispatch on `Params.integrator`; under the default `LeapfrogIntegrator`:
 
 ```
-_step_model!(m, dt, nu)
+_step_model!(m, dt)
 ├── advance_leapfrog!               rotate past ← present ← future, then
 │   └── step_secondary_fields!    (src/physics/) from the present/past levels:
 │       ambient T/S → density → convection → melt → frazil → entrainment/detrainment
@@ -226,11 +228,11 @@ _step_model!(m, dt, nu)
 │   ├── U,V step_u_momentum!, step_v_momentum!, clamp_velocities! (speed cap v_cut)
 │   ├── T   step_temperature!, apply_tracer_bounds! (none by default)
 │   └── S   step_salinity!, gap surface fluxes, apply_tracer_bounds!
-└── apply_robert_asselin_filter!    filter present (coefficient nu), then refresh density and convection
+└── apply_robert_asselin_filter!    filter present (coefficient ν of the integrator), then refresh density and convection
 ```
 
-- The `Simulation` constructor bootstraps the leapfrog with one forward step (`_bootstrap_leapfrog!`,
-  `leapfrog_step!(m, dt, 1)`); so does a dt change under `AdaptiveTimeStepper` and a restart
+- The `Simulation` constructor bootstraps the leapfrog with one forward step (`_bootstrap!`,
+  `leapfrog_step!(m, dt, 1)`); so does a dt change under `AdaptiveTimeStepper` (`_rebootstrap!`) and a restart
 - `adv`, `lap` and `Hq` in `Cache` are shared work arrays: U, V, T and S are stepped one after another and
   each consumes them before the next one writes them. Do not read them across steps
 - A new process usually enters as a `process!` in `step_secondary_fields!` (ordered by its inputs) and

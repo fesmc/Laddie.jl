@@ -5,8 +5,8 @@
 """
 $(TYPEDSIGNATURES)
 
-Advance `model` by `n` leapfrog steps of `dt` seconds (Robert–Asselin coefficient
-`nu`), without a [`Simulation`](@ref): no clock, output, dt control or blow-up check.
+Advance `model` by `n` steps of `dt` seconds of its `Params.integrator`, without a
+[`Simulation`](@ref): no clock, output, dt control or blow-up check.
 The model must already be bootstrapped, e.g. taken from a simulation after
 construction (`sim.model`).  Returns `model`.
 
@@ -15,10 +15,9 @@ through a model built at `FT = Dual`, and with Enzyme inside [`reactant_compile`
 `n` may be traced. Under Reactant it also takes `checkpoints` (the reverse-mode memory budget),
 and `integrate!(model, sched)` replays an [`adaptive_schedule`](@ref).
 """
-function integrate!(model, dt, n; nu = 0.8)
-    nu = model.FT(nu)
+function integrate!(model, dt, n)
     for _ = 1:n
-        _step_model!(model, dt, nu)
+        _step_model!(model, dt)
     end
     return model
 end
@@ -58,14 +57,14 @@ struct DtSchedule{V,W,N}
 end
 
 """
-    adaptive_schedule(model, dt; days, stepper = AdaptiveTimeStepper(), cfl = ExactCFL(), nu = 0.8,
+    adaptive_schedule(model, dt; days, stepper = AdaptiveTimeStepper(), cfl = ExactCFL(),
                       maxsegments = 10_000) -> DtSchedule
 
 Run `model` (on a [`ReactantBackend`](@ref); requires `using Reactant, CUDA`) for `days` from
 the step `dt` (s), adapting dt with `stepper` as `run!` does, and return the dt schedule it
 took. Advances `model`. The first of two passes that differentiate an adaptive run: the dt
-controller cannot be differentiated, so `integrate!(model, sched; means = (), nu = 0.8,
-checkpoints = 20)` inside [`reactant_compile`](@ref) replays the schedule with dt as data,
+controller cannot be differentiated, so `integrate!(model, sched; means = (), checkpoints = 20)`
+inside [`reactant_compile`](@ref) replays the schedule with dt as data,
 returning the time-weighted means of the fields in `means`. See [Reactant backend](@ref).
 """
 function adaptive_schedule end

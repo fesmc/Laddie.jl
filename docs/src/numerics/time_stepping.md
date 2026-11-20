@@ -13,8 +13,8 @@ where advection, pressure, Coriolis, drag, entrainment and melt are evaluated at
 the present level, while the Laplacian terms act on the **lagged** (past) level —
 a diffusive term evaluated at the centre of a leapfrog step is unconditionally
 unstable. After the leapfrog advance, a **Robert–Asselin filter** (strength
-``\nu``, `Simulation(model; nu)`, 0.8 by default) damps the computational
-(``2\Delta t``) mode:
+``\nu``, `Params(; integrator = LeapfrogIntegrator(; nu))`, 0.8 by default) damps the
+computational (``2\Delta t``) mode:
 
 ```math
 q^n \;\leftarrow\; q^n + \frac{\nu}{2}\bigl(q^{n-1} + q^{n+1} - 2\,q^n\bigr).
@@ -82,6 +82,8 @@ worst-case CFL (see [CFL number](cfl.md)), which can only shrink the step.
 ## API
 
 ```@docs
+AbstractIntegrator
+LeapfrogIntegrator
 AbstractTimeStepper
 FixedTimeStepper
 AdaptiveTimeStepper

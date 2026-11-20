@@ -26,6 +26,7 @@ include("bcs/boundary_conditions.jl")
 include("numerics/viscosity.jl")
 include("numerics/advection.jl")
 include("numerics/timestepping.jl")
+include("numerics/integrator.jl")
 include("bcs/forcing.jl")
 include("bcs/ocean_sources.jl")
 include("utils/preprocessing.jl")
@@ -115,6 +116,7 @@ export AbstractLaplacianWeights, PresentLaplacianWeights, PastLaplacianWeights
 export AbstractFrontPressure, ZeroGradientFrontPressure, ZeroExteriorFrontPressure, V1FrontPressure
 export AbstractIceSlope, CentredIceSlope, MaskedIceSlope
 export AbstractTimeStepper, FixedTimeStepper, AdaptiveTimeStepper
+export AbstractIntegrator, LeapfrogIntegrator
 export AbstractCFL, ConservativeCFL, ExactCFL
 export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateSimulationEnd
 export AbstractOceanForcing, OceanForcing1D, OceanForcing2D, PerBasinOceanForcing1D, RampedOceanForcing,

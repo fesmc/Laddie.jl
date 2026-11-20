@@ -25,7 +25,7 @@ Convenience constructor for the idealised ISOMIP+ channel geometry
 - `params`: `Params` object (default `Params(; FT)`, the ISOMIP+-canonical values).
 - `domain_cropping`, `preprocess`: forwarded to `Grid`.
 - `boundary`: forwarded to `Model`.
-- any other keyword (`dt`, `time_stepper`, `cfl`, `nu`, `stop`, `output`, `restart`,
+- any other keyword (`dt`, `time_stepper`, `cfl`, `stop`, `output`, `restart`,
   `debug`) is forwarded to [`Simulation`](@ref).
 
 ```julia
@@ -139,6 +139,7 @@ _v1_params(; A_h, K_h, H_min, u_tide) = (
     closure_level = PresentClosureLevel(),
     tracer_bounds = TracerBounds(),
     front_pressure = V1FrontPressure(),
+    integrator = LeapfrogIntegrator(; nu = 0.8),
 )
 
 # v1's `slip = 1` on every wall: no slip in the viscosity, a zero ghost in the
@@ -208,7 +209,7 @@ function _v1_simulation(
     model = Model(grid; forcing, params, boundary)
     return Simulation(
         model;
-        merge((; dt, nu = 0.8, stop = FixedSimulationEnd(days)), values(simulation_kwargs))...,
+        merge((; dt, stop = FixedSimulationEnd(days)), values(simulation_kwargs))...,
     )
 end
 
@@ -413,6 +414,8 @@ _v2_params(; C_d_top, melting, C_visc, K_h, H_min, H_init, v_cut, H_max, buoyanc
     momentum_form = AdvectiveMomentumForm(),
     closure_level = PresentClosureLevel(),
     tracer_bounds = TracerBounds(),
+    # v2 integrates with FB-RK3; these aliases reproduce its parameters, not its numerics.
+    integrator = LeapfrogIntegrator(; nu = 0.8),
 )
 
 # Zero velocity one grid spacing behind every wall (v2's "no slip"), no momentum

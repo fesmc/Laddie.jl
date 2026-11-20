@@ -43,7 +43,7 @@ end
                      time_stepper = AdaptiveTimeStepper(; cfl_target = 0.4))
     @test m.time_stepper isa AdaptiveTimeStepper{Float32}
     @test m.time_stepper.ncheck isa Int                  # integer field not converted
-    @test m.nu isa Float32 && m.clock.dt isa Float32
+    @test m.model.params.integrator.nu isa Float32 && m.clock.dt isa Float32
     run!(m; days = 0.2, verbose = false)
     @test all(isfinite, m.model.melt) && eltype(m.model.melt) == Float32
 end

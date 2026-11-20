@@ -725,42 +725,49 @@ function leapfrog_step!(m, dt, nsteps; check_nans = false, clock = nothing)
     return
 end
 
-# Start the leapfrog: refresh secondary fields at the time step `dt`, then take one
-# first-order step.  Run when a Simulation is constructed on a freshly
-# initialised model (whose three time levels are identical), and by
+# ============================================================================
+# Time-stepping orchestration, by `Params.integrator`
+# ============================================================================
+
+# Prepare a model to be stepped at `dt`: run when a Simulation is constructed on a
+# freshly initialised model (whose three time levels are identical), and by
 # `init_from_restart!` after loading the saved levels.  Keywords as `leapfrog_step!`.
-function _bootstrap_leapfrog!(m, dt; kwargs...)
+_bootstrap!(m::Model, dt; kwargs...) = _bootstrap!(m, m.params.integrator, dt; kwargs...)
+
+# Re-initialise the time levels after a change of dt.
+_rebootstrap!(sim::Simulation) = _rebootstrap!(sim.exec, sim)
+_rebootstrap!(::NativeExecution, sim::Simulation) = _rebootstrap!(sim.model, sim.clock.dt; _nan_check(sim)...)
+_rebootstrap!(m::Model, dt; kwargs...) = _rebootstrap!(m, m.params.integrator, dt; kwargs...)
+
+# One time step of `m` with the time step `dt`: `time_step!` without the clock.
+# Keywords as `leapfrog_step!`.
+_step_model!(m::Model, dt; kwargs...) = _step_model!(m, m.params.integrator, dt; kwargs...)
+
+# Leapfrog: refresh secondary fields at the time step `dt`, then take one first-order step.
+function _bootstrap!(m, ::LeapfrogIntegrator, dt; kwargs...)
     step_secondary_fields!(m, dt)
     leapfrog_step!(m, dt, 1; kwargs...)
     return
 end
 
-# Re-initialise the leapfrog after a dt change: collapse the `past` level onto
-# `present` so the two are co-located in time, then bootstrap at the new dt.  The
-# next `advance_leapfrog!` rotation leaves a past/present pair separated by the
-# new dt, so the following centred `leapfrog_step!(m, dt, 2)` is consistent.  The
-# anchor is the Robert–Asselin-filtered `present`, exactly as at startup.
-_rebootstrap_leapfrog!(sim) = _rebootstrap_leapfrog!(sim.exec, sim)
-_rebootstrap_leapfrog!(::NativeExecution, sim) =
-    _collapse_and_bootstrap!(sim.model, sim.clock.dt; _nan_check(sim)...)
-function _collapse_and_bootstrap!(m, dt; kwargs...)
+# Leapfrog: collapse the `past` level onto `present` so the two are co-located in time,
+# then bootstrap at the new dt.  The next `advance_leapfrog!` rotation leaves a
+# past/present pair separated by the new dt, so the following centred
+# `leapfrog_step!(m, dt, 2)` is consistent.  The anchor is the Robert–Asselin-filtered
+# `present`, exactly as at startup.
+function _rebootstrap!(m, integrator::LeapfrogIntegrator, dt; kwargs...)
     for var in _prognostics(m)
         var.past .= var.present
     end
-    _bootstrap_leapfrog!(m, dt; kwargs...)
+    _bootstrap!(m, integrator, dt; kwargs...)
     return
 end
 
-# ============================================================================
-# Time-stepping orchestration
-# ============================================================================
-
-# One leapfrog step of `m` with the time step `dt` and the Robert–Asselin coefficient
-# `nu`: `time_step!` without the clock.  Keywords as `leapfrog_step!`.
-function _step_model!(m, dt, nu; kwargs...)
+# Leapfrog: rotate the levels, take the centred step over 2·dt, filter (Robert–Asselin).
+function _step_model!(m, integrator::LeapfrogIntegrator, dt; kwargs...)
     advance_leapfrog!(m, dt)
     leapfrog_step!(m, dt, 2; kwargs...)
-    apply_robert_asselin_filter!(m, nu)
+    apply_robert_asselin_filter!(m, integrator.nu)
     return
 end
 

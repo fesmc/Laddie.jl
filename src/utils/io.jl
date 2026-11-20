@@ -330,7 +330,6 @@ function _write_run_metadata(sim)
     m = sim.model
     sim_d = Dict{String,Any}(
         "dt0" => _float64(sim.clock.dt),
-        "nu" => _float64(sim.nu),
         "time_stepper" => _scalar_fields(sim.time_stepper),
         "cfl" => _scalar_fields(sim.cfl),
         "stop" => _scalar_fields(sim.stop),
@@ -965,7 +964,7 @@ function _restart_leapfrog!(sim, exact::Bool)
     if exact
         step_secondary_fields!(m, sim.clock.dt)
     else
-        _bootstrap_leapfrog!(m, sim.clock.dt; _nan_check(sim)...)
+        _bootstrap!(m, sim.clock.dt; _nan_check(sim)...)
     end
     return
 end

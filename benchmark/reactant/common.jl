@@ -81,7 +81,7 @@ const TRACK_NUMBERS = get(ENV, "TRACK_NUMBERS", "0") == "1"
 # Physics of one leapfrog step: `time_step!` without the clock update (the
 # Clock's fields are plain numbers, so a traced step would bake them in).
 function rstep!(sim)
-    Laddie._step_model!(sim.model, sim.clock.dt, sim.nu)
+    Laddie._step_model!(sim.model, sim.clock.dt)
     return nothing
 end
 
@@ -102,14 +102,13 @@ end
 # What the step functions read from a Simulation (they take `sim` untyped).  The
 # full Simulation also carries IOState, whose 0×0 accumulators Reactant cannot
 # export from a traced loop (`tensor.empty`), and host-only I/O config.
-struct RSim{M,C,FT,D}
+struct RSim{M,C,D}
     model::M
     clock::C
-    nu::FT
     debug::D
 end
 
-raw_sim(m, like::Simulation) = RSim(m, deepcopy(like.clock), like.nu, like.debug)
+raw_sim(m, like::Simulation) = RSim(m, deepcopy(like.clock), like.debug)
 
 to_reactant(sim) = raw_sim(to_backend(sim.model, RB()), sim)
 

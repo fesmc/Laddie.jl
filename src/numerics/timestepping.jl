@@ -88,7 +88,7 @@ function _apply_dt!(sim, ts::AdaptiveTimeStepper, cfl; allow_grow::Bool)
     dt_new = sim.model.FT(_controller_dt(ts, _float64(dt_old), cfl; allow_grow))
     dt_new == dt_old && return false
     sim.clock.dt = dt_new
-    _rebootstrap_leapfrog!(sim)
+    _rebootstrap!(sim)
     _log_dt_change!(sim, dt_old, dt_new, cfl)
     return true
 end

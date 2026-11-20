@@ -4,7 +4,7 @@ $(TYPEDEF)
 All physical constants and parameterization choices of a [`Model`](@ref), in one
 immutable, concretely typed struct.  Build it with the keyword constructor
 `Params(; ...)`, which fills in the ISOMIP+-canonical defaults.
-Time integration is configured on the [`Simulation`](@ref), and the boundary
+The step-size control is configured on the [`Simulation`](@ref), and the boundary
 conditions in [`BoundaryConditions`](@ref).
 
 Rates follow the model's convention: `melt` and the entrainment
@@ -34,6 +34,7 @@ struct Params{
     CP<:AbstractCoriolisParameter,
     IS<:AbstractIceSlope,
     KT<:AbstractKinks,
+    TI<:AbstractIntegrator,
 }
     # Dynamics
     "gravitational acceleration (m s⁻², default `9.81`)"
@@ -121,6 +122,8 @@ struct Params{
     ice_slope::IS
     "treatment of the kinks (max/min switches, upwinding, √ at zero), an [`AbstractKinks`](@ref) (default exact)"
     kinks::KT
+    "time integration, an [`AbstractIntegrator`](@ref) (default `LeapfrogIntegrator()`, ν = 0.8)"
+    integrator::TI
 end
 
 # Promote a parameterization object's floating-point fields to FT so it stays
@@ -182,6 +185,7 @@ _param_defaults() = (
     coriolis = CoriolisParameter0D(),
     ice_slope = MaskedIceSlope(),
     kinks = ExactKinks(),
+    integrator = LeapfrogIntegrator(),
 )
 
 """

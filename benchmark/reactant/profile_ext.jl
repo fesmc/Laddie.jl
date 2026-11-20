@@ -22,9 +22,8 @@ n = ConcreteRNumber(NSTEPS)
 # The extension's step batch, compiled with `sync = true` as the profiler requires.
 Ext._const_workaround!()
 Ext.TRACING_FUSION[] = FUSION
-nu = sim.nu
 prog = Base.invokelatest(Reactant.compile,
-    (model, accs, dt, n) -> Ext._steps!(model, accs, dt, n, nu, ()),
+    (model, accs, dt, n) -> Ext._steps!(model, accs, dt, n),
     (sim.model, (), dt, n); raise = get(ENV, "RAISE", "1") == "1", sync = true)
 (; xplane_file) = RP.profile_and_get_xplane_file(prog, sim.model, (), dt, n;
                                                   nrepeat = NREPEAT, warmup = 2)

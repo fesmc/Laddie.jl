@@ -37,6 +37,33 @@
     @test meta2["simulation"]["time_stepper"]["cfl_target"] ≈ 0.4
 end
 
+@testset "Integrator: LeapfrogIntegrator lives in Params" begin
+    # The default is LeapfrogIntegrator(ν = 0.8); stating it explicitly is bit-identical.
+    @test Params().integrator == LeapfrogIntegrator(; nu = 0.8)
+    @test Params(; FT = Float32).integrator isa LeapfrogIntegrator{Float32}
+    s_def = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+    s_exp = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                         params = Params(; FT, integrator = LeapfrogIntegrator(; nu = 0.8)))
+    s_low = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                         params = Params(; FT, integrator = LeapfrogIntegrator(; nu = 0.1)))
+    for s in (s_def, s_exp, s_low)
+        run!(s; days = 0.5, verbose = false)
+    end
+    @test s_exp.model.H.present == s_def.model.H.present
+    @test s_exp.model.melt == s_def.model.melt
+    @test s_low.model.H.present != s_def.model.H.present   # ν reaches the filter
+    # `integrate!` steps with the same integrator as `run!`.
+    s1 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+    s2 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+    for _ = 1:10
+        time_step!(s1)
+    end
+    integrate!(s2.model, s2.clock.dt, 10)
+    @test s2.model.H.present == s1.model.H.present
+    # ν is no longer a keyword of the Simulation.
+    @test_throws MethodError Simulation(s1.model; nu = 0.8)
+end
+
 @testset "run! advances model state" begin
     m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
     H0 = copy(m.model.H.present)

@@ -156,7 +156,7 @@ _execution(backend) = NativeExecution()
 """
 $(TYPEDEF)
 
-A [`Model`](@ref) together with its time integration and I/O.  Construct with
+A [`Model`](@ref) together with its step-size control, clock and I/O.  Construct with
 [`Simulation(model; ...)`](@ref Simulation(::Model)) and advance with [`run!`](@ref).
 
 # Fields
@@ -167,7 +167,6 @@ struct Simulation{
     CL<:Clock,
     TS<:AbstractTimeStepper,
     C<:AbstractCFL,
-    N,
     E<:AbstractSimulationEnd,
     O<:OutputConfig,
     IOS<:IOState,
@@ -182,8 +181,6 @@ struct Simulation{
     time_stepper::TS
     "how the in-loop CFL number is computed: [`ExactCFL`](@ref) or [`ConservativeCFL`](@ref)"
     cfl::C
-    "Robert–Asselin filter coefficient"
-    nu::N
     "default stopping criterion of `run!`"
     stop::E
     "output cadence, field selection and run directory"
@@ -199,7 +196,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Wrap `model` in a simulation, initialise its leapfrog time levels, and (when
+Wrap `model` in a simulation, initialise its time levels, and (when
 `output.saveday > 0`) create the run directory and write the initial state.
 
 # Keywords
@@ -207,7 +204,6 @@ Wrap `model` in a simulation, initialise its leapfrog time levels, and (when
   stays constant; under [`AdaptiveTimeStepper`](@ref) it is the starting point.
 - `time_stepper`: [`FixedTimeStepper`](@ref) (default) or [`AdaptiveTimeStepper`](@ref).
 - `cfl`: [`ExactCFL`](@ref) (default) or [`ConservativeCFL`](@ref).
-- `nu`: Robert–Asselin filter coefficient (default 0.8).
 - `stop`: default stopping criterion of [`run!`](@ref), a
   [`FixedSimulationEnd`](@ref) (default, 30 days) or [`SteadyStateSimulationEnd`](@ref).
 - `output`: an [`OutputConfig`](@ref); the default disables file I/O.
@@ -218,7 +214,9 @@ Wrap `model` in a simulation, initialise its leapfrog time levels, and (when
 - `debug`: a [`DebugConfig`](@ref).
 
 Constructing a simulation takes the first (bootstrap) step of the leapfrog
-scheme on `model`, so build one simulation per model.
+scheme on `model`, so build one simulation per model.  The time integration itself, and
+the Robert–Asselin coefficient ν, are set by `Params(; integrator)`
+([`AbstractIntegrator`](@ref)).
 
 ```julia
 grid = Grid(mask, z_draft, dx, dy)
@@ -232,7 +230,6 @@ function Simulation(
     dt = 210.0,
     time_stepper = FixedTimeStepper(),
     cfl = ExactCFL(),
-    nu = 0.8,
     stop = FixedSimulationEnd(),
     output = OutputConfig(),
     restart = nothing,
@@ -246,7 +243,6 @@ function Simulation(
         Clock(0.0, 0, FT(dt)),
         _promote_param(time_stepper, FT),
         cfl,
-        FT(nu),
         stop,
         output,
         io,
@@ -255,7 +251,7 @@ function Simulation(
     )
     output.saveday > 0 && create_rundir!(sim)
     if restart === nothing
-        _bootstrap_leapfrog!(model, sim.clock.dt; _nan_check(sim)...)
+        _bootstrap!(model, sim.clock.dt; _nan_check(sim)...)
     else
         init_from_restart!(sim, restart)
     end
@@ -291,7 +287,6 @@ function to_backend(sim::Simulation, backend)
         Clock(c.time, c.iteration, c.dt),
         sim.time_stepper,
         sim.cfl,
-        sim.nu,
         sim.stop,
         sim.output,
         _iostate_to_backend(sim.io, backend),

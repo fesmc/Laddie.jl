@@ -88,7 +88,9 @@ end
     @test meta["run"]["laddie_version"] isa String
     @test meta["grid"]["nx"] == 20 && meta["grid"]["ny"] == 10
     @test meta["simulation"]["dt0"] == 210.0
-    @test meta["simulation"]["nu"] ≈ 0.8
+    @test !haskey(meta["simulation"], "nu")
+    @test meta["params"]["integrator"]["type"] == "LeapfrogIntegrator"
+    @test meta["params"]["integrator"]["nu"] ≈ 0.8
     @test meta["simulation"]["cfl"]["type"] == "ExactCFL"
     @test meta["simulation"]["restart"] == ""
     @test !haskey(meta["params"], "dt0") && !haskey(meta["params"], "time_stepper")

@@ -232,10 +232,8 @@ end
 # without it Enzyme stores every step in a buffer of dynamic size, which XLA cannot
 # compile.  The checkpoints cost nothing in the primal and in forward mode.
 const DEFAULT_CHECKPOINTS = 20
-Laddie.integrate!(model, dt, n::Reactant.TracedRNumber; nu = 0.8,
-                  checkpoints = DEFAULT_CHECKPOINTS) =
-    (_steps!(model, (;), dt, n, model.FT(nu);
-             checkpointing = Reactant.Binomial(checkpoints)); model)
+Laddie.integrate!(model, dt, n::Reactant.TracedRNumber; checkpoints = DEFAULT_CHECKPOINTS) =
+    (_steps!(model, (;), dt, n; checkpointing = Reactant.Binomial(checkpoints)); model)
 
 # ============================================================================
 # Adaptive dt, differentiable: record the schedule, then replay it
@@ -254,21 +252,21 @@ end
 # Re-bootstrap where dt changed.  A traced `if` is fine here (no differentiation).
 function _rebootstrap_if!(model, changed, dt)
     @trace track_numbers = false if changed
-        Laddie._collapse_and_bootstrap!(model, dt)
+        Laddie._rebootstrap!(model, dt)
     end
     return nothing
 end
 
 # Pass 1: the adaptive run.  Loop state: time, dt, step count and segment index as
 # floats (exact for integers), and the segments as fixed-capacity arrays.
-function _schedule!(model, dt0, tend, ts, cfl, nu, cap)
+function _schedule!(model, dt0, tend, ts, cfl, cap)
     FT = model.FT
     idx = FT.(Reactant.Ops.iota(Int, [cap]; iota_dimension = 1) .+ 1)
     seg_dt = ifelse.(idx .== 1, dt0, zero(dt0))
     seg_n = zero(seg_dt)
     t, dt, k, j = zero(dt0), dt0 * one(dt0), zero(dt0), one(dt0)
     @trace track_numbers = false while t < tend
-        Laddie._step_model!(model, dt, nu)
+        Laddie._step_model!(model, dt)
         t = t + dt
         k = k + 1
         seg_n = seg_n .+ ifelse.(idx .== j, one(FT), zero(FT))
@@ -287,14 +285,13 @@ end
 const SCHEDULE_PROGRAMS = Dict{Any,Any}()
 
 function Laddie.adaptive_schedule(model::Model, dt; days, stepper = Laddie.AdaptiveTimeStepper(),
-                                  cfl = Laddie.ExactCFL(), nu = 0.8, maxsegments = 10_000)
+                                  cfl = Laddie.ExactCFL(), maxsegments = 10_000)
     FT = model.FT
     ts = Laddie._promote_param(stepper, FT)
-    nuv = FT(nu)
-    key = (typeof(model), size(model.melt), ts, cfl, nuv, maxsegments)
+    key = (typeof(model), size(model.melt), ts, cfl, model.params.integrator, maxsegments)
     dt0, tend = ConcreteRNumber(FT(dt)), ConcreteRNumber(FT(days * 86400))
     prog = get!(SCHEDULE_PROGRAMS, key) do
-        _compile_with((m, dt0, tend) -> _schedule!(m, dt0, tend, ts, cfl, nuv, maxsegments),
+        _compile_with((m, dt0, tend) -> _schedule!(m, dt0, tend, ts, cfl, maxsegments),
                       _fusion(:auto), (model, dt0, tend), (;))
     end
     seg_dt, seg_n, j = prog(model, dt0, tend)
@@ -312,7 +309,7 @@ end
 function _rebootstrap_blend!(model, keep, dt)
     vars = Laddie._prognostics(model)
     old = map(v -> (copy(v.past), copy(v.future)), vars)
-    Laddie._collapse_and_bootstrap!(model, dt)
+    Laddie._rebootstrap!(model, dt)
     for (v, (p, f)) in zip(vars, old)
         v.past .= ifelse.(keep, v.past, p)
         v.future .= ifelse.(keep, v.future, f)
@@ -322,9 +319,9 @@ end
 
 _field(m, name) = (x = getproperty(m, name); x isa Laddie.Var ? x.present : x)
 
-function _segment!(model, accs, dt, n, nu, names, checkpoints)
+function _segment!(model, accs, dt, n, names, checkpoints)
     @trace track_numbers = false checkpointing = Reactant.Binomial(checkpoints) for _ = 1:n
-        Laddie._step_model!(model, dt, nu)
+        Laddie._step_model!(model, dt)
         for (acc, name) in zip(accs, names)
             acc .+= _field(model, name) .* dt
         end
@@ -333,9 +330,8 @@ function _segment!(model, accs, dt, n, nu, names, checkpoints)
 end
 
 function Laddie.integrate!(model, sched::Laddie.DtSchedule{<:Reactant.AnyTracedRArray};
-                           means = (), nu = 0.8, checkpoints = DEFAULT_CHECKPOINTS)
+                           means = (), checkpoints = DEFAULT_CHECKPOINTS)
     FT = model.FT
-    nuv = FT(nu)
     names = Tuple(means)
     accs = map(name -> zero(_field(model, name)), names)
     cap = length(sched.dt)
@@ -345,7 +341,7 @@ function Laddie.integrate!(model, sched::Laddie.DtSchedule{<:Reactant.AnyTracedR
         dt = sum(ifelse.(idx .== j, sched.dt, zero(FT)))
         n = sum(ifelse.(idx .== j, sched.steps, 0))
         _rebootstrap_blend!(model, j > 1, dt)
-        _segment!(model, accs, dt, n, nuv, names, checkpoints)
+        _segment!(model, accs, dt, n, names, checkpoints)
     end
     isempty(names) && return model
     total = sum(sched.dt .* sched.steps)
@@ -363,8 +359,8 @@ _dt(sim) = ConcreteRNumber(sim.model.FT(Laddie._primal(sim.clock.dt)))
 # One leapfrog step, with the output accumulation when `acc` is not empty:
 # `time_step!` without the clock, then `_accum!` without its host counters.  `dt` is
 # traced, so that an adaptive dt change does not recompile; the clock stays on the host.
-function _step!(model, acc, dt, nu)
-    Laddie._step_model!(model, dt, nu)
+function _step!(model, acc, dt)
+    Laddie._step_model!(model, dt)
     Laddie._accum_fields!(acc, model, dt)
     return nothing
 end
@@ -378,19 +374,19 @@ const NATIVE_UNROLL = Ref(4)
 _unroll(fusion) = fusion === :native ? NATIVE_UNROLL[] : 1
 
 # `checkpointing` only shapes the reverse pass of Enzyme; see `integrate!`.
-function _steps!(model, acc, dt, n, nu, unroll = 1; checkpointing = false)
+function _steps!(model, acc, dt, n, unroll = 1; checkpointing = false)
     if unroll > 1
         @trace track_numbers = false for _ = 1:(n ÷ unroll)
             for _ = 1:unroll
-                _step!(model, acc, dt, nu)
+                _step!(model, acc, dt)
             end
         end
         @trace track_numbers = false for _ = 1:(n % unroll)
-            _step!(model, acc, dt, nu)
+            _step!(model, acc, dt)
         end
     else
         @trace track_numbers = false checkpointing = checkpointing for _ = 1:n
-            _step!(model, acc, dt, nu)
+            _step!(model, acc, dt)
         end
     end
     return nothing
@@ -402,11 +398,10 @@ function Laddie._advance_batch!(exec::ReactantExecution, sim, n, io_on)
     acc = sim.io.acc   # empty without output
     dt = _dt(sim)
     nn = ConcreteRNumber(n)
-    nu = sim.nu   # captured by value: Reactant traces a closure's captured variables
     unroll = _unroll(exec.fusion)
     prog = _program(exec, :steps) do
         _compile(
-            (model, acc, dt, n) -> _steps!(model, acc, dt, n, nu, unroll),
+            (model, acc, dt, n) -> _steps!(model, acc, dt, n, unroll),
             exec,
             sim.model,
             acc,
@@ -424,10 +419,10 @@ function Laddie._advance_batch!(exec::ReactantExecution, sim, n, io_on)
 end
 
 # Re-bootstrap after a dt change, as the native path does.
-function Laddie._rebootstrap_leapfrog!(exec::ReactantExecution, sim)
+function Laddie._rebootstrap!(exec::ReactantExecution, sim::Laddie.Simulation)
     dt = _dt(sim)
     prog = _program(exec, :rebootstrap) do
-        _compile(Laddie._collapse_and_bootstrap!, exec, sim.model, dt)
+        _compile(Laddie._rebootstrap!, exec, sim.model, dt)
     end
     prog(sim.model, dt)
     return

@@ -155,7 +155,7 @@ save(joinpath(ASSETS, "jesse-forcing.png"), fig)
 #     `laddie_viscosity` (`Ah` in Table A1, 10) is the coefficient of that parameterisation in the
 #     interior — not a viscosity in m² s⁻¹ — but v2's *wall* term uses the same number as a
 #     plain viscosity, which is `A_h` here;
-#   * [`TruncatedDepthFrontPressure`](@ref): v2's pressure gradient at the ice front;
+#   * [`ZeroExteriorFrontPressure`](@ref): v2's pressure gradient at the ice front;
 #   * [`ClampDensityConvection`](@ref): v2's only convection treatment, a buoyancy floor;
 #   * `max_detrainment`: v2 hard-codes a 1e-3 m s⁻¹ cap (`laddie_physics.f90`), and unlike
 #     v1's 0.5 it binds.
@@ -179,7 +179,7 @@ params = Params(; FT,
     melting = UStarGamTMelting(3.0e-2),
     entrainment = GasparEntrainment(; mu = 2.5, drho_floor = 0.005 / rho0, max_detrainment = 1e-3),
     lateral_viscosity = NonlinearLateralViscosity(10.0),
-    front_pressure = TruncatedDepthFrontPressure(),
+    front_pressure = ZeroExteriorFrontPressure(),
     convection = ClampDensityConvection(0.005),
     coriolis = CoriolisParameter0D(-1.37e-4),
     A_h = 10.0,                         # the wall term of v2's viscosity

@@ -962,7 +962,7 @@ end
 function _restart_leapfrog!(sim, exact::Bool)
     m = sim.model
     if exact
-        step_secondary_fields!(m, sim.clock.dt)
+        step_secondary_fields!(m, sim.clock.dt + sim.clock.dt)
     else
         _bootstrap!(m, sim.clock.dt; _nan_check(sim)...)
     end

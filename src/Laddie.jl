@@ -42,6 +42,7 @@ include("simulation/simulation.jl")
 
 include("physics/secondary_fields.jl")
 include("numerics/leapfrog.jl")
+include("numerics/fbrk3.jl")
 include("numerics/stencils.jl")
 include("utils/backend.jl")
 include("utils/diagnostics.jl")
@@ -116,7 +117,7 @@ export AbstractLaplacianWeights, PresentLaplacianWeights, PastLaplacianWeights
 export AbstractFrontPressure, ZeroGradientFrontPressure, ZeroExteriorFrontPressure, V1FrontPressure
 export AbstractIceSlope, CentredIceSlope, MaskedIceSlope
 export AbstractTimeStepper, FixedTimeStepper, AdaptiveTimeStepper
-export AbstractIntegrator, LeapfrogIntegrator
+export AbstractIntegrator, LeapfrogIntegrator, FBRK3Integrator, default_cfl_target
 export AbstractCFL, ConservativeCFL, ExactCFL
 export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateSimulationEnd
 export AbstractOceanForcing, OceanForcing1D, OceanForcing2D, PerBasinOceanForcing1D, RampedOceanForcing,

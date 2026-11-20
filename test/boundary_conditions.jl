@@ -285,7 +285,7 @@ end
     # RelaxToAmbientConvection is the same sink applied gradually, so conv2 is gated too.
     m_rlx, _, _ = destabilize(RelaxToAmbientConvection(FT(10000.0)))
     Laddie.convection!(m_rlx.model)
-    Laddie.precompute_integration_terms!(m_rlx.model, m_rlx.clock.dt)
+    Laddie.precompute_integration_terms!(m_rlx.model, m_rlx.model.H.present, 2 * m_rlx.clock.dt)
     @test all(m_rlx.model.conv2[gap_ix] .== 0)
     @test all(m_rlx.model.conv2[shelf] .> 0)
 

@@ -5,14 +5,15 @@
 # (frazil.jl), `step_entrainment!` (entrainment.jl).  The friction velocity, which
 # the melt and entrainment schemes share, is here.
 
-# `dt` is the base time step; only the `ent2` top-up in `step_entrainment!` needs it.
-function step_secondary_fields!(m, dt)
+# `span` is the time the next step covers (2·dt in the leapfrog, the stage span in
+# FB-RK3); only the preventive bounds on H in `step_entrainment!` need it.
+function step_secondary_fields!(m, span)
     ambient_fields!(m)
     density!(m)
     convection!(m)
     melt!(m)
     frazil!(m)
-    step_entrainment!(m, dt)
+    step_entrainment!(m, span)
     return
 end
 

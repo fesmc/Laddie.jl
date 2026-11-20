@@ -111,6 +111,18 @@ _float64(x) = Float64(_primal(x))
     @inbounds out[i, j] = a[i, j] * b[i, j]
 end
 
+# `out = 0` everywhere.
+@kernel function _zero_kernel!(out)
+    i, j = @index(Global, NTuple)
+    @inbounds out[i, j] = zero(eltype(out))
+end
+
+# `out = a` everywhere.
+@kernel function _copy_kernel!(out, @Const(a))
+    i, j = @index(Global, NTuple)
+    @inbounds out[i, j] = a[i, j]
+end
+
 # ============================================================================
 # Host-side interpolation
 # ============================================================================

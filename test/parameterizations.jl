@@ -288,7 +288,7 @@ end
         Laddie.leapfrog_step!(mm, dt, 2)
         with = map(copy, (H = mm.H.future, U = mm.U.future, T = mm.T.future, S = mm.S.future))
         fill!(mm.frazil, 0)
-        Laddie.step_entrainment!(mm, dt)
+        Laddie.step_entrainment!(mm, 2dt)
         Laddie.leapfrog_step!(mm, dt, 2)
 
         # Water leaves the layer ...

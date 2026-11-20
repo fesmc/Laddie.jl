@@ -169,7 +169,7 @@ Simulation
 │   │   ├── coriolis                    #   AbstractCoriolisParameter
 │   │   ├── ice_slope                   #   MaskedIceSlope (default) / CentredIceSlope
 │   │   ├── kinks                       #   AbstractKinks (ExactKinks / SmoothKinks)
-│   │   └── integrator                  #   AbstractIntegrator (LeapfrogIntegrator(nu))
+│   │   └── integrator                  #   AbstractIntegrator (LeapfrogIntegrator(nu) / FBRK3Integrator)
 │   ├── boundary :: BoundaryConditions  # open_ocean, grounding_line_slip, land_slip, gaps, wall_advection
 │   └── forcing :: CavityForcing        # ocean (ambient T/S profiles), ice (ice-base temperature)
 ├── clock :: Clock                      # time, iteration, dt
@@ -231,6 +231,8 @@ _step_model!(m, dt)
 └── apply_robert_asselin_filter!    filter present (coefficient ν of the integrator), then refresh density and convection
 ```
 
+- `FBRK3Integrator` (`src/numerics/fbrk3.jl`) runs three stages of the same core (`_step_fields!`), each
+  after `step_secondary_fields!` on the stage level, with the past level fixed at qⁿ; no filter, no bootstrap
 - The `Simulation` constructor bootstraps the leapfrog with one forward step (`_bootstrap!`,
   `leapfrog_step!(m, dt, 1)`); so does a dt change under `AdaptiveTimeStepper` (`_rebootstrap!`) and a restart
 - `adv`, `lap` and `Hq` in `Cache` are shared work arrays: U, V, T and S are stepped one after another and

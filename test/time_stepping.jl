@@ -64,6 +64,42 @@ end
     @test_throws MethodError Simulation(s1.model; nu = 0.8)
 end
 
+@testset "Integrator: FBRK3Integrator" begin
+    # Host-side checks: β in [0, 1], and the settings the stages need.
+    @test FBRK3Integrator() == FBRK3Integrator(0.5, 0.5, 0.344)
+    @test_throws ArgumentError FBRK3Integrator(; beta3 = 1.5)
+    @test_throws ArgumentError Params(; integrator = FBRK3Integrator())   # PastClosureLevel
+    present = PresentClosureLevel()
+    @test_throws ArgumentError Params(; integrator = FBRK3Integrator(), closure_level = present,
+                                      tracer_form = AdvectiveTracerForm())
+    @test_throws ArgumentError Params(; integrator = FBRK3Integrator(), closure_level = present,
+                                      momentum_form = AdvectiveMomentumForm())
+    p_fb = Params(; FT, integrator = FBRK3Integrator(), closure_level = present)
+    @test p_fb.integrator isa FBRK3Integrator{FT}
+
+    # The CFL setpoint follows the integrator unless it is given.
+    @test default_cfl_target(FBRK3Integrator()) == 0.4 && default_cfl_target(LeapfrogIntegrator()) == 0.3
+    s_fb = build_isomip(CPU(); FT, nx = 20, ny = 10, params = p_fb, time_stepper = AdaptiveTimeStepper())
+    s_lf = build_isomip(CPU(); FT, nx = 20, ny = 10, time_stepper = AdaptiveTimeStepper())
+    @test s_fb.time_stepper.cfl_target == FT(0.4) && s_lf.time_stepper.cfl_target == FT(0.3)
+    @test build_isomip(CPU(); FT, nx = 20, ny = 10, params = p_fb,
+                       time_stepper = AdaptiveTimeStepper(; cfl_target = 0.25)).time_stepper.cfl_target == FT(0.25)
+
+    # A step leaves `past` and `present` equal; the run stays close to the leapfrog's.
+    p_lf = Params(; FT, closure_level = present)
+    sim_fb = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p_fb, dt = 120.0)
+    sim_lf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p_lf, dt = 120.0)
+    time_step!(sim_fb)
+    @test all(v -> v.past == v.present, Laddie._prognostics(sim_fb.model))
+    run!(sim_fb; days = 2.0, verbose = false)
+    run!(sim_lf; days = 2.0, verbose = false)
+    @test all(isfinite, sim_fb.model.H.present) && all(isfinite, sim_fb.model.melt)
+    @test meltstats(sim_fb).mean_melt ≈ meltstats(sim_lf).mean_melt rtol = 0.01
+    # dt changes under the controller need no bootstrap.
+    run!(s_fb; days = 1.0, verbose = false)
+    @test all(isfinite, s_fb.model.H.present)
+end
+
 @testset "run! advances model state" begin
     m = build_isomip(CPU(); nx=20, ny=10, isomipcond=:warm)
     H0 = copy(m.model.H.present)
@@ -133,7 +169,9 @@ end
     # Predictive, asymmetric controller arithmetic.  Defaults: cfl_target =
     # 0.3, q = 1, max_growth = 1.1, grow_hyst = 0.8, dt ∈ [1, 1000].
     # The hysteresis band is [grow_hyst*target, target] = [0.24, 0.3].
-    ts = AdaptiveTimeStepper()
+    # The setpoint is left unset and filled from the integrator, as `Simulation` does.
+    @test AdaptiveTimeStepper().cfl_target === nothing
+    ts = Laddie._with_cfl_target(AdaptiveTimeStepper(), LeapfrogIntegrator())
     @test ts.cfl_target == 0.3
     @test Laddie._controller_dt(ts, 210.0, 1.0;  allow_grow = true)  ≈ 63.0         # above target → shrink to target (q=1)
     @test Laddie._controller_dt(ts, 210.0, 0.45; allow_grow = true)  ≈ 140.0        # above target → shrink

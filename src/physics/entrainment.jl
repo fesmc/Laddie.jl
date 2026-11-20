@@ -133,13 +133,13 @@ $(TYPEDSIGNATURES)
 Compute entrainment/detrainment rates and assemble the net entrainment
 `m.nentr = entr + ent2 - detr` that enters the thickness and tracer equations.
 `ent2` is the extra entrainment that keeps the first guess of `H` above `H_min`, and `detr_cap`
-the detrainment that brings it down to `Params.max_layer_thickness`, both from `H.past` before
-the step (LADDIE v1 and v2). `detr_cap` leaves at the layer's own T, S and velocity.
+the detrainment that brings it down to `Params.max_layer_thickness`, both from `H.past` over the
+time `span` of the next step (2Δt in the leapfrog; LADDIE v1 and v2). `detr_cap` leaves at the
+layer's own T, S and velocity.
 """
-function step_entrainment!(m, dt)
+function step_entrainment!(m, span)
     entrainment!(m, m.entrainment)
     upwind_advection_T(m.convH, m, m.H.present)
-    FT = m.FT
     launch!(
         _net_entrainment_kernel!,
         m.ent2,
@@ -157,7 +157,7 @@ function step_entrainment!(m, dt)
         m.params.max_layer_thickness,
         m.params.kinks,
         m.H_min,
-        FT(2) * dt,
+        span,
     )
     return
 end

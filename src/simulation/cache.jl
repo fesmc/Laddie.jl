@@ -53,6 +53,8 @@ mutable struct Cache{A<:AbstractMatrix,GamT,Conv2,Frz,PM,Gap}
     dHdt::A
     "product `H * drho` read by the momentum equations (m)"
     Hdrho::A
+    "thickness of the pressure and Coriolis terms of the momentum equations under `FBRK3Integrator`, a blend of the stage levels (m)"
+    Hfb::A
     "relaxation rate toward ambient under `RelaxToAmbientConvection` (a field), else an unused scalar"
     conv2::Conv2
     "frazil-ice formation rate under `RelaxedFrazilIce` (m s⁻¹, freshwater equivalent; a field), else zero as a scalar"

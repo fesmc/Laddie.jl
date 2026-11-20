@@ -287,7 +287,7 @@ const SCHEDULE_PROGRAMS = Dict{Any,Any}()
 function Laddie.adaptive_schedule(model::Model, dt; days, stepper = Laddie.AdaptiveTimeStepper(),
                                   cfl = Laddie.ExactCFL(), maxsegments = 10_000)
     FT = model.FT
-    ts = Laddie._promote_param(stepper, FT)
+    ts = Laddie._promote_param(Laddie._with_cfl_target(stepper, model.params.integrator), FT)
     key = (typeof(model), size(model.melt), ts, cfl, model.params.integrator, maxsegments)
     dt0, tend = ConcreteRNumber(FT(dt)), ConcreteRNumber(FT(days * 86400))
     prog = get!(SCHEDULE_PROGRAMS, key) do

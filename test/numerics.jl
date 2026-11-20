@@ -38,7 +38,7 @@
         Laddie.advance_leapfrog!(m.model, m.clock.dt)
         dt = 2 * m.clock.dt
         Laddie.step_thickness!(m.model, dt)
-        Laddie.precompute_integration_terms!(m.model, m.clock.dt)
+        Laddie.precompute_integration_terms!(m.model, m.model.H.present, dt)
 
         rhs_U =    u_advection(m.model) .-
                    u_pressure_depth(m.model)     .+ u_pressure_slope(m.model) .-

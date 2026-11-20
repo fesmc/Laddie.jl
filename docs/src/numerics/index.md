@@ -23,7 +23,8 @@ gradient-based work; see [Kinks](kinks.md).
 ## Time integration
 
 The prognostic variables advance with a leapfrog scheme and a Robert–Asselin filter
-([`LeapfrogIntegrator`](@ref)), at a constant step or one set by a CFL controller; see
+([`LeapfrogIntegrator`](@ref), the default) or a forward–backward Runge–Kutta scheme
+([`FBRK3Integrator`](@ref)), at a constant step or one set by a CFL controller; see
 [Time stepping](time_stepping.md).
 
 ## Domain, boundaries, and masks

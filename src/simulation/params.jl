@@ -213,5 +213,6 @@ function Params(; FT = Float64, kwargs...)
         k in names || throw(ArgumentError("Params has no field `$k`"))
     end
     p = merge(_param_defaults(), values(kwargs))
+    _check_integrator(p.integrator, p)
     return Params(map(fn -> _param_value(p[fn], FT), names)...)
 end

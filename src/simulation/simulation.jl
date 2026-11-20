@@ -241,7 +241,7 @@ function Simulation(
     sim = Simulation(
         model,
         Clock(0.0, 0, FT(dt)),
-        _promote_param(time_stepper, FT),
+        _promote_param(_with_cfl_target(time_stepper, model.params.integrator), FT),
         cfl,
         stop,
         output,

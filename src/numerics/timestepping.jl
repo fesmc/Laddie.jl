@@ -35,9 +35,9 @@ Select via `Simulation(model; time_stepper = AdaptiveTimeStepper(; cfl_target = 
 # Fields
 $(TYPEDFIELDS)
 """
-@kwdef struct AdaptiveTimeStepper{FT,I} <: AbstractTimeStepper
-    "CFL setpoint the controller aims for (default `0.3`)"
-    cfl_target::FT = 0.3
+@kwdef struct AdaptiveTimeStepper{FT,I,C} <: AbstractTimeStepper
+    "CFL setpoint the controller aims for (default [`default_cfl_target`](@ref) of the integrator: `0.3` under leapfrog, `0.4` under FB-RK3)"
+    cfl_target::C = nothing
     "response exponent: `1` is CFL-exact, `< 1` damps, `> 1` overshoots (default `1.0`)"
     q::FT = 1.0
     "largest dt increase per adjustment, e.g. `1.1` = +10 % (default `1.1`)"
@@ -50,14 +50,29 @@ $(TYPEDFIELDS)
     dtmin::FT = 1.0
     "upper clamp on dt (s, default `1000.0`)"
     dtmax::FT = 1000.0
-    AdaptiveTimeStepper{FT,I}(args...) where {FT,I} = new{FT,I}(args...)
+    AdaptiveTimeStepper{FT,I,C}(args...) where {FT,I,C} = new{FT,I,C}(args...)
 end
 
 # The float fields are promoted to one type, so `AdaptiveTimeStepper(; dtmax = 1000)` works.
+# `cfl_target` stays `nothing` until the `Simulation` sets it from the integrator
+# (`_with_cfl_target`).
 function AdaptiveTimeStepper(cfl_target, q, max_growth, grow_hyst, ncheck, dtmin, dtmax)
-    f = promote(map(float, (cfl_target, q, max_growth, grow_hyst, dtmin, dtmax))...)
-    return AdaptiveTimeStepper{eltype(f),typeof(ncheck)}(f[1:4]..., ncheck, f[5:6]...)
+    f = promote(map(float, (q, max_growth, grow_hyst, dtmin, dtmax))...)
+    FT = promote_type(eltype(f), _target_type(cfl_target))
+    target = _float_or_nothing(cfl_target, FT)
+    f = map(FT, f)
+    return AdaptiveTimeStepper{FT,typeof(ncheck),typeof(target)}(target, f[1:3]..., ncheck, f[4:5]...)
 end
+_target_type(::Nothing) = Union{}
+_target_type(x) = typeof(float(x))
+_float_or_nothing(::Nothing, _) = nothing
+_float_or_nothing(x, FT) = FT(x)
+
+# The stepper with its CFL setpoint filled in from the integrator when it was left unset.
+_with_cfl_target(ts, integrator) = ts
+_with_cfl_target(ts::AdaptiveTimeStepper{FT,I,Nothing}, integrator) where {FT,I} =
+    AdaptiveTimeStepper(default_cfl_target(integrator), ts.q, ts.max_growth, ts.grow_hyst, ts.ncheck,
+                        ts.dtmin, ts.dtmax)
 
 # (Float-type promotion of the stepper to the model's FT is handled generically by
 # `_promote_param` in params.jl, called from the `Simulation` constructor.)

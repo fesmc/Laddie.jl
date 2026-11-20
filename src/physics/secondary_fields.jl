@@ -1,31 +1,31 @@
 # The secondary fields of the layer, updated from the prognostic levels before each
 # step, in the order of their inputs.  Each process lives with its scheme types:
-# `update_ambient_fields!` (forcing.jl), `update_density!` (eos.jl),
-# `update_convection!` (convection.jl), `update_melt!` (melting.jl), `update_frazil!`
-# (frazil.jl), `update_entrainment!` (entrainment.jl).  The friction velocity, which
+# `ambient_fields!` (forcing.jl), `density!` (eos.jl),
+# `convection!` (convection.jl), `melt!` (melting.jl), `frazil!`
+# (frazil.jl), `step_entrainment!` (entrainment.jl).  The friction velocity, which
 # the melt and entrainment schemes share, is here.
 
-# `dt` is the base time step; only the `ent2` top-up in `update_entrainment!` needs it.
-function update_secondary_fields!(m, dt)
-    update_ambient_fields!(m)
-    update_density!(m)
-    update_convection!(m)
-    update_melt!(m)
-    update_frazil!(m)
-    update_entrainment!(m, dt)
+# `dt` is the base time step; only the `ent2` top-up in `step_entrainment!` needs it.
+function step_secondary_fields!(m, dt)
+    ambient_fields!(m)
+    density!(m)
+    convection!(m)
+    melt!(m)
+    frazil!(m)
+    step_entrainment!(m, dt)
     return
 end
 
 """
-    update_ustar!(m)
+    ustar!(m)
 
 Friction velocity on T-points, `m.ustar = √(C_d_top (Ū² + V̄² + u_tide²))`, with the velocities
 averaged onto the T-point at the level of `Params.closure_level`. A melting scheme calls it,
 since the entrainment needs it too.
 """
-function update_ustar! end
+function ustar! end
 
-function update_ustar!(m)
+function ustar!(m)
     launch_interior!(
         _ustar_kernel!,
         m.ustar,

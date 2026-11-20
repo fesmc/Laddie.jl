@@ -2,7 +2,7 @@
 
 - **Type:** open question
 - **Status:** unchanged since v1
-- **Code:** `update_entrainment!` and `_net_entrainment_kernel!` in `src/physics/entrainment.jl` (`FT(2) * dt`)
+- **Code:** `step_entrainment!` and `_net_entrainment_kernel!` in `src/physics/entrainment.jl` (`FT(2) * dt`)
 
 ## Question
 

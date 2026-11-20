@@ -15,8 +15,8 @@ struct ConstantMelt <: AbstractMelting
     rate::Float64   # m s⁻¹, freshwater equivalent
 end
 
-function Laddie.update_melt!(m, s::ConstantMelt)
-    Laddie.update_ustar!(m)          # u★ also drives the entrainment
+function Laddie.melt!(m, s::ConstantMelt)
+    Laddie.ustar!(m)          # u★ also drives the entrainment
     m.melt .= s.rate .* m.imask
     m.Tb .= m.l1 .* m.S.present .+ m.l2 .+ m.l3 .* m.z_draft
     return nothing
@@ -26,7 +26,7 @@ sim = build_isomip(; params = Params(; melting = ConstantMelt(10 / 31_557_600)))
 ```
 
 These methods are public and exported, so a scheme defined outside Laddie.jl adds a
-method to them (`Laddie.update_melt!` above, or after `import Laddie: update_melt!`). Read an
+method to them (`Laddie.melt!` above, or after `import Laddie: melt!`). Read an
 existing scheme of the family first: the file named in the table holds its methods, with their signatures and the
 fields of the model they read and write.
 
@@ -34,10 +34,10 @@ fields of the model they read and write.
 
 | abstract type | slot | methods to implement for your type | file |
 |---|---|---|---|
-| [`AbstractEntrainment`](@ref) | `Params(; entrainment)` | `compute_entrainment!(m, scheme)` | `physics/entrainment.jl` |
-| [`AbstractMelting`](@ref) | `Params(; melting)` | `update_melt!(m, scheme)`, which also calls `update_ustar!(m)` | `physics/melting.jl` |
-| [`AbstractConvection`](@ref) | `Params(; convection)` | `update_convection!(m, scheme)`; `update_convective_relaxation!` for a relaxation rate (`numerics/leapfrog.jl`) | `physics/convection.jl` |
-| [`AbstractFrazilIce`](@ref) | `Params(; frazil_ice)` | `update_frazil!(m, scheme)` | `physics/frazil.jl` |
+| [`AbstractEntrainment`](@ref) | `Params(; entrainment)` | `entrainment!(m, scheme)` | `physics/entrainment.jl` |
+| [`AbstractMelting`](@ref) | `Params(; melting)` | `melt!(m, scheme)`, which also calls `ustar!(m)` | `physics/melting.jl` |
+| [`AbstractConvection`](@ref) | `Params(; convection)` | `convection!(m, scheme)`; `convective_relaxation!` for a relaxation rate (`numerics/leapfrog.jl`) | `physics/convection.jl` |
+| [`AbstractFrazilIce`](@ref) | `Params(; frazil_ice)` | `frazil!(m, scheme)` | `physics/frazil.jl` |
 | [`AbstractIceConduction`](@ref) | `Params(; ice_conduction)` | `conduction_coefficients` | `physics/conduction.jl` |
 | [`AbstractEOS`](@ref) | `Params(; equation_of_state)` | `eos_coefficients` | `physics/eos.jl` |
 | [`AbstractMaxLayerThickness`](@ref) | `Params(; max_layer_thickness)` | `cap_layer_thickness` | `physics/max_layer_thickness.jl` |
@@ -57,7 +57,7 @@ fields of the model they read and write.
 | [`AbstractSlipAtLand`](@ref) | `BoundaryConditions(; land_slip)` | `slip_factor` | `bcs/walls.jl` |
 | [`AbstractWallAdvection`](@ref) | `BoundaryConditions(; wall_advection)` | `advection_slips` | `bcs/walls.jl` |
 | [`AbstractGapsBC`](@ref) | `BoundaryConditions(; gaps)` | `gaps_mask` | `bcs/gaps.jl` |
-| [`AbstractOceanForcing`](@ref) | `CavityForcing(ocean, ice)` | `update_ambient_fields!(m, forcing)`, writing `m.Ta` and `m.Sa` | `bcs/forcing.jl` |
+| [`AbstractOceanForcing`](@ref) | `CavityForcing(ocean, ice)` | `ambient_fields!(m, forcing)`, writing `m.Ta` and `m.Sa` | `bcs/forcing.jl` |
 | [`AbstractIceForcing`](@ref) | `CavityForcing(ocean, ice)` | a field `T_ice_farfield` | `bcs/forcing.jl` |
 | [`AbstractTimeStepper`](@ref) | `Simulation(model; time_stepper)` | `init_adaptive_dt!`, `adapt_dt!` | `numerics/timestepping.jl` |
 | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `cfl_rate`, `cfl_reductions` | `numerics/timestepping.jl` |
@@ -88,12 +88,12 @@ fields of the model they read and write.
 The methods of the table, grouped by family, and the helpers a new scheme calls.
 
 ```@docs
-compute_entrainment!
-update_melt!
-update_ustar!
-update_convection!
-update_convective_relaxation!
-update_frazil!
+entrainment!
+melt!
+ustar!
+convection!
+convective_relaxation!
+frazil!
 conduction_coefficients
 eos_coefficients
 cap_layer_thickness
@@ -125,7 +125,7 @@ clip_front_inflow!
 slip_factor
 advection_slips
 gaps_mask
-update_ambient_fields!
+ambient_fields!
 init_adaptive_dt!
 adapt_dt!
 cfl_reductions

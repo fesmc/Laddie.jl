@@ -100,7 +100,7 @@ Base.show(io::IO, e::RoquetEOS) =
     print(io, "RoquetEOS(Cb = $(e.Cb), Theta0 = $(e.Theta0), Th = $(e.Th), b0 = $(e.b0))")
 
 # ============================================================================
-# Density contrast: the pointwise pieces, `update_density!` and its kernel
+# Density contrast: the pointwise pieces, `density!` and its kernel
 # ============================================================================
 
 # Point-wise equation-of-state and freezing-point pieces shared by several kernels.
@@ -140,7 +140,7 @@ Base.show(io::IO, e::RoquetEOS) =
 end
 
 "Reduced (dimensionless) density `δρ = Δρ_a/ρ₀` of the ambient water against the layer, `β(S_a − S) − α(T_a − T)` for [`LinearEOS`](@ref) (Lambert et al. 2023, Eqs. 6–7)."
-update_density!(m) = launch!(
+density!(m) = launch!(
     _density_kernel!,
     m.drho,
     m.Sa,

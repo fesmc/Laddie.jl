@@ -80,7 +80,7 @@ end
 # A scheme-dependent slot is a field by default, so that a scheme defined outside
 # Laddie can write it; the schemes that never do hold a scalar instead.  Every melt
 # scheme but `FixedGamTMelting` sets per-cell transfer velocities (`PrescribedMelting`
-# reports an equivalent one, see `update_melt!`).
+# reports an equivalent one, see `melt!`).
 _gamT_init(FT, nx, ny, ::Type) = zeros(FT, nx, ny)
 _gamT_init(FT, _, _, ::Type{<:FixedGamTMelting}) = zero(FT)
 _prescribed_init(FT, _, _, ::Type) = zero(FT)

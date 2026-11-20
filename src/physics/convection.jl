@@ -67,7 +67,7 @@ $(TYPEDFIELDS)
 end
 
 # ============================================================================
-# `update_convection!` and its kernels
+# `convection!` and its kernels
 # ============================================================================
 
 """
@@ -78,7 +78,7 @@ so the plume remains lighter than ambient.
 
 Applies in gap cells too, as LADDIE v2's floor does over its whole active domain.
 """
-function update_convection!(m, cs::ClampDensityConvection)
+function convection!(m, cs::ClampDensityConvection)
     thr = cs.d_rho_min / m.rho0_seawater
     launch!(_clamp_density_kernel!, m.convective_instability, m.drho, thr, m.params.kinks)
     return nothing
@@ -107,7 +107,7 @@ values so the density remains stable.
 Restricted to ice-covered cells (`imask`): in a gap, ambient is surface water and the reset would
 rebuild the sink [`ConnectedGapsBC`](@ref) removes (see [Convection](@ref)).
 """
-function update_convection!(m, cs::ResetToAmbientConvection)
+function convection!(m, cs::ResetToAmbientConvection)
     thr = cs.d_rho_min / m.rho0_seawater
     eos = eos_coefficients(m)
     S_adj = cs.d_rho_min / (m.rho0_seawater * eos.beta)
@@ -173,7 +173,7 @@ tracer time step via `conv2`.
 
 Restricted to ice-covered cells (`imask`), as [`ResetToAmbientConvection`](@ref).
 """
-function update_convection!(m, ::RelaxToAmbientConvection)
+function convection!(m, ::RelaxToAmbientConvection)
     launch!(_flag_unstable_ice_kernel!, m.convective_instability, m.drho, m.imask)
 end
 
@@ -184,4 +184,4 @@ end
         ifelse((drho[i, j] < 0) & (imask[i, j] > 0), one(FT), zero(FT))
 end
 
-update_convection!(m) = update_convection!(m, m.convection)
+convection!(m) = convection!(m, m.convection)

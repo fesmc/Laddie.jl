@@ -175,7 +175,7 @@ end
     @test all(isfinite, m.T.present) && all(isfinite, m.H.present)
     # Tb is the local freezing point, and the temperature equation's
     # exchange term carries exactly the heat the prescribed melt needs.
-    Laddie.update_melt!(m)
+    Laddie.melt!(m)
     @test m.Tb[ice] ≈ (m.l1 .* m.S.present .+ m.l2 .+ m.l3 .* m.z_draft)[ice]
     heat = @. m.melt * (m.L - m.c_i * (m.T_ice_farfield - m.Tb)) / m.c_p
     @test (m.gamT .* (m.T.present .- m.Tb))[ice] ≈ heat[ice]
@@ -189,7 +189,7 @@ end
     M = fill(2.0, 22, 12); M[12:end, :] .= 8.0
     sim2 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                         params = Params(; FT, melting = PrescribedMelting(M)))
-    Laddie.update_melt!(sim2.model)
+    Laddie.melt!(sim2.model)
     m2 = sim2.model
     @test all(m2.melt[ice] .≈ (M ./ spy)[ice])
     @test_throws ArgumentError build_isomip(CPU(); FT, nx = 20, ny = 10,
@@ -288,7 +288,7 @@ end
         Laddie.leapfrog_step!(mm, dt, 2)
         with = map(copy, (H = mm.H.future, U = mm.U.future, T = mm.T.future, S = mm.S.future))
         fill!(mm.frazil, 0)
-        Laddie.update_entrainment!(mm, dt)
+        Laddie.step_entrainment!(mm, dt)
         Laddie.leapfrog_step!(mm, dt, 2)
 
         # Water leaves the layer ...
@@ -570,7 +570,7 @@ end
         m = sim.model
         Tf = @. m.l1 * m.S.present + m.l2 + m.l3 * m.z_draft
         supercooled && (m.T.present .= ifelse.(m.imask .> 0, Tf .- 0.05, m.T.present))
-        Laddie.update_melt!(m)
+        Laddie.melt!(m)
         ice = m.imask .> 0
         ci = @. m.c_i * ifelse(m.T.present > Tf, fmelt, ffreeze)
         Hi = @. -m.z_draft * m.rho0_seawater / m.rho_ice
@@ -617,7 +617,7 @@ end
                                          ice_conduction = c))
         end
         m = sim.model
-        Laddie.update_melt!(m)
+        Laddie.melt!(m)
         Tf = @. m.l1 * m.S.present + m.l2 + m.l3 * m.z_draft
         ci = @. m.c_i * ifelse(m.T.present > Tf, f1, f2)
         Hi = @. -m.z_draft * m.rho0_seawater / m.rho_ice
@@ -679,7 +679,7 @@ end
         run!(sim; days = 0.2, verbose = false)
         Tf = @. m.l1 * m.S.present + m.l2 + m.l3 * m.z_draft
         supercooled && (m.T.present .= ifelse.(m.imask .> 0, Tf .- 0.05, m.T.present))
-        Laddie.update_melt!(m)
+        Laddie.melt!(m)
         m, Tf
     end
 
@@ -769,12 +769,12 @@ end
     @test Laddie._drho(34.7, 34.4, 0.5, -1.0, 500.0, c) ≈ 1.38e-4 rtol = 5e-3
     @test Laddie._drho(34.7, 34.4, 0.5, -1.0, 500.0, Laddie.eos_coefficients(m_lin)) ≈ 1.79e-4 rtol = 5e-3
 
-    # `update_density!` evaluates Roquet's polynomial at the layer mid-depth: independent check.
+    # `density!` evaluates Roquet's polynomial at the layer mid-depth: independent check.
     ρp(T, S, Z) = (-0.011 / 2 * (T + 4.5)^2 - 2.5e-5 * Z * T + 0.77 * S) / ρ0
     sim = mk(equation_of_state = eos)
     run!(sim; days = 0.2, verbose = false)
     m = sim.model
-    Laddie.update_density!(m)
+    Laddie.density!(m)
     Z = @. -m.z_draft + m.H.present / 2
     ref = @. ρp(m.Ta, m.Sa, Z) - ρp(m.T.present, m.S.present, Z)
     act = m.tmask .> 0
@@ -782,7 +782,7 @@ end
     @test all(iszero, m.drho[.!act])
     # A LinearEOS `alpha` moves the run; `Params` no longer has the constants.
     m1 = mk().model; m2 = mk(equation_of_state = LinearEOS(; alpha = 2 * lin.alpha)).model
-    Laddie.update_density!(m1); Laddie.update_density!(m2)
+    Laddie.density!(m1); Laddie.density!(m2)
     @test m1.drho != m2.drho
     @test !hasfield(Params, :alpha) && !hasfield(Params, :beta)
 
@@ -793,12 +793,12 @@ end
         mm = s.model
         ice = mm.imask .> 0
         mm.S.present .= ifelse.(ice, mm.Sa .+ 0.5, mm.S.present)     # saltier than ambient: unstable
-        Laddie.update_density!(mm)
+        Laddie.density!(mm)
         @test all(<(0), mm.drho[ice])
-        Laddie.update_convection!(mm, mm.convection)
+        Laddie.convection!(mm, mm.convection)
         @test all(mm.convective_instability[ice] .== 1)
         @test mm.drho[ice] ≈ fill(FT(0.005) / mm.rho0_seawater, count(ice)) rtol = 1e-9
-        Laddie.update_density!(mm)
+        Laddie.density!(mm)
         @test mm.drho[ice] ≈ fill(FT(0.005) / mm.rho0_seawater, count(ice)) rtol = 1e-9
     end
 
@@ -880,15 +880,15 @@ end
 struct UserConstantMelt <: AbstractMelting
     rate::Float64   # m s⁻¹
 end
-function Laddie.update_melt!(m, s::UserConstantMelt)
-    Laddie.update_ustar!(m)                       # u★ drives the entrainment too
+function Laddie.melt!(m, s::UserConstantMelt)
+    Laddie.ustar!(m)                       # u★ drives the entrainment too
     m.melt .= s.rate .* m.imask
     m.Tb .= m.l1 .* m.S.present .+ m.l2 .+ m.l3 .* m.z_draft
     return nothing
 end
 
 struct UserNoConvection <: AbstractConvection end
-Laddie.update_convection!(m, ::UserNoConvection) = (fill!(m.convective_instability, 0); nothing)
+Laddie.convection!(m, ::UserNoConvection) = (fill!(m.convective_instability, 0); nothing)
 
 # A forcing's fields are forwarded by the model (`m.T_uniform`), so their names must not
 # be those of other model fields (`T` would clash with the state).
@@ -896,7 +896,7 @@ struct UserUniformOcean <: AbstractOceanForcing
     T_uniform::Float64   # °C
     S_uniform::Float64   # psu
 end
-Laddie.update_ambient_fields!(m, o::UserUniformOcean) = (m.Ta .= o.T_uniform; m.Sa .= o.S_uniform; nothing)
+Laddie.ambient_fields!(m, o::UserUniformOcean) = (m.Ta .= o.T_uniform; m.Sa .= o.S_uniform; nothing)
 
 @testset "User-defined schemes and forcings run" begin
     rate = 10 / 31_557_600                        # 10 m/yr

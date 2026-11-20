@@ -36,7 +36,8 @@ It solves a vertically-averaged approximation of the Navier-Stokes equations in 
 
 - Each exchangeable scheme is a concrete subtype of an abstract scheme type, stored in a slot of `Params`
   (or `BoundaryConditions`, `CavityForcing`)
-- Dispatch on the scheme **at the launch site**: `update_xxx!(model, scheme::SomeScheme)` launches the kernel
+- Dispatch on the scheme **at the launch site**: `process!(model, scheme::SomeScheme)` launches the kernel,
+  named after the process without an `update_`/`compute_` prefix (`melt!`, `entrainment!`)
 - Kernels receive arrays, scalars (or NamedTuples of scalars) and **small scheme structs** for inline
   dispatch of a local operation (`kinks`, `eos`, `tracer_form`, `momentum_form`). Never `Model`, `Params`,
   `Simulation` or another container
@@ -104,6 +105,9 @@ It solves a vertically-averaged approximation of the Navier-Stokes equations in 
 - **Functions**: snake_case — `time_step!`; functions that return values are not PascalCase, except named
   setups that return a configured object like a constructor (`ISOMIPForcing`, `ParamsISOMIPv2`, `SimulationPIGv1`)
 - **Kernels**: underscore prefix and `_kernel!` suffix — `_accum_series_kernel!`
+- **Launchers**: named after the process, without an `update_`/`compute_` prefix — `melt!`, `entrainment!`.
+  A launcher that takes `dt` advances something in time and starts with `step_` — `step_entrainment!`,
+  `step_secondary_fields!`
 - **Scheme types**: a concrete subtype ends with the suffix of its abstract type, the abstract name without
   `Abstract` — `FluxTracerForm <: AbstractTracerForm`, `SinkGapsBC <: AbstractGapsBC`. Prefer renaming the
   abstract type when its suffix is too long to repeat. Exceptions are decided with the human, case by case:
@@ -118,8 +122,8 @@ It solves a vertically-averaged approximation of the Navier-Stokes equations in 
 then containers, then kernels, then the run loop):
 
 - `physics/`: one file per process (`entrainment.jl`, `melting.jl`, `eos.jl`, …), each with one abstract
-  scheme type, its implementations, and the `update_*!` that launches its kernels. `secondary_fields.jl`
-  holds `update_secondary_fields!` (the update order) and the friction velocity the schemes share
+  scheme type, its implementations, and the `process!` that launches its kernels. `secondary_fields.jl`
+  holds `step_secondary_fields!` (the update order) and the friction velocity the schemes share
 - `numerics/`: the leapfrog step (`leapfrog.jl`), stencils, advection and tracer/momentum forms, lateral
   viscosity, kinks, time stepping and the CFL number
 - `bcs/`: boundary conditions (`walls.jl`, `open_ocean.jl`, `gaps.jl`, the `BoundaryConditions`
@@ -215,7 +219,7 @@ batches. `time_step!` sets the forcing time, calls `_step_model!` (`src/numerics
 ```
 _step_model!(m, dt, nu)
 ├── advance_leapfrog!               rotate past ← present ← future, then
-│   └── update_secondary_fields!    (src/physics/) from the present/past levels:
+│   └── step_secondary_fields!    (src/physics/) from the present/past levels:
 │       ambient T/S → density → convection → melt → frazil → entrainment/detrainment
 ├── leapfrog_step!(m, dt, 2)        centred step over 2Δt, writing the future level:
 │   ├── H   step_thickness!, clamp thickness, precompute_integration_terms!
@@ -229,7 +233,7 @@ _step_model!(m, dt, nu)
   `leapfrog_step!(m, dt, 1)`); so does a dt change under `AdaptiveTimeStepper` and a restart
 - `adv`, `lap` and `Hq` in `Cache` are shared work arrays: U, V, T and S are stepped one after another and
   each consumes them before the next one writes them. Do not read them across steps
-- A new process usually enters as an `update_*!` in `update_secondary_fields!` (ordered by its inputs) and
+- A new process usually enters as a `process!` in `step_secondary_fields!` (ordered by its inputs) and
   as a term in the relevant `step_*!` kernel
 
 ## Common Pitfalls

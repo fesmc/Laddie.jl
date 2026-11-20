@@ -24,7 +24,7 @@ end
 # secondary fields and the leapfrog bootstrap step depend on dt, so they are left
 # to the `Simulation` constructor.
 function _initialize_prognostics!(m)
-    update_ambient_fields!(m)
+    ambient_fields!(m)
     for level in (:past, :present, :future)
         setfield!(m.H, level, m.H_init .* m.tmask)
         setfield!(m.T, level, (m.Ta .+ m.dT_init) .* m.tmask)

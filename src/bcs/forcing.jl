@@ -425,7 +425,7 @@ _as_cavity_forcing(f) = throw(
 )
 
 # ============================================================================
-# Ambient T/S at the layer base: `update_ambient_fields!` and its kernels
+# Ambient T/S at the layer base: `ambient_fields!` and its kernels
 # ============================================================================
 
 # The profile levels around the layer base z_draft − H of cell (i, j): the 1-based
@@ -489,16 +489,16 @@ Vertically interpolate the ambient T/S profiles to the depth of each grid cell's
 plume base (z_draft − H), writing results into `m.Ta` and `m.Sa`. This sampling has
 no numbered equation in [Lambert et al. (2023)](@cite lambert_modelling_2023); see `docs/src/physics/equations.md`.
 """
-update_ambient_fields!(m) = update_ambient_fields!(m, m.forcing.ocean)
+ambient_fields!(m) = ambient_fields!(m, m.forcing.ocean)
 
-function update_ambient_fields!(m, o::RampedOceanForcing)
+function ambient_fields!(m, o::RampedOceanForcing)
     from, to = o.from, o.to
     launch!(_ambient_interp_ramp_kernel!, m.Ta, m.Sa, m.z_draft, m.H.present, from.Tz, from.Sz, to.Tz, to.Sz,
             _basin(from), o.weight[], from.z0, from.dz, length(from.z))
     return
 end
 
-function update_ambient_fields!(m, o::AbstractOceanForcing)
+function ambient_fields!(m, o::AbstractOceanForcing)
     launch!(_ambient_interp_kernel!, m.Ta, m.Sa, m.z_draft, m.H.present, o.Tz, o.Sz, _basin(o), o.z0, o.dz, length(o.z))
     return
 end

@@ -2,7 +2,7 @@
 
 - **Type:** open question
 - **Status:** `RelaxToAmbientConvection(3600)` is the default since 2026-11-18 (6fdbc74); `ClampDensityConvection` is LADDIE v2's floor, `ResetToAmbientConvection` LADDIE v1's reset
-- **Code:** `src/physics/convection.jl`; `update_convective_relaxation!` in `src/numerics/leapfrog.jl`
+- **Code:** `src/physics/convection.jl`; `convective_relaxation!` in `src/numerics/leapfrog.jl`
 - **Docs:** `docs/src/physics/convection.md`
 
 ## Question

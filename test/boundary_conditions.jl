@@ -269,13 +269,13 @@ end
         m = build(gappy_mask(), ConnectedGapsBC();
                   params = Params(; FT, convection = scheme))
         m.model.T.present[m.model.tmask .> 0] .-= 5
-        Laddie.update_density!(m.model)
+        Laddie.density!(m.model)
         @test all(m.model.drho[gap_ix] .< 0) && all(m.model.drho[shelf] .< 0)
         return m, copy(m.model.T.present), copy(m.model.S.present)
     end
 
     m_rst, T0, S0 = destabilize(ResetToAmbientConvection(FT(0.005)))
-    Laddie.update_convection!(m_rst.model)
+    Laddie.convection!(m_rst.model)
     @test m_rst.model.T.present[gap_ix] == T0[gap_ix]      # gaps keep their heat ...
     @test m_rst.model.S.present[gap_ix] == S0[gap_ix]
     @test all(m_rst.model.convective_instability[gap_ix] .== 0)        # ... and are never flagged
@@ -284,7 +284,7 @@ end
 
     # RelaxToAmbientConvection is the same sink applied gradually, so conv2 is gated too.
     m_rlx, _, _ = destabilize(RelaxToAmbientConvection(FT(10000.0)))
-    Laddie.update_convection!(m_rlx.model)
+    Laddie.convection!(m_rlx.model)
     Laddie.precompute_integration_terms!(m_rlx.model, m_rlx.clock.dt)
     @test all(m_rlx.model.conv2[gap_ix] .== 0)
     @test all(m_rlx.model.conv2[shelf] .> 0)
@@ -293,7 +293,7 @@ end
     # convection treatment LADDIE v2 also has, and it applies over its whole
     # active domain, gaps included.
     m_cld, _, _ = destabilize(ClampDensityConvection(FT(0.005)))
-    Laddie.update_convection!(m_cld.model)
+    Laddie.convection!(m_cld.model)
     @test all(m_cld.model.drho[gap_ix] .≈ FT(0.005) / m_cld.model.rho0_seawater)
 
     # End-to-end: gap cells really do sit below the reset threshold during a

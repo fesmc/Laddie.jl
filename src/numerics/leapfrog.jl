@@ -17,17 +17,17 @@ end
 # ==================================================================
 
 """
-    update_convective_relaxation!(m, convection)
+    convective_relaxation!(m, convection)
 
 Set the relaxation rate `m.conv2 = [δρ < 0] H/convection_time` on ice-covered cells under
 [`RelaxToAmbientConvection`](@ref); nothing for the other schemes.
 """
-function update_convective_relaxation! end
+function convective_relaxation! end
 
-update_convective_relaxation!(::Any, ::AbstractConvection) = nothing
-function update_convective_relaxation!(m, cs::RelaxToAmbientConvection)
+convective_relaxation!(::Any, ::AbstractConvection) = nothing
+function convective_relaxation!(m, cs::RelaxToAmbientConvection)
     # `imask`, not `tmask`: gap cells are never relaxed towards ambient.  See
-    # `update_convection!(m, ::RelaxToAmbientConvection)`.
+    # `convection!(m, ::RelaxToAmbientConvection)`.
     launch!(
         _relax_conv2_kernel!,
         m.conv2,
@@ -84,7 +84,7 @@ function precompute_integration_terms!(m, dt)
         m.drho,
         dt,
     )
-    update_convective_relaxation!(m, m.convection)
+    convective_relaxation!(m, m.convection)
     return
 end
 
@@ -632,7 +632,7 @@ end
 
 # The upper bound of `max_layer_thickness` (see `cap_layer_thickness`), then the
 # H_min floor, in one pass.  Both are enforced before the step, by `detr_cap` and
-# `ent2` (`update_entrainment!`), so this is a safety net: it binds only where the
+# `ent2` (`step_entrainment!`), so this is a safety net: it binds only where the
 # first guess there misses the stepped H — in the bootstrap step, which spans dt
 # rather than the 2·dt both are computed for, and by rounding.  Under
 # `FluxTracerForm` the tracer step accounts for what it moves (`tracer_update`).
@@ -730,7 +730,7 @@ end
 # initialised model (whose three time levels are identical), and by
 # `init_from_restart!` after loading the saved levels.  Keywords as `leapfrog_step!`.
 function _bootstrap_leapfrog!(m, dt; kwargs...)
-    update_secondary_fields!(m, dt)
+    step_secondary_fields!(m, dt)
     leapfrog_step!(m, dt, 1; kwargs...)
     return
 end
@@ -781,8 +781,8 @@ function apply_robert_asselin_filter!(m, nu)
     # this call is not redundant: under ResetToAmbientConvection it resets the filtered T/S,
     # which become `past`, and for every scheme it is the `drho` and `convective_instability`
     # that the output, the diagnostics and the CFL number read.
-    update_density!(m)
-    update_convection!(m)
+    density!(m)
+    convection!(m)
     return
 end
 
@@ -790,7 +790,7 @@ function advance_leapfrog!(m, dt)
     for var in _prognostics(m)
         rotate!(var)
     end
-    update_secondary_fields!(m, dt)
+    step_secondary_fields!(m, dt)
     return
 end
 

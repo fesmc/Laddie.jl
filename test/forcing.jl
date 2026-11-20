@@ -73,8 +73,8 @@ end
     m1 = mk(-5000.0:1.0:-1.0)
     m2 = mk(-5000.0:2.0:-2.0)
     # Model samples the profile before H is initialised; resample at the layer base.
-    Laddie.update_ambient_fields!(m1)
-    Laddie.update_ambient_fields!(m2)
+    Laddie.ambient_fields!(m1)
+    Laddie.ambient_fields!(m2)
     act = m1.tmask .> 0
     zb = (m1.z_draft .- m1.H.present)[act]
     @test m1.Ta[act] ≈ Tlin.(zb)
@@ -166,7 +166,7 @@ end
     @test size(f.Tz) == (2, length(warm.z))
     @test f.Tz[1, :] ≈ warm.Tz && f.Sz[2, :] ≈ cold.Sz
     m, mw, mc = (Model(grid; forcing = o) for o in (f, warm, cold))
-    foreach(Laddie.update_ambient_fields!, (m, mw, mc))
+    foreach(Laddie.ambient_fields!, (m, mw, mc))
     b = m.basin   # cropped with the grid
     @test size(b) == size(m.Ta)
     @test m.Ta[b .== 1] == mw.Ta[b .== 1] && m.Sa[b .== 1] == mw.Sa[b .== 1]
@@ -203,8 +203,8 @@ end
     for (from, to) in ((cold, warm), (pc, pw))
         f = RampedOceanForcing(from, to; start = 1, duration = 2)
         m, m0, m1 = (Model(grid; forcing = o) for o in (f, from, to))
-        foreach(Laddie.update_ambient_fields!, (m0, m1))
-        sample(t) = (Laddie._set_forcing_time!(getfield(m, :forcing).ocean, t); Laddie.update_ambient_fields!(m); (copy(m.Ta), copy(m.Sa)))
+        foreach(Laddie.ambient_fields!, (m0, m1))
+        sample(t) = (Laddie._set_forcing_time!(getfield(m, :forcing).ocean, t); Laddie.ambient_fields!(m); (copy(m.Ta), copy(m.Sa)))
         @test sample(0.5) == (m0.Ta, m0.Sa)          # before the ramp: exactly `from`
         @test sample(3.5) == (m1.Ta, m1.Sa)          # after it: exactly `to`
         Ta, Sa = sample(2.0)                          # halfway

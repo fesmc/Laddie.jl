@@ -70,8 +70,8 @@ end
     f = PerBasinOceanForcing1D([ISOMIPForcing(:warm), ISOMIPForcing(:cold)], basin)
     m_c = Model(grid; forcing = f)
     m_g = to_backend(m_c, gpu_backend)
-    Laddie.update_ambient_fields!(m_c)
-    Laddie.update_ambient_fields!(m_g)
+    Laddie.ambient_fields!(m_c)
+    Laddie.ambient_fields!(m_g)
     @test Array(m_g.Ta) ≈ m_c.Ta && Array(m_g.Sa) ≈ m_c.Sa
     s_c, s_g = Simulation(m_c), Simulation(m_g)
     run!(s_c; days = 0.2, verbose = false)

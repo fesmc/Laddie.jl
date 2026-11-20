@@ -3,7 +3,7 @@
 - **Type:** improvement
 - **Status:** default since 2026-11-18 (`RelaxToAmbientConvection(3600)`; before, `ResetToAmbient(0.005)`); used in the pan-Antarctic reference runs since 2026-10-30, and in gap cells under `LeakyGapsBC` whatever the scheme
 - **Commits:** in Laddie.jl since the first port of v1 (June 2026), as v1's `convop = 2`; gap use in adf6cb0; default with τ = 3600 s in 6fdbc74
-- **Code:** `AbstractConvection`, `ClampDensityConvection`, `ResetToAmbientConvection`, `RelaxToAmbientConvection` in `src/physics/convection.jl`; `update_convective_relaxation!` in `src/numerics/leapfrog.jl`
+- **Code:** `AbstractConvection`, `ClampDensityConvection`, `ResetToAmbientConvection`, `RelaxToAmbientConvection` in `src/physics/convection.jl`; `convective_relaxation!` in `src/numerics/leapfrog.jl`
 - **Docs:** `docs/src/physics/convection.md`
 
 ## Summary

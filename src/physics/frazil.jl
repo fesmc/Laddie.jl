@@ -38,7 +38,7 @@ $(TYPEDFIELDS)
 end
 
 # ============================================================================
-# `update_frazil!` and its kernel
+# `frazil!` and its kernel
 # ============================================================================
 
 """
@@ -46,12 +46,12 @@ $(TYPEDSIGNATURES)
 
 Frazil-ice formation rate `m.frazil` (m s⁻¹, freshwater equivalent) under
 [`RelaxedFrazilIce`](@ref), on ice-covered cells only (a gap forms sea ice, not marine ice);
-nothing under [`NoFrazilIce`](@ref). Called before `update_entrainment!`, whose preventive
+nothing under [`NoFrazilIce`](@ref). Called before `step_entrainment!`, whose preventive
 bounds on `H` include it.
 """
-update_frazil!(m) = update_frazil!(m, m.frazil_ice)
-update_frazil!(m, ::NoFrazilIce) = nothing
-function update_frazil!(m, fz::RelaxedFrazilIce)
+frazil!(m) = frazil!(m, m.frazil_ice)
+frazil!(m, ::NoFrazilIce) = nothing
+function frazil!(m, fz::RelaxedFrazilIce)
     launch!(
         _frazil_kernel!,
         m.frazil,

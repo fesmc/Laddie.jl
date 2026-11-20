@@ -66,7 +66,7 @@ $(TYPEDFIELDS)
 end
 
 # ============================================================================
-# `update_entrainment!` and its kernels
+# `step_entrainment!` and its kernels
 # ============================================================================
 
 """
@@ -75,7 +75,7 @@ $(TYPEDSIGNATURES)
 Holland–Jenkins shear entrainment (see [`HollandEntrainment`](@ref)), an
 alternative to the buoyancy-flux form of [Lambert et al. (2023, Eq. 14)](@cite lambert_modelling_2023).
 """
-function compute_entrainment!(m, ep::HollandEntrainment)
+function entrainment!(m, ep::HollandEntrainment)
     coeff = ep.cl * m.K_h / m.A_h^2
     drho_coeff = m.g * m.K_h / m.A_h
     level = m.params.closure_level
@@ -102,7 +102,7 @@ $(TYPEDSIGNATURES)
 `e = 2μ u⋆³ / (g H δρ)` minus a melt detrainment correction
 ([Lambert et al. 2023](@cite lambert_modelling_2023), Eq. 14; see `docs/src/physics/equations.md`).
 """
-function compute_entrainment!(m, ep::GasparEntrainment)
+function entrainment!(m, ep::GasparEntrainment)
     launch!(
         _buoyancy_entrainment_kernel!,
         m.entr,
@@ -136,8 +136,8 @@ Compute entrainment/detrainment rates and assemble the net entrainment
 the detrainment that brings it down to `Params.max_layer_thickness`, both from `H.past` before
 the step (LADDIE v1 and v2). `detr_cap` leaves at the layer's own T, S and velocity.
 """
-function update_entrainment!(m, dt)
-    compute_entrainment!(m, m.entrainment)
+function step_entrainment!(m, dt)
+    entrainment!(m, m.entrainment)
     upwind_advection_T(m.convH, m, m.H.present)
     FT = m.FT
     launch!(

@@ -32,8 +32,8 @@ Every commit only moves code: no computation changed.
   Only type annotations in signatures, struct field types and top-level code depend on include order.
   The `update_*!` functions take the model untyped (`m`) and dispatch on scheme types from their own file.
 - `DEFAULT_PAPERS_DIR` (`src/simulation/presets.jl`) now uses `dirname(dirname(@__DIR__))`, because the file sits one folder deeper.
-- `update_ustar!` stays in `src/physics/secondary_fields.jl`, next to `update_secondary_fields!`: the friction velocity is shared by every melt scheme and by `GasparEntrainment`.
-- The order of updates in `update_secondary_fields!` is kept apart from `leapfrog.jl`, so that another time integrator can reuse it.
+- `ustar!` stays in `src/physics/secondary_fields.jl`, next to `step_secondary_fields!`: the friction velocity is shared by every melt scheme and by `GasparEntrainment`.
+- The order of updates in `step_secondary_fields!` is kept apart from `leapfrog.jl`, so that another time integrator can reuse it.
 
 ## Caveats
 

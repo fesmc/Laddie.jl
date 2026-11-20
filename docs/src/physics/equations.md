@@ -202,7 +202,7 @@ g_a' = \frac{g\,\Delta\rho_a}{\rho_0}, \tag{6}
 \Delta\rho_a = \rho_0\!\left[-\alpha(T_a - T) + \beta(S_a - S)\right]. \tag{7}
 ```
 
-`update_density!` / `_density_kernel!` computes the dimensionless
+`density!` / `_density_kernel!` computes the dimensionless
 ``\delta\rho = \beta(S_a-S) - \alpha(T_a-T)`` into `m.drho` (masked) for the default
 `equation_of_state = LinearEOS`. For any [`AbstractEOS`](@ref) the contrast is
 ```math
@@ -324,7 +324,7 @@ the LADDIE v1 verification stays valid.
 
 ### Minimum-thickness correction
 
-`update_entrainment!` adds a non-negative `ent2` so ``H`` cannot fall below
+`step_entrainment!` adds a non-negative `ent2` so ``H`` cannot fall below
 `H_min`, and assembles the net entrainment used in Eq. (1):
 
 ```math
@@ -372,13 +372,13 @@ toward ``T_f`` at the rate ``1/\tau``. The salt stays in the layer, see (5).
 | (3) | ``V``-momentum | `_step_v_momentum_kernel!`; terms: `v_*` fns (`test/equation_terms.jl`) |
 | (4) | heat | `_step_temperature_kernel!` + `mat_*` variants |
 | (5) | salt | `_step_salinity_kernel!` + `mat_*` variant |
-| (6)/(7) | reduced gravity / EOS | `update_density!`, `_density_kernel!`, `_drho`, `eos_coefficients` |
+| (6)/(7) | reduced gravity / EOS | `density!`, `_density_kernel!`, `_drho`, `eos_coefficients` |
 | (8)–(10) | three-eq melt + liquidus | `_three_eq_melt_kernel!` |
 | — | conduction into the ice | `_ice_conduction`, `conduction_coefficients` |
 | — | two-equation melt (`TwoEquationMelting`) | `_two_eq_melt_kernel!`, `_ustar_gamT_kernel!` |
 | (11)/(12) | ``\gamma_T,\gamma_S`` | `_compute_turbulent_transfer_coefficients!` |
 | (13) | ``u_\star`` | `_ustar_kernel!` |
 | (14) | entrainment | `GasparEntrainment` → `_buoyancy_entrainment_kernel!` (default); Holland → `_holland_entrainment_kernel!` |
-| — | min-thickness / net ``\dot e`` | `update_entrainment!` |
-| — | convective relaxation | `update_convection!`, `update_convective_relaxation!` |
-| — | frazil ice | `update_frazil!`, `_frazil_kernel!` |
+| — | min-thickness / net ``\dot e`` | `step_entrainment!` |
+| — | convective relaxation | `convection!`, `convective_relaxation!` |
+| — | frazil ice | `frazil!`, `_frazil_kernel!` |

@@ -218,7 +218,7 @@ function _log_layer_offset(x)
 end
 
 # ============================================================================
-# Melt rate: `update_melt!` and its kernels
+# Melt rate: `melt!` and its kernels
 # ============================================================================
 
 # γ_T / γ_S, the fixed ratio of the heat and salt exchange velocities.
@@ -340,8 +340,8 @@ coefficient `γ_T` ([Jenkins 1991](@cite jenkins_onedimensional_1991); [Lambert 
 Sets `m.ustar`, `m.melt`, `m.Tb`; `m.gamT` and `m.gamS` hold the constant
 exchange velocities from the start.
 """
-function update_melt!(m, ::FixedGamTMelting)
-    update_ustar!(m)
+function melt!(m, ::FixedGamTMelting)
+    ustar!(m)
     _launch_three_eq_melt!(m)
     return nothing
 end
@@ -388,8 +388,8 @@ prescribed field, `m.Tb` to the local freezing point, and `m.gamT` to the transf
 coefficient that makes the ice–ocean heat flux match the prescribed melt.  Also
 sets `m.ustar`, which entrainment needs.
 """
-function update_melt!(m, ::PrescribedMelting)
-    update_ustar!(m)
+function melt!(m, ::PrescribedMelting)
+    ustar!(m)
     launch!(
         _prescribed_melt_kernel!,
         m.melt,
@@ -467,8 +467,8 @@ transfer coefficients `γ_T`, `γ_S` via the log-layer formulation
 ([Holland & Jenkins 1999](@cite holland_modeling_1999); [Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 8–13).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
-function update_melt!(m, mp::TurbulentGamTMelting)
-    update_ustar!(m)
+function melt!(m, mp::TurbulentGamTMelting)
+    ustar!(m)
     _compute_turbulent_transfer_coefficients!(m, mp)
     _launch_three_eq_melt!(m)
     return nothing
@@ -481,8 +481,8 @@ Three-equation melt with transfer coefficients proportional to the friction velo
 `γ_T = Γ_T u⋆` and `γ_S = γ_T/r`, with `r = mp.ratio` (35 by default).
 Sets `m.ustar`, `m.gamT`, `m.gamS`, `m.melt`, `m.Tb`.
 """
-function update_melt!(m, mp::UStarGamTMelting)
-    update_ustar!(m)
+function melt!(m, mp::UStarGamTMelting)
+    ustar!(m)
     launch!(_ustar_gamma_kernel!, m.gamT, m.gamS, m.ustar, m.tmask, mp.Gamma_T, mp.ratio)
     _launch_three_eq_melt!(m)
     return nothing
@@ -505,8 +505,8 @@ Two-equation ice–ocean melt parameterisation (see [`TwoEquationMelting`](@ref)
 Sets `m.ustar`, `m.gamT`, `m.melt`, `m.Tb` (the freezing point at the layer salinity);
 `m.gamS` is not used.
 """
-function update_melt!(m, mp::TwoEquationMelting)
-    update_ustar!(m)
+function melt!(m, mp::TwoEquationMelting)
+    ustar!(m)
     launch!(_ustar_gamT_kernel!, m.gamT, m.ustar, m.tmask, mp.Gamma_TS)
     launch!(
         _two_eq_melt_kernel!,
@@ -570,4 +570,4 @@ end
     end
 end
 
-update_melt!(m) = update_melt!(m, m.melting)
+melt!(m) = melt!(m, m.melting)

@@ -10,25 +10,26 @@
 #
 # with the pressure and Coriolis terms on the thickness blend of `_momentum_thickness!`:
 # (a, b) = (β₁, 0), (β₂, 1 − β₂), (β₃, β₃).  `present` and `future` swap between stages.
-# Viscosity and diffusion act only in the last stage, from `past` (as v2).  The secondary
-# fields are recomputed from each stage, so that a change of dt or of the forcing time
-# needs no bootstrap.  Keywords as `_step_fields!`.
+# Viscosity and diffusion act in every stage, on `past`, i.e. from level n (v2 adds them in
+# the last stage only; zeroing them in the first two crashes Reactant's compiler).  The
+# secondary fields are recomputed from each stage, so that a change of dt or of the
+# forcing time needs no bootstrap.  Keywords as `_step_fields!`.
 function _step_model!(m, s::FBRK3Integrator, dt; kwargs...)
     third = dt / 3
-    _fbrk3_stage!(m, third, (s.beta1, zero(s.beta1)), Val(false); kwargs...)
+    _fbrk3_stage!(m, third, (s.beta1, zero(s.beta1)); kwargs...)
     _swap_stage!(m)
-    _fbrk3_stage!(m, dt / 2, (s.beta2, one(s.beta2) - s.beta2), Val(false); kwargs...)
+    _fbrk3_stage!(m, dt / 2, (s.beta2, one(s.beta2) - s.beta2); kwargs...)
     _swap_stage!(m)
-    _fbrk3_stage!(m, dt, (s.beta3, s.beta3), Val(true); kwargs...)
+    _fbrk3_stage!(m, dt, (s.beta3, s.beta3); kwargs...)
     _end_fbrk3_step!(m, third)
     return
 end
 
 # One stage: secondary fields from `present`, then every prognostic from `past` over `span`.
 # The preventive bounds on H (`ent2`, `detr_cap`) and dH/dt are taken over the stage span.
-function _fbrk3_stage!(m, span, blend, lateral; kwargs...)
+function _fbrk3_stage!(m, span, blend; kwargs...)
     step_secondary_fields!(m, span)
-    _step_fields!(m, span, span, blend, lateral; kwargs...)
+    _step_fields!(m, span, span, blend; kwargs...)
     return
 end
 

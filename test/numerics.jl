@@ -90,6 +90,58 @@ end
     @test m.model.H.future ≈ H_past .+ src .* (2 * m.clock.dt)
 end
 
+const FBRK3_PARAMS = (; integrator = FBRK3Integrator(), closure_level = PresentClosureLevel())
+
+@testset "Conservation: FB-RK3 H equation exact over one stage" begin
+    m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, params = Params(; FBRK3_PARAMS...))
+    run!(m; days = 0.2, verbose = false)   # develop a non-trivial flow
+    model, dt = m.model, m.clock.dt
+    β = model.params.integrator.beta3
+    H_past = copy(model.H.past)
+    Laddie._fbrk3_stage!(model, dt, (β, β))   # the last stage, over Δt
+    src = (model.convH .+ model.melt .+ model.nentr .- model.detr_cap) .* model.tmask
+    @test model.H.future ≈ H_past .+ src .* dt
+    # The blend H*** = β₃Hⁿ⁺¹ + (1 − 2β₃)Hⁿ⁺¹ᐟ² + β₃Hⁿ that the momentum step saw.
+    @test model.Hfb ≈ β .* model.H.future .+ (1 - 2β) .* model.H.present .+ β .* model.H.past
+end
+
+@testset "Flux forms: a uniform temperature stays uniform" begin
+    # No melt (γ_T = 0) and ambient water at the layer's temperature: T then changes only
+    # if the tracer fluxes disagree with the continuity equation.  FB-RK3 takes both with
+    # the stage thickness (v2 takes the tracer flux with H*, D1 of the plan).
+    isomip = ISOMIPForcing(:warm)
+    ocean = OceanForcing1D(fill(0.5, length(isomip.Tz)), isomip.Sz, isomip.z)
+    grid = build_isomip(CPU(); nx = 20, ny = 10).model.grid
+    for schemes in ((;), FBRK3_PARAMS)
+        params = Params(; melting = FixedGamTMelting(0.0), schemes...)
+        sim = Simulation(Model(grid; forcing = ocean, params))
+        run!(sim; days = 1.0, verbose = false)
+        active = sim.model.tmask .> 0
+        @test meltstats(sim).max_speed > 0.01   # the fresher layer flows
+        @test maximum(abs, sim.model.T.present[active] .- 0.5) < 1e-12
+    end
+end
+
+@testset "FB-RK3: first order in time, closer to the converged run than the leapfrog" begin
+    # Both schemes are first order here: the lateral terms (from level n in every FB-RK3
+    # stage, forward Euler), the implicit sinks and the preventive H bounds are.  Measured
+    # 2026-11-20 on this setup over 0.5 d: H errors 8.6e-4, 4.0e-4 (FB-RK3) against
+    # 4.7e-3, 2.3e-3 (leapfrog) at Δt = 240, 120 s.
+    present = PresentClosureLevel()
+    run_at(params, dt) = (s = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, params, dt);
+                          run!(s; days = 0.25, verbose = false); copy(s.model.H.present))
+    relerr(a, b) = maximum(abs, a .- b) / maximum(abs, b)
+    p_fb = Params(; FBRK3_PARAMS...)
+    p_lf = Params(; closure_level = present)
+    ref = run_at(p_fb, 15.0)
+    e240, e120, e60 = (relerr(run_at(p_fb, dt), ref) for dt in (240.0, 120.0, 60.0))
+    @test 0.8 < log2(e240 / e120) < 1.5
+    @test 0.8 < log2(e120 / e60) < 1.6
+    @test e120 < relerr(run_at(p_lf, 120.0), ref) / 2
+    # Both converge to the same run.
+    @test relerr(run_at(p_lf, 15.0), ref) < 1e-3
+end
+
 @testset "Maximum layer thickness: preventive detrainment" begin
     # A binding cap is met by detraining layer water before the step, so the
     # stepped H lands on the cap without the corrective clamp.  That the detrained

@@ -582,24 +582,15 @@ function step_thickness!(m, dt)
     )
     return
 end
-# `H` is the thickness of the pressure and Coriolis terms (see `precompute_integration_terms!`);
-# `lateral` is `Val(true)` to include the lateral viscosity, `Val(false)` to leave it out
-# (the first two FB-RK3 stages).
-step_u_momentum!(m, dt, H = m.H.present, lateral = Val(true)) = _step_momentum!(m, m.U, dt, H, lateral)
-step_v_momentum!(m, dt, H = m.H.present, lateral = Val(true)) = _step_momentum!(m, m.V, dt, H, lateral)
-
-# The lateral term of a momentum component (`_uv` entry `c`) or of a tracer `q` into
-# `m.lap`: computed, or zero.
-_momentum_lateral!(m, c, ::Val{true}) = c.laplace(m)
-_momentum_lateral!(m, c, ::Val{false}) = launch!(_zero_kernel!, m.lap)
-_tracer_lateral!(m, q, ::Val{true}) = laplace_T(m.lap, m, q.past)
-_tracer_lateral!(m, q, ::Val{false}) = launch!(_zero_kernel!, m.lap)
+# `H` is the thickness of the pressure and Coriolis terms (see `precompute_integration_terms!`).
+step_u_momentum!(m, dt, H = m.H.present) = _step_momentum!(m, m.U, dt, H)
+step_v_momentum!(m, dt, H = m.H.present) = _step_momentum!(m, m.V, dt, H)
 
 # The momentum step of the component `q`, U or V (`_uv`).
-function _step_momentum!(m, q, dt, H, lateral)
+function _step_momentum!(m, q, dt, H)
     c = _uv(m, q)
     # Laplacian first: NonlinearLateralViscosity uses `adv` as scratch.
-    _momentum_lateral!(m, c, lateral)
+    c.laplace(m)
     outflow = momentum_outflow(m)
     c.advect(m, outflow)
     level = m.params.closure_level
@@ -613,18 +604,17 @@ function _step_momentum!(m, q, dt, H, lateral)
 end
 
 # The transport terms of a tracer `q`: the advection of its content H·q into `adv`, the
-# Laplacian of its past level into `lap` (zero under `lateral = Val(false)`), and the
-# outflow rate into `Hq`.
-function _tracer_transport!(m, q, lateral)
+# Laplacian of its past level into `lap`, and the outflow rate into `Hq`.
+function _tracer_transport!(m, q)
     launch!(_product_kernel!, m.Hq, m.H.present, q.present)
     upwind_advection_T(m.adv, m, m.Hq)
-    _tracer_lateral!(m, q, lateral)
+    laplace_T(m.lap, m, q.past)
     outflow_rate!(m, m.params.tracer_form)
     return
 end
 
-function step_temperature!(m, dt, lateral = Val(true))
-    _tracer_transport!(m, m.T, lateral)
+function step_temperature!(m, dt)
+    _tracer_transport!(m, m.T)
     H, T = m.H, m.T
     gamT = first(_exchange_velocities(m))
     launch!(_step_temperature_kernel!, T.future, T.past, T.present, m.dHdt, m.adv, m.nentr, m.detr_cap, m.Ta,
@@ -633,8 +623,8 @@ function step_temperature!(m, dt, lateral = Val(true))
     return
 end
 
-function step_salinity!(m, dt, lateral = Val(true))
-    _tracer_transport!(m, m.S, lateral)
+function step_salinity!(m, dt)
+    _tracer_transport!(m, m.S)
     H, S = m.H, m.S
     launch!(_step_salinity_kernel!, S.future, S.past, S.present, m.dHdt, m.adv, m.nentr, m.detr_cap, m.Sa,
             m.lap, H.present, H.past, H.future, m.convH, m.melt, m.Hq, m.tmask, m.params.tracer_form,
@@ -708,7 +698,7 @@ end
 # One leapfrog integration of `m` over `nsteps × dt`: `nsteps = 2` is the centred
 # step, `nsteps = 1` the first-order bootstrap.  dH/dt keeps the base `dt` (see
 # `precompute_integration_terms!`).  Keywords as `_step_fields!`.
-leapfrog_step!(m, dt, nsteps; kwargs...) = _step_fields!(m, nsteps * dt, dt + dt, nothing, Val(true); kwargs...)
+leapfrog_step!(m, dt, nsteps; kwargs...) = _step_fields!(m, nsteps * dt, dt + dt, nothing; kwargs...)
 
 # The thickness of the pressure and Coriolis terms: `H.present`, or the blend
 # a·H_future + (1 − a − b)·H_present + b·H_past of FB-RK3 written into `m.Hfb`.
@@ -727,10 +717,10 @@ end
 # Step every prognostic of `m` from `past` over `span`, with its tendencies at `present`
 # (the core shared by a leapfrog step and an FB-RK3 stage).  dH/dt is taken over
 # `dHdt_span`; `blend` is `nothing` or the FB-RK3 weights `(a, b)` of the momentum
-# thickness (`_momentum_thickness!`); `lateral` is `Val(true)` to include viscosity and
-# diffusion.  With `check_nans`, each prognostic is checked for NaNs on the shelf after
-# its step, and an error reports the time of `clock`.
-function _step_fields!(m, span, dHdt_span, blend, lateral; check_nans = false, clock = nothing)
+# thickness (`_momentum_thickness!`).  The Laplacians act on the `past` level.  With
+# `check_nans`, each prognostic is checked for NaNs on the shelf after its step, and an
+# error reports the time of `clock`.
+function _step_fields!(m, span, dHdt_span, blend; check_nans = false, clock = nothing)
     step_thickness!(m, span)
     _clamp_thickness!(m)
     H = _momentum_thickness!(m, blend)
@@ -739,19 +729,19 @@ function _step_fields!(m, span, dHdt_span, blend, lateral; check_nans = false, c
 
     # Both momentum components are stepped before the limiter, because it caps the
     # speed and so needs U and V together (see `clamp_velocities!`).
-    step_u_momentum!(m, span, H, lateral)
-    step_v_momentum!(m, span, H, lateral)
+    step_u_momentum!(m, span, H)
+    step_v_momentum!(m, span, H)
     clip_front_inflow!(m, m.boundary.open_ocean)
     clamp_velocities!(m)
     check_nans && _check_nans_shelf!(m, "U", m.U.future, clock)
     check_nans && _check_nans_shelf!(m, "V", m.V.future, clock)
 
     # Tracer bounds (`Params.tracer_bounds`, see `AbstractTracerBounds`).
-    step_temperature!(m, span, lateral)
+    step_temperature!(m, span)
     apply_tracer_bounds!(m, m.T.future, Val(:T))
     check_nans && _check_nans_shelf!(m, "T", m.T.future, clock)
 
-    step_salinity!(m, span, lateral)
+    step_salinity!(m, span)
     _gap_surface!(m, m.gap_heat, span)
     apply_tracer_bounds!(m, m.S.future, Val(:S))
     check_nans && _check_nans_shelf!(m, "S", m.S.future, clock)

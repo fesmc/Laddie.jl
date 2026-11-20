@@ -76,7 +76,7 @@ function per_cell_sim(; kw...)
     return Simulation(Model(grid; forcing = OceanForcing2D(Tz, Sz, z)); kw...)
 end
 
-# Every non-default scheme, in eight runs.  Not covered: TopographicMaxLayerThickness
+# Every non-default scheme, in nine runs.  Not covered: TopographicMaxLayerThickness
 # (the kernel of RelativeMaxLayerThickness at fraction 1).
 const SCHEME_SCENARIOS = [
     "mixing" => () -> build_isomip(CPU(); KW...,
@@ -107,6 +107,11 @@ const SCHEME_SCENARIOS = [
     "gaps" => gaps_sim,
     "per-basin forcing" => per_basin_sim,
     "per-cell forcing" => per_cell_sim,
+    # FB-RK3 under adaptive dt (no re-bootstrap) and a convection scheme that resets the
+    # state (the end-of-step sync), with v2's Laplacian weights.
+    "FB-RK3" => () -> build_isomip(CPU(); KW..., time_stepper = AdaptiveTimeStepper(),
+        params = Params(; integrator = FBRK3Integrator(), closure_level = PresentClosureLevel(),
+                        convection = ResetToAmbientConvection(), laplacian_weights = PastLaplacianWeights())),
 ]
 
 @testset "Reactant extension" begin

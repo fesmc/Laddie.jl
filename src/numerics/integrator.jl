@@ -40,8 +40,8 @@ Hⁿ⁺¹ᐟ² = Hⁿ + Δt/2 Ψ(Hⁿ⁺¹ᐟ³, Uⁿ⁺¹ᐟ³),     Uⁿ⁺¹�
 Hⁿ⁺¹ = Hⁿ + Δt Ψ(Hⁿ⁺¹ᐟ², Uⁿ⁺¹ᐟ²),         Uⁿ⁺¹ = Uⁿ + Δt Φ(H***, Uⁿ⁺¹ᐟ²),     H*** = β₃Hⁿ⁺¹ + (1−2β₃)Hⁿ⁺¹ᐟ² + β₃Hⁿ
 ```
 
-T and S are stepped as U. Lateral viscosity and diffusion act only in the last stage, from
-level n. No computational mode, no filter, and no bootstrap step. Needs
+T and S are stepped as U. Lateral viscosity and diffusion act in every stage, from level n. No
+computational mode, no filter, and no bootstrap step. Needs
 `closure_level = PresentClosureLevel()` and the flux forms. Defaults: v2's configurations.
 
 Select via `Params(; integrator = FBRK3Integrator(), closure_level = PresentClosureLevel())`.

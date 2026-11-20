@@ -61,7 +61,8 @@ configurations. Everything else follows the stage level: advection, drag, melt a
 entrainment, which are recomputed in each stage (so the stages need
 `closure_level = PresentClosureLevel()`). The thickness in the tracer fluxes is the stage
 thickness of the continuity equation, so a uniform tracer stays uniform (v2 uses ``H^*``
-there). Viscosity and diffusion act only in the last stage, from ``q^n``, as in v2. Under the
+there). Viscosity and diffusion act in every stage, from ``q^n`` (v2 adds them in the last
+stage only). Under the
 flux forms, which the scheme requires, the sinks at the layer's own state stay at the new
 level of each stage.
 

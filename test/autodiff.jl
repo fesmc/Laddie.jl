@@ -57,6 +57,8 @@ const AD_SCHEME_CASES = (
     "AdvectiveMomentumForm" => (; schemes = (; momentum_form = AdvectiveMomentumForm())),
     "AdvectiveTracerForm" => (; schemes = (; tracer_form = AdvectiveTracerForm())),
     "PresentClosureLevel" => (; schemes = (; closure_level = PresentClosureLevel())),
+    "FBRK3Integrator" => (; schemes = (; integrator = FBRK3Integrator(), closure_level = PresentClosureLevel()),
+                          reference = (; closure_level = PresentClosureLevel())),
     "ResetToAmbientConvection" => (; schemes = (; convection = ResetToAmbientConvection()), supercooling = 0.05),
     "RelaxToAmbientConvection, convecting" => (; schemes = (; convection = RelaxToAmbientConvection()), supercooling = 0.05,
                                      reference = (; convection = ClampDensityConvection())),

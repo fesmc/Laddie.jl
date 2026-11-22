@@ -160,6 +160,21 @@ const SCHEME_SCENARIOS = [
         @test isfile(joinpath(dir, "rx", "restart_latest.jld2"))
     end
 
+    @testset "host-only arrays pass through a compiled program" begin
+        cpu = build_isomip(CPU(); KW...).model
+        m = to_backend(cpu, ReactantBackend())
+        # Wrapped, so that a program returning the model does not rebuild them element by
+        # element (7 min on the first call at 480×240); plain again back on the CPU.
+        @test !(m.grid.mask isa Array) && m.grid.mask == cpu.grid.mask
+        @test !(m.resolved_mask isa Array) && m.resolved_mask == cpu.resolved_mask
+        @test !(m.grid.x isa Array) && m.grid.x == cpu.grid.x
+        back = to_backend(m, CPU())
+        @test back.grid.mask isa Matrix && back.resolved_mask isa Matrix && back.grid.x isa Vector
+        r = reactant_compile(mm -> (mm.H.present .+= 1; mm), m)(m)
+        @test r.grid.mask === m.grid.mask && r.resolved_mask === m.resolved_mask
+        @test Array(m.H.present) ≈ Array(cpu.H.present) .+ 1
+    end
+
     @testset "forward-mode AD through reactant_compile" begin
         mk() = to_backend(build_isomip(CPU(); KW...), ReactantBackend())
         loss(model, dt, n) =

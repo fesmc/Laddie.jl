@@ -59,6 +59,11 @@ It solves a vertically-averaged approximation of the Navier-Stokes equations in 
   `clamp` instead of `if`, `? :`, `&&`, `||`
 - Closures compiled into kernels capture only `isbits` values (no `Type`s such as `FT`)
 - Do not run `test/reactant` with `--check-bounds=yes`
+- A plain `Array` inside a value returned by a compiled program is rebuilt by one generated statement per
+  element (minutes of compilation on the first call at realistic sizes). Host-only arrays of the model
+  (masks, coordinates) are therefore wrapped in the extension's `HostArray` on Reactant; a new host array
+  in `Grid` or `Geometry` gets the same treatment through `_host_array`, and any other one must stay out of
+  what compiled programs return
 
 ### Differentiability
 

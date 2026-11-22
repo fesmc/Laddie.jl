@@ -153,6 +153,42 @@ end
 Laddie._to_device(p::ShardedPlacement, a::AbstractArray) =
     Reactant.to_rarray(Laddie._flush_subnormals(a); sharding = Reactant.Sharding.Replicated(p.mesh))
 
+# ============================================================================
+# Host-only arrays of a model on Reactant
+# ============================================================================
+
+"""
+A host array of a model on Reactant that no compiled program reads (the integer masks
+of `Grid` and `Geometry`, the coordinate vectors), read-only. Reactant passes it through
+a compiled program as it is: a plain `Array` in a returned model would be rebuilt by one
+generated statement per element, whose compilation took minutes on the first call
+(7 min at 480×240, about 3 h at 1000×1000, growing as cells^1.5).
+"""
+struct HostArray{T,N,A<:Array{T,N}} <: AbstractArray{T,N}
+    "the wrapped array"
+    data::A
+end
+Base.size(a::HostArray) = size(a.data)
+Base.IndexStyle(::Type{<:HostArray}) = IndexLinear()
+Base.getindex(a::HostArray, i::Int) = a.data[i]
+Base.parent(a::HostArray) = a.data
+
+# Wrapped on the way to Reactant, unwrapped on the way back.
+Laddie._host_array(::Type{<:Reactant.AbstractConcreteArray}, y::Array) = HostArray(y)
+Laddie._host_array(::Type{<:Reactant.AbstractConcreteArray}, y::HostArray) = y
+Laddie._host_array(::Type, y::HostArray) = parent(y)
+
+# Tracing leaves it untouched, as Reactant does for a `BitArray`, and the code that
+# rebuilds the results of a compiled program embeds the object instead of its elements.
+Reactant.make_tracer(seen, @nospecialize(prev::HostArray), @nospecialize(path), mode; kwargs...) = prev
+Base.@nospecializeinfer Reactant.traced_type_inner(
+    @nospecialize(A::Type{<:HostArray}), seen, mode::Reactant.TraceMode, @nospecialize(track_numbers::Type),
+    @nospecialize(ndevices), @nospecialize(runtime)) = A
+Reactant.Compiler.create_result(
+    tocopy::HostArray, @nospecialize(path::Tuple), result_stores, path_to_shard_info, to_unreshard_results,
+    unresharded_code::Vector{Expr}, unresharded_arrays_cache, used_shardinfo, result_cache, var_idx,
+    resultgen_code) = Meta.quot(tocopy)
+
 """
 Batched execution through Reactant: the compiled programs of one simulation, and a
 CPU mirror of its model for the log diagnostics.

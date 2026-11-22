@@ -68,8 +68,17 @@ _flush_subnormals(a) = a
 _matrices_to_backend(x, ::Type{A}, backend) where {A} =
     _mapfields(y -> y isa A ? _to_device(backend, y) : y, x)
 
-_grid_to_backend(g::Grid{FT,A}, backend) where {FT,A} = _matrices_to_backend(g, A, backend)
-_geometry_to_backend(g::Geometry{A}, backend) where {A} = _matrices_to_backend(g, A, backend)
+_grid_to_backend(g::Grid{FT,A}, backend) where {FT,A} =
+    _host_arrays(_matrices_to_backend(g, A, backend))
+_geometry_to_backend(g::Geometry{A}, backend) where {A} =
+    _host_arrays(_matrices_to_backend(g, A, backend))
+
+# The host-only arrays of a moved grid or geometry (integer masks, coordinate vectors),
+# by the type `A` its matrices now have: unchanged here; the Reactant extension wraps
+# them so that a compiled program returning the model does not rebuild them.
+_host_arrays(g::Grid{FT,A}) where {FT,A} = _mapfields(y -> _host_array(A, y), g)
+_host_arrays(g::Geometry{A}) where {A} = _mapfields(y -> _host_array(A, y), g)
+_host_array(::Type, y) = y
 _cache_to_backend(c::Cache{A}, backend) where {A} = _matrices_to_backend(c, A, backend)
 
 # Moves that are the identity on the CPU, where grids and models are first built.

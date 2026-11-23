@@ -882,17 +882,20 @@ function saverestart!(sim)
 end
 
 """
-    init_from_restart!(sim, path; refine = 1)
+    init_from_restart!(sim, path; refine = 1, refine_fill = :keep)
 
 Load the leapfrog levels of H, U, V, T, S from the JLD2 restart at `path`, onto the model's
 backend and precision, and set the clock to the restart time. On the same grid and `dt` the
 run continues to the last bit; [`FixedTimeStepper`](@ref) keeps its own `dt` and restarts the
-leapfrog if the file's differs. `refine = f > 1` loads the restart of a run `f` times coarser.
+leapfrog if the file's differs. `refine = f > 1` loads the restart of a run `f` times coarser;
+`refine_fill` sets what its active cells without an active coarse parent take: their own state
+(`:keep`) or H, T and S of the nearest cell with one, through the active cells (`:nearest`).
 [`Simulation`](@ref) calls it for its
 `restart` keyword. Details on the [Output and restarts](@ref) page.
 """
-function init_from_restart!(sim, path::AbstractString; refine::Integer = 1)
+function init_from_restart!(sim, path::AbstractString; refine::Integer = 1, refine_fill::Symbol = :keep)
     refine ≥ 1 || throw(ArgumentError("refine must be a positive integer, got $refine"))
+    refine_fill in (:keep, :nearest) || throw(ArgumentError("refine_fill must be :keep or :nearest, got :$refine_fill"))
     m = sim.model
     sim.io.restartfile = path
     exact = jldopen(path, "r") do f
@@ -900,7 +903,7 @@ function init_from_restart!(sim, path::AbstractString; refine::Integer = 1)
         file_dt = f["dt"] / refine
         exact = refine == 1 ? _restart_dt!(sim, sim.time_stepper, file_dt) : _refined_dt!(sim, file_dt)
         refine == 1 && _check_restart_tmask(m, f["tmask"], path)
-        fine = refine == 1 ? (name, a, dst) -> a : _refiner(m, f, refine)
+        fine = refine == 1 ? (name, a, dst) -> a : _refiner(m, f, refine, refine_fill)
         for (name, var) in pairs(_prognostics(m))
             data = f[String(name)]
             # The file holds plain CPU arrays: convert each level to the model's
@@ -923,7 +926,7 @@ function init_from_restart!(sim, path::AbstractString; refine::Integer = 1)
     end
     _set_forcing_time!(sim)
     _restart_leapfrog!(sim, exact)
-    refined = refine == 1 ? "" : " (refined $(refine)×)"
+    refined = refine == 1 ? "" : " (refined $(refine)×$(refine_fill == :nearest ? ", unparented cells from the nearest" : ""))"
     _print2log(sim, "Restarted from $(path)$(refined) at $(_t_days(sim)) days")
     return sim
 end
@@ -983,7 +986,9 @@ end
 
 # A function `(name, coarse level, model level) -> fine level` that refines a
 # coarse restart onto the model's grid, `f` times finer (`init_from_restart!`).
-function _refiner(m, file, f)
+# `refine_fill = :nearest`: an active fine cell without an active coarse parent takes H, T and S
+# of the parented cell nearest to it through the active cells (`_nearest_source`).
+function _refiner(m, file, f, refine_fill = :keep)
     (r, c) = file["crop"]
     co = (; tmask = file["tmask"], crop = (r[1]:r[2], c[1]:c[2]), input_size = file["input_size"], dx = file["dx"])
     g = m.grid
@@ -1017,6 +1022,10 @@ function _refiner(m, file, f)
     wet = [pick(active_c, i, j, false) for i in eachindex(I), j in eachindex(J)]
     tmask = Array(m.tmask) .> 0
     umask, vmask = Array(m.umask), Array(m.vmask)
+    # The fine cell whose coarse parent gives each fine cell its H, T and S; zero: none (keep).
+    none = CartesianIndex(0, 0)
+    source = refine_fill == :nearest ? _nearest_source(tmask, wet .& tmask) :
+             [wet[i, j] & tmask[i, j] ? CartesianIndex(i, j) : none for i in eachindex(I), j in eachindex(J)]
     return function (name, a, dst)
         if name in (:U, :V)
             # Faces → cell centres: the mean of a cell's two faces, the west
@@ -1027,8 +1036,33 @@ function _refiner(m, file, f)
             return [pick(c, i, j, zero(eltype(c))) * vmask_[i, j] for i in eachindex(I), j in eachindex(J)]
         else
             keep = Array(dst)
-            return [wet[i, j] & tmask[i, j] ? pick(a, i, j, keep[i, j]) : keep[i, j]
+            return [source[i, j] == none ? keep[i, j] : pick(a, source[i, j][1], source[i, j][2], keep[i, j])
                     for i in eachindex(I), j in eachindex(J)]
         end
     end
+end
+
+# For each active cell of `active`, the cell of `parented` nearest to it in steps through
+# active cells (breadth-first, 4 neighbours; a parented cell is its own); CartesianIndex(0, 0)
+# for inactive cells and for active ones with no path to a parented cell.
+function _nearest_source(active, parented)
+    none = CartesianIndex(0, 0)
+    source = fill(none, size(active))
+    queue = [I for I in CartesianIndices(active) if parented[I]]
+    for I in queue
+        source[I] = I
+    end
+    steps = (CartesianIndex(1, 0), CartesianIndex(-1, 0), CartesianIndex(0, 1), CartesianIndex(0, -1))
+    head = 1
+    while head <= length(queue)
+        I = queue[head]
+        head += 1
+        for d in steps
+            K = I + d
+            (checkbounds(Bool, active, K) && active[K] && source[K] == none) || continue
+            source[K] = source[I]
+            push!(queue, K)
+        end
+    end
+    return source
 end

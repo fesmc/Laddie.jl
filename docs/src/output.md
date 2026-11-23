@@ -106,6 +106,9 @@ stores the active cells must match the model's.
   active, and each fine velocity point the cell-centred velocity of that coarse cell (the
   mean of its two faces), on the fine velocity masks;
 - fine cells whose coarse cell was not active (a finer shelf reaches further) keep their
-  state, so refine onto a simulation started from rest;
+  state, so refine onto a simulation started from rest; with `refine_fill = :nearest` they
+  take `H`, `T` and `S` of the nearest cell that has an active coarse cell, counted in steps
+  through the active cells (velocities stay zero), which avoids a layer at rest next to a
+  spun-up one;
 - `dt` is the restart's divided by `f`, and the leapfrog restarts with a forward step;
 - the two runs may crop their domains differently; the coarse grid is read from the file.

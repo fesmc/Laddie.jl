@@ -228,6 +228,42 @@ end
         checked += 1
     end
     @test checked > 0.9 * count(tm_f)
+
+    # refine_fill = :nearest: the active fine cells without an active coarse parent take H, T
+    # and S of the nearest parented cell through the active cells, so each holds the values of
+    # an active neighbour; velocities stay zero there, and the parented cells are as with :keep.
+    # The two ISOMIP grids nest exactly, so a copy of the restart marks one interior column of
+    # active coarse cells inactive: their fine children have no active parent.
+    cut = joinpath(tmp, "cut.jld2")
+    restart = JLD2.load(file)
+    rows = first.(Tuple.(findall(tm_c)))
+    column = (minimum(rows) + maximum(rows)) ÷ 2
+    restart["tmask"][column, :] .= false
+    JLD2.jldsave(cut; (Symbol(k) => v for (k, v) in restart)...)
+    kept = Laddie.init_from_restart!(fine_sim(), cut; refine = 2).model
+    near = Laddie.init_from_restart!(fine_sim(), cut; refine = 2, refine_fill = :nearest).model
+    tm_cut = restart["tmask"]
+    parented = falses(size(tm_f))
+    for (jj, j) in enumerate(gf.crop[2]), (ii, i) in enumerate(gf.crop[1])
+        pi = parent(i, gf.input_size[1], gc.input_size[1]) - first(gc.crop[1]) + 1
+        pj = parent(j, gf.input_size[2], gc.input_size[2]) - first(gc.crop[2]) + 1
+        parented[ii, jj] = 1 <= pi <= size(Hc, 1) && 1 <= pj <= size(Hc, 2) && tm_cut[pi, pj] && tm_f[ii, jj]
+    end
+    orphans = findall(tm_f .& .!parented)
+    @test !isempty(orphans)
+    for q in (:H, :T, :S)
+        @test getproperty(near, q).past[parented] == getproperty(kept, q).past[parented]
+    end
+    neighbours(I) = [I + d for d in CartesianIndex.(((1, 0), (-1, 0), (0, 1), (0, -1)))
+                     if checkbounds(Bool, tm_f, I + d) && tm_f[I + d]]
+    for I in orphans, q in (:H, :T, :S)
+        level = getproperty(near, q).past
+        @test any(K -> level[K] == level[I], neighbours(I))
+    end
+    @test all(near.H.past[I] != kept.H.past[I] for I in orphans)
+    @test all(near.U.past[I] == 0 && near.V.past[I] == 0 for I in orphans)
+    @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), file; refine = 2, refine_fill = :nope)
+
     run!(fine; days = 0.2, verbose = false)
     @test all(isfinite, fine.model.H.present) && all(isfinite, fine.model.melt)
 

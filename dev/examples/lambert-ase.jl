@@ -108,8 +108,9 @@ params = Params(; FT,
     seconds_per_year = 365 * 86400.0,
     ice_slope = CentredIceSlope(),
     ## Laddie's defaults differ from what the published run used:
-    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel(),
+    momentum_form = AdvectiveMomentumForm(), integrator = LeapfrogIntegrator(; closure_level = PresentClosureLevel()),
     tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsIceConduction(),
+    max_layer_thickness = NoMaxLayerThickness(),
 )
 boundary = BoundaryConditions(;
     grounding_line_slip = PartialSlipAtGL(1.0), land_slip = PartialSlipAtLand(1.0),

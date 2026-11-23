@@ -68,13 +68,13 @@ end
     # Host-side checks: β in [0, 1], and the settings the stages need.
     @test FBRK3Integrator() == FBRK3Integrator(0.5, 0.5, 0.344)
     @test_throws ArgumentError FBRK3Integrator(; beta3 = 1.5)
-    @test_throws ArgumentError Params(; integrator = FBRK3Integrator())   # PastClosureLevel
-    present = PresentClosureLevel()
-    @test_throws ArgumentError Params(; integrator = FBRK3Integrator(), closure_level = present,
-                                      tracer_form = AdvectiveTracerForm())
-    @test_throws ArgumentError Params(; integrator = FBRK3Integrator(), closure_level = present,
-                                      momentum_form = AdvectiveMomentumForm())
-    p_fb = Params(; FT, integrator = FBRK3Integrator(), closure_level = present)
+    # The closures read the stage level under FB-RK3, the integrator's field under the leapfrog.
+    @test closure_level(FBRK3Integrator()) isa PresentClosureLevel
+    @test closure_level(LeapfrogIntegrator()) isa PastClosureLevel
+    @test closure_level(LeapfrogIntegrator(; closure_level = PresentClosureLevel())) isa PresentClosureLevel
+    @test_throws ArgumentError Params(; integrator = FBRK3Integrator(), tracer_form = AdvectiveTracerForm())
+    @test_throws ArgumentError Params(; integrator = FBRK3Integrator(), momentum_form = AdvectiveMomentumForm())
+    p_fb = Params(; FT, integrator = FBRK3Integrator())
     @test p_fb.integrator isa FBRK3Integrator{FT}
 
     # The CFL setpoint follows the integrator unless it is given.
@@ -86,7 +86,7 @@ end
                        time_stepper = AdaptiveTimeStepper(; cfl_target = 0.25)).time_stepper.cfl_target == FT(0.25)
 
     # A step leaves `past` and `present` equal; the run stays close to the leapfrog's.
-    p_lf = Params(; FT, closure_level = present)
+    p_lf = Params(; FT, integrator = LeapfrogIntegrator(; closure_level = PresentClosureLevel()))
     sim_fb = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p_fb, dt = 120.0)
     sim_lf = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = p_lf, dt = 120.0)
     time_step!(sim_fb)
@@ -210,7 +210,7 @@ end
     # `leapfrog_step!` (v_cut on U/V, T ∈ [-5, 5], S ∈ [32, 36], H floored at
     # H_min and capped by max_layer_thickness) bound every prognostic, so an
     # unstable run stays perfectly finite while producing nonsense — at
-    # dt = 5000 s the mean melt rate is ~25x the converged value.  Detect it
+    # dt = 8000 s the mean melt rate is ~150x the converged value.  Detect it
     # physically instead, against the small-dt reference solution.
     mref = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, dt = 210.0)
     run!(mref; days = 2.0, verbose = false)
@@ -223,8 +223,8 @@ end
     catch
         false
     end
-    @test !survives(2.0; dt = 5000.0)                         # FixedTimeStepper blows up
-    @test  survives(2.0; dt = 5000.0, time_stepper = AdaptiveTimeStepper())   # AdaptiveTimeStepper rescues
+    @test !survives(2.0; dt = 8000.0)                         # FixedTimeStepper blows up
+    @test  survives(2.0; dt = 8000.0, time_stepper = AdaptiveTimeStepper())   # AdaptiveTimeStepper rescues
 
     # dt changes are logged to log.txt.
     tmp = mktempdir()

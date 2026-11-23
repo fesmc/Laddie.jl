@@ -1,7 +1,7 @@
 # Relative layer-thickness cap
 
 - **Type:** dead end
-- **Status:** code in main (`RelativeMaxLayerThickness(f, H_floor)`, opt-in); not used in reference runs since 2026-11-04, which take v2's `AbsoluteMaxLayerThickness(10 000)`
+- **Status:** the fractional cap (f < 1) stays a dead end; since 2026-11-23 the default is `RelativeMaxLayerThickness(1, 500)`, the water column with a floor (the reference runs since 2026-11-10 use f = 1 with a 1000 m floor)
 - **Commits:** 45b4d3e (enforced by detrainment), 5d38792 (`H_floor`)
 - **Code:** `RelativeMaxLayerThickness` in `src/physics/max_layer_thickness.jl`
 - **Docs:** `docs/src/numerics/max_layer_thickness.md`

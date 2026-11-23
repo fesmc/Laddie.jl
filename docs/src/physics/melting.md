@@ -6,8 +6,8 @@ available through `Params(; melting = ...)`:
 
 | scheme | equations | transfer coefficients |
 |---|---|---|
-| [`FixedGamTMelting`](@ref) (default) | three-equation | ``\gamma_T`` constant, ``\gamma_S = \gamma_T/35`` |
-| [`TurbulentGamTMelting`](@ref) | three-equation | log-layer functions of ``u_\star`` ([Holland & Jenkins 1999](@cite holland_modeling_1999)) |
+| [`FixedGamTMelting`](@ref) | three-equation | ``\gamma_T`` constant, ``\gamma_S = \gamma_T/35`` |
+| [`TurbulentGamTMelting`](@ref) (default) | three-equation | log-layer functions of ``u_\star`` ([Holland & Jenkins 1999](@cite holland_modeling_1999)) |
 | [`UStarGamTMelting`](@ref) | three-equation | ``\gamma_T = \Gamma_T u_\star``, ``\gamma_S = \gamma_T/r`` |
 | [`TwoEquationMelting`](@ref) | two-equation, experimental | ``\gamma_{TS} = \Gamma_{TS} u_\star`` |
 | [`PrescribedMelting`](@ref) | none, ``\dot m`` given | equivalent ``\gamma_T`` diagnosed |

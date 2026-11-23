@@ -136,10 +136,10 @@ _v1_params(; A_h, K_h, H_min, u_tide) = (
     ice_slope = CentredIceSlope(),
     # Pinned, so that a change of the model-wide default does not move these runs.
     momentum_form = AdvectiveMomentumForm(),
-    closure_level = PresentClosureLevel(),
     tracer_bounds = TracerBounds(),
     front_pressure = V1FrontPressure(),
-    integrator = LeapfrogIntegrator(; nu = 0.8),
+    max_layer_thickness = NoMaxLayerThickness(),
+    integrator = LeapfrogIntegrator(; nu = 0.8, closure_level = PresentClosureLevel()),
 )
 
 # v1's `slip = 1` on every wall: no slip in the viscosity, a zero ghost in the
@@ -412,10 +412,9 @@ _v2_params(; C_d_top, melting, C_visc, K_h, H_min, H_init, v_cut, H_max, buoyanc
     coriolis = CoriolisParameter0D(-1.37e-4),
     # Pinned, so that a change of the model-wide default does not move these runs.
     momentum_form = AdvectiveMomentumForm(),
-    closure_level = PresentClosureLevel(),
     tracer_bounds = TracerBounds(),
     # v2 integrates with FB-RK3; these aliases reproduce its parameters, not its numerics.
-    integrator = LeapfrogIntegrator(; nu = 0.8),
+    integrator = LeapfrogIntegrator(; nu = 0.8, closure_level = PresentClosureLevel()),
 )
 
 # Zero velocity one grid spacing behind every wall (v2's "no slip"), no momentum

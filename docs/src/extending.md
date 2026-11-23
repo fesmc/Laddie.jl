@@ -48,7 +48,7 @@ fields of the model they read and write.
 | [`AbstractMomentumAdvection`](@ref) | `Params(; momentum_advection)` | `advect_U`, `advect_V` (`numerics/stencils.jl`); `momentum_outflow` if it has an outflow (`numerics/leapfrog.jl`) | `numerics/advection.jl` |
 | [`AbstractTracerForm`](@ref) | `Params(; tracer_form)` | `tracer_update`, `thickness_tendency`, `outflow_rate!` | `numerics/leapfrog.jl` |
 | [`AbstractMomentumForm`](@ref) | `Params(; momentum_form)` | `momentum_update`, `momentum_thickness_tendency`, `momentum_flux_terms`, `explicit_sink` | `numerics/leapfrog.jl` |
-| [`AbstractClosureLevel`](@ref) | `Params(; closure_level)` | `closure_field` | `numerics/advection.jl` |
+| [`AbstractClosureLevel`](@ref) | `LeapfrogIntegrator(; closure_level)` | `closure_field` | `numerics/advection.jl` |
 | [`AbstractKinks`](@ref) | `Params(; kinks)` | `kink_width` and the smooth switches (`smooth_max`, `smooth_min`, `smooth_clamp`, …) | `numerics/kinks.jl` |
 | [`AbstractIceSlope`](@ref) | `Params(; ice_slope)` | `icebase_slope` | `simulation/grid.jl` |
 | [`AbstractFrontPressure`](@ref) | `Params(; front_pressure)` | `front_pgf_weight`, `front_drho_weight` | `bcs/open_ocean.jl` |

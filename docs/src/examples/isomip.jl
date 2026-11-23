@@ -88,8 +88,9 @@ println("mean melt $(round(mean_melt; digits = 2)) m/yr, max melt $(round(max_me
 # slope (`CentredIceSlope`), the v1 walls (its `slip = 1`: no slip in the viscosity,
 # [`V1WallAdvection`](@ref) in the advection; see [Wall slip](../bcs/walls.md)) and
 # the v1 tracer step (`AdvectiveTracerForm`), and the settings where Laddie's defaults
-# differ from v1 (convection, conduction, momentum form, closure level, tracer bounds); the
-# two end states are compared cell by cell.
+# differ from v1 (convection, conduction, momentum form, closure level, tracer bounds, melting,
+# equation of state, layer cap, viscosity, momentum advection); the two end states are
+# compared cell by cell.
 
 v1_walls = BoundaryConditions(; grounding_line_slip = NoSlipAtGL(), land_slip = NoSlipAtLand(),
                               wall_advection = V1WallAdvection(), open_ocean = ZeroGradientOpenOceanBC())
@@ -98,8 +99,12 @@ sim_py = build_isomip(; isomipcond = :warm, boundary = v1_walls,
                                       convection = ResetToAmbientConvection(0.005),
                                       ice_conduction = HollandJenkinsIceConduction(),
                                       momentum_form = AdvectiveMomentumForm(),
-                                      closure_level = PresentClosureLevel(), tracer_bounds = TracerBounds(),
-                                      front_pressure = V1FrontPressure()))
+                                      integrator = LeapfrogIntegrator(; closure_level = PresentClosureLevel()),
+                                      tracer_bounds = TracerBounds(), front_pressure = V1FrontPressure(),
+                                      melting = FixedGamTMelting(1.8e-4), equation_of_state = LinearEOS(),
+                                      max_layer_thickness = NoMaxLayerThickness(),
+                                      lateral_viscosity = PrescribedLateralViscosity(),
+                                      momentum_advection = CentredMomentumAdvection()))
 run!(sim_py; days = 1.0, verbose = false)
 mj = sim_py.model
 

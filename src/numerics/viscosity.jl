@@ -5,8 +5,8 @@
 """
 Abstract supertype for lateral (horizontal) momentum viscosity parameterisations.
 Pass a concrete instance as `Params(; lateral_viscosity = ...)`:
-[`PrescribedLateralViscosity`](@ref) (constant coefficient, the default) or
-[`NonlinearLateralViscosity`](@ref) (shear-scaled, as in LADDIE v2).
+[`NonlinearLateralViscosity`](@ref) (shear-scaled, as in LADDIE v2, the default) or
+[`PrescribedLateralViscosity`](@ref) (constant coefficient).
 
 The momentum equations carry the lateral friction `∇·(A_h H ∇u)`. Tracer diffusivity
 `Params.K_h` is always a constant.
@@ -16,11 +16,11 @@ abstract type AbstractLateralViscosity end
 """
 $(TYPEDEF)
 
-Constant-coefficient Laplacian lateral viscosity, `Params.A_h` everywhere (the default), as in
+Constant-coefficient Laplacian lateral viscosity, `Params.A_h` everywhere, as in
 LADDIE v1 ([Lambert et al. 2023](@cite lambert_modelling_2023), Eqs. 2–3). Wall stress relative to an interior face is set
 by the slip factor of [`BoundaryConditions`](@ref).
 
-Select via `Params(; lateral_viscosity = PrescribedLateralViscosity())` (the default).
+Select via `Params(; lateral_viscosity = PrescribedLateralViscosity())`.
 """
 struct PrescribedLateralViscosity <: AbstractLateralViscosity end
 
@@ -39,14 +39,14 @@ vector across it. `C_visc` is dimensionless and resolution-independent, comparab
 configuration value but not to `Params.A_h`, which plays no part here. Walls take the ghost
 velocity of the slip factor. See [Lateral viscosity](@ref).
 
-Select via `Params(; lateral_viscosity = NonlinearLateralViscosity(10.0))`.
+Select via `Params(; lateral_viscosity = NonlinearLateralViscosity(0.1))` (the default).
 
 # Fields
 $(TYPEDFIELDS)
 """
 @kwdef struct NonlinearLateralViscosity{FT} <: AbstractLateralViscosity
-    "dimensionless coefficient, the reference `C%laddie_viscosity` (default `10.0`, its MISMIP+ value; the Antarctic test config uses `0.1`)"
-    C_visc::FT = 10.0
+    "dimensionless coefficient, the reference `C%laddie_viscosity` (default `0.1`, its Antarctic value; its MISMIP+ config uses `10`)"
+    C_visc::FT = 0.1
 end
 
 #############################

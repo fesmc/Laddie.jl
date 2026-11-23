@@ -3,8 +3,8 @@ $(TYPEDEF)
 
 Abstract supertype for the momentum-advection scheme: how the momentum carried through a face
 of a velocity control volume is evaluated. Pass a concrete instance as
-`Params(; momentum_advection = ...)`: [`CentredMomentumAdvection`](@ref) (the default) or
-[`UpstreamMomentumAdvection`](@ref). Tracer advection is always upwind.
+`Params(; momentum_advection = ...)`: [`UpstreamMomentumAdvection`](@ref) (the default) or
+[`CentredMomentumAdvection`](@ref). Tracer advection is always upwind.
 """
 abstract type AbstractMomentumAdvection end
 
@@ -12,11 +12,11 @@ abstract type AbstractMomentumAdvection end
 $(TYPEDEF)
 
 Evaluate the advected momentum as the average of the two velocities either side
-of the face (the default), as LADDIE v1 does: the east face of a
+of the face, as LADDIE v1 does: the east face of a
 U-control volume carries `H̄·ū·ū` with `ū = (U[i] + U[i+1])/2`, and likewise for
 the other faces.  Centred differencing adds no numerical viscosity of its own.
 
-Select via `Params(; momentum_advection = CentredMomentumAdvection())` (the default).
+Select via `Params(; momentum_advection = CentredMomentumAdvection())`.
 """
 struct CentredMomentumAdvection <: AbstractMomentumAdvection end
 
@@ -30,7 +30,7 @@ equation, averaged onto the face, and the velocity of its upstream side. Walls t
 no momentum (so [`AbstractWallAdvection`](@ref) has no effect), and the scheme is dissipative,
 of order `|u|·Δ/2`; see [Momentum advection](@ref).
 
-Select via `Params(; momentum_advection = UpstreamMomentumAdvection())`.
+Select via `Params(; momentum_advection = UpstreamMomentumAdvection())` (the default).
 """
 struct UpstreamMomentumAdvection <: AbstractMomentumAdvection end
 
@@ -139,9 +139,9 @@ $(TYPEDEF)
 
 Abstract supertype for the time level the closures see: the friction velocity `u★`
 (hence the melt and entrainment rates), the thickness in the entrainment rate, and
-the speed in the quadratic drag.  Pass a concrete instance as
-`Params(; closure_level = ...)`: [`PastClosureLevel`](@ref) (the default) or
-[`PresentClosureLevel`](@ref).
+the speed in the quadratic drag.  A field of [`LeapfrogIntegrator`](@ref), since only the
+leapfrog has a choice: [`PastClosureLevel`](@ref) (the default) or [`PresentClosureLevel`](@ref).
+[`FBRK3Integrator`](@ref) reads the closures at the stage level.
 
 A closure that damps the state it is computed from is unstable in the leapfrog at the centred
 level once its rate exceeds about `0.57/Δt`, and stable well beyond that from the lagged
@@ -154,7 +154,7 @@ $(TYPEDEF)
 
 Compute the closures from the present level, as LADDIE v1 does.
 
-Select via `Params(; closure_level = PresentClosureLevel())`.
+Select via `Params(; integrator = LeapfrogIntegrator(; closure_level = PresentClosureLevel()))`.
 """
 struct PresentClosureLevel <: AbstractClosureLevel end
 
@@ -166,7 +166,7 @@ lagged, filtered `past` level (the default). First order in time for these terms
 [`FluxMomentumForm`](@ref) it removes the step-to-step oscillation of thin, strongly entraining
 layers.
 
-Select via `Params(; closure_level = PastClosureLevel())` (the default).
+Select via `Params(; integrator = LeapfrogIntegrator(; closure_level = PastClosureLevel()))` (the default).
 """
 struct PastClosureLevel <: AbstractClosureLevel end
 

@@ -117,7 +117,7 @@ export AbstractLaplacianWeights, PresentLaplacianWeights, PastLaplacianWeights
 export AbstractFrontPressure, ZeroGradientFrontPressure, ZeroExteriorFrontPressure, V1FrontPressure
 export AbstractIceSlope, CentredIceSlope, MaskedIceSlope
 export AbstractTimeStepper, FixedTimeStepper, AdaptiveTimeStepper
-export AbstractIntegrator, LeapfrogIntegrator, FBRK3Integrator, default_cfl_target
+export AbstractIntegrator, LeapfrogIntegrator, FBRK3Integrator, default_cfl_target, closure_level
 export AbstractCFL, ConservativeCFL, ExactCFL
 export AbstractSimulationEnd, FixedSimulationEnd, SteadyStateSimulationEnd
 export AbstractOceanForcing, OceanForcing1D, OceanForcing2D, PerBasinOceanForcing1D, RampedOceanForcing,

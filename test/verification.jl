@@ -23,8 +23,12 @@
                             convection = ResetToAmbientConvection(0.005),
                             ice_conduction = HollandJenkinsIceConduction(),
                             momentum_form = AdvectiveMomentumForm(),
-                            closure_level = PresentClosureLevel(), tracer_bounds = TracerBounds(),
-                            front_pressure = V1FrontPressure())
+                            integrator = LeapfrogIntegrator(; closure_level = PresentClosureLevel()), tracer_bounds = TracerBounds(),
+                            front_pressure = V1FrontPressure(),
+                            melting = FixedGamTMelting(1.8e-4), equation_of_state = LinearEOS(),
+                            max_layer_thickness = NoMaxLayerThickness(),
+                            lateral_viscosity = PrescribedLateralViscosity(),
+                            momentum_advection = CentredMomentumAdvection())
         m = build_isomip(; isomipcond = :warm, boundary = v1_walls,
                          params = v1_params)
         run!(m; days = 1.0, verbose = false)

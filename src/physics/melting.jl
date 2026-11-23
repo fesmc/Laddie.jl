@@ -52,7 +52,7 @@ $(TYPEDEF)
 
 Three-equation ice–ocean melt parameterisation ([Jenkins 1991](@cite jenkins_onedimensional_1991); the equations are
 given under [`TurbulentGamTMelting`](@ref)) with a constant turbulent heat transfer
-coefficient `γ_T` and `γ_S = γ_T / 35` (the default).
+coefficient `γ_T` and `γ_S = γ_T / 35`.
 
 # Example
 
@@ -171,7 +171,7 @@ The turbulent heat exchange coefficients are determined by:
 ```
 
 This gives a quadratic equation for `ṁ`. The log term is floored at zero
-(`u⋆ H/ν₀ ≥ 1`), which never binds at the default parameters; see [Melting](@ref).
+(`u⋆ H/ν₀ ≥ 1`), which never binds at the default parameters; see [Melting](@ref). The default.
 
 # Example
 

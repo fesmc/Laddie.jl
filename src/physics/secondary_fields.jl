@@ -21,7 +21,7 @@ end
     ustar!(m)
 
 Friction velocity on T-points, `m.ustar = √(C_d_top (Ū² + V̄² + u_tide²))`, with the velocities
-averaged onto the T-point at the level of `Params.closure_level`. A melting scheme calls it,
+averaged onto the T-point at the [`closure_level`](@ref) of the integrator. A melting scheme calls it,
 since the entrainment needs it too.
 """
 function ustar! end
@@ -30,8 +30,8 @@ function ustar!(m)
     launch_interior!(
         _ustar_kernel!,
         m.ustar,
-        closure_field(m.U, m.params.closure_level),
-        closure_field(m.V, m.params.closure_level),
+        closure_field(m.U, closure_level(m.params.integrator)),
+        closure_field(m.V, closure_level(m.params.integrator)),
         m.tmask,
         m.C_d_top,
         m.u_tide,

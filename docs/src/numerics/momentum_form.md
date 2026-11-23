@@ -19,10 +19,11 @@ the [tracer form](tracer_form.md):
   with ``d`` the detrainment, ``d_\mathrm{cap}`` the cap detrainment and ``f`` the frazil formation,
   averaged onto the face.
 
-Separately, `Params(; closure_level = ...)` sets the time level the closures read:
-the friction velocity ``u_\star`` (hence melt and entrainment), the thickness in the
-entrainment rate and the drag speed ``|\mathbf{u}|``, either [`PresentClosureLevel`](@ref)
-(the default) or [`PastClosureLevel`](@ref).
+Separately, the `closure_level` of [`LeapfrogIntegrator`](@ref) sets the time level the
+closures read: the friction velocity ``u_\star`` (hence melt and entrainment), the thickness
+in the entrainment rate and the drag speed ``|\mathbf{u}|``, either [`PastClosureLevel`](@ref)
+(the default) or [`PresentClosureLevel`](@ref). [`FBRK3Integrator`](@ref) reads them at the
+stage level ([`closure_level`](@ref)).
 
 ## Equations
 

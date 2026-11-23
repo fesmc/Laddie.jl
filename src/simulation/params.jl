@@ -30,7 +30,6 @@ struct Params{
     MA<:AbstractMomentumAdvection,
     TF<:AbstractTracerForm,
     MF<:AbstractMomentumForm,
-    CL<:AbstractClosureLevel,
     CP<:AbstractCoriolisParameter,
     IS<:AbstractIceSlope,
     KT<:AbstractKinks,
@@ -43,7 +42,7 @@ struct Params{
     C_d::FT
     "drag coefficient in the friction velocity u★ that drives melt and entrainment (–, default `1.1e-3`)"
     C_d_top::FT
-    "lateral momentum viscosity under `PrescribedLateralViscosity`, walls included; also enters `HollandEntrainment` (m² s⁻¹, default `6`)"
+    "lateral momentum viscosity under `PrescribedLateralViscosity` (not the default), walls included; also enters `HollandEntrainment` (m² s⁻¹, default `6`)"
     A_h::FT
     "lateral tracer diffusivity (m² s⁻¹, default `1`)"
     K_h::FT
@@ -88,7 +87,7 @@ struct Params{
     # Typed parameterization objects
     "entrainment scheme, an [`AbstractEntrainment`](@ref) (default `GasparEntrainment(2.5)`)"
     entrainment::EP
-    "melt scheme, an [`AbstractMelting`](@ref) (default `FixedGamTMelting(1.8e-4)`)"
+    "melt scheme, an [`AbstractMelting`](@ref) (default `TurbulentGamTMelting()`)"
     melting::MP
     "convective-instability treatment, an [`AbstractConvection`](@ref) (default `RelaxToAmbientConvection(3600)`)"
     convection::CS
@@ -96,33 +95,31 @@ struct Params{
     frazil_ice::FZ
     "heat conduction into the ice at the interface, an [`AbstractIceConduction`](@ref) (default `MeltOnlyIceConduction()`)"
     ice_conduction::IC
-    "equation of state, an [`AbstractEOS`](@ref) (default `LinearEOS()`)"
+    "equation of state, an [`AbstractEOS`](@ref) (default `RoquetEOS()`)"
     equation_of_state::EQ
-    "upper bound on the layer thickness, an [`AbstractMaxLayerThickness`](@ref) (default none)"
+    "upper bound on the layer thickness, an [`AbstractMaxLayerThickness`](@ref) (default `RelativeMaxLayerThickness(1, 500)`: the water column, at least 500 m)"
     max_layer_thickness::MLT
     "bounds on the layer temperature and salinity, an [`AbstractTracerBounds`](@ref) (default `NoTracerBounds()`)"
     tracer_bounds::TB
-    "lateral momentum viscosity, an [`AbstractLateralViscosity`](@ref) (default constant `A_h`)"
+    "lateral momentum viscosity, an [`AbstractLateralViscosity`](@ref) (default `NonlinearLateralViscosity(0.1)`)"
     lateral_viscosity::LV
     "time level of the Laplacian thickness weights, an [`AbstractLaplacianWeights`](@ref)"
     laplacian_weights::LW
     "ice-front pressure-gradient treatment, an [`AbstractFrontPressure`](@ref)"
     front_pressure::FP
-    "momentum-advection scheme, an [`AbstractMomentumAdvection`](@ref) (default centred, as in v1.x)"
+    "momentum-advection scheme, an [`AbstractMomentumAdvection`](@ref) (default `UpstreamMomentumAdvection()`, as in v2)"
     momentum_advection::MA
     "form of the tracer equations, an [`AbstractTracerForm`](@ref) (default flux form, as in v2)"
     tracer_form::TF
     "form of the momentum equations, an [`AbstractMomentumForm`](@ref) (default flux form, the transport `H U` as in LADDIE v2)"
     momentum_form::MF
-    "time level of `u★`, the entrainment thickness and the drag speed, an [`AbstractClosureLevel`](@ref) (default `PastClosureLevel()`)"
-    closure_level::CL
     "Coriolis parameter, an [`AbstractCoriolisParameter`](@ref) (default f-plane at `-1.37e-4` s⁻¹)"
     coriolis::CP
     "stencil of the ice-base slope, an [`AbstractIceSlope`](@ref) (default `MaskedIceSlope()`)"
     ice_slope::IS
     "treatment of the kinks (max/min switches, upwinding, √ at zero), an [`AbstractKinks`](@ref) (default exact)"
     kinks::KT
-    "time integration, an [`AbstractIntegrator`](@ref) (default `LeapfrogIntegrator()`, ν = 0.8)"
+    "time integration and the time level of the closures, an [`AbstractIntegrator`](@ref) (default `LeapfrogIntegrator()`: ν = 0.8, `PastClosureLevel()`)"
     integrator::TI
 end
 
@@ -168,20 +165,19 @@ _param_defaults() = (
     seconds_per_day = 86400.0,
     seconds_per_year = 365.25 * 24 * 3600,
     entrainment = GasparEntrainment(2.5),
-    melting = FixedGamTMelting(0.00018),
+    melting = TurbulentGamTMelting(),
     convection = RelaxToAmbientConvection(3600.0),
     frazil_ice = NoFrazilIce(),
     ice_conduction = MeltOnlyIceConduction(),
-    equation_of_state = LinearEOS(),
-    max_layer_thickness = NoMaxLayerThickness(),
+    equation_of_state = RoquetEOS(),
+    max_layer_thickness = RelativeMaxLayerThickness(1.0, 500.0),
     tracer_bounds = NoTracerBounds(),
-    lateral_viscosity = PrescribedLateralViscosity(),
+    lateral_viscosity = NonlinearLateralViscosity(),
     laplacian_weights = PresentLaplacianWeights(),
     front_pressure = ZeroGradientFrontPressure(),
-    momentum_advection = CentredMomentumAdvection(),
+    momentum_advection = UpstreamMomentumAdvection(),
     tracer_form = FluxTracerForm(),
     momentum_form = FluxMomentumForm(),
-    closure_level = PastClosureLevel(),
     coriolis = CoriolisParameter0D(),
     ice_slope = MaskedIceSlope(),
     kinks = ExactKinks(),

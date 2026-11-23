@@ -269,7 +269,7 @@ _or_zero(::Nothing, FT) = zero(FT)
         Vjm = _face_avg(V1, vmask, i, j, i, jm1)
         Vjm_ip = _face_avg_ring0(V1, vmask, ip1, j, 0, -1)
         ip_H_Vjm = _safe_div(H1[i, j] * Vjm + H1[ip1, j] * Vjm_ip, tmip)
-        # The drag speed, at the level of `Params.closure_level` (Ud, Vd).
+        # The drag speed, at the closure level of the integrator (Ud, Vd).
         ipjmV = half * (half * (Vd[i, j] + Vd[i, jm1]) + half * (Vd[ip1, j] + Vd[ip1, jm1]))
         speed = _ssqrt(kinks, Ud[i, j]^2 + ipjmV^2, kink_width(kinks, :u))
         C_dU = _face_drag(C_d, gap_drag, i, j, ip1, j)   # mélange cover in gaps (LeakyGapsBC)
@@ -357,7 +357,7 @@ end
         Uim = _face_avg(U1, umask, i, j, im1, j)
         Uim_jp = _face_avg_ring0(U1, umask, i, jp1, -1, 0)
         jp_H_Uim = _safe_div(H1[i, j] * Uim + H1[i, jp1] * Uim_jp, tmjp)
-        # The drag speed, at the level of `Params.closure_level` (Vd, Ud).
+        # The drag speed, at the closure level of the integrator (Vd, Ud).
         jpimU = half * (half * (Ud[i, j] + Ud[im1, j]) + half * (Ud[i, jp1] + Ud[im1, jp1]))
         speed = _ssqrt(kinks, Vd[i, j]^2 + jpimU^2, kink_width(kinks, :u))
         C_dV = _face_drag(C_d, gap_drag, i, j, i, jp1)   # mélange cover in gaps (LeakyGapsBC)
@@ -593,7 +593,7 @@ function _step_momentum!(m, q, dt, H)
     c.laplace(m)
     outflow = momentum_outflow(m)
     c.advect(m, outflow)
-    level = m.params.closure_level
+    level = closure_level(m.params.integrator)
     launch_interior!(c.step, q.future, q.past, q.present, m.dHdt, m.Hdrho, H, m.drho, c.slope,
                      c.partner.present, m.detr, m.detr_cap, m.adv, m.lap, m.tmask, c.mask, c.partner_mask, c.f,
                      closure_field(q, level), closure_field(c.partner, level), m.H.past, m.H.future, m.convH,

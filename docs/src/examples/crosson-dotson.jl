@@ -6,10 +6,11 @@ This script reproduces the Crosson–Dotson run of
 it cell by cell with the reference output. The settings are the reference's, not Laddie.jl's
 defaults, and make a good starting point for a realistic cavity. Four of them matter:
 
-  * `LeapfrogIntegrator(; nu = 0.8)`, the default: `nu = 0.1` is unstable at `dt = 120 s` and
+  * `LeapfrogIntegrator(; nu = 0.8)`, the default ν: `nu = 0.1` is unstable at `dt = 120 s` and
     inflates the mean melt sevenfold.
-  * No cap on the layer thickness ([`NoMaxLayerThickness`](@ref), the default): capping `H`
-    at the water column cuts melt by ~90 % (see [`AbstractMaxLayerThickness`](@ref)).
+  * No cap on the layer thickness ([`NoMaxLayerThickness`](@ref), as the reference): capping `H`
+    at the water column cut melt by ~90 % before the cap became a detrainment (see
+    [`AbstractMaxLayerThickness`](@ref)).
   * `ClampDensityConvection` convection, as in the reference (`ResetToAmbientConvection`: −0.07 %).
   * `CentredIceSlope`, the reference's ice-base slope (the default `MaskedIceSlope`: −0.8 %).
 
@@ -83,11 +84,13 @@ params = Params(; FT,
     convection = ClampDensityConvection(0.005),
     tracer_form = AdvectiveTracerForm(),  # the reference steps T and S, not H·T and H·S
     ice_slope = CentredIceSlope(),        # the reference's slope stencil
-    integrator = LeapfrogIntegrator(; nu = 0.8),  # the reference's Robert–Asselin coefficient
+    integrator = LeapfrogIntegrator(; nu = 0.8, closure_level = PresentClosureLevel()),  # the reference's ν and closures
     ## Laddie's defaults differ from what the published run used:
-    momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel(),
+    momentum_form = AdvectiveMomentumForm(),
     tracer_bounds = TracerBounds(), ice_conduction = HollandJenkinsIceConduction(),
     front_pressure = V1FrontPressure(),
+    equation_of_state = LinearEOS(; alpha, beta), max_layer_thickness = NoMaxLayerThickness(),
+    lateral_viscosity = PrescribedLateralViscosity(), momentum_advection = CentredMomentumAdvection(),
 )
 ## The reference's slip = 1 on every wall: no slip in the viscosity, v1's advective ghost;
 ## zero-gradient inflow at the ice front, as in v1.

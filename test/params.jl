@@ -28,7 +28,7 @@ end
     @test p.melting isa FixedGamTMelting{Float32}
     @test p.convection isa ResetToAmbientConvection{Float32}
     @test !hasfield(typeof(p), :open_bc) && !hasfield(typeof(p), :gaps_bc)  # BCs live elsewhere
-    @test p.lateral_viscosity isa PrescribedLateralViscosity
+    @test p.lateral_viscosity isa NonlinearLateralViscosity{Float32}
 
     p_nl = Params(; FT = Float32, lateral_viscosity = NonlinearLateralViscosity(10.0))
     @test p_nl.lateral_viscosity isa NonlinearLateralViscosity{Float32}

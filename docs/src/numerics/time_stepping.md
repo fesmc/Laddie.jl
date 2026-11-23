@@ -58,8 +58,8 @@ H^{***} = \beta_3 H^{n+1} + (1-2\beta_3) H^{n+1/2} + \beta_3 H^n,
 
 with ``\beta_1 = \beta_2 = 0.5`` and ``\beta_3 = 0.344``, the values of the v2
 configurations. Everything else follows the stage level: advection, drag, melt and
-entrainment, which are recomputed in each stage (so the stages need
-`closure_level = PresentClosureLevel()`). The thickness in the tracer fluxes is the stage
+entrainment, which are recomputed in each stage (the closures read the stage level, so
+[`FBRK3Integrator`](@ref) has no `closure_level`). The thickness in the tracer fluxes is the stage
 thickness of the continuity equation, so a uniform tracer stays uniform (v2 uses ``H^*``
 there). Viscosity and diffusion act in every stage, from ``q^n`` (v2 adds them in the last
 stage only). Under the
@@ -140,6 +140,7 @@ AbstractIntegrator
 LeapfrogIntegrator
 FBRK3Integrator
 default_cfl_target
+closure_level
 AbstractTimeStepper
 FixedTimeStepper
 AdaptiveTimeStepper

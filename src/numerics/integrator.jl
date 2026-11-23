@@ -18,14 +18,17 @@ qⁿ⁺¹ = qⁿ⁻¹ + 2Δt F(qⁿ, qⁿ⁻¹),    qⁿ ← qⁿ + ν/2 (qⁿ�
 The filter damps the computational (2Δt) mode. The first step, and the first after a change
 of Δt, is a forward step over Δt.
 
-Select via `Params(; integrator = LeapfrogIntegrator(; nu = 0.8))` (the default).
+Select via `Params(; integrator = LeapfrogIntegrator(; nu = 0.8, closure_level = PastClosureLevel()))`
+(the default).
 
 # Fields
 $(TYPEDFIELDS)
 """
-@kwdef struct LeapfrogIntegrator{FT} <: AbstractIntegrator
+@kwdef struct LeapfrogIntegrator{FT, CL<:AbstractClosureLevel} <: AbstractIntegrator
     "Robert–Asselin filter coefficient ν (–, default `0.8`)"
     nu::FT = 0.8
+    "time level the closures read, an [`AbstractClosureLevel`](@ref) (default `PastClosureLevel()`)"
+    closure_level::CL = PastClosureLevel()
 end
 
 """
@@ -40,11 +43,11 @@ Hⁿ⁺¹ᐟ² = Hⁿ + Δt/2 Ψ(Hⁿ⁺¹ᐟ³, Uⁿ⁺¹ᐟ³),     Uⁿ⁺¹�
 Hⁿ⁺¹ = Hⁿ + Δt Ψ(Hⁿ⁺¹ᐟ², Uⁿ⁺¹ᐟ²),         Uⁿ⁺¹ = Uⁿ + Δt Φ(H***, Uⁿ⁺¹ᐟ²),     H*** = β₃Hⁿ⁺¹ + (1−2β₃)Hⁿ⁺¹ᐟ² + β₃Hⁿ
 ```
 
-T and S are stepped as U. Lateral viscosity and diffusion act in every stage, from level n. No
-computational mode, no filter, and no bootstrap step. Needs
-`closure_level = PresentClosureLevel()` and the flux forms. Defaults: v2's configurations.
+T and S are stepped as U. Lateral viscosity and diffusion act in every stage, from level n, and
+the closures at the stage level. No computational mode, no filter, and no bootstrap step. Needs
+the flux forms. Defaults: v2's configurations.
 
-Select via `Params(; integrator = FBRK3Integrator(), closure_level = PresentClosureLevel())`.
+Select via `Params(; integrator = FBRK3Integrator())`.
 
 # Fields
 $(TYPEDFIELDS)
@@ -74,15 +77,24 @@ The CFL setpoint of an [`AdaptiveTimeStepper`](@ref) built without `cfl_target`,
 """
 function default_cfl_target end
 
+"""
+    closure_level(integrator)
+
+The [`AbstractClosureLevel`](@ref) the closures read under the [`AbstractIntegrator`](@ref)
+`integrator`: the `closure_level` field of [`LeapfrogIntegrator`](@ref), and
+[`PresentClosureLevel`](@ref) (the stage level) for [`FBRK3Integrator`](@ref).
+"""
+function closure_level end
+
+closure_level(integrator::LeapfrogIntegrator) = integrator.closure_level
+closure_level(::FBRK3Integrator) = PresentClosureLevel()
+
 default_cfl_target(::LeapfrogIntegrator) = 0.3
 default_cfl_target(::FBRK3Integrator) = 2.0
 
 # The settings an integrator needs from the rest of `Params`, checked by `Params(; ...)`.
 _check_integrator(::LeapfrogIntegrator, _) = nothing
 function _check_integrator(::FBRK3Integrator, p)
-    p.closure_level isa PresentClosureLevel || throw(ArgumentError(
-        "FBRK3Integrator needs closure_level = PresentClosureLevel(): its stages take the " *
-        "closures at the stage level"))
     p.tracer_form isa FluxTracerForm || throw(ArgumentError(
         "FBRK3Integrator needs tracer_form = FluxTracerForm()"))
     p.momentum_form isa FluxMomentumForm || throw(ArgumentError(

@@ -1,7 +1,7 @@
 """
 Abstract supertype for the equation of state: the buoyancy contrast `δρ = (ρ_a − ρ)/ρ₀` of the
 ambient water against the layer. Pass a concrete instance as `Params(; equation_of_state = ...)`:
-[`LinearEOS`](@ref) (the default) or [`RoquetEOS`](@ref). All have the form
+[`RoquetEOS`](@ref) (the default) or [`LinearEOS`](@ref). All have the form
 
 ```
 δρ = β (S_a − S) − (a₀ + a_T T̄ + a_Z Z) (T_a − T),    T̄ = ½ (T_a + T),
@@ -16,8 +16,8 @@ abstract type AbstractEOS end
 $(TYPEDEF)
 
 Linear equation of state, `δρ = β (S_a − S) − α (T_a − T)`, with constant thermal
-expansion `alpha` and haline contraction `beta`.  The default, and the behaviour of LADDIE v1
-and v2 (whose values are the defaults).
+expansion `alpha` and haline contraction `beta`, the behaviour of LADDIE v1 and v2 (whose
+values are the defaults).
 
 Select via `Params(; equation_of_state = LinearEOS())`, or `LinearEOS(; alpha = 3.8e-5)`.
 
@@ -43,14 +43,10 @@ The simplified polynomial equation of state of [Roquet et al. (2015, their Eq. 1
 
 the simplest form with cabbeling (the thermal expansion `α = C_b(Θ − Θ₀) + T_h Z` falls with
 temperature) and thermobaricity (it rises with depth). The defaults are the paper's values,
-rescaled by `ρ₀`. Experimental: warns when constructed; its range of validity is discussed on
-the [Equation of state](@ref) page.
+rescaled by `ρ₀`. The default; its range of validity is discussed on the
+[Equation of state](@ref) page.
 
-# Example
-
-```julia
-Params(; equation_of_state = RoquetEOS())
-```
+Select via `Params(; equation_of_state = RoquetEOS())` (the default).
 
 # Fields
 $(TYPEDFIELDS)
@@ -70,7 +66,6 @@ end
 function RoquetEOS(Cb::FT, Theta0::FT, Th::FT, b0::FT) where {FT<:Real}
     Cb >= 0 || throw(ArgumentError("RoquetEOS: Cb must be non-negative, got $Cb"))
     b0 > 0 || throw(ArgumentError("RoquetEOS: b0 must be positive, got $b0"))
-    _warn_experimental("RoquetEOS", "equation of state", "LinearEOS()")
     return RoquetEOS{FT}(Cb, Theta0, Th, b0)
 end
 RoquetEOS(Cb::Real, Theta0::Real, Th::Real, b0::Real) = RoquetEOS(promote(Cb, Theta0, Th, b0)...)

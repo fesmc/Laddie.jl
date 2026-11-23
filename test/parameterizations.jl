@@ -109,20 +109,21 @@ end
     @test !isapprox(m1.model.entr, m2.model.entr)
 end
 
-@testset "Lateral viscosity: PrescribedLateralViscosity bit-identical, NonlinearLateralViscosity differs" begin
-    # PrescribedLateralViscosity is the default and must reproduce the
-    # pre-AbstractLateralViscosity behaviour bit-for-bit: laplace_U/V now
-    # dispatch on m.lateral_viscosity, but the Prescribed path is the exact
-    # same kernel followed by the same `.*= A_h` that used to live in the
-    # momentum-step kernels.
+@testset "Lateral viscosity: NonlinearLateralViscosity(0.1) is the default, the others differ" begin
+    # The default is NonlinearLateralViscosity(0.1): stating it is bit-identical,
+    # and the constant-coefficient PrescribedLateralViscosity changes the solution.
     m_def  = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+    m_nl01 = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                          params = Params(; FT, lateral_viscosity = NonlinearLateralViscosity(FT(0.1))))
     m_presc = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
                            params = Params(; FT, lateral_viscosity = PrescribedLateralViscosity()))
     run!(m_def;   days = 1.0, verbose = false)
+    run!(m_nl01;  days = 1.0, verbose = false)
     run!(m_presc; days = 1.0, verbose = false)
-    @test m_presc.model.U.present == m_def.model.U.present
-    @test m_presc.model.V.present == m_def.model.V.present
-    @test m_presc.model.melt == m_def.model.melt
+    @test m_nl01.model.U.present == m_def.model.U.present
+    @test m_nl01.model.V.present == m_def.model.V.present
+    @test m_nl01.model.melt == m_def.model.melt
+    @test m_presc.model.V.present != m_def.model.V.present
 
     # NonlinearLateralViscosity changes the solution and stays physical.
     m_nl = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
@@ -154,9 +155,9 @@ end
     @test Laddie.laplace_U(m_nl.model) != lU_before
     # ...and the same coupling must be absent under the plain Laplacian,
     # whose coefficient is a constant and never reads V at all.
-    lU0_before = copy(Laddie.laplace_U(m_def.model))
-    m_def.model.V.past .*= 2
-    @test Laddie.laplace_U(m_def.model) == lU0_before
+    lU0_before = copy(Laddie.laplace_U(m_presc.model))
+    m_presc.model.V.past .*= 2
+    @test Laddie.laplace_U(m_presc.model) == lU0_before
 end
 
 @testset "PrescribedMelting: prescribed rate, consistent heat sink, 2D field" begin
@@ -237,6 +238,14 @@ end
     @test all(H[act .& thin] .≈ 1.6) && all(H[act .& .!thin] .≈ 8)
     H = capped(RelativeMaxLayerThickness(0.8, 5.0))
     @test all(H[act .& thin] .≈ 5) && all(H[act .& .!thin] .≈ 8)   # the floor only where 0.8·wc < 5 m
+
+    # Without a bed (z_bed = −∞) there is no cap, and its derivative with respect to the
+    # fraction is 0, not NaN, under both kink treatments (the default cap, ISOMIP+).
+    for kinks in (ExactKinks(), SmoothKinks())
+        cap(f) = cap_layer_thickness(RelativeMaxLayerThickness(f, 500.0), kinks, 30.0, -400.0, -Inf, 1.0)
+        @test cap(1.0) == 30.0
+        @test ForwardDiff.derivative(cap, 1.0) === 0.0
+    end
 end
 
 @testset "ClampDensityConvection convection scheme: build and short run" begin
@@ -400,9 +409,11 @@ end
     # Both forms discretise the same budget, but the advective one carries a larger
     # time-step error: on 2-day warm ISOMIP+, cutting dt from 210 s to 52.5 s moved
     # the mean melt by 7.3 % under the advective form and by 0.36 % under the flux
-    # form, and the two forms meet as dt shrinks (5.22 vs 5.35 m/yr at 52.5 s).
+    # form, and the two forms meet as dt shrinks (5.22 vs 5.35 m/yr at 52.5 s); measured
+    # under the old default schemes (FixedGamTMelting, LinearEOS, …).  Under the current
+    # ones the advective form's error is 0.66 % against the flux form's 0.39 %.
     melt(tf, dt) = (m = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, dt,
-                                     params = Params(; FT, tracer_form = tf));
+                                     params = Params(; FT, OLD_DEFAULT_SCHEMES..., tracer_form = tf));
                     run!(m; days = 2.0, verbose = false); meltstats(m)[2])
     flux = melt(FluxTracerForm(), 210.0), melt(FluxTracerForm(), 52.5)
     adv = melt(AdvectiveTracerForm(), 210.0), melt(AdvectiveTracerForm(), 52.5)
@@ -443,9 +454,9 @@ end
 
 @testset "Flux momentum form: dilution and sinks at the new level" begin
     @test Params().momentum_form isa FluxMomentumForm
-    @test Params().closure_level isa PastClosureLevel
-    @test Params(; FT, momentum_form = AdvectiveMomentumForm(), closure_level = PresentClosureLevel()).closure_level isa
-          PresentClosureLevel
+    @test closure_level(Params().integrator) isa PastClosureLevel
+    @test closure_level(Params(; FT, momentum_form = AdvectiveMomentumForm(),
+                               integrator = LeapfrogIntegrator(; closure_level = PresentClosureLevel())).integrator) isa PresentClosureLevel
     upd(rhs, H_old, H_new, sink; U = 0.3, mask = 1.0, dt = 800.0) =
         Laddie.momentum_update(FluxMomentumForm(), U, U, rhs, NaN, H_old, H_new, sink, 0.0, mask, dt)
     # Entrainment of water at rest: U scaled by H⁻/H⁺, whatever the rate.
@@ -491,9 +502,9 @@ end
 end
 
 @testset "Momentum advection: centred (v1) vs upstream (v2)" begin
-    @test Params().momentum_advection isa CentredMomentumAdvection
-    @test Params(; FT, momentum_advection = UpstreamMomentumAdvection()).momentum_advection isa
-          UpstreamMomentumAdvection
+    @test Params().momentum_advection isa UpstreamMomentumAdvection
+    @test Params(; FT, momentum_advection = CentredMomentumAdvection()).momentum_advection isa
+          CentredMomentumAdvection
 
     mk(ma) = build_isomip(CPU(); FT, nx = 40, ny = 20, isomipcond = :warm,
         params = Params(; FT, melting = FixedGamTMelting(0.00018),
@@ -726,16 +737,16 @@ end
     @test any(>(0), sim.model.melt)
 end
 
-@testset "AbstractEOS: LinearEOS default, RoquetEOS contrast, convection" begin
+@testset "AbstractEOS: RoquetEOS default, LinearEOS contrast, convection" begin
     quiet(f) = Base.CoreLogging.with_logger(f, Base.CoreLogging.NullLogger())
     mk(; kw...) = quiet() do
         build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, params = Params(; FT, kw...))
     end
 
-    @test Params(; FT).equation_of_state === LinearEOS()
-    @test occursin("eq. of state   = LinearEOS()", sprint(show, MIME("text/plain"), Params(; FT)))
+    @test Params(; FT).equation_of_state isa RoquetEOS{FT}
+    @test occursin("eq. of state   = RoquetEOS", sprint(show, MIME("text/plain"), Params(; FT)))
     @test_logs LinearEOS()
-    @test_logs (:warn, r"RoquetEOS is an experimental equation of state") RoquetEOS()
+    @test_logs RoquetEOS()
     eos = quiet(() -> RoquetEOS())
     @test (eos.Cb, eos.Theta0, eos.Th, eos.b0) == (0.011, -4.5, 2.5e-5, 0.77)
     @test quiet(() -> RoquetEOS(0.011, -4.5, 2.5e-5, 1)).b0 === 1.0     # mixed types promote
@@ -746,7 +757,7 @@ end
     @test p32.equation_of_state === RoquetEOS{Float32}(0.011f0, -4.5f0, 2.5f-5, 0.77f0)
 
     # The coefficients: the linear ones are the scheme's constants, with no T or Z dependence.
-    m_lin = mk().model
+    m_lin = mk(equation_of_state = LinearEOS()).model
     lin = m_lin.params.equation_of_state
     @test lin === LinearEOS{FT}(FT(3.733e-5), FT(7.843e-4))
     @test Laddie.eos_coefficients(m_lin) === (; beta = lin.beta, a0 = lin.alpha, aT = zero(FT), aZ = zero(FT))
@@ -781,7 +792,7 @@ end
     @test m.drho[act] ≈ ref[act] rtol = 1e-9
     @test all(iszero, m.drho[.!act])
     # A LinearEOS `alpha` moves the run; `Params` no longer has the constants.
-    m1 = mk().model; m2 = mk(equation_of_state = LinearEOS(; alpha = 2 * lin.alpha)).model
+    m1 = mk(equation_of_state = LinearEOS()).model; m2 = mk(equation_of_state = LinearEOS(; alpha = 2 * lin.alpha)).model
     Laddie.density!(m1); Laddie.density!(m2)
     @test m1.drho != m2.drho
     @test !hasfield(Params, :alpha) && !hasfield(Params, :beta)
@@ -812,7 +823,7 @@ end
     s_h = mk(equation_of_state = eos, entrainment = HollandEntrainment(FT(0.01775)))
     run!(s_h; days = 0.5, verbose = false)
     @test all(isfinite, s_h.model.H.present)
-    s_l = mk(convection = ResetToAmbientConvection(FT(0.005)))
+    s_l = mk(equation_of_state = LinearEOS(), convection = ResetToAmbientConvection(FT(0.005)))
     run!(s_l; days = 0.5, verbose = false)
     @test s_l.model.melt != melts[1]
 end

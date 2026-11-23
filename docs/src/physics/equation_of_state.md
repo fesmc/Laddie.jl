@@ -69,8 +69,8 @@ or ``0.029`` kg m⁻³ K⁻¹ at the surface freezing point (about ``-1.9`` °C)
 contrast of a plume against its ambient is weaker where it is warm or deep (by about 5 % for a cold
 plume and 25 % for a warm one at 500 m).
 
-!!! warning "Experimental"
-    `RoquetEOS` is experimental and logs a warning when constructed. [Roquet et al. (2015)](@cite roquet_defining_2015) fit it to the
+!!! warning "Range of validity"
+    `RoquetEOS` is the default. [Roquet et al. (2015)](@cite roquet_defining_2015) fit it to the
     open ocean in Conservative Temperature and Absolute Salinity, which Laddie takes as its temperature
     and salinity (only salinity differences enter, so the offset to practical salinity cancels; the
     difference between Conservative and potential temperature is below 0.01 K in cold water), and say

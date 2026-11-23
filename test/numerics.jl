@@ -23,10 +23,10 @@
                convection = ClampDensityConvection(FT(0.005))),
         Params(; FT, momentum_form = FluxMomentumForm(), max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0)),
                frazil_ice = RelaxedFrazilIce(FT(3600.0)), convection = ClampDensityConvection(FT(0.005))),
-        Params(; FT, closure_level = PastClosureLevel(),
+        Params(; FT, integrator = LeapfrogIntegrator(; closure_level = PastClosureLevel()),
                melting = TurbulentGamTMelting(FT(13.8), FT(2432.0), FT(1.95e-6)),
                entrainment  = HollandEntrainment(FT(0.01775))),
-        Params(; FT, momentum_form = FluxMomentumForm(), closure_level = PastClosureLevel()),
+        Params(; FT, momentum_form = FluxMomentumForm(), integrator = LeapfrogIntegrator(; closure_level = PastClosureLevel())),
         Params(; FT, momentum_form = FluxMomentumForm(), momentum_advection = UpstreamMomentumAdvection(),
                max_layer_thickness = AbsoluteMaxLayerThickness(FT(5.0))),
     )
@@ -90,7 +90,7 @@ end
     @test m.model.H.future ≈ H_past .+ src .* (2 * m.clock.dt)
 end
 
-const FBRK3_PARAMS = (; integrator = FBRK3Integrator(), closure_level = PresentClosureLevel())
+const FBRK3_PARAMS = (; integrator = FBRK3Integrator())
 
 @testset "Conservation: FB-RK3 H equation exact over one stage" begin
     m = build_isomip(CPU(); nx = 20, ny = 10, isomipcond = :warm, params = Params(; FBRK3_PARAMS...))
@@ -132,7 +132,7 @@ end
                           run!(s; days = 0.25, verbose = false); copy(s.model.H.present))
     relerr(a, b) = maximum(abs, a .- b) / maximum(abs, b)
     p_fb = Params(; FBRK3_PARAMS...)
-    p_lf = Params(; closure_level = present)
+    p_lf = Params(; integrator = LeapfrogIntegrator(; closure_level = present))
     ref = run_at(p_fb, 15.0)
     e240, e120, e60 = (relerr(run_at(p_fb, dt), ref) for dt in (240.0, 120.0, 60.0))
     @test 0.8 < log2(e240 / e120) < 1.5

@@ -265,9 +265,11 @@ end
     # the layer carries across the gap every single step, rebuilding the very
     # sink ConnectedGapsBC exists to remove.
     # Cool every active cell to drive the whole domain convectively unstable.
+    # Under LinearEOS: cooling by 5 K takes the layer below RoquetEOS's Θ₀ = −4.5 °C, where
+    # cooler water is lighter.
     function destabilize(scheme)
         m = build(gappy_mask(), ConnectedGapsBC();
-                  params = Params(; FT, convection = scheme))
+                  params = Params(; FT, convection = scheme, equation_of_state = LinearEOS()))
         m.model.T.present[m.model.tmask .> 0] .-= 5
         Laddie.density!(m.model)
         @test all(m.model.drho[gap_ix] .< 0) && all(m.model.drho[shelf] .< 0)
@@ -330,10 +332,14 @@ end
     gap_ix = CartesianIndices((10:12, 5:7))
     z_draft_raw = fill(-400.0, 22, 12)
     forcing = ISOMIPForcing(:warm; FT)
+    # Under the default schemes before 2026-11-23, at which the δρ ordering below was
+    # measured; under the current ones the connected gap is the less unstable one after
+    # one day (min δρ −6.3e-5 against −1.5e-4), while the leaky gap still drains.
     build(gaps) =
         Simulation(Model(Grid(gappy_mask(), z_draft_raw, 2000.0, 2000.0; FT,
                               domain_cropping = NoDomainCropping());
-                         forcing, boundary = BoundaryConditions(; gaps)))
+                         forcing, params = Params(; FT, OLD_DEFAULT_SCHEMES...),
+                         boundary = BoundaryConditions(; gaps)))
 
     # -- Construction ------------------------------------------------------
     @test LeakyGapsBC().melange_cover == 0.9
@@ -439,9 +445,14 @@ end
     end
     gappy = copy(mask0); gappy[xgap, ygap] .= 4
 
+    # Under the default schemes before 2026-11-23 (centred momentum advection,
+    # FixedGamTMelting, …), at which the contrast below was measured.  Under the current
+    # defaults the sink no longer collapses the downstream current: downstream melt
+    # sink 166, connected 157, no gap 157 (with centred advection alone 164, 202, 198).
     function channel(mask, bc)
         grid = Grid(mask, z_draft, dx, dy; FT, domain_cropping = NoDomainCropping())
         m = Simulation(Model(grid; forcing = ISOMIPForcing(:warm; FT),
+                             params = Params(; FT, OLD_DEFAULT_SCHEMES...),
                              boundary = BoundaryConditions(; gaps = bc)))
         run!(m; days = 20.0, verbose = false)
         return m

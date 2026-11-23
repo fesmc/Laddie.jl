@@ -65,9 +65,9 @@ using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, 
     _drho_gate(m, ip_count(m.tmask))
 # f·H̄·V  (Coriolis)
 @inline u_coriolis(m) = m.fu .* ip_t(m, m.H.present .* jm_v(m, m.V.present))
-# |u| on the U points, at the level of `Params.closure_level`
+# |u| on the U points, at the closure level of the integrator
 @inline u_drag_speed(m) =
-    _safe_sqrt.(closure_level(m, m.U) .^ 2 .+ ip_half(jm_half(closure_level(m, m.V))) .^ 2)
+    _safe_sqrt.(closure_state(m, m.U) .^ 2 .+ ip_half(jm_half(closure_state(m, m.V))) .^ 2)
 # Cd·U·|u|  (quadratic bottom drag)
 @inline u_bottom_drag(m) = m.C_d .* m.U.present .* u_drag_speed(m)
 # Ah·∇²(HU)  (lateral diffusion; the A_h/shear scaling is applied inside
@@ -94,9 +94,9 @@ using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, 
     _drho_gate(m, jp_count(m.tmask))
 # f·H̄·U  (Coriolis)
 @inline v_coriolis(m) = m.fv .* jp_t(m, m.H.present .* im_u(m, m.U.present))
-# |u| on the V points, at the level of `Params.closure_level`
+# |u| on the V points, at the closure level of the integrator
 @inline v_drag_speed(m) =
-    _safe_sqrt.(closure_level(m, m.V) .^ 2 .+ jp_half(im_half(closure_level(m, m.U))) .^ 2)
+    _safe_sqrt.(closure_state(m, m.V) .^ 2 .+ jp_half(im_half(closure_state(m, m.U))) .^ 2)
 # Cd·V·|u|  (quadratic bottom drag)
 @inline v_bottom_drag(m) = m.C_d .* m.V.present .* v_drag_speed(m)
 # Ah·∇²(HV)  (lateral diffusion; the A_h/shear scaling is applied inside
@@ -105,8 +105,8 @@ using Laddie: xm1, ym1, xp1, yp1, ip_half, jp_half, im_half, jm_half, ip_count, 
 # ė·V  (detrainment momentum loss)
 @inline v_detrainment(m) = (m.detr .+ jp_t(m, m.detr_cap) .+ jp_t(m, frazil_field(m))) .* m.V.present
 
-# The prognostic level the closures read (`Params.closure_level`).
-closure_level(m, v) = m.params.closure_level isa PastClosureLevel ? v.past : v.present
+# The prognostic level the closures read (`closure_level` of the integrator).
+closure_state(m, v) = Laddie.closure_field(v, Laddie.closure_level(m.params.integrator))
 
 # One momentum step of U from `rhs`, the momentum terms without U·∂H/∂t, drag and
 # detrainment, in the model's `momentum_form`: the advective form adds those terms

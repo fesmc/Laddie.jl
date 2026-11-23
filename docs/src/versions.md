@@ -21,25 +21,25 @@ Laddie.jl; the [table below](#Options-in-each-version) lists them, with the defa
 
 | option | LADDIE v1 | LADDIE v2 | Laddie.jl default |
 |---|---|---|---|
-| equation of state | `LinearEOS` | `LinearEOS` | `LinearEOS` |
-| melting | `TurbulentGamTMelting` | `TurbulentGamTMelting` or `UStarGamTMelting`, per run | `FixedGamTMelting` |
+| equation of state | `LinearEOS` | `LinearEOS` | `RoquetEOS`† |
+| melting | `TurbulentGamTMelting` | `TurbulentGamTMelting` or `UStarGamTMelting`, per run | `TurbulentGamTMelting` |
 | ice conduction | `HollandJenkinsIceConduction` | `HollandJenkinsIceConduction` | `MeltOnlyIceConduction`† |
 | entrainment | `GasparEntrainment` | `GasparEntrainment` | `GasparEntrainment` |
 | convection | `ResetToAmbientConvection` | `ClampDensityConvection` | `RelaxToAmbientConvection(3600)`† |
 | frazil ice | `NoFrazilIce` | `NoFrazilIce` | `NoFrazilIce` |
-| lateral viscosity | `PrescribedLateralViscosity` | `NonlinearLateralViscosity` | `PrescribedLateralViscosity` |
+| lateral viscosity | `PrescribedLateralViscosity` | `NonlinearLateralViscosity` | `NonlinearLateralViscosity(0.1)` |
 | Coriolis parameter | `CoriolisParameter0D` | `CoriolisParameter0D` | `CoriolisParameter0D` |
 | ice-shelf gaps | `SinkGapsBC` | `SinkGapsBC`, `ConnectedGapsBC` or `LeakyGapsBC`, per run | `SinkGapsBC` |
-| momentum advection | `CentredMomentumAdvection` | `UpstreamMomentumAdvection` | `CentredMomentumAdvection` |
+| momentum advection | `CentredMomentumAdvection` | `UpstreamMomentumAdvection` | `UpstreamMomentumAdvection` |
 | tracer form | `AdvectiveTracerForm` | `FluxTracerForm` | `FluxTracerForm` |
 | momentum form | `AdvectiveMomentumForm` | `FluxMomentumForm`\* | `FluxMomentumForm` |
-| closure level | `PresentClosureLevel` | no counterpart (FB-RK3) | `PastClosureLevel`† |
+| closure level | `PresentClosureLevel` | no counterpart (FB-RK3) | `PastClosureLevel`†, a field of `LeapfrogIntegrator` |
 | Laplacian weights | `PastLaplacianWeights`\* | no counterpart | `PresentLaplacianWeights` |
 | wall slip | `NoSlipAtGL`, `NoSlipAtLand` | `PartialSlipAtGL(1)`, `PartialSlipAtLand(1)` | `PartialSlipAtGL(1)`, `PartialSlipAtLand(1)` |
 | wall momentum advection | `V1WallAdvection` | `NoWallAdvection` | `NoWallAdvection` |
 | open-ocean boundary | `ZeroGradientOpenOceanBC` | `ZeroGradientOpenOceanBC` | `OutflowOnlyOpenOceanBC`† |
 | ice-front pressure gradient | `V1FrontPressure` | `ZeroExteriorFrontPressure` | `ZeroGradientFrontPressure`† |
-| maximum layer thickness | none that binds | `AbsoluteMaxLayerThickness` | `NoMaxLayerThickness` |
+| maximum layer thickness | none that binds | `AbsoluteMaxLayerThickness` | `RelativeMaxLayerThickness(1, 500)`† |
 | tracer bounds | none | none | `NoTracerBounds`\* |
 | ice-base slope (`ice_slope`) | `CentredIceSlope` | no counterpart (mesh) | `MaskedIceSlope` |
 
@@ -49,7 +49,11 @@ Laddie.jl; the [table below](#Options-in-each-version) lists them, with the defa
 `V1FrontPressure` and the v2 setups zero-gradient inflow at the ice front. Select the option of the
 version explicitly to use it.
 
-† Neither version's choice: the default is the setup of tuned pan-Antarctic runs. Relaxing an
+† Neither version's choice: the default is the setup of tuned pan-Antarctic runs. The nonlinear
+equation of state carries cabbeling and thermobaricity, which raise the thermal expansion at the
+depth of the deep grounding lines; the layer is capped at its water column, but never below
+500 m, so that the cap binds only on the thickest layers, not where the draft nearly meets the bed
+(a cap at 0.8 of the water column removed nearly all refreezing). Relaxing an
 unstable layer to the ambient water over an hour replaces an instantaneous reset; conduction
 stops where the base refreezes, since marine ice there sits near the freezing point
 ([Wiskandt & Jourdain 2025](@cite wiskandt_brief_2025)); the closures at the past level keep

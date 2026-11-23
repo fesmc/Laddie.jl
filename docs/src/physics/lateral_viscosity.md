@@ -3,9 +3,9 @@
 The momentum equations carry a lateral viscous term, a thickness-weighted Laplacian of
 the velocity. Its coefficient is selected with `Params(; lateral_viscosity = ...)`:
 
-- [`PrescribedLateralViscosity`](@ref), the default: one global coefficient
+- [`PrescribedLateralViscosity`](@ref): one global coefficient
   `Params.A_h` (6 m² s⁻¹ by default), as [LADDIE v1](../versions.md) does.
-- [`NonlinearLateralViscosity`](@ref): a Smagorinsky-type coefficient, as [LADDIE v2](../versions.md)
+- [`NonlinearLateralViscosity`](@ref), the default: a Smagorinsky-type coefficient, as [LADDIE v2](../versions.md)
   does, which is near zero in smooth flow and large where the shear is strong. At each
   interior face it is
   ```math
@@ -15,7 +15,7 @@ the velocity. Its coefficient is selected with `Params(; lateral_viscosity = ...
   magnitude of the velocity difference across it. `C_visc` is dimensionless and
   resolution-independent, so it is directly comparable to the v2 configuration value, but
   not to `A_h`. `C_visc/100` plays the role of a squared Smagorinsky constant; the default
-  10 corresponds to ``C_s \approx 0.32``.
+  0.1, v2's Antarctic value, corresponds to ``C_s \approx 0.032`` (v2's MISMIP+ value 10 to 0.32).
 
 The grounding-line and land walls carry the scheme's own coefficient, with the neighbour
 replaced by the ghost velocity ``(1 - s)\,u`` of the slip factor ``s``. With the default

@@ -53,13 +53,13 @@ the forcing. The pages of this section describe one family each:
 
 | abstract type | selected with | default |
 |---------------|---------------|---------|
-| [`AbstractEOS`](@ref) | `Params(; equation_of_state)` | `LinearEOS()` |
-| [`AbstractMelting`](@ref) | `Params(; melting)` | `FixedGamTMelting(1.8e-4)` |
+| [`AbstractEOS`](@ref) | `Params(; equation_of_state)` | `RoquetEOS()` |
+| [`AbstractMelting`](@ref) | `Params(; melting)` | `TurbulentGamTMelting()` |
 | [`AbstractIceConduction`](@ref) | `Params(; ice_conduction)` | `MeltOnlyIceConduction()` |
 | [`AbstractEntrainment`](@ref) | `Params(; entrainment)` | `GasparEntrainment(2.5)` |
 | [`AbstractConvection`](@ref) | `Params(; convection)` | `RelaxToAmbientConvection(3600)` |
 | [`AbstractFrazilIce`](@ref) | `Params(; frazil_ice)` | `NoFrazilIce()` |
-| [`AbstractLateralViscosity`](@ref) | `Params(; lateral_viscosity)` | `PrescribedLateralViscosity()` |
+| [`AbstractLateralViscosity`](@ref) | `Params(; lateral_viscosity)` | `NonlinearLateralViscosity(0.1)` |
 | [`AbstractCoriolisParameter`](@ref) | `Params(; coriolis)` | `CoriolisParameter0D()` |
 
 Each default is the choice a plain run makes. The [LADDIE versions](../versions.md) page

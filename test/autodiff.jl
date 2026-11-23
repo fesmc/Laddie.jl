@@ -56,9 +56,15 @@ const AD_SCHEME_CASES = (
     "RelaxedFrazilIce" => (; schemes = (; frazil_ice = RelaxedFrazilIce()), supercooling = 0.05),
     "AdvectiveMomentumForm" => (; schemes = (; momentum_form = AdvectiveMomentumForm())),
     "AdvectiveTracerForm" => (; schemes = (; tracer_form = AdvectiveTracerForm())),
-    "PresentClosureLevel" => (; schemes = (; closure_level = PresentClosureLevel())),
-    "FBRK3Integrator" => (; schemes = (; integrator = FBRK3Integrator(), closure_level = PresentClosureLevel()),
-                          reference = (; closure_level = PresentClosureLevel())),
+    "PresentClosureLevel" => (; schemes = (; integrator = LeapfrogIntegrator(; closure_level = PresentClosureLevel()))),
+    "FBRK3Integrator" => (; schemes = (; integrator = FBRK3Integrator()),
+                          reference = (; integrator = LeapfrogIntegrator(; closure_level = PresentClosureLevel()))),
+    # The loss is ~20× less sensitive here, so round-off dominates the central difference at
+    # the 1e-6 step; at 1e-4 it agrees with the AD gradient to 3e-7.
+    "TurbulentGamTMelting" => (; schemes = (; melting = TurbulentGamTMelting()), step = 1e-4),
+    "LinearEOS" => (; schemes = (; equation_of_state = LinearEOS())),
+    "PrescribedLateralViscosity" => (; schemes = (; lateral_viscosity = PrescribedLateralViscosity())),
+    "CentredMomentumAdvection" => (; schemes = (; momentum_advection = CentredMomentumAdvection())),
     "ResetToAmbientConvection" => (; schemes = (; convection = ResetToAmbientConvection()), supercooling = 0.05),
     "RelaxToAmbientConvection, convecting" => (; schemes = (; convection = RelaxToAmbientConvection()), supercooling = 0.05,
                                      reference = (; convection = ClampDensityConvection())),
@@ -78,7 +84,7 @@ const AD_SCHEME_CASES = (
     g = ad_gradient(loss)
     @test all(isfinite, g)
     for k in eachindex(AD_X0)
-        h = 1e-6 * AD_X0[k]
+        h = get(case, :step, 1e-6) * AD_X0[k]
         e = zeros(length(AD_X0)); e[k] = h
         fd = (loss(AD_X0 .+ e) - loss(AD_X0 .- e)) / 2h
         @test g[k] ≈ fd rtol = 1e-5

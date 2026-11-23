@@ -78,7 +78,7 @@ alternative to the buoyancy-flux form of [Lambert et al. (2023, Eq. 14)](@cite l
 function entrainment!(m, ep::HollandEntrainment)
     coeff = ep.cl * m.K_h / m.A_h^2
     drho_coeff = m.g * m.K_h / m.A_h
-    level = m.params.closure_level
+    level = closure_level(m.params.integrator)
     launch_interior!(
         _holland_entrainment_kernel!,
         m.entr,
@@ -112,7 +112,7 @@ function entrainment!(m, ep::GasparEntrainment)
         m.Tb,
         m.z_draft,
         m.ustar,
-        closure_field(m.H, m.params.closure_level),
+        closure_field(m.H, closure_level(m.params.integrator)),
         m.drho,
         m.melt,
         m.tmask,

@@ -86,7 +86,8 @@ end
     # T_ice_farfield moved out of Params and into the forcing.  The default must
     # reproduce the old scalar Params.T_i = -25.0 exactly, or every existing
     # result shifts.
-    m_def = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm)
+    m_def = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm,
+                         params = Params(; FT, melting = FixedGamTMelting(FT(0.00018))))
     @test m_def.model.T_ice_farfield isa Matrix{FT}
     @test size(m_def.model.T_ice_farfield) == size(m_def.model.tmask)
     @test all(m_def.model.T_ice_farfield .== -25)

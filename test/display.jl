@@ -23,7 +23,7 @@ end
     ss = plain(m)
     @test occursin("Simulation{Float64} on CPU", ss)
     @test occursin("dt = 210.0 s", ss) && occursin("FixedTimeStepper()", ss)
-    @test occursin("LeapfrogIntegrator{Float64}(0.8)", ss) && occursin("disabled", ss)
+    @test occursin("LeapfrogIntegrator{Float64, PastClosureLevel}(0.8, PastClosureLevel())", ss) && occursin("disabled", ss)
     @test length(ss) < 800
     @test occursin("Simulation{Float64} on CPU at day 0.0", sprint(show, m))
 

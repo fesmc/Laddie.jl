@@ -18,6 +18,13 @@ import CUDA
 
 FT = Float64
 
+# The schemes that were defaults before 2026-11-23, for the tests whose numbers were
+# measured under them.
+const OLD_DEFAULT_SCHEMES = (; melting = FixedGamTMelting(1.8e-4), equation_of_state = LinearEOS(),
+                             max_layer_thickness = NoMaxLayerThickness(),
+                             lateral_viscosity = PrescribedLateralViscosity(),
+                             momentum_advection = CentredMomentumAdvection())
+
 # Detect GPU: use CUDABackend if a functional CUDA device is present.
 const gpu_backend = CUDA.functional() ? CUDA.CUDABackend() : nothing
 

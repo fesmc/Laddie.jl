@@ -71,17 +71,17 @@ describe one family each:
 
 | page | abstract type | selected with | default |
 |------|---------------|---------------|---------|
-| [Momentum advection](momentum_advection.md) | [`AbstractMomentumAdvection`](@ref) | `Params(; momentum_advection)` | `CentredMomentumAdvection()` |
+| [Momentum advection](momentum_advection.md) | [`AbstractMomentumAdvection`](@ref) | `Params(; momentum_advection)` | `UpstreamMomentumAdvection()` |
 | [Tracer form](tracer_form.md) | [`AbstractTracerForm`](@ref) | `Params(; tracer_form)` | `FluxTracerForm()` |
 | [Momentum form](momentum_form.md) | [`AbstractMomentumForm`](@ref) | `Params(; momentum_form)` | `FluxMomentumForm()` |
-| [Closure level](momentum_form.md) | [`AbstractClosureLevel`](@ref) | `Params(; closure_level)` | `PastClosureLevel()` |
+| [Closure level](momentum_form.md) | [`AbstractClosureLevel`](@ref) | `LeapfrogIntegrator(; closure_level)` | `PastClosureLevel()` |
 | [Laplacian weights](laplacian_weights.md) | [`AbstractLaplacianWeights`](@ref) | `Params(; laplacian_weights)` | `PresentLaplacianWeights()` |
 | [Kinks](kinks.md) | [`AbstractKinks`](@ref) | `Params(; kinks)` | `ExactKinks()` |
 | [Time integration](time_stepping.md) | [`AbstractIntegrator`](@ref) | `Params(; integrator)` | `LeapfrogIntegrator()` |
 | [Time stepping](time_stepping.md) | [`AbstractTimeStepper`](@ref) | `Simulation(model; time_stepper)` | `FixedTimeStepper()` |
 | [CFL number](cfl.md) | [`AbstractCFL`](@ref) | `Simulation(model; cfl)` | `ExactCFL()` |
 | [Simulation end](simulation_end.md) | [`AbstractSimulationEnd`](@ref) | `Simulation(model; stop)`, `run!(sim; until)` | `FixedSimulationEnd()` |
-| [Maximum layer thickness](max_layer_thickness.md) | [`AbstractMaxLayerThickness`](@ref) | `Params(; max_layer_thickness)` | `NoMaxLayerThickness()` |
+| [Maximum layer thickness](max_layer_thickness.md) | [`AbstractMaxLayerThickness`](@ref) | `Params(; max_layer_thickness)` | `RelativeMaxLayerThickness(1, 500)` |
 | [Tracer bounds](tracer_bounds.md) | [`AbstractTracerBounds`](@ref) | `Params(; tracer_bounds)` | `NoTracerBounds()` |
 | [Ice-base slope](ice_slope.md) | [`AbstractIceSlope`](@ref) | `Params(; ice_slope)` | `MaskedIceSlope()` |
 | [Mask preprocessing](preprocessing.md) | [`AbstractPreprocess`](@ref) | `Grid(...; preprocess)` | none |

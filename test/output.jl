@@ -94,9 +94,10 @@ end
     @test meta["simulation"]["cfl"]["type"] == "ExactCFL"
     @test meta["simulation"]["restart"] == ""
     @test !haskey(meta["params"], "dt0") && !haskey(meta["params"], "time_stepper")
-    @test meta["params"]["melting"]["type"] == "FixedGamTMelting"
-    @test meta["params"]["melting"]["gamTfix"] ≈ 0.00018
-    @test meta["params"]["momentum_advection"]["type"] == "CentredMomentumAdvection"
+    @test meta["params"]["melting"]["type"] == "TurbulentGamTMelting"
+    @test meta["params"]["melting"]["Pr"] ≈ 13.8
+    @test meta["params"]["momentum_advection"]["type"] == "UpstreamMomentumAdvection"
+    @test meta["params"]["integrator"]["closure_level"]["type"] == "PastClosureLevel"
     @test meta["boundary"]["wall_advection"]["type"] == "NoWallAdvection"
     @test meta["boundary"]["grounding_line_slip"]["type"] == "PartialSlipAtGL"
     @test meta["boundary"]["gaps"]["type"] == "SinkGapsBC"

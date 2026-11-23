@@ -1,7 +1,7 @@
 # Nonlinear equation of state
 
 - **Type:** improvement
-- **Status:** opt-in since 2026-10-27 (`LinearEOS()` is the default); used in the pan-Antarctic reference runs
+- **Status:** `RoquetEOS()` default since 2026-11-23 (no longer experimental; opt-in from 2026-10-27); used in the pan-Antarctic reference runs
 - **Commits:** dc073f5 (feature)
 - **Code:** `AbstractEquationOfState`, `LinearEOS`, `RoquetEOS` in `src/physics/eos.jl` (`Params(; equation_of_state)`)
 - **Docs:** `docs/src/physics/equation_of_state.md`

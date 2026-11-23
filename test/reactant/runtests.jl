@@ -110,15 +110,19 @@ const SCHEME_SCENARIOS = [
     # FB-RK3 under adaptive dt (no re-bootstrap) and a convection scheme that resets the
     # state (the end-of-step sync), with v2's Laplacian weights.
     "FB-RK3" => () -> build_isomip(CPU(); KW..., time_stepper = AdaptiveTimeStepper(),
-        params = Params(; integrator = FBRK3Integrator(), closure_level = PresentClosureLevel(),
+        params = Params(; integrator = FBRK3Integrator(),
                         convection = ResetToAmbientConvection(), laplacian_weights = PastLaplacianWeights())),
 ]
 
 @testset "Reactant extension" begin
     @testset "run! matches the CPU ($(GPU ? "GPU" : "CPU") target)" begin
         for FT in (Float64, Float32), time_stepper in (FixedTimeStepper(), AdaptiveTimeStepper())
-            ref = build_isomip(CPU(); KW..., FT, time_stepper)
-            rsim = to_backend(build_isomip(CPU(); KW..., FT, time_stepper), ReactantBackend())
+            # A fixed γ_T in Float32: the default TurbulentGamTMelting amplifies round-off
+            # (the CPU Float32 run drifts 2e-3 from Float64 in U over this day, 1e-4 under
+            # FixedGamTMelting), beyond what this comparison resolves.
+            params = FT == Float32 ? Params(; FT, melting = FixedGamTMelting(1.8e-4)) : Params(; FT)
+            ref = build_isomip(CPU(); KW..., FT, time_stepper, params)
+            rsim = to_backend(build_isomip(CPU(); KW..., FT, time_stepper, params), ReactantBackend())
             for s in (ref, rsim)
                 run!(s; days = 0.5, verbose = false)
                 run!(s; days = 0.5, verbose = false)   # reuses the compiled programs
@@ -200,7 +204,7 @@ const SCHEME_SCENARIOS = [
         sim = mk()
         model = trace_parameters(sim.model)
         @test model.FT === Float64
-        @test model.params.melting.gamTfix isa Reactant.ConcreteRNumber
+        @test model.params.melting.Pr isa Reactant.ConcreteRNumber
         @test_throws ArgumentError trace_parameters(model; nope = 1)
         traced_sim = Simulation(map(f -> f === :model ? model : getfield(sim, f), fieldnames(Simulation))...)
         @test_throws ArgumentError run!(traced_sim; days = 0.1, verbose = false)

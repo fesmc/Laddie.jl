@@ -1,15 +1,16 @@
 # Maximum layer thickness
 
 The layer thickness is bounded from below by `Params.H_min`, through the
-[minimum-thickness entrainment](../physics/entrainment.md). An upper bound is optional,
-`Params(; max_layer_thickness = ...)`:
+[minimum-thickness entrainment](../physics/entrainment.md). The upper bound is
+`Params(; max_layer_thickness = ...)`, by default the water column but never below 500 m,
+`RelativeMaxLayerThickness(1, 500)`:
 
 | option | cap on ``H`` | needs a bed |
 |---|---|---|
-| [`NoMaxLayerThickness`](@ref) (default) | none | no |
+| [`NoMaxLayerThickness`](@ref) | none | no |
 | [`TopographicMaxLayerThickness`](@ref) | the water column, ``z_b - z_\text{bed}`` | yes |
 | [`AbsoluteMaxLayerThickness`](@ref) | a fixed `H_max` | no |
-| [`RelativeMaxLayerThickness`](@ref) | ``\max(f\,(z_b - z_\text{bed}),\ H_\text{floor})`` | yes |
+| [`RelativeMaxLayerThickness`](@ref) (default, ``f = 1``, ``H_\text{floor} = 500`` m) | ``\max(f\,(z_b - z_\text{bed}),\ H_\text{floor})`` | yes |
 
 The topographic and relative caps bind only when a bed elevation `z_bed` was given to
 [`Grid`](@ref); without one the bed is at ``-\infty`` and the cap never binds.
@@ -43,7 +44,9 @@ a known limitation of a depth-averaged model.
 
     LADDIE v1 has no upper bound at all (its `maxD = 3000 m` never binds),
     and LADDIE v2's Antarctic setup uses a fixed `Hmax` of 10 000 m that never binds
-    either. Prefer the default, and reach for a cap only as a stability measure.
+    either. In pan-Antarctic runs, a cap at 0.8 of the water column removed nearly all the
+    refreezing that the uncapped runs share with v2; the default binds only where the layer
+    is thicker than both its water column and 500 m. Do not tighten it to stabilise a run.
 
 ## API
 

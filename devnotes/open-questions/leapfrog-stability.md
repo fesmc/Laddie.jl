@@ -26,6 +26,11 @@ Largest stable ω·Δt of leapfrog + RA on dq/dt = iωq:
   The usable gradient window is ~1 d at CFL 0.4 and ~5 d at CFL 0.2. `PastClosures` does not help.
   The 1 m/s speed cap made it worse (one Filchner cell held at the cap). `RelaxToAmbientConvection` instead of the v2 floor leaves the window unchanged (clean to 2 d at CFL 0.2, blow-up at 5 d).
 
+- A scheme without a computational mode is available since 2026-11 (`improvements/fbrk3-integrator.md`).
+  In linear theory the leapfrog with ν = 0.8 is stable to CFL 0.46 for gravity waves, FB-RK3 to 3.53.
+  In forward runs (ISOMIP warm 2 km, Amundsen Sea 1 km) the leapfrog breaks at CFL 0.8–1.0 and FB-RK3 at 4–5.
+  The warm adjoint window has not been run under FB-RK3.
+
 ## Candidate explanations
 
 - The convective switch in freshened warm water (S ≈ 32.4).
@@ -37,4 +42,4 @@ Largest stable ω·Δt of leapfrog + RA on dq/dt = iωq:
 - Every-step primal probe at the warm hot cells: does anything alternate every step?
 - A warm window sweep at CFL 0.1: does the blow-up move in proportion to dt?
 - ν = 0.2 with CFL target ~0.6, over 200 d (about 50 % more dt, untested).
-- A scheme without a computational mode (v2's FB-RK3), if the probe shows a 2Δt alternation.
+- The warm adjoint window under FB-RK3 (`FBRK3Integrator`, CFL 2.0): if it stays clean, the growth is the leapfrog's mode.

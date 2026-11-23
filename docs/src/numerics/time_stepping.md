@@ -68,16 +68,18 @@ level of each stage.
 
 FB-RK3 has no computational mode, so it needs no filter, and a step starts from one level:
 no bootstrap at the start or after a change of ``\Delta t``. A step costs about three
-leapfrog steps, but its stability limit for gravity waves is about five times larger. For one
-Fourier mode of linear gravity waves on the C-grid, the leapfrog is stable for
-``\omega\Delta t \le 1``, classic RK3 for ``\omega\Delta t \le \sqrt 3``, and FB-RK3 with the
-β above for ``\omega\Delta t \le 4.99``. The fastest wave on a square grid has
-``\omega\Delta t = \sqrt 2\, C`` in terms of the [CFL number](cfl.md) ``C``, so the limits are
-``C \le 0.71`` (leapfrog) and ``C \le 3.53`` (FB-RK3); on elongated cells ``C`` understates the
-fastest wave by up to ``\sqrt 2`` (FB-RK3: ``C \le 3.35`` at an aspect ratio of 2, down to 2.5 in the limit). Runs agree: on ISOMIP and the Amundsen
-Sea, the leapfrog fails between 0.8 and 1.0 and FB-RK3 between 3 and 5; below that, the melt rate
-after 20 (Amundsen Sea) and 60 (ISOMIP) days stays within 0.2 % of its value at ``C = 0.3``.
-Hence the default target of 2.0 under FB-RK3.
+leapfrog steps, but its stability limit for gravity waves is about eight times larger. For one
+Fourier mode of linear gravity waves on the C-grid, the leapfrog with the Robert–Asselin filter at
+``\nu = 0.8`` is stable for ``\omega\Delta t \le 0.65`` (1 without the filter), classic RK3 for
+``\omega\Delta t \le \sqrt 3``, and FB-RK3 with the β above for ``\omega\Delta t \le 4.99``. The
+fastest wave on a square grid has ``\omega\Delta t = \sqrt 2\, C`` in terms of the
+[CFL number](cfl.md) ``C``, so the limits are ``C \le 0.46`` (leapfrog) and ``C \le 3.53``
+(FB-RK3). On elongated cells ``C`` understates the fastest wave by up to ``\sqrt 2`` (FB-RK3:
+``C \le 3.35`` at an aspect ratio of 2, down to 2.5 in the limit). In runs on ISOMIP and the
+Amundsen Sea, drag and entrainment damp the fastest waves, and the limits lie higher: the leapfrog
+fails between 0.8 and 1.0, FB-RK3 between 3 and 5. Below that, the melt rate after 20 (Amundsen Sea)
+and 60 (ISOMIP) days stays within 0.2 % of its value at ``C = 0.3``. Hence the default target of
+2.0 under FB-RK3.
 
 ## Step-size control
 

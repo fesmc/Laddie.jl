@@ -36,7 +36,7 @@ Select via `Simulation(model; time_stepper = AdaptiveTimeStepper(; cfl_target = 
 $(TYPEDFIELDS)
 """
 @kwdef struct AdaptiveTimeStepper{FT,I,C} <: AbstractTimeStepper
-    "CFL setpoint the controller aims for (default [`default_cfl_target`](@ref) of the integrator: `0.3` under leapfrog, `0.4` under FB-RK3)"
+    "CFL setpoint the controller aims for (default [`default_cfl_target`](@ref) of the integrator: `0.3` under leapfrog, `2.0` under FB-RK3)"
     cfl_target::C = nothing
     "response exponent: `1` is CFL-exact, `< 1` damps, `> 1` overshoots (default `1.0`)"
     q::FT = 1.0

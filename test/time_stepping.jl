@@ -78,10 +78,10 @@ end
     @test p_fb.integrator isa FBRK3Integrator{FT}
 
     # The CFL setpoint follows the integrator unless it is given.
-    @test default_cfl_target(FBRK3Integrator()) == 0.4 && default_cfl_target(LeapfrogIntegrator()) == 0.3
+    @test default_cfl_target(FBRK3Integrator()) == 2.0 && default_cfl_target(LeapfrogIntegrator()) == 0.3
     s_fb = build_isomip(CPU(); FT, nx = 20, ny = 10, params = p_fb, time_stepper = AdaptiveTimeStepper())
     s_lf = build_isomip(CPU(); FT, nx = 20, ny = 10, time_stepper = AdaptiveTimeStepper())
-    @test s_fb.time_stepper.cfl_target == FT(0.4) && s_lf.time_stepper.cfl_target == FT(0.3)
+    @test s_fb.time_stepper.cfl_target == FT(2.0) && s_lf.time_stepper.cfl_target == FT(0.3)
     @test build_isomip(CPU(); FT, nx = 20, ny = 10, params = p_fb,
                        time_stepper = AdaptiveTimeStepper(; cfl_target = 0.25)).time_stepper.cfl_target == FT(0.25)
 

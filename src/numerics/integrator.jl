@@ -69,13 +69,13 @@ end
     default_cfl_target(integrator)
 
 The CFL setpoint of an [`AdaptiveTimeStepper`](@ref) built without `cfl_target`, for the
-[`AbstractIntegrator`](@ref) `integrator`: `0.3` for [`LeapfrogIntegrator`](@ref), `0.4` for
+[`AbstractIntegrator`](@ref) `integrator`: `0.3` for [`LeapfrogIntegrator`](@ref), `2.0` for
 [`FBRK3Integrator`](@ref).
 """
 function default_cfl_target end
 
 default_cfl_target(::LeapfrogIntegrator) = 0.3
-default_cfl_target(::FBRK3Integrator) = 0.4
+default_cfl_target(::FBRK3Integrator) = 2.0
 
 # The settings an integrator needs from the rest of `Params`, checked by `Params(; ...)`.
 _check_integrator(::LeapfrogIntegrator, _) = nothing

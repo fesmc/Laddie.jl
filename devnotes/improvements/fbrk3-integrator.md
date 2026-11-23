@@ -81,7 +81,7 @@ The remaining gap to v2 is not the time scheme.
 
 ## Caveats
 
-- Not run on the pan-Antarctic warm window, and the adjoint has not been run at large Δt. For the linear wave part the adjoint step is the transpose of the tangent-linear step and shares its stability limit; thin cells, kinks and clamps may differ.
+- On the pan-Antarctic runs it neither reduces the resolution dependence of melt nor keeps the tangent bounded on warm windows for longer than the leapfrog (`deadends/fbrk3-resolution-and-gradients.md`).
 - Reverse mode through Reactant's traced loop needs more memory than the leapfrog: 1840 against 1302 arrays per cell (14.8 against 10.5 GB) at 1000×1000 with 20 checkpoints, ISOMIP geometry.
   A prototype adjoint of the time scheme (one Enzyme VJP per stage, prognostic-only checkpoints on the host, a fixed buffer pool) gets 377 arrays per cell (3.0 GB) at equal gradients; it is not in main.
 - The speed cap (`_speed_scale_kernel!`) reads the border ring of `V.future`, which no step kernel writes; it is zero in practice, so results are unaffected, but a stage map of FB-RK3 (and a leapfrog step) formally depends on the level two stages back.

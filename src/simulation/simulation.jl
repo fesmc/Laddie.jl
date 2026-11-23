@@ -129,6 +129,7 @@ function IOState(m::Model, output::OutputConfig)
         0.0,     # t_accum
         0,       # time_index
         0.0,     # nextsave
+        Inf,     # nextwindow
         0.0,     # nextdiag
         0.0,     # nextrest
         "",      # rundir
@@ -138,6 +139,7 @@ function IOState(m::Model, output::OutputConfig)
         NamedTuple{names}(map(_ -> zero(m.tmask), names)),
         Inf,     # nextseries
         0.0,     # ts_t_accum
+        0,       # ts_count
         NamedTuple{series}(map(_ -> zero(m.tmask), series)),
         _SeriesRow[],   # ts_rows
         0,       # ts_index
@@ -208,9 +210,11 @@ Wrap `model` in a simulation, initialise its time levels, and (when
   [`FixedSimulationEnd`](@ref) (default, 30 days) or [`SteadyStateSimulationEnd`](@ref).
 - `output`: an [`OutputConfig`](@ref); the default disables file I/O.
 - `restart`: path to a JLD2 restart file (see `init_from_restart!`), or `nothing`
-  (default) to start from the model's initial state.
-  the model's initial state.  Restores the prognostic fields, the clock time
-  and the time step.
+  (default) to start from the model's initial state.  Restores the prognostic fields,
+  the clock time and the time step.
+- `refine`, `refine_fill`: passed to `init_from_restart!` with `restart`, to start from
+  a run `refine` times coarser (default 1, the same grid; `refine_fill` default `:keep`).
+  The output schedule starts at the restart's time.
 - `debug`: a [`DebugConfig`](@ref).
 
 Constructing a simulation takes the first (bootstrap) step of the leapfrog
@@ -233,10 +237,13 @@ function Simulation(
     stop = FixedSimulationEnd(),
     output = OutputConfig(),
     restart = nothing,
+    refine::Integer = 1,
+    refine_fill::Symbol = :keep,
     debug = DebugConfig(),
 )
     FT = model.FT
     dt > 0 || throw(ArgumentError("dt must be positive, got $dt"))
+    restart === nothing && refine != 1 && throw(ArgumentError("refine = $refine needs a restart"))
     io = IOState(model, output)
     sim = Simulation(
         model,
@@ -253,7 +260,7 @@ function Simulation(
     if restart === nothing
         _bootstrap!(model, sim.clock.dt; _nan_check(sim)...)
     else
-        init_from_restart!(sim, restart)
+        init_from_restart!(sim, restart; refine, refine_fill)
     end
     output.saveday > 0 && prepare_output!(sim)
     return sim

@@ -32,7 +32,8 @@ $(TYPEDEF)
 Output configuration of a [`Simulation`](@ref): run directory, output and restart cadence, and
 the fields written. `OutputConfig()` writes nothing; `saveday > 0` writes time-averaged maps
 to `output.nc` every `saveday` days, a log line every `diagday` days and a restart every
-`restday` days. `tsday` adds time series of shelf means.
+`restday` days. `meanday` averages the maps over the last `meanday` days before each write
+instead of the whole interval. `tsday` adds time series of shelf means.
 
 `fields` takes `:Ut`, `:Vt`, `:Uu`, `:Vv`, `:H`, `:T`, `:S`, `:melt`, `:entr`, `:detr`, `:ent2`,
 `:detr_cap`, `:frazil`, `:Tbase`, `:Tamb`, `:gammaT`, `:ustar`, `:drho`,
@@ -45,12 +46,15 @@ OutputConfig: every 1.0 d → ./output/warm
 
 julia> OutputConfig(; name = "warm", saveday = 10.0, tsday = 1.0)   # with daily time series
 OutputConfig: every 10.0 d → ./output/warm
+
+julia> OutputConfig(; name = "warm", saveday = 100.0, meanday = 2.0)   # maps of the last 2 days
+OutputConfig: every 100.0 d (mean of the last 2.0 d) → ./output/warm
 ```
 
 # Fields
 $(TYPEDFIELDS)
 """
-Base.@kwdef struct OutputConfig{T,D,F}
+Base.@kwdef struct OutputConfig{T,D,F,M}
     "run name; files go to `joinpath(resultdir, name)`"
     name::String = "run"
     "averaging and output interval in days; `0` disables all file I/O"
@@ -69,7 +73,9 @@ Base.@kwdef struct OutputConfig{T,D,F}
     fields::F = (:Ut, :Vt, :H, :T, :S, :melt, :mask, :z_draft)
     "float type of the time-averaged maps in `output.nc`, `Float32` (default) or `Float64`"
     float_type::DataType = Float32
-    OutputConfig{T,D,F}(args...) where {T,D,F} = new{T,D,F}(args...)
+    "length in days of the window before each write over which the maps are averaged; `nothing` (default): the whole interval since the last write"
+    meanday::M = nothing
+    OutputConfig{T,D,F,M}(args...) where {T,D,F,M} = new{T,D,F,M}(args...)
 end
 
 const _STATIC_FIELDS = (:mask, :z_draft)
@@ -90,6 +96,7 @@ function OutputConfig(
     logfilename,
     fields,
     float_type = Float32,
+    meanday = nothing,
 )
     saveday >= 0 || throw(ArgumentError("saveday must not be negative (0 disables file I/O), got $saveday"))
     float_type in (Float32, Float64) ||
@@ -99,14 +106,17 @@ function OutputConfig(
     restday > 0 || throw(ArgumentError("restday must be positive, got $restday"))
     tsday === nothing || tsday > 0 ||
         throw(ArgumentError("tsday must be positive (or `nothing` for no time series), got $tsday"))
+    meanday === nothing || 0 < meanday <= saveday ||
+        throw(ArgumentError("meanday must be in (0, saveday] (or `nothing`: the whole interval), got $meanday with saveday = $saveday"))
     days = promote(float(saveday), float(diagday), float(restday))
     tsday = tsday === nothing ? nothing : convert(eltype(days), tsday)
+    meanday = meanday === nothing ? nothing : convert(eltype(days), meanday)
     fields = Tuple(Symbol.(fields))
     known = (keys(_OUTPUT_FIELDS)..., _STATIC_FIELDS...)
     for f in fields
         f in known || throw(ArgumentError("unknown output field :$f; use one of $known"))
     end
-    return OutputConfig{eltype(days),typeof(tsday),typeof(fields)}(
+    return OutputConfig{eltype(days),typeof(tsday),typeof(fields),typeof(meanday)}(
         name,
         days...,
         tsday,
@@ -114,6 +124,7 @@ function OutputConfig(
         logfilename,
         fields,
         float_type,
+        meanday,
     )
 end
 
@@ -141,6 +152,8 @@ mutable struct IOState{I,T,C,S,R}
     time_index::I
     "clock time of the next output write (s)"
     nextsave::T
+    "clock time at which the averaging window of the next write opens (s); `Inf` when it is the whole interval or already open"
+    nextwindow::T
     "clock time of the next log diagnostics (s)"
     nextdiag::T
     "clock time of the next restart write (s)"
@@ -159,6 +172,8 @@ mutable struct IOState{I,T,C,S,R}
     nextseries::T
     "simulated time accumulated since the last time-series point (s)"
     ts_t_accum::T
+    "steps accumulated since the last time-series point"
+    ts_count::I
     "the dt-weighted sums over the series window of the fields behind the time series, by name (full-size model arrays)"
     tsacc::S
     "time-series points (host numbers) not yet written to `output.nc`"
@@ -233,6 +248,7 @@ const _SERIES = (
     ts_mean_melt = ("m yr-1", "mean net basal melt rate (melt - frazil) over ice-covered cells"),
     ts_total_melt = ("Gt yr-1", "total net basal melt (melt - frazil), freshwater mass"),
     ts_refreezing = ("Gt yr-1", "total refreezing (max(-melt, 0) + frazil), freshwater mass"),
+    ts_dt = ("s", "mean time step over the time-series window"),
 )
 
 # One time-series point: the time (days) and the series, as host numbers.
@@ -383,6 +399,7 @@ function prepare_output!(sim)
     m = sim.model
     out, spd = sim.output, _float64(m.seconds_per_day)
     sim.io.nextsave = sim.clock.time + out.saveday * spd
+    sim.io.nextwindow = _window_opens(sim)
     sim.io.nextdiag = sim.clock.time + out.diagday * spd
     sim.io.nextrest = sim.clock.time + out.restday * spd
     sim.io.nextseries = _series_on(sim) ? sim.clock.time + out.tsday * spd : Inf
@@ -390,6 +407,7 @@ function prepare_output!(sim)
     sim.io.t_accum = 0.0
     sim.io.time_index = 0
     sim.io.ts_index = 0
+    sim.io.ts_count = 0
     empty!(sim.io.ts_rows)
     _write_run_metadata(sim)
     _create_output_file!(sim)
@@ -515,6 +533,7 @@ function _count_accum!(io, dt)
     io.count += 1
     io.t_accum += _primal(dt)
     io.ts_t_accum += _primal(dt)
+    io.ts_count += 1
     return
 end
 
@@ -577,6 +596,7 @@ function _create_output_file!(sim)
 
         ds.attrib["model"] = "Laddie.jl"
         ds.attrib["saveday"] = sim.output.saveday
+        sim.output.meanday === nothing || (ds.attrib["meanday"] = sim.output.meanday)
         _series_on(sim) && (ds.attrib["tsday"] = sim.output.tsday)
 
         # Time series of shelf means — their own unlimited time axis, since `tsday`
@@ -754,9 +774,11 @@ function _record_series!(sim)
         shelf_mean(sums.net_melt) * seconds_per_year,
         melt_total * seconds_per_year / _KG_PER_GT,
         refreezing_total * seconds_per_year / _KG_PER_GT,
+        t / io.ts_count,
     ))
     push!(io.ts_rows, row)
     io.ts_t_accum = 0.0
+    io.ts_count = 0
     foreach(acc -> fill!(acc, 0), io.tsacc)
     return
 end
@@ -810,6 +832,30 @@ function savefields!(sim)
     _write_series!(sim)
     _reset_accum!(sim)
     sim.io.nextsave += sim.output.saveday * _primal(sim.model.seconds_per_day)
+    sim.io.nextwindow = _window_opens(sim)
+    return
+end
+
+# The clock time at which the averaging window of the next write opens: `meanday` before
+# it, or `Inf` when the window is the whole interval since the last write.
+function _window_opens(sim)
+    meanday = sim.output.meanday
+    (meanday === nothing || meanday >= sim.output.saveday) && return Inf
+    return sim.io.nextsave - meanday * _primal(sim.model.seconds_per_day)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Open the averaging window of the next write, `output.meanday` days before it: drop what
+the maps accumulated since the last write. Called by `run!` after each batch of steps,
+after `savefields!`; a no-op without `meanday`.
+"""
+function openwindow!(sim)
+    _event_due(sim, sim.io.nextwindow) || return
+    _reset_accum!(sim)
+    sim.io.nextwindow = Inf
+    _print2log(sim, @sprintf("%.3f days: opened the averaging window of the next output", _t_days(sim)))
     return
 end
 
@@ -891,11 +937,18 @@ leapfrog if the file's differs. `refine = f > 1` loads the restart of a run `f` 
 `refine_fill` sets what its active cells without an active coarse parent take: their own state
 (`:keep`) or H, T and S of the nearest cell with one, through the active cells (`:nearest`).
 [`Simulation`](@ref) calls it for its
-`restart` keyword. Details on the [Output and restarts](@ref) page.
+`restart` keyword (and `refine`, `refine_fill`), before it schedules the output. Called on
+a simulation that writes output, after it is built, the output schedule still starts at
+the simulation's start, and the first steps write every save, restart and series point
+since then: pass the restart to [`Simulation`](@ref) instead. Details on the
+[Output and restarts](@ref) page.
 """
 function init_from_restart!(sim, path::AbstractString; refine::Integer = 1, refine_fill::Symbol = :keep)
     refine ≥ 1 || throw(ArgumentError("refine must be a positive integer, got $refine"))
     refine_fill in (:keep, :nearest) || throw(ArgumentError("refine_fill must be :keep or :nearest, got :$refine_fill"))
+    sim.io.time_index > 0 && @warn "init_from_restart! on a simulation whose output is already scheduled: " *
+        "its first steps write every output event since its start, unless `prepare_output!` is called again; " *
+        "pass `restart` (and `refine`) to `Simulation`"
     m = sim.model
     sim.io.restartfile = path
     exact = jldopen(path, "r") do f

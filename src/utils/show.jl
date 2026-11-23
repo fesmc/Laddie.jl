@@ -185,7 +185,7 @@ Base.show(io::IO, c::Clock{FT}) where {FT} = print(
 Base.show(io::IO, o::OutputConfig) = print(
     io,
     o.saveday > 0 ?
-    "OutputConfig: every $(o.saveday) d → $(joinpath(o.resultdir, o.name))" :
+    "OutputConfig: every $(o.saveday) d$(o.meanday === nothing ? "" : " (mean of the last $(o.meanday) d)") → $(joinpath(o.resultdir, o.name))" :
     "OutputConfig: disabled (saveday = 0)",
 )
 

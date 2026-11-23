@@ -132,7 +132,8 @@ _sync_due(r, step, elapsed, half) = step % r.checkint == 0 || elapsed + half >= 
 _sample_due(r, elapsed, half) = elapsed + half >= r.next_steady
 _output_due(io, t, half) =
     _event_due(t, half, io.nextsave) || _event_due(t, half, io.nextdiag) ||
-    _event_due(t, half, io.nextrest) || _event_due(t, half, io.nextseries)
+    _event_due(t, half, io.nextrest) || _event_due(t, half, io.nextseries) ||
+    _event_due(t, half, io.nextwindow)
 
 # The number of steps until the next host event.
 function _steps_to_next_event(sim, r)
@@ -247,6 +248,7 @@ function run!(sim::Simulation; days = nothing, until = nothing, verbose = true)
         if io_on
             saveseries!(sim)
             savefields!(sim)
+            openwindow!(sim)
             printdiags(sim)
             saverestart!(sim)
         end

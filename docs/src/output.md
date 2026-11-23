@@ -14,7 +14,8 @@ Event times are absolute on the simulation clock, so a simulation advanced by se
 ## Maps
 
 `OutputConfig(; fields)` names the variables of `output.nc`. Time averages over each
-`saveday` window:
+`saveday` window, or with `meanday` over its last `meanday` days only (e.g. the state at the
+end of a long run, `saveday = 100, meanday = 2`):
 
 | name | field | units |
 |------|-------|-------|
@@ -55,6 +56,7 @@ axis `ts_time`:
 | `ts_mean_melt` | mean net basal melt rate, `melt − frazil` | m yr⁻¹ |
 | `ts_total_melt` | total net basal melt, freshwater mass | Gt yr⁻¹ |
 | `ts_refreezing` | total refreezing, `max(−melt, 0) + frazil`, freshwater mass | Gt yr⁻¹ |
+| `ts_dt` | mean time step over the window (its length over its number of steps) | s |
 
 As in [`meltstats`](@ref), `ts_total_melt + ts_refreezing` is the melting alone. The
 fields are accumulated on the device every step, like the maps; the spatial means are
@@ -112,3 +114,8 @@ stores the active cells must match the model's.
   spun-up one;
 - `dt` is the restart's divided by `f`, and the leapfrog restarts with a forward step;
 - the two runs may crop their domains differently; the coarse grid is read from the file.
+
+Pass `refine` and `refine_fill` to [`Simulation`](@ref) along with `restart`, so the
+output schedule starts at the restart's time. Calling `init_from_restart!` on a
+simulation built with output leaves the schedule at its start, and the first steps then
+write every save, restart and series point in between (Laddie warns).

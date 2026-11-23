@@ -267,6 +267,27 @@ end
     run!(fine; days = 0.2, verbose = false)
     @test all(isfinite, fine.model.H.present) && all(isfinite, fine.model.melt)
 
+    # Through Simulation's keywords, the output schedule starts at the restart's time: one
+    # slice for the restart state, then one per saveday, no catch-up of the days before it.
+    t0 = coarse.clock.time / 86400
+    out = OutputConfig(; name = "refined", resultdir = tmp, saveday = 0.1)
+    viasim = build_isomip(CPU(); nx = 40, ny = 12, dx = 2000.0, dy = 2000.0, xfront = 60_000.0,
+                          domain_cropping = crop, output = out, restart = file, refine = 2,
+                          refine_fill = :nearest)
+    @test viasim.model.H.past == Laddie.init_from_restart!(fine_sim(), file; refine = 2,
+                                                           refine_fill = :nearest).model.H.past
+    run!(viasim; days = 0.2, verbose = false)
+    Laddie.NCDatasets.Dataset(joinpath(tmp, "refined", "output.nc")) do ds
+        @test ds["time"][:] ≈ t0 .+ [0, 0.1, 0.2] atol = 1e-3
+    end
+    @test_throws ArgumentError build_isomip(CPU(); nx = 40, ny = 12, dx = 2000.0, dy = 2000.0,
+                                            xfront = 60_000.0, domain_cropping = crop, refine = 2)
+    # init_from_restart! after the output is scheduled warns.
+    late = build_isomip(CPU(); nx = 40, ny = 12, dx = 2000.0, dy = 2000.0, xfront = 60_000.0,
+                        domain_cropping = crop,
+                        output = OutputConfig(; name = "late", resultdir = tmp, saveday = 0.1))
+    @test_logs (:warn, r"already scheduled") match_mode = :any Laddie.init_from_restart!(late, file; refine = 2)
+
     # Mismatches are caught: a plain restart onto the finer grid, and a factor that
     # does not refine the coarse domain.
     @test_throws ArgumentError Laddie.init_from_restart!(fine_sim(), file)
@@ -352,6 +373,9 @@ end
         @test ds["ts_u_norm"][end] > 0
         @test ds["ts_total_melt"].attrib["units"] == "Gt yr-1"
         @test ds["ts_refreezing"].attrib["units"] == "Gt yr-1"
+        # A fixed dt: every window's mean time step is that dt, the initial point's included.
+        @test all(ds["ts_dt"][:] .≈ sim.clock.dt)
+        @test ds["ts_dt"].attrib["units"] == "s"
     end
 
     # Finer than the maps, with the final partial window flushed at the end of run!.
@@ -376,6 +400,47 @@ end
     output = OutputConfig(; name = "rx", resultdir = tmp, saveday = 0.5, tsday = 0.25)
     sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, output)
     @test_throws ArgumentError to_backend(sim, ReactantBackend())
+
+    # Under AdaptiveTimeStepper, the window's length over its steps.
+    output = OutputConfig(; name = "adaptive", resultdir = tmp, saveday = 0.5, tsday = 0.25)
+    sim = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, output, dt = 60.0,
+                       time_stepper = AdaptiveTimeStepper())
+    run!(sim; days = 0.5, verbose = false)
+    NCD.Dataset(joinpath(tmp, "adaptive", "output.nc")) do ds
+        dts = ds["ts_dt"][:]
+        @test dts[1] ≈ 60.0 && all(dts .> 0) && dts[end] > dts[1]
+    end
+end
+
+@testset "I/O: maps averaged over the last meanday days" begin
+    NCD = Laddie.NCDatasets
+    tmp = mktempdir()
+    @test_throws ArgumentError OutputConfig(; saveday = 1.0, meanday = 0)
+    @test_throws ArgumentError OutputConfig(; saveday = 1.0, meanday = 1.5)
+    @test OutputConfig(; saveday = 1, meanday = 1).meanday === 1.0
+    @test sprint(show, OutputConfig(; name = "w", saveday = 100.0, meanday = 2.0)) ==
+          "OutputConfig: every 100.0 d (mean of the last 2.0 d) → ./output/w"
+
+    # At a fixed dt (216 s divides 0.1 d), the map written at 0.5 d with meanday = 0.1 is the
+    # average over the steps of 0.4–0.5 d: the last slice of a run writing every 0.1 d.
+    build(name; kw...) = build_isomip(CPU(); FT, nx = 20, ny = 10, isomipcond = :warm, dt = 216.0,
+                                      output = OutputConfig(; name, resultdir = tmp, kw...))
+    for (name, kw) in (("window", (; saveday = 0.5, meanday = 0.1)), ("every", (; saveday = 0.1)),
+                       ("whole", (; saveday = 0.5)))
+        run!(build(name; kw..., fields = (:H, :melt, :Ut), float_type = Float64); days = 0.5, verbose = false)
+    end
+    rd(name, v) = NCD.Dataset(ds -> NCD.nomissing(ds[v][:, :, end], NaN), joinpath(tmp, name, "output.nc"))
+    NCD.Dataset(joinpath(tmp, "window", "output.nc")) do ds
+        @test ds["time"][:] ≈ [0.0, 0.5]
+        @test ds.attrib["meanday"] == 0.1
+    end
+    for v in ("H", "melt", "Ut")
+        a, b, c = rd("window", v), rd("every", v), rd("whole", v)
+        ok = isfinite.(a)
+        @test a[ok] ≈ b[ok]
+        @test !(a[ok] ≈ c[ok])   # differs from the mean over the whole 0.5 d
+    end
+    @test occursin("opened the averaging window", read(joinpath(tmp, "window", "log.txt"), String))
 end
 
 @testset "Restart: a continuation equals the straight run, to the last bit" begin
